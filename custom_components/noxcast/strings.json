@@ -84,6 +84,38 @@
       "abort": {
         "reconfigure_successful": "PV array saved."
       }
+    },
+    "exclusion": {
+      "entry_type": "Excluded period",
+      "initiate_flow": {
+        "user": "Exclude period"
+      },
+      "step": {
+        "user": {
+          "title": "Excluded period",
+          "description": "Hours in this period are ignored for learning, e.g. holidays with zero export when output was curtailed.",
+          "data": {
+            "start_date": "Start date",
+            "end_date": "End date (inclusive)",
+            "note": "Note"
+          }
+        },
+        "reconfigure": {
+          "title": "Excluded period",
+          "description": "Hours in this period are ignored for learning, e.g. holidays with zero export when output was curtailed.",
+          "data": {
+            "start_date": "Start date",
+            "end_date": "End date (inclusive)",
+            "note": "Note"
+          }
+        }
+      },
+      "error": {
+        "end_before_start": "The end date must not be before the start date."
+      },
+      "abort": {
+        "reconfigure_successful": "Period saved."
+      }
     }
   },
   "selector": {
@@ -120,24 +152,6 @@
     }
   },
   "services": {
-    "exclude_period": {
-      "name": "Exclude period from learning",
-      "description": "Ignore a period in which output was curtailed, e.g. holidays with zero export.",
-      "fields": {
-        "start_date": {
-          "name": "Start date",
-          "description": "First day to exclude."
-        },
-        "end_date": {
-          "name": "End date",
-          "description": "Last day to exclude."
-        },
-        "note": {
-          "name": "Note",
-          "description": "Reason, for your own reference."
-        }
-      }
-    },
     "relearn": {
       "name": "Relearn",
       "description": "Learn efficiency and shading again from history now."

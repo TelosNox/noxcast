@@ -34,9 +34,14 @@ with ISO timestamps → kWh, `schema_version` 1) and remaining today. Diagnostic
 efficiency, shading map coverage, last learning run. The total is available as solar forecast
 in the energy dashboard.
 
+## Excluded periods
+
+Periods with curtailment that the battery sensors cannot reveal (e.g. holidays with zero export)
+are added on the integration page via **Exclude period**. They are listed there and can be
+edited or deleted; every change triggers relearning.
+
 ## Services
 
-- `noxcast.exclude_period` – ignore a period with curtailment (e.g. holidays with zero export).
 - `noxcast.relearn` – learn again from history now.
 
 ## Development

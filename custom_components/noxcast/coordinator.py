@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_END_DATE, CONF_NAME, CONF_NOTE, CONF_START_DATE, SUBENTRY_EXCLUSION, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
     WEATHER_SOURCE_OPEN_METEO,
@@ -60,6 +60,22 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
     return configs
 
 
+def exclusion_periods(entry: ConfigEntry) -> list[dict]:
+    """Excluded periods from subentries: {"start": ts, "end": ts (exclusive), "note": str}."""
+    periods = []
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SUBENTRY_EXCLUSION:
+            continue
+        start = dt_util.parse_date(sub.data[CONF_START_DATE])
+        end = dt_util.parse_date(sub.data[CONF_END_DATE])
+        if start is None or end is None:
+            continue
+        periods.append({"start": dt_util.start_of_local_day(start).timestamp(),
+                        "end": (dt_util.start_of_local_day(end) + timedelta(days=1)).timestamp(),
+                        "note": sub.data.get(CONF_NOTE, "")})
+    return sorted(periods, key=lambda p: p["start"])
+
+
 class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     """Single writer for learned state; learning runs in the executor on immutable inputs."""
 
@@ -70,7 +86,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
         self.learned: dict[str, LearnedArray] = {}
-        self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
+        self.exclusions = exclusion_periods(entry)
         self.last_learning: datetime | None = None
         self.last_learning_error: str | None = None
         self._hours: dict[str, dict[float, float]] = {}
@@ -83,8 +99,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Restore learned state. A damaged store is ignored – everything can be relearned from history."""
         try:
             stored = await self._store.async_load() or {}
-            self.exclusions = [e for e in stored.get("exclusions", []) if {"start", "end"} <= set(e)]
             for sub_id, data in stored.get("arrays", {}).items():
+                # learned state is only valid for the same geometry, sensors and excluded periods
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
             if stored.get("last_learning"):
@@ -112,11 +128,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]
-        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since]
+        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since,
+                [[e["start"], e["end"]] for e in self.exclusions]]
 
     def _store_data(self) -> dict:
         return {
-            "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
                        for sid, la in self.learned.items() if sid in self.arrays},
@@ -177,10 +193,6 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                          arr.name, result.efficiency, len(result.cells), result.coverage * 100, result.samples)
         self.learned.update(learned)          # applied in one step on the event loop
         self.last_learning = now
-
-    async def async_add_exclusion(self, start: datetime, end: datetime, note: str = "") -> None:
-        self.exclusions.append({"start": start.timestamp(), "end": end.timestamp(), "note": note})
-        self._store.async_delay_save(self._store_data, 5)
 
     # ------------------------------------------------------------------ forecast
 

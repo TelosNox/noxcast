@@ -103,3 +103,31 @@ async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> No
             sub["flow_id"], {**ARRAY, "power_sensors": ["sensor.pv_kwh"]})
     assert sub["type"] is FlowResultType.FORM
     assert sub["errors"] == {"power_sensors": "sensor_unit"}
+
+
+async def test_exclusion_subentry(hass: HomeAssistant) -> None:
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
+         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+
+        flow = await hass.config_entries.subentries.async_init((entry.entry_id, "exclusion"),
+                                                               context={"source": config_entries.SOURCE_USER})
+        bad = await hass.config_entries.subentries.async_configure(
+            flow["flow_id"], {"start_date": "2026-06-07", "end_date": "2026-05-22", "note": ""})
+        assert bad["errors"] == {"end_date": "end_before_start"}
+        done = await hass.config_entries.subentries.async_configure(
+            flow["flow_id"], {"start_date": "2026-05-22", "end_date": "2026-06-07", "note": "Urlaub"})
+        assert done["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+
+    entry = hass.config_entries.async_get_entry(entry.entry_id)
+    sub = next(s for s in entry.subentries.values() if s.subentry_type == "exclusion")
+    assert sub.title == "Urlaub · 22.05.2026 – 07.06.2026"
+    periods = entry.runtime_data.exclusions
+    assert len(periods) == 1
+    assert periods[0]["end"] - periods[0]["start"] == pytest.approx(17 * 86400, abs=3600)   # end day inclusive

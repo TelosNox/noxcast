@@ -13,7 +13,7 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_END_DATE, CONF_NAME, CONF_NOTE, CONF_START_DATE, SUBENTRY_EXCLUSION, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
 )
@@ -96,7 +96,7 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_ARRAY: ArraySubentryFlow}
+        return {SUBENTRY_ARRAY: ArraySubentryFlow, SUBENTRY_EXCLUSION: ExclusionSubentryFlow}
 
 
 class ArraySubentryFlow(ConfigSubentryFlow):
@@ -136,3 +136,46 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     if valid and (dt_util.parse_date(valid) is None or dt_util.parse_date(valid) > dt_util.now().date()):
         return {CONF_VALID_SINCE: "date_in_future"}
     return {}
+
+
+def _exclusion_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema({
+        vol.Required(CONF_START_DATE, description={"suggested_value": defaults.get(CONF_START_DATE)}): selector.DateSelector(),
+        vol.Required(CONF_END_DATE, description={"suggested_value": defaults.get(CONF_END_DATE)}): selector.DateSelector(),
+        vol.Optional(CONF_NOTE, default=defaults.get(CONF_NOTE, "")): selector.TextSelector(),
+    })
+
+
+def _exclusion_title(data: dict[str, Any]) -> str:
+    start, end = (dt_util.parse_date(data[k]) for k in (CONF_START_DATE, CONF_END_DATE))
+    period = f"{start:%d.%m.%Y} – {end:%d.%m.%Y}"
+    return f"{data[CONF_NOTE]} · {period}" if data.get(CONF_NOTE) else period
+
+
+def _validate_exclusion(user_input: dict[str, Any] | None) -> dict[str, str]:
+    if user_input is None:
+        return {}
+    start = dt_util.parse_date(user_input.get(CONF_START_DATE) or "")
+    end = dt_util.parse_date(user_input.get(CONF_END_DATE) or "")
+    if start is None or end is None or end < start:
+        return {CONF_END_DATE: "end_before_start"}
+    return {}
+
+
+class ExclusionSubentryFlow(ConfigSubentryFlow):
+    """A period ignored for learning, e.g. holidays with zero export. Listed, editable and deletable in the UI."""
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors = _validate_exclusion(user_input)
+        if user_input is not None and not errors:
+            return self.async_create_entry(title=_exclusion_title(user_input), data=user_input)
+        return self.async_show_form(step_id="user", data_schema=_exclusion_schema(user_input or {}), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        errors = _validate_exclusion(user_input)
+        if user_input is not None and not errors:
+            return self.async_update_and_abort(self._get_entry(), subentry, title=_exclusion_title(user_input),
+                                               data=user_input)
+        return self.async_show_form(step_id="reconfigure",
+                                    data_schema=_exclusion_schema(user_input or dict(subentry.data)), errors=errors)

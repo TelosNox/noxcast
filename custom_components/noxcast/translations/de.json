@@ -84,6 +84,38 @@
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."
       }
+    },
+    "exclusion": {
+      "entry_type": "Ausgeschlossener Zeitraum",
+      "initiate_flow": {
+        "user": "Zeitraum ausschließen"
+      },
+      "step": {
+        "user": {
+          "title": "Ausgeschlossener Zeitraum",
+          "description": "Stunden in diesem Zeitraum werden beim Lernen ignoriert, z. B. Urlaub mit Nulleinspeisung, in dem abgeregelt wurde.",
+          "data": {
+            "start_date": "Startdatum",
+            "end_date": "Enddatum (einschließlich)",
+            "note": "Notiz"
+          }
+        },
+        "reconfigure": {
+          "title": "Ausgeschlossener Zeitraum",
+          "description": "Stunden in diesem Zeitraum werden beim Lernen ignoriert, z. B. Urlaub mit Nulleinspeisung, in dem abgeregelt wurde.",
+          "data": {
+            "start_date": "Startdatum",
+            "end_date": "Enddatum (einschließlich)",
+            "note": "Notiz"
+          }
+        }
+      },
+      "error": {
+        "end_before_start": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      },
+      "abort": {
+        "reconfigure_successful": "Zeitraum gespeichert."
+      }
     }
   },
   "selector": {
@@ -120,24 +152,6 @@
     }
   },
   "services": {
-    "exclude_period": {
-      "name": "Zeitraum vom Lernen ausschließen",
-      "description": "Einen Zeitraum ignorieren, in dem abgeregelt wurde, z. B. Urlaub bei Nulleinspeisung.",
-      "fields": {
-        "start_date": {
-          "name": "Startdatum",
-          "description": "Erster auszuschließender Tag."
-        },
-        "end_date": {
-          "name": "Enddatum",
-          "description": "Letzter auszuschließender Tag."
-        },
-        "note": {
-          "name": "Notiz",
-          "description": "Grund, zur eigenen Nachvollziehbarkeit."
-        }
-      }
-    },
     "relearn": {
       "name": "Neu lernen",
       "description": "Wirkungsgrad und Schatten jetzt neu aus der Historie lernen."

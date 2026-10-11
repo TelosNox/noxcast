@@ -21,6 +21,12 @@ CONF_AZIMUTH = "azimuth"
 CONF_PEAK_POWER = "peak_power"
 CONF_VALID_SINCE = "valid_since"
 
+# exclusion subentry: period ignored for learning (e.g. holidays with zero export)
+SUBENTRY_EXCLUSION = "exclusion"
+CONF_START_DATE = "start_date"
+CONF_END_DATE = "end_date"
+CONF_NOTE = "note"
+
 # irradiance attributes recognised in weather entity hourly forecasts (W/m², mean of the preceding hour)
 IRRADIANCE_KEYS = ("sun_irradiance", "solar_irradiance", "irradiance", "global_horizontal_irradiance")
 
@@ -34,5 +40,4 @@ HISTORY_YEARS = 2                        # history window used for learning
 STORAGE_VERSION = 1
 ATTR_SCHEMA_VERSION = 1
 
-SERVICE_EXCLUDE_PERIOD = "exclude_period"
 SERVICE_RELEARN = "relearn"

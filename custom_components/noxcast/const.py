@@ -44,6 +44,8 @@ LEARN_TIME = (1, 30)                     # local time of the nightly learning ru
 HISTORY_YEARS = 2                        # history window used for learning
 
 STORAGE_VERSION = 1
+ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluation
+ERROR_DAYS = 30                          # window of the forecast error sensor
 ATTR_SCHEMA_VERSION = 1
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"

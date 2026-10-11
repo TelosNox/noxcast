@@ -14,7 +14,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import ATTR_SCHEMA_VERSION, DOMAIN
+from . import archive as fc_archive
+from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 
 
@@ -69,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
     total_device = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name="Noxcast", manufacturer="Noxcast",
                               entry_type=DeviceEntryType.SERVICE)
     async_add_entities([ForecastSensor(coordinator, d, None, total_device) for d in FORECASTS]
-                       + [LastLearningSensor(coordinator, total_device)])
+                       + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
 
     for sub_id, arr in coordinator.arrays.items():
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
@@ -183,3 +184,37 @@ class LastLearningSensor(NoxcastEntity, SensorEntity):
         return {"last_error": self.coordinator.last_learning_error,
                 "archive_errors": self.coordinator.archive_errors,
                 "excluded_periods": len(self.coordinator.exclusions)}
+
+
+class ForecastErrorSensor(NoxcastEntity, SensorEntity):
+    """Day-ahead daily energy error over the last days, from the forecast archive."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
+    _attr_translation_key = "forecast_error"
+
+    def __init__(self, coordinator, device: DeviceInfo) -> None:
+        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_forecast_error", device)
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def _since(self):
+        return dt_util.now().date() - timedelta(days=ERROR_DAYS)
+
+    @property
+    def native_value(self) -> float | None:
+        error, _ = fc_archive.daily_error(self.coordinator.forecast_archive, self._since())
+        return None if error is None else round(error * 100, 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        archive = self.coordinator.forecast_archive
+        _, days = fc_archive.daily_error(archive, self._since())
+        per_array = {}
+        for sub_id, arr in self.coordinator.arrays.items():
+            error, _ = fc_archive.daily_error(archive, self._since(), sub_id)
+            per_array[arr.name] = None if error is None else round(error * 100, 1)
+        return {"days": days, "archived_days": len(archive), "per_array": per_array}

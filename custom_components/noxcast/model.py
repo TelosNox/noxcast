@@ -42,6 +42,7 @@ TEMP_FULL_TRUST_BINS = 8         # bins needed to trust the learned coefficient 
 FALLBACK_AIR_TEMP = 15.0         # when a forecast has no temperature
 CLEAR_KT = 0.8                   # satellite clearness index for a clear hour
 MIN_CLEAR_COVERAGE = 0.3         # use the satellite filter only if it covers this share of samples
+MIN_UNSHADED_HOURS = 20          # clear hours at unshaded positions needed for the efficiency median
 
 
 @dataclass(frozen=True)
@@ -289,11 +290,14 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
 
     cells = cell_values(observe(rows, scaled=False), 0.9)
     if clear_filter:
-        # median over clear hours whose sun position is unshaded; the median does not ignore shadows
+        # median over clear hours whose sun position is unshaded; the median does not ignore shadows.
+        # With little data (new installation) all clear hours: shadows pull it slightly low, the safe side,
+        # while a high percentile over clear hours would only pick satellite errors.
         probe = LearnedArray(cells=cells)
         unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= 0.95]
-        if len(unshaded) >= 50:
-            efficiency = eff_quantile(unshaded, 0.5)
+        source = unshaded if len(unshaded) >= MIN_UNSHADED_HOURS else strong
+        if source:
+            efficiency = eff_quantile(source, 0.5)
             cells = cell_values(observe(rows, scaled=False), 0.9)
         cells.update(cell_values(observe(basis, scaled=True), 0.5))
 

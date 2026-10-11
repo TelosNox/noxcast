@@ -18,11 +18,12 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
-    CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    ARCHIVE_DAYS, CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
     WEATHER_SOURCE_OPEN_METEO,
 )
+from . import archive as fc_archive
 from .model import ArrayGeometry, LearnedArray, WeatherHour, forecast, learn, usable_samples
 from .solar import Site
 from .sources import (
@@ -85,6 +86,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._hours: dict[str, dict[float, float]] = {}
         self._learn_lock = asyncio.Lock()
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+        # separate file: larger and written less often than the learned state
+        self._archive_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.archive")
+        self.forecast_archive: dict = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -105,6 +109,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._hours = {}, {}
+        try:
+            self.forecast_archive = (await self._archive_store.async_load() or {}).get("days", {})
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Noxcast forecast archive could not be read; starting a new one", exc_info=True)
+            self.forecast_archive = {}
 
         entry = self.config_entry
         entry.async_on_unload(async_track_time_change(
@@ -211,12 +220,29 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                                 arr.name, result.efficiency)
             learned[sub_id] = result
+            fc_archive.add_actuals(self.forecast_archive, sub_id, summed, now.timestamp(),
+                                   {t for t, v in soc.items() if v >= soc_full})
             _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
                          "coverage %.0f %%, %d samples, clear filter %s, agreement %s",
                          arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
                          result.coverage * 100, result.samples, result.clear_filter, result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
         self.last_learning = now
+        self._archive_store.async_delay_save(self._archive_data, 5)
+
+    def _archive_data(self) -> dict:
+        return {"days": self.forecast_archive}
+
+    def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData) -> None:
+        """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
+        tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
+        a = tomorrow.timestamp()
+        b = dt_util.start_of_local_day(tomorrow.date() + timedelta(days=1)).timestamp()
+        hours = {w.start: (w.ghi, w.temp) for w in weather if a <= w.start < b}
+        if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
+                               result.arrays):
+            fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
+            self._archive_store.async_delay_save(self._archive_data, 300)
 
     async def async_add_exclusion(self, start: datetime, end: datetime, note: str = "") -> None:
         self.exclusions.append({"start": start.timestamp(), "end": end.timestamp(), "note": note})
@@ -254,6 +280,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             for t, wh in merged.items():
                 result.total[t] = result.total.get(t, 0.0) + wh
         result.total = dict(sorted(result.total.items()))
+        self._archive_forecast(weather, result)
         self._store.async_delay_save(self._store_data, 60)
         return result
 

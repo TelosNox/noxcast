@@ -34,5 +34,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         "exclusions": coordinator.exclusions,
         "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
         "last_learning_error": coordinator.last_learning_error,
+        "forecast_archive": coordinator.forecast_archive,
         "forecast_updated": data.updated.isoformat() if data and data.updated else None,
     }

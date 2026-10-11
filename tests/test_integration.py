@@ -1,6 +1,7 @@
 """Home Assistant level tests: config flow, array subentry, learning and sensors."""
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -79,6 +80,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
 
     learned = next(iter(coordinator.learned.values()))
     assert abs(learned.efficiency - 0.92) < 0.03
+    tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
+    assert len(coordinator.forecast_archive[tomorrow]["hours"]) >= 23        # day-ahead forecast archived
 
     states = {s.entity_id: s for s in hass.states.async_all("sensor")}
     today = [s for e, s in states.items() if e.endswith("forecast_today")]

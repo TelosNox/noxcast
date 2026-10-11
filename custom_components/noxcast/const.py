@@ -20,6 +20,18 @@ CONF_TILT = "tilt"
 CONF_AZIMUTH = "azimuth"
 CONF_PEAK_POWER = "peak_power"
 CONF_VALID_SINCE = "valid_since"
+CONF_TEMP_COEFF = "temp_coeff"           # datasheet Pmax temperature coefficient in %/K (optional)
+
+# options (advanced): history archives used for learning
+CONF_ARCHIVE_TEMPERATURE = "archive_temperature"
+CONF_ARCHIVE_URL = "archive_url"
+CONF_SATELLITE = "satellite"
+CONF_SATELLITE_URL = "satellite_url"
+CONF_SATELLITE_MODEL = "satellite_model"
+CONF_API_KEY = "api_key"
+DEFAULT_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+DEFAULT_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"
+DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"
 
 # irradiance attributes recognised in weather entity hourly forecasts (W/m², mean of the preceding hour)
 IRRADIANCE_KEYS = ("sun_irradiance", "solar_irradiance", "irradiance", "global_horizontal_irradiance")

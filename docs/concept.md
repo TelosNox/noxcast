@@ -25,6 +25,73 @@ Only the last part is "machine learning" in the narrow sense, and even there con
 quantile tables or a small gradient-boosting model are sufficient. Geometry and shading are
 statistics on top of physics (clear-sky model, plane-of-array irradiance, incidence angle losses).
 
+### Calculation chain
+
+The forecast is not "clear-sky output × cloud factor". Clouds change the *kind* of light, so
+the weather enters first and every later step works on its result:
+
+1. **Weather:** hourly irradiance, split into direct (beam) and diffuse.
+2. **Geometry:** both parts projected onto the module plane (incidence-angle losses on beam).
+3. **Shading:** learned transmission applied to the **beam part only** – on an overcast day a
+   morning shadow costs almost nothing, on a clear day it costs everything.
+4. **Diffuse factor:** share of the sky not obstructed by surroundings.
+5. **Temperature:** loss from air temperature and irradiance, applied to the result.
+6. **Efficiency:** one factor for everything else (inverter, cables, tolerance, soiling).
+
+### Temperature
+
+Module output drops with cell temperature, and cell temperature depends on air temperature,
+irradiance (heating) and wind (cooling) – and on mounting/ventilation, which differs strongly
+between e.g. a freely hanging balcony array and modules close to a roof. Instead of asking for a
+mounting type or a datasheet coefficient, Noxcast learns the loss directly:
+
+    T_cell = T_air + 30 K · irradiance on the plane / 1000 W/m²
+    temperature factor = 1 + a · (T_cell − 25 °C)
+
+Only the coefficient a is learned: per 5 K cell-temperature bin the upper envelope (90th
+percentile) of actual/expected is taken, and a line is fitted through the bins. With hourly data a
+free regression of a, heating and wind is not identifiable (noise ~11 %), while the envelope gave
+−0.23 to −0.28 %/K for a balcony array (datasheet −0.26 %/K). a starts at −0.35 %/K, is shrunk
+towards it when few bins exist and limited to [−0.6, 0] %/K. An optional datasheet value per
+array replaces the learned one and is recommended: cell temperature rises with irradiance, so
+learning over cell-temperature bins also picks up irradiance-dependent model errors (geometry,
+diffuse model, low-light behaviour). Heating is not identifiable even with a fixed coefficient
+(estimates ran into 0 K and 70 K for two arrays), so it keeps a fixed typical value;
+wind is not used. Air temperature comes from the weather forecast (15 °C if missing); for
+learning from history it comes from the reanalysis archive.
+
+### Optional: satellite irradiance for learning
+
+Which past hours were really clear can be taken from satellite-derived irradiance instead of
+being inferred statistically. Checked against one installation (Dec 2025 – Oct 2026, unshaded
+hours only):
+
+| Archive | Correlation with PV clearness | "clear" in archive but cloudy at the site | hourly error |
+|---|---|---|---|
+| ERA5 reanalysis (~25 km) | 0.69–0.78 | 4–5 % | 22–24 % |
+| Satellite (EUMETSAT, ~5 km) | 0.90–0.94 | 0.4–1.3 % | 12–14 % |
+
+Consequences:
+
+- **Satellite irradiance is used as a pre-filter for clear hours**, not as hourly truth. The
+  90th-percentile per shading cell stays as second safeguard against thin cloud the satellite
+  pixel misses. An archive error only costs a discarded hour.
+- **Regressions over many hours** (diffuse factor, temperature loss) may use satellite irradiance
+  directly, because hourly errors are random and average out.
+- **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
+- The feature is **optional** (off by default). When the archive is unreachable, learning falls
+  back to the percentile method and the diagnostics say so; the forecast never fails because of it.
+- A diagnostic reports the ongoing agreement (correlation) between archive and installation,
+  because satellite quality varies by region (mountains, coastal fog).
+
+**Sources are configurable** under advanced options, with Open-Meteo as default: archive URL
+for irradiance (`https://satellite-api.open-meteo.com/v1/archive`), irradiance model
+(`satellite_radiation_seamless`), archive URL for temperature/wind
+(`https://archive-api.open-meteo.com/v1/archive`) and an optional API key. This allows
+self-hosted Open-Meteo instances, commercial access and model changes without an update. A
+different response format still needs a new source adapter; each source sits behind its own
+small interface. URLs are validated with a test request when saved.
+
 ### Why shading only matters where direct light is possible
 
 A shadow can only remove direct light that would otherwise reach the module. When the sun is
@@ -120,3 +187,19 @@ provide uncertainty bands, 15-minute values and intraday updates from the start.
 - First day-ahead comparison: physics + shading map + DWD irradiance was within 3 % of the
   daily actual on an overcast day; an existing ML-based integration overestimated by 84 %.
   One day is anecdotal; systematic backtesting is the next step.
+
+## Roadmap (agreed next steps)
+
+1. **Temperature loss** learned from data; forecast with forecast temperature and wind.
+2. **Optional satellite filter** for clear hours, configurable sources, agreement diagnostic.
+3. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
+   fixed value to be updated by the user), assignment to the arrays it charges. An hour counts
+   as possibly curtailed for those arrays when its maximum state of charge reaches the limit
+   within a small tolerance. The maximum is robust against saw-tooth charging when MPPTs
+   throttle in steps. A plateau-only detection is not used: a constant state of charge can also
+   mean PV exactly covers the load.
+4. **Optional power limit per sensor** (e.g. 500 W per MPPT): forecast capped per sensor;
+   hours near the limit are excluded from learning.
+5. **Finer shading map from 5-minute statistics** (kept ~10 days by the recorder) for narrow,
+   moving shadows such as masts or chimneys; aggregates per cell are stored because the raw
+   data expires.

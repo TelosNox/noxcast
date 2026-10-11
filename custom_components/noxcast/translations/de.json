@@ -53,13 +53,15 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit"
+            "valid_since": "Konfiguration gültig seit",
+            "temp_coeff": "Temperaturkoeffizient (Datenblatt)"
           },
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung.",
-            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung."
+            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung.",
+            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen: wird fest verwendet. Leer = aus der Historie gelernt."
           }
         },
         "reconfigure": {
@@ -70,7 +72,11 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit"
+            "valid_since": "Konfiguration gültig seit",
+            "temp_coeff": "Temperaturkoeffizient (Datenblatt)"
+          },
+          "data_description": {
+            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen: wird fest verwendet. Leer = aus der Historie gelernt."
           }
         }
       },
@@ -116,6 +122,12 @@
       },
       "last_learning": {
         "name": "Letzter Lernlauf"
+      },
+      "temp_coeff": {
+        "name": "Temperaturkoeffizient"
+      },
+      "agreement": {
+        "name": "Übereinstimmung Satellit"
       }
     }
   },
@@ -141,6 +153,31 @@
     "relearn": {
       "name": "Neu lernen",
       "description": "Wirkungsgrad und Schatten jetzt neu aus der Historie lernen."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lernquellen",
+        "description": "Wetterarchive für das Lernen aus der Historie. Standard ist Open-Meteo, ohne Schlüssel.",
+        "data": {
+          "archive_temperature": "Lufttemperatur aus Archiv",
+          "archive_url": "URL Temperaturarchiv",
+          "satellite": "Satellitenfilter für klare Stunden",
+          "satellite_url": "URL Satellitenarchiv",
+          "satellite_model": "Satellitenmodell",
+          "api_key": "API-Schlüssel"
+        },
+        "data_description": {
+          "archive_temperature": "Nötig, um den Temperaturverlust zu lernen. Ohne steckt die mittlere Temperatur im Wirkungsgrad.",
+          "satellite": "Wählt klare Stunden zum Lernen anhand der Satellitenstrahlung aus. Optional; die Qualität schwankt je nach Region.",
+          "api_key": "Nur für kommerziellen oder selbst gehosteten Zugang."
+        }
+      }
+    },
+    "error": {
+      "archive_failed": "Das Archiv war nicht erreichbar oder lieferte einen Fehler.",
+      "archive_empty": "Das Archiv lieferte keine Daten."
     }
   }
 }

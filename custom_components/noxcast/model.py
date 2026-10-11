@@ -5,8 +5,9 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun_azimuth, 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
 - f_temp = 1 + temp_coeff · (T_cell − 25 °C), T_cell = T_air + HEATING_K · POA / 1000 W/m².
-  The temperature coefficient is learned from the upper envelope of actual/expected per
-  cell-temperature bin and shrunk towards a typical value when the data spans too little.
+  The temperature coefficient comes from the datasheet. Without it, it is learned from the upper
+  envelope of actual/expected per cell-temperature bin, only from satellite-confirmed clear hours,
+  shrunk towards a typical value and rejected when implausible; otherwise the typical value is used.
   Heating by irradiance and cooling by wind are not identifiable from hourly data and use a
   fixed typical heating.
 - T: beam transmission (1 = unshaded) per sun-position cell, learned from hours where direct
@@ -34,7 +35,7 @@ HALF_LIFE_DAYS = 365.0
 TEMP_REF = 25.0
 HEATING_K = 30.0                 # cell heating in K at 1000 W/m² on the plane
 DEFAULT_TEMP_COEFF = -0.0035     # per K, typical crystalline module
-TEMP_COEFF_RANGE = (-0.006, 0.0)
+TEMP_COEFF_PLAUSIBLE = (-0.005, -0.002)   # learned values outside are rejected
 TEMP_BIN_K = 5.0
 TEMP_MIN_BIN_SAMPLES = 15
 TEMP_FULL_TRUST_BINS = 8         # bins needed to trust the learned coefficient completely
@@ -189,7 +190,9 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
     coeff = slope / max(ys)
     trust = min(1.0, len(env) / TEMP_FULL_TRUST_BINS)
     coeff = trust * coeff + (1 - trust) * DEFAULT_TEMP_COEFF
-    return min(max(coeff, TEMP_COEFF_RANGE[0]), TEMP_COEFF_RANGE[1]), True
+    if not TEMP_COEFF_PLAUSIBLE[0] <= coeff <= TEMP_COEFF_PLAUSIBLE[1]:
+        return DEFAULT_TEMP_COEFF, False                 # irradiance-dependent model errors, not temperature
+    return coeff, True
 
 
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
@@ -224,7 +227,13 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     if len(basis) < 50:                                  # too few clear hours: fall back to all hours
         basis, clear_filter = rows, False
 
-    exp = {r[0]: geo.peak_w * (r[2] + r[3]) / 1000 for r in basis}
+    # With the satellite filter, expectations are scaled to the measured irradiance (clearness kt) and
+    # medians are used: clouds are already removed, so a high percentile would only pick satellite errors.
+    # Without it, high percentiles separate clear conditions from clouds and occasional curtailment.
+    def scale(r) -> float:
+        return min(r[8], 1.2) if clear_filter else 1.0
+
+    exp = {r[0]: geo.peak_w * (r[2] + r[3]) / 1000 * scale(r) for r in basis}
     limit = 0.4 * max(exp.values())
     strong = [r for r in basis if exp[r[0]] > limit and r[1] / exp[r[0]] <= 1.5]
 
@@ -232,9 +241,12 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     temp_rows = [(r[9] + HEATING_K * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6]) for r in strong if r[9] is not None]
     if datasheet_temp_coeff is not None:
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
-    else:
+    elif clear_filter:
+        # only clear hours: with cloudy hours, summer clouds and winter sun share temperature bins
         temp_coeff, temp_learned = _learn_temp_coeff(temp_rows)
         temp_source = "learned" if temp_learned else "default"
+    else:
+        temp_coeff, temp_learned, temp_source = DEFAULT_TEMP_COEFF, False, "default"
     if not temp_rows:                                    # no temperature history: efficiency absorbs it
         temp_coeff, temp_source = 0.0, "none"
 
@@ -242,30 +254,48 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
         return temperature_factor(temp_coeff, r[9], r[2] + r[3]) if r[9] is not None else 1.0
 
     # efficiency at 25 °C from strong expected hours
-    ratios = [(r[1] / (exp[r[0]] * f_temp(r)), r[6]) for r in strong]
-    efficiency = weighted_quantile([v for v, _ in ratios], [w for _, w in ratios], 0.95) if ratios else DEFAULT_EFFICIENCY
+    def eff_quantile(source, q: float) -> float:
+        ratios = [(r[1] / (exp[r[0]] * f_temp(r)), r[6]) for r in source]
+        return weighted_quantile([v for v, _ in ratios], [w for _, w in ratios], q) if ratios else DEFAULT_EFFICIENCY
 
-    # beam transmission per sun-position cell
-    obs: dict[tuple[int, int], list[tuple[float, float, float]]] = {}
-    for r in basis:
-        t, p, beam, diff, az, el, weight, age = r[:8]
-        beam_w = geo.peak_w * beam / 1000
-        if beam_w <= MIN_BEAM_W:
-            continue
-        tr = (p / (efficiency * f_temp(r)) - geo.peak_w * diff / 1000) / beam_w
-        obs.setdefault(_cell(az, el), []).append((min(max(tr, -0.2), 1.3), weight, age))
+    efficiency = eff_quantile(strong, 0.95)
 
-    cells = {}
-    for (ai, ei), items in obs.items():
-        if len(items) < MIN_CELL_SAMPLES:
-            continue
-        value = weighted_quantile([v for v, _, _ in items], [w for _, w, _ in items], 0.9)
-        recent = [v for v, _, a in items if a <= RECENT_DAYS]
-        if len(recent) >= 3:
-            recent_value = _quantile(recent, 0.9)
-            if abs(recent_value - value) > CHANGE_THRESHOLD:     # e.g. a tree was cut or a building added
-                value = recent_value
-        cells[_key(ai, ei)] = round(min(max(value, 0.0), 1.0), 3)
+    # beam transmission per sun-position cell: all hours (P90), refined by clear hours (median) where enough exist
+    def observe(source, scaled: bool) -> dict[tuple[int, int], list[tuple[float, float, float]]]:
+        obs: dict[tuple[int, int], list[tuple[float, float, float]]] = {}
+        for r in source:
+            t, p, beam, diff, az, el, weight, age = r[:8]
+            k = scale(r) if scaled else 1.0
+            beam_w = geo.peak_w * beam / 1000 * k
+            if beam_w <= MIN_BEAM_W:
+                continue
+            tr = (p / (efficiency * f_temp(r)) - geo.peak_w * diff / 1000 * k) / beam_w
+            obs.setdefault(_cell(az, el), []).append((min(max(tr, -0.2), 1.3), weight, age))
+        return obs
+
+    def cell_values(obs, q: float) -> dict[str, float]:
+        out = {}
+        for (ai, ei), items in obs.items():
+            if len(items) < MIN_CELL_SAMPLES:
+                continue
+            value = weighted_quantile([v for v, _, _ in items], [w for _, w, _ in items], q)
+            recent = [v for v, _, a in items if a <= RECENT_DAYS]
+            if len(recent) >= 3:
+                recent_value = _quantile(recent, q)
+                if abs(recent_value - value) > CHANGE_THRESHOLD:     # e.g. a tree was cut or a building added
+                    value = recent_value
+            out[_key(ai, ei)] = round(min(max(value, 0.0), 1.0), 3)
+        return out
+
+    cells = cell_values(observe(rows, scaled=False), 0.9)
+    if clear_filter:
+        # median over clear hours whose sun position is unshaded; the median does not ignore shadows
+        probe = LearnedArray(cells=cells)
+        unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= 0.95]
+        if len(unshaded) >= 50:
+            efficiency = eff_quantile(unshaded, 0.5)
+            cells = cell_values(observe(rows, scaled=False), 0.9)
+        cells.update(cell_values(observe(basis, scaled=True), 0.5))
 
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,

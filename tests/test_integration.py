@@ -82,6 +82,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
     assert abs(learned.efficiency - 0.92) < 0.03
     tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
     assert len(coordinator.forecast_archive[tomorrow]["hours"]) >= 23        # day-ahead forecast archived
+    image = next(s for s in hass.states.async_all("image") if s.entity_id.endswith("shading_map"))
+    assert image.state not in ("unknown", "unavailable")
 
     states = {s.entity_id: s for s in hass.states.async_all("sensor")}
     today = [s for e, s in states.items() if e.endswith("forecast_today")]

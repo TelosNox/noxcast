@@ -132,6 +132,11 @@
       "forecast_error": {
         "name": "Prognosefehler (30 Tage)"
       }
+    },
+    "image": {
+      "shading_map": {
+        "name": "Schattenkarte"
+      }
     }
   },
   "services": {

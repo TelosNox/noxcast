@@ -156,6 +156,8 @@ expected beam irradiance is significant.
 - Energy dashboard solar forecast.
 - Diagnostics: shading-map coverage, last learning run, excluded hours with reason,
   forecast error of the last 30 days.
+- Shading map per array as image entity (SVG): learned transmission over sun azimuth and
+  elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.
 - Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast

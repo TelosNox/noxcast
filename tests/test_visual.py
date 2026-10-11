@@ -27,11 +27,14 @@ def test_render_is_valid_svg_with_title_and_figures():
     learned = model.LearnedArray(efficiency=0.94, cells={"18,6": 0.1, "19,6": 1.0}, coverage=0.5, learned_at=1.0,
                                  temp_coeff=-0.0026, temp_source="datasheet", agreement=0.95)
     reachable = model.reachable_cells(SITE, GEO)
-    svg = visual.render_shading_map(SITE, learned, reachable, date(2026, 10, 12), "Roof <A&B>", "de")
+    svg = visual.render_shading_map(SITE, learned, reachable, date(2026, 10, 12), "Roof <A&B>", "de", GEO)
     root = ET.fromstring(svg)
     texts = " ".join(el.text or "" for el in root.iter("{http://www.w3.org/2000/svg}text"))
     assert "Roof <A&B>" in texts and "Datenblatt" in texts and "21. Jun" in texts
     assert len(list(root.iter("{http://www.w3.org/2000/svg}polyline"))) == 4
+    assert "Module 180°" in texts
+    dot = next(root.iter("{http://www.w3.org/2000/svg}circle"))           # perpendicular sun at 60° elevation
+    assert "180° / 60°" in dot.find("{http://www.w3.org/2000/svg}title").text
 
 
 def test_render_without_learned_state():

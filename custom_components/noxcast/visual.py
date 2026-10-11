@@ -5,7 +5,7 @@ import math
 from datetime import date, datetime, timezone
 from xml.sax.saxutils import escape
 
-from .model import AZ_STEP, EL_STEP, LearnedArray
+from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray
 from .solar import Site, sun_position
 
 WIDTH, HEIGHT = 720, 400
@@ -16,12 +16,14 @@ TEXT = {
     "en": {"efficiency": "Efficiency", "temp": "Temp. coeff.", "coverage": "Coverage", "agreement": "Satellite",
            "datasheet": "datasheet", "learned": "learned", "default": "typical", "none": "off",
            "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data",
-           "elevation": "Sun elevation", "not_learned": "not learned yet",
+           "elevation": "Sun elevation", "not_learned": "not learned yet", "modules": "modules",
+           "normal": "sun perpendicular to the modules",
            "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules"},
     "de": {"efficiency": "Wirkungsgrad", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
            "datasheet": "Datenblatt", "learned": "gelernt", "default": "typisch", "none": "aus",
            "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten",
-           "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt",
+           "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt", "modules": "Module",
+           "normal": "Sonne senkrecht auf den Modulen",
            "legend": "grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen"},
 }
 COMPASS = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW", 360: "N"}
@@ -78,7 +80,7 @@ def display_value(cells: dict[str, float], ai: int, ei: int) -> float | None:
 
 
 def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[tuple[int, int]], today: date,
-                       title: str, language: str = "en") -> str:
+                       title: str, language: str = "en", geo: ArrayGeometry | None = None) -> str:
     t = TEXT.get(language[:2], TEXT["en"])
     paths = {
         "summer": sun_path(site, date(today.year, 6, 21)),
@@ -148,6 +150,20 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         a, e = max(pts, key=lambda p: p[1])
         out.append(f'<text x="{_x(a, rng):.1f}" y="{_y(e) - 5:.1f}" text-anchor="middle" fill="{color}">'
                    f'{t[name]}</text>')
+
+    # module orientation and the sun position perpendicular to the modules (highest irradiance)
+    if geo is not None:
+        az = geo.azimuth if a0 <= geo.azimuth <= a1 else geo.azimuth + 360
+        if a0 <= az <= a1:
+            x = _x(az, rng)
+            out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" stroke="#7a3db8" '
+                       f'stroke-width="1.4" stroke-dasharray="8 3"/>')
+            out.append(f'<text x="{x + 4:.1f}" y="{TOP + 10}" fill="#7a3db8">{t["modules"]} {geo.azimuth:.0f}°</text>')
+            normal_el = 90.0 - geo.tilt
+            if 0 < normal_el <= EL_MAX:
+                out.append(f'<circle cx="{x:.1f}" cy="{_y(normal_el):.1f}" r="5" fill="#7a3db8" stroke="#ffffff" '
+                           f'stroke-width="1.5"><title>{escape(t["normal"])}: {geo.azimuth:.0f}° / '
+                           f'{normal_el:.0f}°</title></circle>')
 
     # key figures
     if learned and learned.learned_at:

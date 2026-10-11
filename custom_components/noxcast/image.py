@@ -65,6 +65,6 @@ class ShadingMapImage(CoordinatorEntity[NoxcastCoordinator], ImageEntity):
                     reachable_cells, self.coordinator.site, arr.geometry)
             svg = await self.hass.async_add_executor_job(
                 render_shading_map, self.coordinator.site, self.coordinator.learned.get(self._sub_id),
-                self._reachable, key[1], arr.name, self.hass.config.language)
+                self._reachable, key[1], arr.name, self.hass.config.language, arr.geometry)
             self._svg, self._key = svg.encode(), key
         return self._svg

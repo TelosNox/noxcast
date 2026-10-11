@@ -158,7 +158,8 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
             return None
         first = dt_util.utc_from_timestamp(learned.first_sample).isoformat() if learned.first_sample else None
         return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells),
-                "temperature_learned": learned.temp_learned, "clear_filter": learned.clear_filter}
+                "temperature_learned": learned.temp_learned,
+                "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter}
 
 
 class LastLearningSensor(NoxcastEntity, SensorEntity):

@@ -53,13 +53,15 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit"
+            "valid_since": "Konfiguration gültig seit",
+            "temp_coeff": "Temperaturkoeffizient (Datenblatt)"
           },
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung.",
-            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung."
+            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung.",
+            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen: wird fest verwendet. Leer = aus der Historie gelernt."
           }
         },
         "reconfigure": {
@@ -70,7 +72,11 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit"
+            "valid_since": "Konfiguration gültig seit",
+            "temp_coeff": "Temperaturkoeffizient (Datenblatt)"
+          },
+          "data_description": {
+            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen: wird fest verwendet. Leer = aus der Historie gelernt."
           }
         }
       },

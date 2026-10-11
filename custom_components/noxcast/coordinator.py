@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
-    CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
     WEATHER_SOURCE_OPEN_METEO,
@@ -40,6 +40,7 @@ class ArrayConfig:
     sensors: tuple[str, ...]
     geometry: ArrayGeometry
     valid_since: float | None
+    temp_coeff: float | None = None          # per K, from the datasheet
 
 
 @dataclass
@@ -62,7 +63,8 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
         configs[sub_id] = ArrayConfig(
             subentry_id=sub_id, name=d[CONF_NAME], sensors=tuple(d[CONF_POWER_SENSORS]),
             geometry=ArrayGeometry(float(d[CONF_TILT]), float(d[CONF_AZIMUTH]), float(d[CONF_PEAK_POWER])),
-            valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None)
+            valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None,
+            temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None)
     return configs
 
 
@@ -119,7 +121,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]
-        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since,
+        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since, a.temp_coeff,
                 bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False))]
 
     def _option(self, key: str, default=None):
@@ -203,7 +205,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             samples = usable_samples(summed, soc=soc, soc_full=soc_full, exclusions=exclusions,
                                      valid_since=arr.valid_since)
             result = await self.hass.async_add_executor_job(functools.partial(
-                learn, self.site, arr.geometry, samples, now.timestamp(), air_temp=air_temp, satellite_ghi=satellite_ghi))
+                learn, self.site, arr.geometry, samples, now.timestamp(), air_temp=air_temp, satellite_ghi=satellite_ghi,
+                datasheet_temp_coeff=arr.temp_coeff))
             if result.samples and not 0.5 <= result.efficiency <= 1.2:
                 _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                                 arr.name, result.efficiency)

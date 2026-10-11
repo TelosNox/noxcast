@@ -20,6 +20,7 @@ CONF_TILT = "tilt"
 CONF_AZIMUTH = "azimuth"
 CONF_PEAK_POWER = "peak_power"
 CONF_VALID_SINCE = "valid_since"
+CONF_TEMP_COEFF = "temp_coeff"           # datasheet Pmax temperature coefficient in %/K (optional)
 
 # options (advanced): history archives used for learning
 CONF_ARCHIVE_TEMPERATURE = "archive_temperature"

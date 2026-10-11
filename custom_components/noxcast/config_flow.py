@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
-    CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
 )
@@ -53,6 +53,8 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="Wp", mode=number)),
         vol.Optional(CONF_VALID_SINCE, description={"suggested_value": defaults.get(CONF_VALID_SINCE)}):
             selector.DateSelector(),
+        vol.Optional(CONF_TEMP_COEFF, description={"suggested_value": defaults.get(CONF_TEMP_COEFF)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=-1, max=0, step=0.01, unit_of_measurement="%/K", mode=number)),
     })
 
 

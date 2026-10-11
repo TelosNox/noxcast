@@ -64,6 +64,7 @@ class LearnedArray:
     efficiency: float = DEFAULT_EFFICIENCY                     # at 25 °C cell temperature
     temp_coeff: float = DEFAULT_TEMP_COEFF                     # per K
     temp_learned: bool = False
+    temp_source: str = "default"                               # datasheet | learned | default | none
     cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
@@ -193,11 +194,14 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
 
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
           air_temp: dict[float, float] | None = None, satellite_ghi: dict[float, float] | None = None,
-          half_life_days: float = HALF_LIFE_DAYS) -> LearnedArray:
+          datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS) -> LearnedArray:
     """Learn efficiency, temperature coefficient and shading map from (hour_start, mean power W) samples.
 
     air_temp: air temperature (°C) at the middle of each hour.
     satellite_ghi: measured hourly mean GHI (W/m²) used to pre-select clear hours (optional).
+    datasheet_temp_coeff: Pmax temperature coefficient per K; used as fixed value instead of learning it.
+      Learning over cell-temperature bins also picks up irradiance-dependent model errors, so a known
+      datasheet value is more robust.
     """
     rows = []
     for t, p in samples:
@@ -226,9 +230,13 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
 
     # temperature coefficient from the upper envelope per cell-temperature bin
     temp_rows = [(r[9] + HEATING_K * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6]) for r in strong if r[9] is not None]
-    temp_coeff, temp_learned = _learn_temp_coeff(temp_rows)
+    if datasheet_temp_coeff is not None:
+        temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
+    else:
+        temp_coeff, temp_learned = _learn_temp_coeff(temp_rows)
+        temp_source = "learned" if temp_learned else "default"
     if not temp_rows:                                    # no temperature history: efficiency absorbs it
-        temp_coeff = 0.0
+        temp_coeff, temp_source = 0.0, "none"
 
     def f_temp(r) -> float:
         return temperature_factor(temp_coeff, r[9], r[2] + r[3]) if r[9] is not None else 1.0
@@ -260,6 +268,7 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
         cells[_key(ai, ei)] = round(min(max(value, 0.0), 1.0), 3)
 
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
+                           temp_source=temp_source,
                            cells=cells, samples=len(rows), clear_filter=clear_filter,
                            first_sample=rows[0][0], learned_at=now)
 

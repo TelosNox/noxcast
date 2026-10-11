@@ -52,7 +52,11 @@ Only the coefficient a is learned: per 5 K cell-temperature bin the upper envelo
 percentile) of actual/expected is taken, and a line is fitted through the bins. With hourly data a
 free regression of a, heating and wind is not identifiable (noise ~11 %), while the envelope gave
 −0.23 to −0.28 %/K for a balcony array (datasheet −0.26 %/K). a starts at −0.35 %/K, is shrunk
-towards it when few bins exist and limited to [−0.6, 0] %/K. Heating uses a fixed typical value;
+towards it when few bins exist and limited to [−0.6, 0] %/K. An optional datasheet value per
+array replaces the learned one and is recommended: cell temperature rises with irradiance, so
+learning over cell-temperature bins also picks up irradiance-dependent model errors (geometry,
+diffuse model, low-light behaviour). Heating is not identifiable even with a fixed coefficient
+(estimates ran into 0 K and 70 K for two arrays), so it keeps a fixed typical value;
 wind is not used. Air temperature comes from the weather forecast (15 °C if missing); for
 learning from history it comes from the reanalysis archive.
 

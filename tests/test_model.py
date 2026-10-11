@@ -121,3 +121,10 @@ def test_satellite_filter_and_agreement():
     assert learned.clear_filter
     assert abs(learned.efficiency - EFF) < 0.03
     assert learned.agreement is not None and learned.agreement > 0.8
+
+
+def test_datasheet_coefficient_is_used_fixed():
+    samples, air = make_temperature_samples(120)
+    learned = model.learn(SITE, GEO, samples, now=START + 120 * 86400, air_temp=air, datasheet_temp_coeff=-0.0026)
+    assert learned.temp_coeff == -0.0026 and learned.temp_source == "datasheet"
+    assert abs(learned.efficiency - EFF) < 0.04

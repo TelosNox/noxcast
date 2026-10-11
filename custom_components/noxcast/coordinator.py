@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -15,6 +16,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
+    DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
@@ -22,7 +25,10 @@ from .const import (
 )
 from .model import ArrayGeometry, LearnedArray, WeatherHour, forecast, learn, usable_samples
 from .solar import Site
-from .sources import async_hourly_statistics, async_open_meteo, async_power_factors, async_weather_entity
+from .sources import (
+    async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
+)
+from .sources import async_open_meteo, async_power_factors, async_weather_entity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +79,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
         self.last_learning_error: str | None = None
+        self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
         self._hours: dict[str, dict[float, float]] = {}
         self._learn_lock = asyncio.Lock()
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
@@ -112,7 +119,33 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]
-        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since]
+        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since,
+                bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False))]
+
+    def _option(self, key: str, default=None):
+        return self.config_entry.options.get(key, default)
+
+    async def _async_archives(self, start: datetime, end: datetime) -> tuple[dict | None, dict | None]:
+        """Optional history archives; a failure only disables that refinement."""
+        lat, lon, key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
+        self.archive_errors = {}
+        temp = sat = None
+        if self._option(CONF_ARCHIVE_TEMPERATURE, True):
+            try:
+                temp = await async_archive_temperature(
+                    self.hass, self._option(CONF_ARCHIVE_URL) or DEFAULT_ARCHIVE_URL, lat, lon, start, end, key)
+            except Exception as err:  # noqa: BLE001
+                self.archive_errors["temperature"] = str(err) or type(err).__name__
+                _LOGGER.warning("Temperature archive unavailable, learning without temperature: %s", err)
+        if self._option(CONF_SATELLITE, False):
+            try:
+                sat = await async_archive_irradiance(
+                    self.hass, self._option(CONF_SATELLITE_URL) or DEFAULT_SATELLITE_URL,
+                    self._option(CONF_SATELLITE_MODEL) or DEFAULT_SATELLITE_MODEL, lat, lon, start, end, key)
+            except Exception as err:  # noqa: BLE001
+                self.archive_errors["satellite"] = str(err) or type(err).__name__
+                _LOGGER.warning("Satellite archive unavailable, learning without clear-hour filter: %s", err)
+        return temp, sat
 
     def _store_data(self) -> dict:
         return {
@@ -157,6 +190,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     soc[ts] = max(value, soc.get(ts, value))
         exclusions = [(e["start"], e["end"]) for e in self.exclusions]
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
+        air_temp, satellite_ghi = await self._async_archives(start, now)
 
         learned = {}
         for sub_id, arr in self.arrays.items():
@@ -168,13 +202,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                   for s in arr.sensors])
             samples = usable_samples(summed, soc=soc, soc_full=soc_full, exclusions=exclusions,
                                      valid_since=arr.valid_since)
-            result = await self.hass.async_add_executor_job(learn, self.site, arr.geometry, samples, now.timestamp())
+            result = await self.hass.async_add_executor_job(functools.partial(
+                learn, self.site, arr.geometry, samples, now.timestamp(), air_temp=air_temp, satellite_ghi=satellite_ghi))
             if result.samples and not 0.5 <= result.efficiency <= 1.2:
                 _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                                 arr.name, result.efficiency)
             learned[sub_id] = result
-            _LOGGER.info("Learned %s: efficiency %.3f, %d shading cells, coverage %.0f %%, %d samples",
-                         arr.name, result.efficiency, len(result.cells), result.coverage * 100, result.samples)
+            _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
+                         "coverage %.0f %%, %d samples, clear filter %s, agreement %s",
+                         arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
+                         result.coverage * 100, result.samples, result.clear_filter, result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
         self.last_learning = now
 

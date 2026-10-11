@@ -116,6 +116,12 @@
       },
       "last_learning": {
         "name": "Last learning run"
+      },
+      "temp_coeff": {
+        "name": "Temperature coefficient"
+      },
+      "agreement": {
+        "name": "Satellite agreement"
       }
     }
   },
@@ -141,6 +147,31 @@
     "relearn": {
       "name": "Relearn",
       "description": "Learn efficiency and shading again from history now."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Learning sources",
+        "description": "Weather archives used when learning from history. Open-Meteo is the default and needs no key.",
+        "data": {
+          "archive_temperature": "Air temperature from archive",
+          "archive_url": "Temperature archive URL",
+          "satellite": "Satellite filter for clear hours",
+          "satellite_url": "Satellite archive URL",
+          "satellite_model": "Satellite model",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "archive_temperature": "Needed to learn the temperature loss. Without it, efficiency absorbs the average temperature.",
+          "satellite": "Uses satellite irradiance to select clear hours for learning. Optional; quality varies by region.",
+          "api_key": "Only for commercial or self-hosted access."
+        }
+      }
+    },
+    "error": {
+      "archive_failed": "The archive could not be reached or returned an error.",
+      "archive_empty": "The archive returned no data."
     }
   }
 }

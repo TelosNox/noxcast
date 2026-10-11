@@ -35,7 +35,7 @@ def _statistics(site: solar.Site, days: int):
     series = {}
     for h in range(days * 24):
         t = start + h * 3600
-        beam, diff, _, _ = model.clearsky_hour(site, geo, t)
+        beam, diff, *_ = model.clearsky_hour(site, geo, t)
         series[t] = 0.5 * geo.peak_w * 0.92 * (beam + diff) / 1000      # two sensors, half each
     return {"sensor.pv1": series, "sensor.pv2": dict(series)}
 
@@ -56,7 +56,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
          patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
-         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats):
+         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
+         patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         assert result["type"] is FlowResultType.FORM
         result = await hass.config_entries.flow.async_configure(
@@ -103,3 +104,32 @@ async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> No
             sub["flow_id"], {**ARRAY, "power_sensors": ["sensor.pv_kwh"]})
     assert sub["type"] is FlowResultType.FORM
     assert sub["errors"] == {"power_sensors": "sensor_unit"}
+
+
+async def test_options_test_archive_on_save(hass: HomeAssistant) -> None:
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
+         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+
+        flow = await hass.config_entries.options.async_init(entry.entry_id)
+        assert flow["type"] is FlowResultType.FORM
+        options = {"archive_temperature": True, "archive_url": "https://archive.invalid/v1/archive",
+                   "satellite": True, "satellite_url": "https://satellite.invalid/v1/archive",
+                   "satellite_model": "satellite_radiation_seamless"}
+        with patch("custom_components.noxcast.config_flow.async_archive_temperature", side_effect=OSError), \
+             patch("custom_components.noxcast.config_flow.async_archive_irradiance", return_value={1.0: 500.0}):
+            bad = await hass.config_entries.options.async_configure(flow["flow_id"], options)
+        assert bad["errors"] == {"archive_url": "archive_failed"}
+        with patch("custom_components.noxcast.config_flow.async_archive_temperature", return_value={1.0: 12.0}), \
+             patch("custom_components.noxcast.config_flow.async_archive_irradiance", return_value={1.0: 500.0}), \
+             patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}), \
+             patch("custom_components.noxcast.coordinator.async_archive_irradiance", return_value={}):
+            done = await hass.config_entries.options.async_configure(flow["flow_id"], options)
+            await hass.async_block_till_done()
+    assert done["type"] is FlowResultType.CREATE_ENTRY
+    assert hass.config_entries.async_get_entry(entry.entry_id).options["satellite"] is True

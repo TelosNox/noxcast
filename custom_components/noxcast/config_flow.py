@@ -1,23 +1,28 @@
 """Config flow: main entry (weather, battery) and one subentry per PV array."""
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import (
-    ConfigEntry, ConfigFlow, ConfigFlowResult, ConfigSubentryFlow, SubentryFlowResult,
+    ConfigEntry, ConfigFlow, ConfigFlowResult, ConfigSubentryFlow, OptionsFlow, SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
+    DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     CONF_AZIMUTH, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
 )
-from .sources import NoIrradianceError, async_weather_entity
+from .sources import (
+    NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
+)
 
 
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -93,6 +98,11 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
                                     errors=errors)
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> NoxcastOptionsFlow:
+        return NoxcastOptionsFlow()
+
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
@@ -136,3 +146,51 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     if valid and (dt_util.parse_date(valid) is None or dt_util.parse_date(valid) > dt_util.now().date()):
         return {CONF_VALID_SINCE: "date_in_future"}
     return {}
+
+
+def _options_schema(d: dict[str, Any]) -> vol.Schema:
+    return vol.Schema({
+        vol.Required(CONF_ARCHIVE_TEMPERATURE, default=d.get(CONF_ARCHIVE_TEMPERATURE, True)): selector.BooleanSelector(),
+        vol.Required(CONF_ARCHIVE_URL, default=d.get(CONF_ARCHIVE_URL, DEFAULT_ARCHIVE_URL)):
+            selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
+        vol.Required(CONF_SATELLITE, default=d.get(CONF_SATELLITE, False)): selector.BooleanSelector(),
+        vol.Required(CONF_SATELLITE_URL, default=d.get(CONF_SATELLITE_URL, DEFAULT_SATELLITE_URL)):
+            selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
+        vol.Required(CONF_SATELLITE_MODEL, default=d.get(CONF_SATELLITE_MODEL, DEFAULT_SATELLITE_MODEL)):
+            selector.TextSelector(),
+        vol.Optional(CONF_API_KEY, description={"suggested_value": d.get(CONF_API_KEY)}):
+            selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
+    })
+
+
+class NoxcastOptionsFlow(OptionsFlow):
+    """Advanced options: history archives used for learning (temperature, optional satellite filter)."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors = {}
+        if user_input is not None:
+            errors = await self._async_test(user_input)
+            if not errors:
+                return self.async_create_entry(data=user_input)
+        return self.async_show_form(step_id="init", data_schema=_options_schema(user_input or dict(self.config_entry.options)),
+                                    errors=errors)
+
+    async def _async_test(self, data: dict[str, Any]) -> dict[str, str]:
+        """One test request per enabled archive (a few days, so it stays cheap)."""
+        end = dt_util.utcnow() - timedelta(days=7)
+        start = end - timedelta(days=1)
+        lat, lon, key = self.hass.config.latitude, self.hass.config.longitude, data.get(CONF_API_KEY) or None
+        if data[CONF_ARCHIVE_TEMPERATURE]:
+            try:
+                if not await async_archive_temperature(self.hass, data[CONF_ARCHIVE_URL], lat, lon, start, end, key):
+                    return {CONF_ARCHIVE_URL: "archive_empty"}
+            except Exception:  # noqa: BLE001
+                return {CONF_ARCHIVE_URL: "archive_failed"}
+        if data[CONF_SATELLITE]:
+            try:
+                if not await async_archive_irradiance(self.hass, data[CONF_SATELLITE_URL], data[CONF_SATELLITE_MODEL],
+                                                      lat, lon, start, end, key):
+                    return {CONF_SATELLITE_URL: "archive_empty"}
+            except Exception:  # noqa: BLE001
+                return {CONF_SATELLITE_URL: "archive_failed"}
+        return {}

@@ -77,7 +77,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         async_add_entities(
             [ForecastSensor(coordinator, d, sub_id, device) for d in FORECASTS]
             + [LearnedSensor(coordinator, sub_id, device, "efficiency", lambda la: round(la.efficiency * 100, 1)),
-               LearnedSensor(coordinator, sub_id, device, "shading_coverage", lambda la: round(la.coverage * 100, 1))],
+               LearnedSensor(coordinator, sub_id, device, "shading_coverage", lambda la: round(la.coverage * 100, 1)),
+               LearnedSensor(coordinator, sub_id, device, "temp_coeff", lambda la: round(la.temp_coeff * 100, 3), "%/K"),
+               LearnedSensor(coordinator, sub_id, device, "agreement", lambda la: la.agreement, None)],
             config_subentry_id=sub_id)
 
 
@@ -136,8 +138,10 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
     def available(self) -> bool:
         return True                                       # learned state does not depend on the weather source
 
-    def __init__(self, coordinator, sub_id: str, device: DeviceInfo, key: str, value: Callable) -> None:
+    def __init__(self, coordinator, sub_id: str, device: DeviceInfo, key: str, value: Callable,
+                 unit: str | None = PERCENTAGE) -> None:
         super().__init__(coordinator, f"{sub_id}_{key}", device)
+        self._attr_native_unit_of_measurement = unit
         self._attr_translation_key = key
         self._sub_id = sub_id
         self._value = value
@@ -153,7 +157,8 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
         if not learned:
             return None
         first = dt_util.utc_from_timestamp(learned.first_sample).isoformat() if learned.first_sample else None
-        return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells)}
+        return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells),
+                "temperature_learned": learned.temp_learned, "clear_filter": learned.clear_filter}
 
 
 class LastLearningSensor(NoxcastEntity, SensorEntity):
@@ -175,4 +180,5 @@ class LastLearningSensor(NoxcastEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"last_error": self.coordinator.last_learning_error,
+                "archive_errors": self.coordinator.archive_errors,
                 "excluded_periods": len(self.coordinator.exclusions)}

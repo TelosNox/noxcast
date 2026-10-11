@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from .const import CONF_API_KEY
 from .coordinator import NoxcastConfigEntry
 
 
@@ -18,6 +20,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
 
     return {
         "config": dict(entry.data),
+        "options": async_redact_data(dict(entry.options), {CONF_API_KEY}),
+        "archive_errors": coordinator.archive_errors,
         "arrays": {
             sid: {
                 "name": arr.name, "sensors": list(arr.sensors), "tilt": arr.geometry.tilt,

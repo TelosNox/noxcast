@@ -15,7 +15,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.IMAGE, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 EXCLUDE_SCHEMA = vol.Schema({

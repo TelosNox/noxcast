@@ -132,6 +132,11 @@
       "forecast_error": {
         "name": "Forecast error (30 days)"
       }
+    },
+    "image": {
+      "shading_map": {
+        "name": "Shading map"
+      }
     }
   },
   "services": {

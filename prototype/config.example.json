@@ -1,0 +1,43 @@
+{
+  "home_assistant": {
+    "url": "ws://homeassistant.local:8123/api/websocket",
+    "token_file": "ha_token.txt"
+  },
+  "location": {
+    "latitude": 50.0,
+    "longitude": 8.0,
+    "altitude": 100,
+    "timezone": "Europe/Berlin"
+  },
+  "arrays": [
+    {
+      "name": "Balcony",
+      "sensors": ["sensor.inverter_a_pv1_power", "sensor.inverter_a_pv2_power"],
+      "tilt": 60,
+      "azimuth": 135,
+      "peak_w": 920
+    },
+    {
+      "name": "Roof",
+      "sensors": ["sensor.inverter_b_pv1_power", "sensor.inverter_b_pv2_power"],
+      "tilt": 30,
+      "azimuth": 225,
+      "peak_w": 1040
+    }
+  ],
+  "history_start": "2025-01-01T00:00:00+01:00",
+  "curtailment": {
+    "soc_sensors": ["sensor.battery_a_soc", "sensor.battery_b_soc"],
+    "soc_full_pct": 95,
+    "exclude_periods": [["2026-05-22", "2026-06-07"]]
+  },
+  "weather": {
+    "source": "ha",
+    "entity": "weather.dwd_station"
+  },
+  "compare": {
+    "today": "sensor.other_forecast_today",
+    "tomorrow": "sensor.other_forecast_tomorrow",
+    "day_after": "sensor.other_forecast_day_after"
+  }
+}

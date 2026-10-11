@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local configuration and secrets (location, sensor IDs, tokens)
+*.local.json
+*token*.txt
+
+# Prototype data and outputs
+prototype/data/
+prototype/out/

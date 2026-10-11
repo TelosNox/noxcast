@@ -76,9 +76,11 @@ hours only):
 
 Consequences:
 
-- **Satellite irradiance is used as a pre-filter for clear hours**, not as hourly truth. The
-  90th-percentile per shading cell stays as second safeguard against thin cloud the satellite
-  pixel misses. An archive error only costs a discarded hour.
+- **Satellite irradiance is used as a pre-filter for clear hours.** Expectations are scaled to
+  the measured clearness and the median is used for efficiency (over unshaded positions) and per
+  shading cell: clouds are already removed, so a high percentile would only pick satellite errors
+  (it gave 100 % system efficiency in a first test). Cells with too few clear hours keep the
+  90th percentile over all hours, so coverage does not drop.
 - **Regressions over many hours** (diffuse factor, temperature loss) may use satellite irradiance
   directly, because hourly errors are random and average out.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.

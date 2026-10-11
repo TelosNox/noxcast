@@ -1,0 +1,13 @@
+{
+  "domain": "noxcast",
+  "name": "Noxcast",
+  "codeowners": ["@TelosNox"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/TelosNox/noxcast",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/TelosNox/noxcast/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -61,7 +61,7 @@
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power.",
             "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules.",
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended: used as fixed value. Empty = learned from history."
+            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter."
           }
         },
         "reconfigure": {
@@ -76,7 +76,7 @@
             "temp_coeff": "Temperature coefficient (datasheet)"
           },
           "data_description": {
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended: used as fixed value. Empty = learned from history."
+            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter."
           }
         }
       },

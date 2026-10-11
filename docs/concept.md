@@ -52,8 +52,11 @@ Only the coefficient a is learned: per 5 K cell-temperature bin the upper envelo
 percentile) of actual/expected is taken, and a line is fitted through the bins. With hourly data a
 free regression of a, heating and wind is not identifiable (noise ~11 %), while the envelope gave
 −0.23 to −0.28 %/K for a balcony array (datasheet −0.26 %/K). a starts at −0.35 %/K, is shrunk
-towards it when few bins exist and limited to [−0.6, 0] %/K. An optional datasheet value per
-array replaces the learned one and is recommended: cell temperature rises with irradiance, so
+towards it when few bins exist and rejected outside [−0.5, −0.2] %/K. Learning runs only on
+satellite-confirmed clear hours: in a first installation, learning over all hours gave 0 and
+−0.06 %/K, because cloudy summer hours and clear winter hours share temperature bins. Without the
+satellite filter the typical value is used. An optional datasheet value per array replaces both
+and is recommended: cell temperature rises with irradiance, so
 learning over cell-temperature bins also picks up irradiance-dependent model errors (geometry,
 diffuse model, low-light behaviour). Heating is not identifiable even with a fixed coefficient
 (estimates ran into 0 K and 70 K for two arrays), so it keeps a fixed typical value;
@@ -190,8 +193,19 @@ provide uncertainty bands, 15-minute values and intraday updates from the start.
 
 ## Roadmap (agreed next steps)
 
-1. **Temperature loss** learned from data; forecast with forecast temperature and wind.
-2. **Optional satellite filter** for clear hours, configurable sources, agreement diagnostic.
+Done: temperature loss (learned coefficient or datasheet value, fixed heating) and the optional
+satellite filter with configurable sources.
+
+1. **Diffuse factor per array**, learned from overcast hours: share of the modelled sky light
+   the array really receives (obstructed sky, e.g. a wall behind the modules or a balcony above).
+   A first check against satellite irradiance showed only 50–67 % of the modelled diffuse output
+   in overcast hours on one installation. Validate against the forecast source (e.g. DWD) before
+   building, because the factor must match the irradiance the forecast uses. Not direction
+   dependent: the shading map already covers direction-dependent losses.
+2. **Geometry check** as diagnostic: tilt and azimuth that fit clear unshaded hours best, with a
+   hint on clear deviations. Never applied automatically, since the shading map depends on the
+   geometry. Steep arrays are sensitive to azimuth; flat ones are not, so the hint needs a
+   confidence measure.
 3. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
    fixed value to be updated by the user), assignment to the arrays it charges. An hour counts
    as possibly curtailed for those arrays when its maximum state of charge reaches the limit

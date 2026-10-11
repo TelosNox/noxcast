@@ -5,8 +5,9 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun_azimuth, 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
 - f_temp = 1 + temp_coeff · (T_cell − 25 °C), T_cell = T_air + HEATING_K · POA / 1000 W/m².
-  The temperature coefficient is learned from the upper envelope of actual/expected per
-  cell-temperature bin and shrunk towards a typical value when the data spans too little.
+  The temperature coefficient comes from the datasheet. Without it, it is learned from the upper
+  envelope of actual/expected per cell-temperature bin, only from satellite-confirmed clear hours,
+  shrunk towards a typical value and rejected when implausible; otherwise the typical value is used.
   Heating by irradiance and cooling by wind are not identifiable from hourly data and use a
   fixed typical heating.
 - T: beam transmission (1 = unshaded) per sun-position cell, learned from hours where direct
@@ -34,7 +35,7 @@ HALF_LIFE_DAYS = 365.0
 TEMP_REF = 25.0
 HEATING_K = 30.0                 # cell heating in K at 1000 W/m² on the plane
 DEFAULT_TEMP_COEFF = -0.0035     # per K, typical crystalline module
-TEMP_COEFF_RANGE = (-0.006, 0.0)
+TEMP_COEFF_PLAUSIBLE = (-0.005, -0.002)   # learned values outside are rejected
 TEMP_BIN_K = 5.0
 TEMP_MIN_BIN_SAMPLES = 15
 TEMP_FULL_TRUST_BINS = 8         # bins needed to trust the learned coefficient completely
@@ -189,7 +190,9 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
     coeff = slope / max(ys)
     trust = min(1.0, len(env) / TEMP_FULL_TRUST_BINS)
     coeff = trust * coeff + (1 - trust) * DEFAULT_TEMP_COEFF
-    return min(max(coeff, TEMP_COEFF_RANGE[0]), TEMP_COEFF_RANGE[1]), True
+    if not TEMP_COEFF_PLAUSIBLE[0] <= coeff <= TEMP_COEFF_PLAUSIBLE[1]:
+        return DEFAULT_TEMP_COEFF, False                 # irradiance-dependent model errors, not temperature
+    return coeff, True
 
 
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
@@ -232,9 +235,12 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     temp_rows = [(r[9] + HEATING_K * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6]) for r in strong if r[9] is not None]
     if datasheet_temp_coeff is not None:
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
-    else:
+    elif clear_filter:
+        # only clear hours: with cloudy hours, summer clouds and winter sun share temperature bins
         temp_coeff, temp_learned = _learn_temp_coeff(temp_rows)
         temp_source = "learned" if temp_learned else "default"
+    else:
+        temp_coeff, temp_learned, temp_source = DEFAULT_TEMP_COEFF, False, "default"
     if not temp_rows:                                    # no temperature history: efficiency absorbs it
         temp_coeff, temp_source = 0.0, "none"
 

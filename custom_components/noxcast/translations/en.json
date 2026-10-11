@@ -1,0 +1,146 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Noxcast",
+        "description": "Choose the weather source and, optionally, battery sensors used to detect curtailment. Add your PV arrays afterwards.",
+        "data": {
+          "weather_source": "Weather source",
+          "weather_entity": "Weather entity",
+          "soc_sensors": "Battery state of charge sensors",
+          "soc_full_pct": "Battery considered full at"
+        },
+        "data_description": {
+          "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
+          "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
+          "soc_full_pct": "State of charge from which curtailment is assumed."
+        }
+      },
+      "reconfigure": {
+        "title": "Noxcast",
+        "data": {
+          "weather_source": "Weather source",
+          "weather_entity": "Weather entity",
+          "soc_sensors": "Battery state of charge sensors",
+          "soc_full_pct": "Battery considered full at"
+        }
+      }
+    },
+    "error": {
+      "weather_entity_required": "Select a weather entity.",
+      "no_irradiance": "This weather entity provides no irradiance in its hourly forecast.",
+      "weather_unavailable": "The weather entity did not return a forecast.",
+      "soc_unit": "Battery sensors must report their state of charge in %."
+    },
+    "abort": {
+      "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
+      "reconfigure_successful": "Settings saved."
+    }
+  },
+  "config_subentries": {
+    "array": {
+      "entry_type": "PV array",
+      "initiate_flow": {
+        "user": "Add PV array"
+      },
+      "step": {
+        "user": {
+          "title": "PV array",
+          "description": "Modules with the same orientation. Power sensors are summed (e.g. two MPPT inputs).",
+          "data": {
+            "name": "Name",
+            "power_sensors": "Power sensors",
+            "tilt": "Tilt",
+            "azimuth": "Azimuth",
+            "peak_power": "Peak power",
+            "valid_since": "Configuration valid since"
+          },
+          "data_description": {
+            "tilt": "0° = horizontal, 90° = vertical.",
+            "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
+            "peak_power": "Sum of module nameplate power.",
+            "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules."
+          }
+        },
+        "reconfigure": {
+          "title": "PV array",
+          "data": {
+            "name": "Name",
+            "power_sensors": "Power sensors",
+            "tilt": "Tilt",
+            "azimuth": "Azimuth",
+            "peak_power": "Peak power",
+            "valid_since": "Configuration valid since"
+          }
+        }
+      },
+      "error": {
+        "sensor_required": "Select at least one power sensor.",
+        "sensor_missing": "A selected sensor does not exist.",
+        "sensor_unit": "Power sensors must report W or kW.",
+        "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
+        "date_in_future": "The date must not be in the future."
+      },
+      "abort": {
+        "reconfigure_successful": "PV array saved."
+      }
+    }
+  },
+  "selector": {
+    "weather_source": {
+      "options": {
+        "entity": "Home Assistant weather entity",
+        "open_meteo": "Open-Meteo (internet)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "energy_today": {
+        "name": "Forecast today"
+      },
+      "energy_tomorrow": {
+        "name": "Forecast tomorrow"
+      },
+      "energy_day_after": {
+        "name": "Forecast day after tomorrow"
+      },
+      "energy_remaining_today": {
+        "name": "Forecast remaining today"
+      },
+      "efficiency": {
+        "name": "System efficiency"
+      },
+      "shading_coverage": {
+        "name": "Shading map coverage"
+      },
+      "last_learning": {
+        "name": "Last learning run"
+      }
+    }
+  },
+  "services": {
+    "exclude_period": {
+      "name": "Exclude period from learning",
+      "description": "Ignore a period in which output was curtailed, e.g. holidays with zero export.",
+      "fields": {
+        "start_date": {
+          "name": "Start date",
+          "description": "First day to exclude."
+        },
+        "end_date": {
+          "name": "End date",
+          "description": "Last day to exclude."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Reason, for your own reference."
+        }
+      }
+    },
+    "relearn": {
+      "name": "Relearn",
+      "description": "Learn efficiency and shading again from history now."
+    }
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Noxcast",
+        "description": "Wähle die Wetterquelle und optional Akku-Sensoren, an denen Abregelung erkannt wird. Die PV-Gruppen legst du danach an.",
+        "data": {
+          "weather_source": "Wetterquelle",
+          "weather_entity": "Wetter-Entität",
+          "soc_sensors": "Akku-Ladezustand",
+          "soc_full_pct": "Akku gilt als voll ab"
+        },
+        "data_description": {
+          "weather_entity": "Muss stündliche Strahlung liefern (z. B. DWD sun_irradiance).",
+          "soc_sensors": "Stunden mit vollem Akku werden beim Lernen ignoriert, weil dann abgeregelt sein kann.",
+          "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird."
+        }
+      },
+      "reconfigure": {
+        "title": "Noxcast",
+        "data": {
+          "weather_source": "Wetterquelle",
+          "weather_entity": "Wetter-Entität",
+          "soc_sensors": "Akku-Ladezustand",
+          "soc_full_pct": "Akku gilt als voll ab"
+        }
+      }
+    },
+    "error": {
+      "weather_entity_required": "Bitte eine Wetter-Entität wählen.",
+      "no_irradiance": "Diese Wetter-Entität liefert keine Strahlung in der Stundenprognose.",
+      "weather_unavailable": "Die Wetter-Entität hat keine Prognose geliefert.",
+      "soc_unit": "Akku-Sensoren müssen den Ladezustand in % liefern."
+    },
+    "abort": {
+      "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
+      "reconfigure_successful": "Einstellungen gespeichert."
+    }
+  },
+  "config_subentries": {
+    "array": {
+      "entry_type": "PV-Gruppe",
+      "initiate_flow": {
+        "user": "PV-Gruppe hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "PV-Gruppe",
+          "description": "Module mit gleicher Ausrichtung. Mehrere Leistungssensoren werden addiert (z. B. zwei MPPT-Eingänge).",
+          "data": {
+            "name": "Name",
+            "power_sensors": "Leistungssensoren",
+            "tilt": "Neigung",
+            "azimuth": "Azimut",
+            "peak_power": "Spitzenleistung",
+            "valid_since": "Konfiguration gültig seit"
+          },
+          "data_description": {
+            "tilt": "0° = waagerecht, 90° = senkrecht.",
+            "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
+            "peak_power": "Summe der Modul-Nennleistung.",
+            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung."
+          }
+        },
+        "reconfigure": {
+          "title": "PV-Gruppe",
+          "data": {
+            "name": "Name",
+            "power_sensors": "Leistungssensoren",
+            "tilt": "Neigung",
+            "azimuth": "Azimut",
+            "peak_power": "Spitzenleistung",
+            "valid_since": "Konfiguration gültig seit"
+          }
+        }
+      },
+      "error": {
+        "sensor_required": "Bitte mindestens einen Leistungssensor wählen.",
+        "sensor_missing": "Ein gewählter Sensor existiert nicht.",
+        "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
+        "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
+        "date_in_future": "Das Datum darf nicht in der Zukunft liegen."
+      },
+      "abort": {
+        "reconfigure_successful": "PV-Gruppe gespeichert."
+      }
+    }
+  },
+  "selector": {
+    "weather_source": {
+      "options": {
+        "entity": "Wetter-Entität aus Home Assistant",
+        "open_meteo": "Open-Meteo (Internet)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "energy_today": {
+        "name": "Prognose heute"
+      },
+      "energy_tomorrow": {
+        "name": "Prognose morgen"
+      },
+      "energy_day_after": {
+        "name": "Prognose übermorgen"
+      },
+      "energy_remaining_today": {
+        "name": "Prognose Rest heute"
+      },
+      "efficiency": {
+        "name": "Systemwirkungsgrad"
+      },
+      "shading_coverage": {
+        "name": "Abdeckung Schattenkarte"
+      },
+      "last_learning": {
+        "name": "Letzter Lernlauf"
+      }
+    }
+  },
+  "services": {
+    "exclude_period": {
+      "name": "Zeitraum vom Lernen ausschließen",
+      "description": "Einen Zeitraum ignorieren, in dem abgeregelt wurde, z. B. Urlaub bei Nulleinspeisung.",
+      "fields": {
+        "start_date": {
+          "name": "Startdatum",
+          "description": "Erster auszuschließender Tag."
+        },
+        "end_date": {
+          "name": "Enddatum",
+          "description": "Letzter auszuschließender Tag."
+        },
+        "note": {
+          "name": "Notiz",
+          "description": "Grund, zur eigenen Nachvollziehbarkeit."
+        }
+      }
+    },
+    "relearn": {
+      "name": "Neu lernen",
+      "description": "Wirkungsgrad und Schatten jetzt neu aus der Historie lernen."
+    }
+  }
+}

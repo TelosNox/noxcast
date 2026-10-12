@@ -29,7 +29,7 @@ def test_expected_uses_actual_then_decaying_correction():
     now = 10 * H
     out = intraday.expected_hours(FORECAST, actual, now, ratio=2.0)
     assert out[8 * H] == 400.0 and out[9 * H] == 700.0
-    assert out[10 * H] == 1000.0                                    # current hour: full correction
-    assert abs(out[12 * H] - 500 * 1.5) < 1e-9                      # two hours ahead: half
+    assert out[10 * H] == 500 * 1.5                                 # current hour: half the deviation
+    assert abs(out[11 * H] - 500 * 1.25) < 1e-9                     # one hour ahead: a quarter
     assert out[17 * H] < 600                                        # far ahead: almost the forecast
     assert intraday.expected_hours(FORECAST, {}, now, None)[11 * H] == 500.0

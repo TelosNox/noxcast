@@ -1,15 +1,16 @@
 """Intraday correction (pure Python): measured hours of today adjust the coming hours.
 
 The ratio actual/forecast of the last completed hours is applied to the coming hours with a
-decaying weight. Weather deviations persist for an hour or two, not for the rest of the day, so
-the weather forecast takes over again further ahead.
+decaying weight. The correction is deliberately soft: weather deviations persist for an hour or
+two, not for the rest of the day, and the weather forecast itself is updated during the day.
 """
 from __future__ import annotations
 
 WINDOW_HOURS = 3
 RECENT_WEIGHT = 0.6              # weight per hour further back in the window
-HALF_LIFE_HOURS = 2.0            # decay of the correction into the coming hours
-RATIO_RANGE = (0.3, 2.5)
+STRENGTH = 0.5                   # share of the measured deviation applied to the current hour
+HALF_LIFE_HOURS = 1.0            # decay of the correction into the coming hours
+RATIO_RANGE = (0.5, 2.0)
 MIN_FORECAST_SHARE = 0.03        # window forecast must reach this share of peak power (Wh) to be meaningful
 
 
@@ -38,5 +39,5 @@ def expected_hours(forecast: dict[float, float], actual: dict[float, float], now
             out[t] = wh
         else:
             ahead = max(t - now, 0.0) / 3600
-            out[t] = wh * (1 + (ratio - 1) * 0.5 ** (ahead / HALF_LIFE_HOURS))
+            out[t] = wh * (1 + (ratio - 1) * STRENGTH * 0.5 ** (ahead / HALF_LIFE_HOURS))
     return out

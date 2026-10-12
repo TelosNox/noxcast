@@ -88,6 +88,9 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
     states = {s.entity_id: s for s in hass.states.async_all("sensor")}
     today = [s for e, s in states.items() if e.endswith("forecast_today")]
     assert today and all(s.state not in ("unknown", "unavailable") for s in today)
+    expected = [s for e, s in states.items() if e.endswith("expected_today")]
+    assert len(expected) == 2 and all(s.state not in ("unknown", "unavailable") for s in expected)
+    assert all("fixed_at" in s.attributes for s in today)
     tomorrow = [s for e, s in states.items() if e.endswith("forecast_tomorrow")]
     assert len(tomorrow) == 2                                # total + array
     assert all(float(s.state) > 1 for s in tomorrow)

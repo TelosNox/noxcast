@@ -359,6 +359,18 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
     return sum(near) / len(near) if near else 1.0
 
 
+def clearsky_weather(site: Site, start: float, temp: float | None = None) -> WeatherHour:
+    """Hourly mean clear-sky irradiance as a weather hour (reference for clearness)."""
+    ghi = dni = dhi = 0.0
+    dni_extra = extra_radiation(start + 1800)
+    for i in range(SUBSTEPS):
+        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+        if sun.elevation > 0:
+            g, n, d = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
+            ghi, dni, dhi = ghi + g, dni + n, dhi + d
+    return WeatherHour(start, ghi / SUBSTEPS, dni / SUBSTEPS, dhi / SUBSTEPS, temp)
+
+
 def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> dict[float, float]:
     """Expected energy per hour (Wh), keyed by hour start (UNIX seconds)."""
     out = {}

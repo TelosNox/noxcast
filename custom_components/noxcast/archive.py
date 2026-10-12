@@ -5,7 +5,11 @@ from the recorder, so without this archive a past forecast cannot be evaluated. 
 from long-term statistics during the nightly learning run.
 
 Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
-         "forecast": {array_id: Wh}, "actual": {array_id: Wh}}}}}
+         "forecast": {array_id: Wh}, "actual": {array_id: Wh},
+         "alt": {source: {"ghi": W/m², "forecast": {array_id: Wh}}}}}}}
+
+"alt" holds the same day computed from another weather source (e.g. Open-Meteo next to DWD),
+so sources and their mix can be compared against the actual values.
 """
 from __future__ import annotations
 
@@ -15,7 +19,8 @@ MIN_DAY_HOURS = 20
 
 
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
-             forecasts: dict[str, dict[float, float]]) -> bool:
+             forecasts: dict[str, dict[float, float]],
+             alt: dict[str, tuple[dict[float, float], dict[str, dict[float, float]]]] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains."""
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
@@ -23,6 +28,10 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
             "ghi": round(ghi, 1), "temp": None if temp is None else round(temp, 1),
             "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in forecasts.items()},
         }
+        for name, (alt_ghi, alt_fc) in (alt or {}).items():
+            if ts in alt_ghi:
+                hours[str(int(ts))].setdefault("alt", {})[name] = {
+                    "ghi": round(alt_ghi[ts], 1), "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in alt_fc.items()}}
     if len(hours) < MIN_DAY_HOURS:
         return False
     old = archive.get(day.isoformat(), {}).get("hours", {})
@@ -54,24 +63,47 @@ def prune(archive: dict, oldest: date) -> None:
         del archive[key]
 
 
-def day_totals(archive: dict, array_id: str | None = None) -> dict[str, tuple[float, float]]:
-    """Complete days only: {day: (forecast Wh, actual Wh)}; array_id None sums all arrays."""
+MIX = "mix"
+
+
+def _forecast(hour: dict, source: str | None) -> dict[str, float] | None:
+    """Forecast of an hour from the primary source, an alternative source or the mean of both."""
+    if source is None:
+        return hour["forecast"]
+    alt = hour.get("alt", {})
+    if source == MIX:
+        other = next(iter(alt.values()), None)
+        if other is None:
+            return None
+        return {sid: (wh + other["forecast"].get(sid, wh)) / 2 for sid, wh in hour["forecast"].items()}
+    return alt[source]["forecast"] if source in alt else None
+
+
+def day_totals(archive: dict, array_id: str | None = None, source: str | None = None) -> dict[str, tuple[float, float]]:
+    """Complete days only: {day: (forecast Wh, actual Wh)}; array_id None sums all arrays.
+
+    source: None = primary weather source, an alternative source name, or MIX (mean of primary and alternative).
+    """
     out = {}
     for key, day in archive.items():
-        hours = day["hours"].values()
+        hours = list(day["hours"].values())
         if not hours or any("actual" not in h for h in hours):
             continue
-        ids = [array_id] if array_id else list(next(iter(hours))["forecast"])
-        if any(sid not in h["actual"] or sid not in h["forecast"] for h in hours for sid in ids):
+        forecasts = [_forecast(h, source) for h in hours]
+        if any(f is None for f in forecasts):
             continue
-        out[key] = (sum(h["forecast"][sid] for h in hours for sid in ids),
+        ids = [array_id] if array_id else list(hours[0]["forecast"])
+        if any(sid not in h["actual"] or sid not in f for h, f in zip(hours, forecasts) for sid in ids):
+            continue
+        out[key] = (sum(f[sid] for f in forecasts for sid in ids),
                     sum(h["actual"][sid] for h in hours for sid in ids))
     return out
 
 
-def daily_error(archive: dict, since: date, array_id: str | None = None) -> tuple[float | None, int]:
+def daily_error(archive: dict, since: date, array_id: str | None = None,
+                source: str | None = None) -> tuple[float | None, int]:
     """Relative daily energy error |forecast − actual| / actual over complete days since a date."""
-    days = {k: v for k, v in day_totals(archive, array_id).items() if k >= since.isoformat()}
+    days = {k: v for k, v in day_totals(archive, array_id, source).items() if k >= since.isoformat()}
     actual = sum(a for _, a in days.values())
     if not days or actual <= 0:
         return None, len(days)

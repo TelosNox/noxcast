@@ -131,6 +131,9 @@
       },
       "forecast_error": {
         "name": "Forecast error (30 days)"
+      },
+      "energy_expected_today": {
+        "name": "Expected today"
       }
     },
     "image": {
@@ -174,12 +177,14 @@
           "satellite": "Satellite filter for clear hours",
           "satellite_url": "Satellite archive URL",
           "satellite_model": "Satellite model",
-          "api_key": "API key"
+          "api_key": "API key",
+          "compare_open_meteo": "Archive Open-Meteo for comparison"
         },
         "data_description": {
           "archive_temperature": "Needed to learn the temperature loss. Without it, efficiency absorbs the average temperature.",
           "satellite": "Uses satellite irradiance to select clear hours for learning. Optional; quality varies by region.",
-          "api_key": "Only for commercial or self-hosted access."
+          "api_key": "Only for commercial or self-hosted access.",
+          "compare_open_meteo": "With a weather entity as source, Open-Meteo is forecast in parallel and archived, so both sources and their mix can be compared with the actual values (forecast error sensor)."
         }
       }
     },

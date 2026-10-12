@@ -44,3 +44,14 @@ def test_actuals_only_for_ended_hours():
     archive.add_actuals(a, "roof", {T0 + h * 3600: 1.0 for h in range(24)}, before=T0 + 5 * 3600)
     with_actual = [h for h in a[DAY.isoformat()]["hours"].values() if "actual" in h]
     assert len(with_actual) == 5
+
+
+def test_alternative_source_and_mix():
+    a = {}
+    alt = {"open_meteo": ({T0 + h * 3600: 50.0 for h in range(24)}, {"roof": {T0 + h * 3600: 30.0 for h in range(24)}})}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)}}, alt)
+    archive.add_actuals(a, "roof", {T0 + h * 3600: 40.0 for h in range(24)}, before=T0 + 24 * 3600)
+    primary, _ = archive.daily_error(a, date(2026, 10, 1))
+    other, _ = archive.daily_error(a, date(2026, 10, 1), source="open_meteo")
+    mix, n = archive.daily_error(a, date(2026, 10, 1), source=archive.MIX)
+    assert abs(primary - 0.25) < 1e-9 and abs(other - 0.25) < 1e-9 and n == 1 and mix == 0.0

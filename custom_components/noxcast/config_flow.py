@@ -14,7 +14,7 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
+    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_COMPARE_OPEN_METEO, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
@@ -160,6 +160,7 @@ def _options_schema(d: dict[str, Any]) -> vol.Schema:
             selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
         vol.Required(CONF_SATELLITE_MODEL, default=d.get(CONF_SATELLITE_MODEL, DEFAULT_SATELLITE_MODEL)):
             selector.TextSelector(),
+        vol.Required(CONF_COMPARE_OPEN_METEO, default=d.get(CONF_COMPARE_OPEN_METEO, True)): selector.BooleanSelector(),
         vol.Optional(CONF_API_KEY, description={"suggested_value": d.get(CONF_API_KEY)}):
             selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
     })

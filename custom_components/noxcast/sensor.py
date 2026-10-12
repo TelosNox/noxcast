@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS
+from .const import ATTR_SCHEMA_VERSION, COMPARE_SOURCE, DOMAIN, ERROR_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 
 
@@ -53,14 +53,19 @@ def hourly_attribute(hours: dict[float, float], offset: int) -> dict[str, float]
 @dataclass(frozen=True, kw_only=True)
 class ForecastDescription(SensorEntityDescription):
     value: Callable[[dict[float, float]], float | None]
-    day_offset: int | None = None
+    series: str = "forecast"            # forecast (latest), morning (fixed in the morning), expected (actual + corrected)
+    day_offset: int | None = None       # day of the hourly attribute
 
 
 FORECASTS = (
-    ForecastDescription(key="energy_today", translation_key="energy_today", value=lambda h: day_energy(h, 0), day_offset=0),
+    ForecastDescription(key="energy_today", translation_key="energy_today", value=lambda h: day_energy(h, 0),
+                        series="morning", day_offset=0),
+    ForecastDescription(key="energy_expected_today", translation_key="energy_expected_today",
+                        value=lambda h: day_energy(h, 0), series="expected", day_offset=0),
     ForecastDescription(key="energy_tomorrow", translation_key="energy_tomorrow", value=lambda h: day_energy(h, 1), day_offset=1),
     ForecastDescription(key="energy_day_after", translation_key="energy_day_after", value=lambda h: day_energy(h, 2), day_offset=2),
-    ForecastDescription(key="energy_remaining_today", translation_key="energy_remaining_today", value=remaining_today),
+    ForecastDescription(key="energy_remaining_today", translation_key="energy_remaining_today", value=remaining_today,
+                        series="expected", day_offset=0),
 )
 
 
@@ -117,7 +122,7 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
         data = self.coordinator.data
         if data is None:
             return {}
-        return data.total if self._sub_id is None else data.arrays.get(self._sub_id, {})
+        return getattr(data, self.entity_description.series).get(self._sub_id, {})
 
     @property
     def native_value(self) -> float | None:
@@ -127,8 +132,14 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         if self.entity_description.day_offset is None:
             return None
-        return {"schema_version": ATTR_SCHEMA_VERSION,
-                "hourly": hourly_attribute(self._hours(), self.entity_description.day_offset)}
+        attrs = {"schema_version": ATTR_SCHEMA_VERSION,
+                 "hourly": hourly_attribute(self._hours(), self.entity_description.day_offset)}
+        data = self.coordinator.data
+        if self.entity_description.series == "morning" and data is not None:
+            attrs["fixed_at"] = data.morning_fixed.isoformat() if data.morning_fixed else None
+        if self.entity_description.series == "expected" and data is not None and self._sub_id is not None:
+            attrs["correction"] = data.correction.get(self._sub_id)
+        return attrs
 
 
 class LearnedSensor(NoxcastEntity, SensorEntity):
@@ -217,4 +228,14 @@ class ForecastErrorSensor(NoxcastEntity, SensorEntity):
         for sub_id, arr in self.coordinator.arrays.items():
             error, _ = fc_archive.daily_error(archive, self._since(), sub_id)
             per_array[arr.name] = None if error is None else round(error * 100, 1)
-        return {"days": days, "archived_days": len(archive), "per_array": per_array}
+        sources = {}
+        for name in (COMPARE_SOURCE, fc_archive.MIX):            # same days as the comparison source
+            error, n = fc_archive.daily_error(archive, self._since(), source=name)
+            if n:
+                own = {k: v for k, v in fc_archive.day_totals(archive).items()
+                       if k in fc_archive.day_totals(archive, source=name) and k >= self._since().isoformat()}
+                own_actual = sum(a for _, a in own.values())
+                sources[name] = {"error": round(error * 100, 1) if error is not None else None, "days": n,
+                                 "primary_error": round(sum(abs(f - a) for f, a in own.values()) / own_actual * 100, 1)
+                                 if own_actual > 0 else None}
+        return {"days": days, "archived_days": len(archive), "per_array": per_array, "comparison": sources}

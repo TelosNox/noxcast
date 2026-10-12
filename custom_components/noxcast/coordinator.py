@@ -18,12 +18,13 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
-    ARCHIVE_DAYS, CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
     WEATHER_SOURCE_OPEN_METEO,
 )
 from . import archive as fc_archive
+from .intraday import correction_ratio, expected_hours
 from .model import ArrayGeometry, LearnedArray, WeatherHour, forecast, learn, usable_samples
 from .solar import Site
 from .sources import (
@@ -46,9 +47,22 @@ class ArrayConfig:
 
 @dataclass
 class NoxcastData:
-    arrays: dict[str, dict[float, float]] = field(default_factory=dict)   # subentry_id -> {hour_ts: Wh}
-    total: dict[float, float] = field(default_factory=dict)
+    """Hourly Wh per array (subentry_id) and as total (key None)."""
+
+    forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
+    morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
+    expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
+    correction: dict[str, float | None] = field(default_factory=dict)              # intraday ratio per array
+    morning_fixed: datetime | None = None
     updated: datetime | None = None
+
+    @property
+    def arrays(self) -> dict[str, dict[float, float]]:
+        return {k: v for k, v in self.forecast.items() if k is not None}
+
+    @property
+    def total(self) -> dict[float, float]:
+        return self.forecast.get(None, {})
 
 
 type NoxcastConfigEntry = ConfigEntry[NoxcastCoordinator]
@@ -84,6 +98,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.last_learning_error: str | None = None
         self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
         self._hours: dict[str, dict[float, float]] = {}
+        self._morning: dict[str, dict[float, float]] = {}
+        self._morning_fixed: datetime | None = None
+        self._factors: dict[str, float] | None = None
+        self._compare: tuple[float, list[WeatherHour]] | None = None      # (fetched at, hours)
         self._learn_lock = asyncio.Lock()
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         # separate file: larger and written less often than the learned state
@@ -106,6 +124,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             for sub_id, hours in stored.get("hours", {}).items():
                 if sub_id in self.arrays:
                     self._hours[sub_id] = {float(t): float(v) for t, v in hours.items() if float(t) >= day_start}
+            morning = stored.get("morning") or {}
+            fixed = dt_util.parse_datetime(morning.get("fixed") or "")
+            if fixed and dt_util.as_local(fixed).date() == dt_util.now().date():
+                self._morning_fixed = fixed
+                self._morning = {sid: {float(t): float(v) for t, v in hours.items()}
+                                 for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._hours = {}, {}
@@ -166,6 +190,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                        for sid, la in self.learned.items() if sid in self.arrays},
             # today's hours survive a restart even if the weather source no longer reports past hours
             "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
+            "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
+                        "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
         }
 
     # ------------------------------------------------------------------ learning
@@ -192,6 +218,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         options = self.config_entry.data
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         factors = await async_power_factors(self.hass, sensor_ids)
+        self._factors = factors
         power = await async_hourly_statistics(self.hass, sensor_ids, start, "mean")
         soc_series = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
         soc: dict[float, float] = {}
@@ -233,14 +260,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _archive_data(self) -> dict:
         return {"days": self.forecast_archive}
 
-    def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData) -> None:
+    def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
+                          alt: dict[str, tuple[dict, dict]] | None = None) -> None:
         """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
         tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
         a = tomorrow.timestamp()
         b = dt_util.start_of_local_day(tomorrow.date() + timedelta(days=1)).timestamp()
         hours = {w.start: (w.ghi, w.temp) for w in weather if a <= w.start < b}
+        alt = {name: ({t: g for t, g in ghi.items() if a <= t < b}, fc) for name, (ghi, fc) in (alt or {}).items()}
         if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
-                               result.arrays):
+                               result.arrays, alt):
             fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self._archive_store.async_delay_save(self._archive_data, 300)
 
@@ -256,19 +285,52 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return await async_open_meteo(self.hass, self.site.latitude, self.site.longitude)
         return await async_weather_entity(self.hass, data[CONF_WEATHER_ENTITY])
 
+    async def _async_compare_weather(self) -> list[WeatherHour]:
+        """Open-Meteo next to a weather entity, for the archive only; fetched hourly, failures are ignored."""
+        data = self.config_entry.data
+        if (data.get(CONF_WEATHER_SOURCE) == WEATHER_SOURCE_OPEN_METEO
+                or not self._option(CONF_COMPARE_OPEN_METEO, True)):
+            return []
+        now = dt_util.utcnow().timestamp()
+        if self._compare is None or now - self._compare[0] > 3300:
+            try:
+                self._compare = (now, await async_open_meteo(self.hass, self.site.latitude, self.site.longitude))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Open-Meteo comparison forecast failed: %s", err)
+                return self._compare[1] if self._compare else []
+        return self._compare[1]
+
+    async def _async_today_actual(self, day_start: float) -> dict[str, dict[float, float]]:
+        """Measured hourly mean power (W = Wh) of today per array, from long-term statistics."""
+        sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
+        try:
+            if self._factors is None:
+                self._factors = await async_power_factors(self.hass, sensor_ids)
+            power = await async_hourly_statistics(self.hass, sensor_ids, dt_util.utc_from_timestamp(day_start), "mean")
+        except Exception as err:  # noqa: BLE001 – without measurements there is simply no correction
+            _LOGGER.debug("Today's statistics unavailable: %s", err)
+            return {}
+        return {sub_id: _sum_series([{t: v * self._factors.get(s, 1.0) for t, v in power.get(s, {}).items()
+                                      if v is not None} for s in arr.sensors])
+                for sub_id, arr in self.arrays.items()}
+
     async def _async_update_data(self) -> NoxcastData:
         try:
             weather = await self._async_fetch_weather()
         except Exception as err:  # noqa: BLE001 – any source failure keeps the last forecast
             raise UpdateFailed(f"Weather source failed: {err}") from err
 
+        local_now = dt_util.now()
         day_start = dt_util.start_of_local_day().timestamp()
+        day_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=1)).timestamp()
         horizon = (dt_util.start_of_local_day() + timedelta(days=FORECAST_DAYS)).timestamp()
         weather = [w for w in weather if day_start <= w.start < horizon]
         if not weather:
             raise UpdateFailed("Weather source returned no hours for the forecast horizon")
+        compare = [w for w in await self._async_compare_weather() if day_start <= w.start < horizon]
 
         result = NoxcastData(updated=dt_util.utcnow())
+        alt_forecasts: dict[str, dict[float, float]] = {}
         for sub_id, arr in self.arrays.items():
             learned = self.learned.get(sub_id, LearnedArray())
             fresh = await self.hass.async_add_executor_job(forecast, self.site, arr.geometry, learned, weather)
@@ -276,11 +338,39 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             merged = {t: v for t, v in self._hours.get(sub_id, {}).items() if t >= day_start}
             merged.update(fresh)
             self._hours[sub_id] = merged
-            result.arrays[sub_id] = dict(sorted(merged.items()))
-            for t, wh in merged.items():
-                result.total[t] = result.total.get(t, 0.0) + wh
-        result.total = dict(sorted(result.total.items()))
-        self._archive_forecast(weather, result)
+            result.forecast[sub_id] = dict(sorted(merged.items()))
+            if compare:
+                alt_forecasts[sub_id] = await self.hass.async_add_executor_job(
+                    forecast, self.site, arr.geometry, learned, compare)
+
+        # today's forecast is fixed in the morning; before that it follows the weather source
+        if self._morning_fixed is None or dt_util.as_local(self._morning_fixed).date() != local_now.date():
+            self._morning_fixed = None
+            self._morning = {}
+        if self._morning_fixed is None and local_now.hour >= MORNING_HOUR:
+            self._morning_fixed = dt_util.utcnow()
+            self._morning = {sid: {t: v for t, v in h.items() if t < day_end} for sid, h in result.arrays.items()}
+        result.morning_fixed = self._morning_fixed
+
+        actual = await self._async_today_actual(day_start)
+        now = dt_util.utcnow().timestamp()
+        for sub_id, arr in self.arrays.items():
+            today = {t: v for t, v in result.forecast[sub_id].items() if t < day_end}
+            result.morning[sub_id] = self._morning.get(sub_id) or today
+            ratio = correction_ratio(today, actual.get(sub_id, {}), now, arr.geometry.peak_w)
+            result.correction[sub_id] = None if ratio is None else round(ratio, 3)
+            result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), now, ratio)
+        for series in (result.forecast, result.morning, result.expected):
+            total: dict[float, float] = {}
+            for hours in list(series.values()):
+                for t, wh in hours.items():
+                    total[t] = total.get(t, 0.0) + wh
+            series[None] = dict(sorted(total.items()))
+
+        alt = None
+        if alt_forecasts:
+            alt = {COMPARE_SOURCE: ({w.start: w.ghi for w in compare}, alt_forecasts)}
+        self._archive_forecast(weather, result, alt)
         self._store.async_delay_save(self._store_data, 60)
         return result
 

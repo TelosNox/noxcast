@@ -131,6 +131,9 @@
       },
       "forecast_error": {
         "name": "Prognosefehler (30 Tage)"
+      },
+      "energy_expected_today": {
+        "name": "Erwartung heute"
       }
     },
     "image": {
@@ -174,12 +177,14 @@
           "satellite": "Satellitenfilter für klare Stunden",
           "satellite_url": "URL Satellitenarchiv",
           "satellite_model": "Satellitenmodell",
-          "api_key": "API-Schlüssel"
+          "api_key": "API-Schlüssel",
+          "compare_open_meteo": "Open-Meteo zum Vergleich archivieren"
         },
         "data_description": {
           "archive_temperature": "Nötig, um den Temperaturverlust zu lernen. Ohne steckt die mittlere Temperatur im Wirkungsgrad.",
           "satellite": "Wählt klare Stunden zum Lernen anhand der Satellitenstrahlung aus. Optional; die Qualität schwankt je nach Region.",
-          "api_key": "Nur für kommerziellen oder selbst gehosteten Zugang."
+          "api_key": "Nur für kommerziellen oder selbst gehosteten Zugang.",
+          "compare_open_meteo": "Bei einer Wetter-Entität als Quelle wird Open-Meteo parallel gerechnet und archiviert, damit beide Quellen und ihre Mischung mit dem Ist verglichen werden können (Sensor Prognosefehler)."
         }
       }
     },

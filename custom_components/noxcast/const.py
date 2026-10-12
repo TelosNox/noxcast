@@ -29,6 +29,7 @@ CONF_SATELLITE = "satellite"
 CONF_SATELLITE_URL = "satellite_url"
 CONF_SATELLITE_MODEL = "satellite_model"
 CONF_API_KEY = "api_key"
+CONF_COMPARE_OPEN_METEO = "compare_open_meteo"   # archive Open-Meteo next to a weather entity for comparison
 DEFAULT_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"
@@ -45,7 +46,9 @@ HISTORY_YEARS = 2                        # history window used for learning
 
 STORAGE_VERSION = 1
 ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluation
-ERROR_DAYS = 30                          # window of the forecast error sensor
+ERROR_DAYS = 30
+MORNING_HOUR = 6                         # local hour at which today's forecast is fixed
+COMPARE_SOURCE = "open_meteo"                          # window of the forecast error sensor
 ATTR_SCHEMA_VERSION = 1
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"

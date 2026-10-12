@@ -24,8 +24,8 @@ from .const import (
     WEATHER_SOURCE_OPEN_METEO,
 )
 from . import archive as fc_archive
-from .intraday import correction_ratio, expected_hours
-from .model import ArrayGeometry, LearnedArray, WeatherHour, forecast, learn, usable_samples
+from .intraday import clearness_shift, expected_hours
+from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast, learn, usable_samples
 from .solar import Site
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
@@ -52,7 +52,7 @@ class NoxcastData:
     forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
     morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
     expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
-    correction: dict[str, float | None] = field(default_factory=dict)              # intraday ratio per array
+    correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
     morning_fixed: datetime | None = None
     updated: datetime | None = None
 
@@ -354,12 +354,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         actual = await self._async_today_actual(day_start)
         now = dt_util.utcnow().timestamp()
+        temps = {w.start: w.temp for w in weather}
+        clear_weather = [clearsky_weather(self.site, t, temps.get(t))
+                         for t in sorted(result.forecast.get(next(iter(self.arrays), None), {})) if t < day_end]
         for sub_id, arr in self.arrays.items():
             today = {t: v for t, v in result.forecast[sub_id].items() if t < day_end}
             result.morning[sub_id] = self._morning.get(sub_id) or today
-            ratio = correction_ratio(today, actual.get(sub_id, {}), now, arr.geometry.peak_w)
-            result.correction[sub_id] = None if ratio is None else round(ratio, 3)
-            result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), now, ratio)
+            clear = await self.hass.async_add_executor_job(
+                forecast, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), clear_weather)
+            shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w)
+            result.correction[sub_id] = None if shift is None else round(shift, 3)
+            result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), clear, now, shift)
         for series in (result.forecast, result.morning, result.expected):
             total: dict[float, float] = {}
             for hours in list(series.values()):

@@ -154,10 +154,11 @@ expected beam irradiance is significant.
 - Per array and total, 15-minute and hourly resolution, today / tomorrow / day after.
 - Remaining energy today, peak time, P10 / P50 / P90.
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total
-  (measured hours + corrected rest) and the remaining energy. The intraday correction applies the
-  actual/forecast ratio of the last three hours softly to the coming hours: half of the deviation
-  for the current hour, halving every further hour, ratio limited to 0.5–2. Weather deviations
-  persist briefly, and the weather forecast itself is updated during the day.
+  (measured hours + corrected rest) and the remaining energy. The intraday correction works on
+  clearness (output relative to the clear-sky output of the same hour): if the last three hours
+  were clearer than forecast, the coming hours get fewer clouds, never more than a clear sky. An
+  hour already forecast as sunny is not lifted. Half of the shift applies to the current hour,
+  halving every further hour, because the weather forecast itself is updated during the day.
 - With a weather entity as source, Open-Meteo is computed in parallel and archived, so the
   forecast error of both sources and of their mean can be compared before mixing them.
 - Energy dashboard solar forecast.

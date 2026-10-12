@@ -20,7 +20,7 @@ from .const import (
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
-    FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_INTERVAL,
+    FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
 )
 from . import archive as fc_archive
@@ -89,7 +89,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     config_entry: NoxcastConfigEntry
 
     def __init__(self, hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
-        super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=UPDATE_INTERVAL)
+        super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=None)
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
         self.learned: dict[str, LearnedArray] = {}
@@ -142,7 +142,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         entry = self.config_entry
         entry.async_on_unload(async_track_time_change(
             self.hass, self._async_nightly, hour=LEARN_TIME[0], minute=LEARN_TIME[1], second=0))
+        # aligned to the clock, so day change (00:00) and morning fix (06:00) happen on time
+        entry.async_on_unload(async_track_time_change(
+            self.hass, self._async_scheduled_refresh, minute=UPDATE_MINUTES, second=0))
         entry.async_on_unload(async_at_started(self.hass, self._async_started))
+
+    async def _async_scheduled_refresh(self, _now: datetime) -> None:
+        await self.async_refresh()
 
     @callback
     def _async_started(self, _hass: HomeAssistant) -> None:

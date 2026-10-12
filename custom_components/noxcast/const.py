@@ -38,7 +38,7 @@ DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"
 IRRADIANCE_KEYS = ("sun_irradiance", "solar_irradiance", "irradiance", "global_horizontal_irradiance")
 
 FORECAST_DAYS = 3
-UPDATE_INTERVAL = timedelta(minutes=30)
+UPDATE_MINUTES = (0, 30)                 # forecast refresh at these minutes of every hour, plus once at start
 STALE_AFTER = timedelta(hours=6)         # sensors stay available this long after the last successful update
 POWER_UNIT_FACTORS = {"W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
 LEARN_TIME = (1, 30)                     # local time of the nightly learning run

@@ -63,15 +63,21 @@ def test_erbs(ref):
 @pytest.mark.parametrize("tilt,azimuth", [(60, 135), (30, 225), (90, 180), (0, 180)])
 def test_plane_of_array(ref, tilt, azimuth):
     sp, cs = ref
+    dni_extra = pvlib.irradiance.get_extra_radiation(TIMES)
     poa = pvlib.irradiance.get_total_irradiance(tilt, azimuth, sp.apparent_zenith, sp.azimuth,
-                                                cs.dni, cs.ghi, cs.dhi, albedo=0.2)
+                                                cs.dni, cs.ghi, cs.dhi, dni_extra=dni_extra, albedo=0.2,
+                                                model="haydavies")
+    sky = pvlib.irradiance.haydavies(tilt, azimuth, cs.dhi, cs.dni, dni_extra, sp.apparent_zenith, sp.azimuth,
+                                     return_components=True)
     aoi = pvlib.irradiance.aoi(tilt, azimuth, sp.apparent_zenith, sp.azimuth)
-    beam_ref = (poa.poa_direct * pvlib.iam.martin_ruiz(aoi)).fillna(0).clip(lower=0).to_numpy()
-    diff_ref = poa.poa_diffuse.fillna(0).to_numpy()
+    # circumsolar light comes from the sun's direction: counted as beam (incidence losses, shading)
+    beam_ref = ((poa.poa_direct + sky.poa_circumsolar) * pvlib.iam.martin_ruiz(aoi)).fillna(0).clip(lower=0).to_numpy()
+    diff_ref = (poa.poa_diffuse - sky.poa_circumsolar).fillna(0).to_numpy()
     mine = []
-    for t, dni, dhi, ghi, el, az in zip(TIMES, cs.dni, cs.dhi, cs.ghi, sp.apparent_elevation, sp.azimuth):
+    for t, dni, dhi, ghi, el, az, ext in zip(TIMES, cs.dni, cs.dhi, cs.ghi, sp.apparent_elevation, sp.azimuth,
+                                            dni_extra):
         sun = solar.SunPosition(az, el, 90 - el)
-        mine.append(solar.plane_of_array(tilt, azimuth, sun, dni, dhi, ghi))
+        mine.append(solar.plane_of_array(tilt, azimuth, sun, dni, dhi, ghi, ext))
     mine = np.array(mine)
     assert np.max(np.abs(mine[:, 0] - beam_ref)) < 1.0
     assert np.max(np.abs(mine[:, 1] - diff_ref)) < 1.0

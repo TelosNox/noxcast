@@ -142,7 +142,7 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float) -> tuple[float, 
         if sun.elevation <= 0:
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, pressure, dni_extra)
-        b, d = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi)
+        b, d = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
         beam += b
         diff += d
         ghi_sum += ghi
@@ -385,7 +385,7 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                 dni, dhi = erbs(wh.ghi, sun.zenith, dni_extra)
             else:
                 dni, dhi = wh.dni, wh.dhi
-            beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi)
+            beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) + diff
             total += geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa) * poa / 1000
         out[wh.start] = total / SUBSTEPS

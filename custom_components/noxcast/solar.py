@@ -179,15 +179,20 @@ def iam_martin_ruiz(aoi: float, a_r: float = 0.16) -> float:
 
 
 def plane_of_array(tilt: float, azimuth: float, sun: SunPosition, dni: float, dhi: float, ghi: float,
-                   albedo: float = 0.2) -> tuple[float, float]:
+                   dni_extra: float = 1367.0, albedo: float = 0.2) -> tuple[float, float]:
     """Effective (beam, diffuse) irradiance on the module plane in W/m².
 
-    Beam includes incidence angle losses; diffuse is isotropic sky plus ground reflection.
+    Sky diffuse after Hay-Davies: the circumsolar share (anisotropy index dni/dni_extra) comes from
+    the sun's direction and is therefore counted as beam, with incidence angle losses and shading;
+    the rest is isotropic. Diffuse is isotropic sky plus ground reflection.
     """
     if sun.elevation <= 0:
         return 0.0, 0.0
     aoi = angle_of_incidence(tilt, azimuth, sun.apparent_zenith, sun.azimuth)
-    beam = max(dni * math.cos(aoi * _RAD), 0.0) * iam_martin_ruiz(aoi)
+    cos_aoi = max(math.cos(aoi * _RAD), 0.0)
+    ai = min(max(dni / dni_extra, 0.0), 1.0) if dni_extra > 0 else 0.0
+    rb = cos_aoi / max(math.cos(sun.apparent_zenith * _RAD), 0.01745)
+    beam = (dni * cos_aoi + dhi * ai * rb) * iam_martin_ruiz(aoi)
     cos_t = math.cos(tilt * _RAD)
-    diffuse = dhi * (1 + cos_t) / 2 + ghi * albedo * (1 - cos_t) / 2
+    diffuse = dhi * (1 - ai) * (1 + cos_t) / 2 + ghi * albedo * (1 - cos_t) / 2
     return beam, max(diffuse, 0.0)

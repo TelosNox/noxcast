@@ -32,6 +32,10 @@ the weather enters first and every later step works on its result:
 
 1. **Weather:** hourly irradiance, split into direct (beam) and diffuse.
 2. **Geometry:** both parts projected onto the module plane (incidence-angle losses on beam).
+   Sky diffuse follows Hay-Davies: on clear days a large part of the sky light comes from around
+   the sun. This circumsolar share is treated like beam (incidence losses, shading); the rest is
+   isotropic. A purely isotropic sky underestimated sun-facing planes on clear days, which a
+   tilt fit compensated with about 8° too steep modules on both arrays.
 3. **Shading:** learned transmission applied to the **beam part only** – on an overcast day a
    morning shadow costs almost nothing, on a clear day it costs everything.
 4. **Diffuse factor:** share of the sky not obstructed by surroundings.

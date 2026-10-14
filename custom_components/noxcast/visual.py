@@ -13,13 +13,13 @@ LEFT, RIGHT, TOP, BOTTOM = 48, 36, 40, 56
 EL_MAX = 70.0
 
 TEXT = {
-    "en": {"efficiency": "Efficiency", "temp": "Temp. coeff.", "coverage": "Coverage", "agreement": "Satellite",
+    "en": {"efficiency": "Efficiency", "direction": "Direction factor", "temp": "Temp. coeff.", "coverage": "Coverage", "agreement": "Satellite",
            "datasheet": "datasheet", "learned": "learned", "default": "typical", "none": "off",
            "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data",
            "elevation": "Sun elevation", "not_learned": "not learned yet", "modules": "modules",
            "normal": "sun perpendicular to the modules",
            "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules"},
-    "de": {"efficiency": "Wirkungsgrad", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
+    "de": {"efficiency": "Wirkungsgrad", "direction": "Richtungsfaktor", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
            "datasheet": "Datenblatt", "learned": "gelernt", "default": "typisch", "none": "aus",
            "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten",
            "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt", "modules": "Module",
@@ -178,6 +178,8 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         parts = [f'{t["efficiency"]} {learned.efficiency * 100:.1f} %',
                  f'{t["temp"]} {learned.temp_coeff * 100:.2f} %/K ({t.get(learned.temp_source, learned.temp_source)})',
                  f'{t["coverage"]} {learned.coverage * 100:.0f} %']
+        if learned.direction:
+            parts.append(f'{t["direction"]} {min(learned.direction.values()):.2f}–{max(learned.direction.values()):.2f}')
         if learned.agreement is not None:
             parts.append(f'{t["agreement"]} {learned.agreement:.2f}')
         figures = " · ".join(parts)

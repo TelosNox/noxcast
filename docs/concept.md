@@ -18,6 +18,7 @@ The forecast is built from four independently learned parts:
 |---|---|---|
 | Geometry and efficiency per array | clear-sky hours | almost never (soiling, ageing) |
 | Shading map (sun azimuth × sun elevation) | clear-sky hours, only where direct light is geometrically possible | rarely (tree, new building) |
+| Direction factor (non-shade effects on beam) | clear-sky hours at unshaded positions | rarely |
 | Diffuse factor (obstructed sky) | overcast days | rarely |
 | Weather forecast correction and uncertainty | all hours, forecast vs. actual | continuously |
 
@@ -107,6 +108,29 @@ A shadow can only remove direct light that would otherwise reach the module. Whe
 behind the module plane, physics already expects zero direct light and the shading is both
 undetectable and irrelevant. The shading map is therefore learned and applied only where the
 expected beam irradiance is significant.
+
+### Shade and other effects are kept apart
+
+A real obstacle has a shape: a building or the terrain shades low sun, an overhang high sun, and
+the edge moves smoothly across the sky from day to day. Temperature, haze and model errors lower
+values without such a shape. The shading map therefore follows physical rules after learning:
+
+- Per azimuth the transmission rises with elevation to a free band and may fall again above it
+  (overhang); dips in between are raised, a clear core (below 0.7) is never changed.
+- Values from 0.9 count as free (dead band).
+- Values between 0.7 and 0.9 are shade only within two cells of a core, in any direction: side
+  walls give edges across azimuth.
+
+What remains at unshaded positions on clear hours goes into a separate, coarse direction factor on
+the beam part (20° × 15° bins, median, 0.8–1.2). It may exceed 1, e.g. light reflected by a wall
+at low sun, and covers geometry and model errors. The map shows shade only; the direction factor
+is reported as a key figure.
+
+Two modules of the same array that deliver equally at a sun position rule out partial shade
+there; diverging modules confirm it. The roof analysis showed exactly that: the wall in the east
+shades one module more than the other, while the reduced output at high south-west sun was equal
+on both modules and is therefore no shade. Using per-module sensors as shade evidence is a later
+step.
 
 ## Requirements
 

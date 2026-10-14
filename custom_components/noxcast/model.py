@@ -1,6 +1,6 @@
 """Learning and forecasting for one PV array (pure Python, no Home Assistant imports).
 
-Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun_azimuth, sun_elevation) + diffuse_poa) / 1000
+Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun) + diffuse_poa) / 1000
 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
@@ -13,7 +13,10 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun_azimuth, 
 - T: beam transmission (1 = unshaded) per sun-position cell, learned from hours where direct
   light is geometrically possible. The 90th percentile per cell represents clear conditions;
   clouds and occasional curtailment fall below it. Optionally, satellite irradiance pre-selects
-  clear hours.
+  clear hours. The map holds shade only: per azimuth it rises with elevation to a free band and may
+  fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
+- D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
+  positions on clear hours: reflections, geometry and model errors that are not shade.
 """
 from __future__ import annotations
 
@@ -43,6 +46,13 @@ FALLBACK_AIR_TEMP = 15.0         # when a forecast has no temperature
 CLEAR_KT = 0.8                   # satellite clearness index for a clear hour
 MIN_CLEAR_COVERAGE = 0.3         # use the satellite filter only if it covers this share of samples
 MIN_UNSHADED_HOURS = 20          # clear hours at unshaded positions needed for the efficiency median
+SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
+SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
+SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a core within this many cells
+DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
+DIRECTION_EL_STEP = 15.0
+DIRECTION_MIN_SAMPLES = 8
+DIRECTION_LIMITS = (0.8, 1.2)
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,7 @@ class LearnedArray:
     temp_learned: bool = False
     temp_source: str = "default"                               # datasheet | learned | default | none
     cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
+    direction: dict[str, float] = field(default_factory=dict)  # coarse "az_idx,el_idx" -> beam factor (non-shade)
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
     clear_filter: bool = False                                 # satellite pre-filter was applied
@@ -301,9 +312,26 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
             cells = cell_values(observe(rows, scaled=False), 0.9)
         cells.update(cell_values(observe(basis, scaled=True), 0.5))
 
+    cells = shape_cells(cells)
+    direction: dict[str, float] = {}
+    if clear_filter:
+        # what remains at unshaded positions on clear hours is not shade: reflections, geometry and
+        # model errors, in both directions; kept apart from the shading map, smooth and coarse
+        probe = LearnedArray(cells=cells)
+        obs: dict[tuple[int, int], list[float]] = {}
+        for r in basis:
+            t, p, beam, diff, az, el = r[:6]
+            k = scale(r)
+            beam_w = geo.peak_w * beam / 1000 * k
+            if beam_w <= MIN_BEAM_W or transmission(probe, az, el) < 0.999:
+                continue
+            tr = (p / (efficiency * f_temp(r)) - geo.peak_w * diff / 1000 * k) / beam_w
+            obs.setdefault((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), []).append(tr)
+        direction = {_key(ai, ei): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
+                     for (ai, ei), v in obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
-                           cells=cells, samples=len(rows), clear_filter=clear_filter,
+                           cells=cells, direction=direction, samples=len(rows), clear_filter=clear_filter,
                            first_sample=rows[0][0], learned_at=now)
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
@@ -323,6 +351,69 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     learned.coverage = round(len(reachable & {tuple(map(int, k.split(","))) for k in cells}) / len(reachable), 3) \
         if reachable else 0.0
     return learned
+
+
+def _isotonic(values: list[float], increasing: bool = True) -> list[float]:
+    """Least-squares monotone fit (pool adjacent violators)."""
+    sign = 1 if increasing else -1
+    blocks: list[list[float]] = []                       # [mean, count]
+    for v in values:
+        blocks.append([sign * v, 1])
+        while len(blocks) > 1 and blocks[-2][0] > blocks[-1][0]:
+            m2, c2 = blocks.pop()
+            m1, c1 = blocks.pop()
+            blocks.append([(m1 * c1 + m2 * c2) / (c1 + c2), c1 + c2])
+    return [sign * m for m, c in blocks for _ in range(int(c))]
+
+
+def _rise_fall(values: list[float]) -> list[float]:
+    """Best fit that rises to a free band and may fall again above it."""
+    best: tuple[float, list[float]] | None = None
+    for k in range(len(values)):
+        up = _isotonic(values[:k + 1], True)
+        down = _isotonic(values[k:], False)
+        fit = up + down[1:]
+        fit[k] = max(up[-1], down[0])
+        sse = sum((f - v) ** 2 for f, v in zip(fit, values))
+        if best is None or sse < best[0]:
+            best = (sse, fit)
+    return best[1] if best else []
+
+
+def shape_cells(cells: dict[str, float]) -> dict[str, float]:
+    """Physical shape rules for a learned shading map.
+
+    Obstacles on the ground shade low sun, overhangs shade high sun: per azimuth column the
+    transmission rises with elevation to a free band and may fall again above it, never up and down
+    in between. Dips in such a column are raised, a clear shadow core is never changed. Values from
+    SHADE_FREE count as free (temperature, haze and model errors); values between SHADE_CORE and
+    SHADE_FREE are shade only next to a core, in any direction, since side walls give edges across
+    azimuth. A core without any shaded neighbour is noise.
+    """
+    columns: dict[int, list[tuple[int, float]]] = {}
+    for key, v in cells.items():
+        ai, ei = map(int, key.split(","))
+        columns.setdefault(ai, []).append((ei, v))
+    raised: dict[tuple[int, int], float] = {}
+    for ai, items in columns.items():
+        items.sort()
+        fit = _rise_fall([v for _, v in items])
+        for (ei, v), f in zip(items, fit):
+            raised[(ai, ei)] = v if v < SHADE_CORE else max(v, f)
+
+    def near(ai: int, ei: int, radius: int) -> list[float]:
+        return [raised[n] for x in range(-radius, radius + 1) for y in range(-radius, radius + 1)
+                if (x, y) != (0, 0) and (n := ((ai + x) % 36, ei + y)) in raised]
+
+    out = {}
+    for (ai, ei), v in raised.items():
+        if v >= SHADE_FREE:
+            v = 1.0
+        elif v >= SHADE_CORE:
+            if not any(n < SHADE_CORE for n in near(ai, ei, SHADE_NEAR_CELLS)):
+                v = 1.0
+        out[_key(ai, ei)] = round(v, 3)
+    return out
 
 
 def reachable_cells(site: Site, geo: ArrayGeometry, year_start: float = 1767225600.0) -> set[tuple[int, int]]:
@@ -359,6 +450,21 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
     return sum(near) / len(near) if near else 1.0
 
 
+def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:
+    """Bilinear between coarse bin centres; bins without data count as 1."""
+    if not learned.direction:
+        return 1.0
+    fa = azimuth / DIRECTION_AZ_STEP - 0.5
+    fe = elevation / DIRECTION_EL_STEP - 0.5
+    a0, e0 = math.floor(fa), math.floor(fe)
+    da, de = fa - a0, fe - e0
+    value = 0.0
+    for ai, wa in ((a0, 1 - da), (a0 + 1, da)):
+        for ei, we in ((e0, 1 - de), (e0 + 1, de)):
+            value += wa * we * learned.direction.get(_key(ai % 18, ei), 1.0)
+    return value
+
+
 def clearsky_weather(site: Site, start: float, temp: float | None = None) -> WeatherHour:
     """Hourly mean clear-sky irradiance as a weather hour (reference for clearness)."""
     ghi = dni = dhi = 0.0
@@ -386,7 +492,8 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
             else:
                 dni, dhi = wh.dni, wh.dhi
             beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra)
-            poa = beam * transmission(learned, sun.azimuth, sun.elevation) + diff
+            poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
+                learned, sun.azimuth, sun.elevation) + diff
             total += geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa) * poa / 1000
         out[wh.start] = total / SUBSTEPS
     return out

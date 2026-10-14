@@ -141,3 +141,45 @@ def test_implausible_learned_coefficient_is_rejected():
     rows = [(t_cell, 0.9 + 0.001 * t_cell, 1.0) for t_cell in range(0, 60) for _ in range(20)]   # rises with heat
     coeff, learned = model._learn_temp_coeff(rows)
     assert coeff == model.DEFAULT_TEMP_COEFF and not learned
+
+
+def _column(ai, values, start=0):
+    return {f"{ai},{start + i}": v for i, v in enumerate(values)}
+
+
+def test_shape_raises_dips_and_keeps_cores():
+    cells = _column(18, [0.2, 0.5, 1.0, 0.85, 1.0, 1.0])          # dip above the free band start
+    out = model.shape_cells(cells)
+    assert out["18,0"] == 0.2 and out["18,1"] == 0.5
+    assert out["18,3"] == 1.0
+
+
+def test_shape_dead_band_and_edges():
+    cells = {**_column(10, [0.3, 0.8, 0.95]), **_column(20, [1.0, 0.8, 1.0], start=5)}
+    out = model.shape_cells(cells)
+    assert out["10,1"] == 0.8                                       # transition next to a core
+    assert out["10,2"] == 1.0                                       # dead band
+    assert out["20,6"] == 1.0                                       # isolated 0.8: temperature, haze
+
+
+def test_shape_side_edge_counts():
+    # a wall to the side: shade changes across azimuth, not elevation
+    cells = {"12,5": 0.3, "13,5": 0.8, "14,5": 1.0, "12,6": 0.35, "13,6": 0.82, "14,6": 1.0}
+    out = model.shape_cells(cells)
+    assert out["13,5"] == 0.8 and out["13,6"] == 0.82
+
+
+def test_shape_overhang_from_above():
+    out = model.shape_cells(_column(22, [1.0, 1.0, 1.0, 0.8, 0.4]))
+    assert out["22,4"] == 0.4 and out["22,3"] == 0.8 and out["22,0"] == 1.0
+
+
+def test_direction_factor_applies_to_beam_and_may_exceed_one():
+    learned = model.LearnedArray(efficiency=0.9, temp_coeff=0.0)
+    boosted = model.LearnedArray(efficiency=0.9, temp_coeff=0.0,
+                                 direction={f"{a},{e}": 1.1 for a in range(18) for e in range(6)})
+    hour = model.WeatherHour(start=1781258400.0, ghi=800.0)        # June noon, clear
+    base = model.forecast(SITE, GEO, learned, [hour])[hour.start]
+    more = model.forecast(SITE, GEO, boosted, [hour])[hour.start]
+    assert 1.03 < more / base < 1.1                                  # beam only, diffuse unchanged
+    assert model.direction_factor(model.LearnedArray(), 180, 40) == 1.0

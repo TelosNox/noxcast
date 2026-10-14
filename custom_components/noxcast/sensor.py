@@ -173,7 +173,9 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
         first = dt_util.utc_from_timestamp(learned.first_sample).isoformat() if learned.first_sample else None
         return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells),
                 "temperature_learned": learned.temp_learned,
-                "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter}
+                "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter,
+                "direction_factor": [min(learned.direction.values()), max(learned.direction.values())]
+                if learned.direction else None}
 
 
 class ShadeTodaySensor(NoxcastEntity, SensorEntity):

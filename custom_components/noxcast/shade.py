@@ -12,7 +12,7 @@ from xml.sax.saxutils import escape
 
 from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray
 from .solar import Site, angle_of_incidence, sun_position
-from .visual import display_value, transmission_color
+from .visual import DARK_STYLE, display_value, transmission_color
 
 STEP_MIN = 10
 SHADED_BELOW = 0.8               # transmission below this counts as shaded
@@ -107,7 +107,7 @@ def render_day(steps: list[Step], title: str, to_local, now: float | None = None
     height = BAR_Y + BAR_H + 66
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {height}" width="{WIDTH}" '
            f'height="{height}" font-family="sans-serif" font-size="12">',
-           f'<rect width="{WIDTH}" height="{height}" fill="#ffffff"/>',
+           DARK_STYLE, f'<rect class="bg" width="{WIDTH}" height="{height}" fill="#ffffff"/>',
            f'<text x="{LEFT}" y="18" font-size="15" font-weight="bold">{escape(title)}</text>']
     if not steps:
         out.append("</svg>")
@@ -122,12 +122,12 @@ def render_day(steps: list[Step], title: str, to_local, now: float | None = None
 
     for s in steps:
         if s.state == BEHIND:
-            fill, tip = "#efefef", t["behind"]
+            fill, tip, cls = "#efefef", t["behind"], ' class="behind"'
         elif s.state == UNKNOWN:
-            fill, tip = "#c8c8c8", t["unknown"]
+            fill, tip, cls = "#c8c8c8", t["unknown"], ' class="nodata"'
         else:
-            fill, tip = transmission_color(s.transmission), f'{s.transmission * 100:.0f} % {t["direct"]}'
-        out.append(f'<rect x="{x(s.start):.1f}" y="{BAR_Y}" width="{x(s.end) - x(s.start) + 0.3:.1f}" '
+            fill, tip, cls = transmission_color(s.transmission), f'{s.transmission * 100:.0f} % {t["direct"]}', ""
+        out.append(f'<rect{cls} x="{x(s.start):.1f}" y="{BAR_Y}" width="{x(s.end) - x(s.start) + 0.3:.1f}" '
                    f'height="{BAR_H}" fill="{fill}"><title>{hm(s.start)}–{hm(s.end)}: {escape(tip)}</title></rect>')
 
     # full hours
@@ -135,16 +135,16 @@ def render_day(steps: list[Step], title: str, to_local, now: float | None = None
     hour = first.timestamp() + 3600
     while hour < t1:
         xx = x(hour)
-        out.append(f'<line x1="{xx:.1f}" y1="{BAR_Y + BAR_H}" x2="{xx:.1f}" y2="{BAR_Y + BAR_H + 5}" stroke="#666666"/>')
-        out.append(f'<text x="{xx:.1f}" y="{BAR_Y + BAR_H + 18}" text-anchor="middle" fill="#444444">'
+        out.append(f'<line x1="{xx:.1f}" y1="{BAR_Y + BAR_H}" x2="{xx:.1f}" y2="{BAR_Y + BAR_H + 5}" class="tick" stroke="#666666"/>')
+        out.append(f'<text x="{xx:.1f}" y="{BAR_Y + BAR_H + 18}" text-anchor="middle" class="muted" fill="#444444">'
                    f'{to_local(hour).hour}</text>')
         hour += 3600
-    out.append(f'<text x="{LEFT}" y="{BAR_Y - 6}" fill="#444444">{hm(t0)}</text>')
-    out.append(f'<text x="{WIDTH - RIGHT}" y="{BAR_Y - 6}" text-anchor="end" fill="#444444">{hm(t1)}</text>')
+    out.append(f'<text x="{LEFT}" y="{BAR_Y - 6}" class="muted" fill="#444444">{hm(t0)}</text>')
+    out.append(f'<text x="{WIDTH - RIGHT}" y="{BAR_Y - 6}" text-anchor="end" class="muted" fill="#444444">{hm(t1)}</text>')
 
     if now is not None and t0 <= now <= t1:
         xx = x(now)
-        out.append(f'<line x1="{xx:.1f}" y1="{BAR_Y - 4}" x2="{xx:.1f}" y2="{BAR_Y + BAR_H + 4}" stroke="#000000" '
+        out.append(f'<line x1="{xx:.1f}" y1="{BAR_Y - 4}" x2="{xx:.1f}" y2="{BAR_Y + BAR_H + 4}" class="ink" stroke="#000000" '
                    f'stroke-width="2"/>')
         out.append(f'<text x="{xx:.1f}" y="{BAR_Y - 6}" text-anchor="middle">{t["now"]}</text>')
 
@@ -152,6 +152,6 @@ def render_day(steps: list[Step], title: str, to_local, now: float | None = None
     summary = " · ".join(f'{t["approx"]} {hm(p["start"])}–{hm(p["end"])} ({p["min_transmission"] * 100:.0f} % {t["direct"]})'
                          for p in periods) or t["none"]
     out.append(f'<text x="{LEFT}" y="{BAR_Y + BAR_H + 40}">{escape(summary)}</text>')
-    out.append(f'<text x="{LEFT}" y="{BAR_Y + BAR_H + 58}" fill="#666666" font-size="11">{escape(t["legend"])}</text>')
+    out.append(f'<text x="{LEFT}" y="{BAR_Y + BAR_H + 58}" class="muted" fill="#666666" font-size="11">{escape(t["legend"])}</text>')
     out.append("</svg>")
     return "\n".join(out)

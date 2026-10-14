@@ -30,6 +30,14 @@ COMPASS = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 
 COMPASS_DE = {"NE": "NO", "E": "O", "SE": "SO"}
 
 
+# dark variant, chosen by the viewer's light/dark setting (also for SVGs shown as <img>)
+DARK_STYLE = ("<style>@media (prefers-color-scheme: dark){svg{fill:#e6e6e6}.bg{fill:#1c1c1c}.gap{stroke:#1c1c1c}"
+              ".nodata{fill:#555555}.behind{fill:#2c2c2c}.grid{stroke:#ffffff26}.muted{fill:#a8a8a8}"
+              ".tick{stroke:#a8a8a8}.ink{stroke:#ffffff}polyline.p-equinox{stroke:#b0b0b0}text.p-equinox{fill:#b0b0b0}"
+              "polyline.p-winter{stroke:#6aa6ff}text.p-winter{fill:#6aa6ff}polyline.p-today{stroke:#ffffff}"
+              "text.p-today{fill:#ffffff}line.modules{stroke:#c39cf0}text.modules,circle.modules{fill:#c39cf0}}</style>")
+
+
 def transmission_color(value: float) -> str:
     """0 = red (shaded), 0.5 = yellow, 1 = green (free)."""
     v = min(max(value, 0.0), 1.0)
@@ -97,7 +105,7 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
 
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}" '
            'font-family="sans-serif" font-size="12">',
-           f'<rect width="{WIDTH}" height="{HEIGHT}" fill="#ffffff"/>',
+           DARK_STYLE, f'<rect class="bg" width="{WIDTH}" height="{HEIGHT}" fill="#ffffff"/>',
            f'<text x="{LEFT}" y="18" font-size="15" font-weight="bold">{escape(title)}</text>']
 
     # cells: learned transmission; grey where direct light is possible but nothing is learned yet;
@@ -113,26 +121,26 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         # hourly samples hit only some cells; gaps between learned cells take the neighbours' mean
         inside = sum((ai + x, ei + y) in learned_keys for x in (-1, 0, 1) for y in (-1, 0, 1)) >= 3
         if value is not None and ((ai, ei) in reachable or (ai, ei) in learned_keys or inside):
-            fill, label = transmission_color(value), f"{value:.2f}"
+            fill, label, cls = transmission_color(value), f"{value:.2f}", "gap"
         elif (ai, ei) in reachable:
-            fill, label = "#c8c8c8", t["no_data"]
+            fill, label, cls = "#c8c8c8", t["no_data"], "gap nodata"
         else:
-            fill, label = "#efefef", "–"
+            fill, label, cls = "#efefef", "–", "gap behind"
         tip = f"{az:.0f}–{az + AZ_STEP:.0f}° / {el:.0f}–{el + EL_STEP:.0f}°: {label}"
-        out.append(f'<rect x="{_x(az, rng):.1f}" y="{_y(el + EL_STEP):.1f}" width="{w:.1f}" height="{h:.1f}" '
+        out.append(f'<rect class="{cls}" x="{_x(az, rng):.1f}" y="{_y(el + EL_STEP):.1f}" width="{w:.1f}" height="{h:.1f}" '
                    f'fill="{fill}" stroke="#ffffff" stroke-width="0.5"><title>{escape(tip)}</title></rect>')
 
     # axes and grid
     for el in range(0, int(EL_MAX) + 1, 10):
         y = _y(el)
-        out.append(f'<line x1="{LEFT}" y1="{y:.1f}" x2="{WIDTH - RIGHT}" y2="{y:.1f}" stroke="#00000022"/>')
+        out.append(f'<line x1="{LEFT}" y1="{y:.1f}" x2="{WIDTH - RIGHT}" y2="{y:.1f}" class="grid" stroke="#00000022"/>')
         out.append(f'<text x="{LEFT - 6}" y="{y + 4:.1f}" text-anchor="end">{el}°</text>')
     for az in range(int(a0), int(a1) + 1, 45):
         x = _x(az, rng)
         label = COMPASS.get(az % 360 if az != 360 else 360, f"{az}°")
         if language[:2] == "de":
             label = COMPASS_DE.get(label, label)
-        out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" stroke="#00000022"/>')
+        out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" class="grid" stroke="#00000022"/>')
         out.append(f'<text x="{x:.1f}" y="{_y(0) + 16:.1f}" text-anchor="middle">{label} {az % 360}°</text>')
     out.append(f'<text x="14" y="{(TOP + _y(0)) / 2:.0f}" transform="rotate(-90 14 {(TOP + _y(0)) / 2:.0f})" '
                f'text-anchor="middle">{t["elevation"]}</text>')
@@ -146,9 +154,9 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
             continue
         color, dash = styles[name]
         d = " ".join(f"{_x(a, rng):.1f},{_y(e):.1f}" for a, e in pts)
-        out.append(f'<polyline points="{d}" fill="none" stroke="{color}" stroke-width="1.6"{dash}/>')
+        out.append(f'<polyline class="p-{name}" points="{d}" fill="none" stroke="{color}" stroke-width="1.6"{dash}/>')
         a, e = max(pts, key=lambda p: p[1])
-        out.append(f'<text x="{_x(a, rng):.1f}" y="{_y(e) - 5:.1f}" text-anchor="middle" fill="{color}">'
+        out.append(f'<text x="{_x(a, rng):.1f}" y="{_y(e) - 5:.1f}" text-anchor="middle" class="p-{name}" fill="{color}">'
                    f'{t[name]}</text>')
 
     # module orientation and the sun position perpendicular to the modules (highest irradiance)
@@ -156,12 +164,12 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         az = geo.azimuth if a0 <= geo.azimuth <= a1 else geo.azimuth + 360
         if a0 <= az <= a1:
             x = _x(az, rng)
-            out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" stroke="#7a3db8" '
+            out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" class="modules" stroke="#7a3db8" '
                        f'stroke-width="1.4" stroke-dasharray="8 3"/>')
-            out.append(f'<text x="{x + 4:.1f}" y="{TOP + 10}" fill="#7a3db8">{t["modules"]} {geo.azimuth:.0f}°</text>')
+            out.append(f'<text x="{x + 4:.1f}" y="{TOP + 10}" class="modules" fill="#7a3db8">{t["modules"]} {geo.azimuth:.0f}°</text>')
             normal_el = 90.0 - geo.tilt
             if 0 < normal_el <= EL_MAX:
-                out.append(f'<circle cx="{x:.1f}" cy="{_y(normal_el):.1f}" r="5" fill="#7a3db8" stroke="#ffffff" '
+                out.append(f'<circle cx="{x:.1f}" cy="{_y(normal_el):.1f}" r="5" class="modules" fill="#7a3db8" stroke="#ffffff" '
                            f'stroke-width="1.5"><title>{escape(t["normal"])}: {geo.azimuth:.0f}° / '
                            f'{normal_el:.0f}°</title></circle>')
 
@@ -176,6 +184,6 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
     else:
         figures = t["not_learned"]
     out.append(f'<text x="{LEFT}" y="{HEIGHT - 26}">{escape(figures)}</text>')
-    out.append(f'<text x="{LEFT}" y="{HEIGHT - 8}" fill="#666666" font-size="11">{escape(t["legend"])}</text>')
+    out.append(f'<text x="{LEFT}" y="{HEIGHT - 8}" class="muted" fill="#666666" font-size="11">{escape(t["legend"])}</text>')
     out.append("</svg>")
     return "\n".join(out)

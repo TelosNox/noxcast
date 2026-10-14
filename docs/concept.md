@@ -166,6 +166,10 @@ expected beam irradiance is significant.
   forecast error of the last 30 days.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and
   elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.
+- Shade today per array: today's sun path through the shading map in 10-minute steps. A sensor
+  reports the shaded minutes (transmission below 0.8) with the shaded periods (start, end, lowest
+  transmission) and the periods not learned yet as attributes; an image entity shows the day as a
+  timeline with the current time. Times are accurate to about a quarter of an hour (cell size).
 - Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from . import archive as fc_archive
 from .const import ATTR_SCHEMA_VERSION, COMPARE_SOURCE, DOMAIN, ERROR_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
+from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
 
 
 def _day_bounds(offset: int) -> tuple[float, float]:
@@ -85,7 +86,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
             + [LearnedSensor(coordinator, sub_id, device, "efficiency", lambda la: round(la.efficiency * 100, 1)),
                LearnedSensor(coordinator, sub_id, device, "shading_coverage", lambda la: round(la.coverage * 100, 1)),
                LearnedSensor(coordinator, sub_id, device, "temp_coeff", lambda la: round(la.temp_coeff * 100, 3), "%/K"),
-               LearnedSensor(coordinator, sub_id, device, "agreement", lambda la: la.agreement, None)],
+               LearnedSensor(coordinator, sub_id, device, "agreement", lambda la: la.agreement, None),
+               ShadeTodaySensor(coordinator, sub_id, device)],
             config_subentry_id=sub_id)
 
 
@@ -172,6 +174,48 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
         return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells),
                 "temperature_learned": learned.temp_learned,
                 "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter}
+
+
+class ShadeTodaySensor(NoxcastEntity, SensorEntity):
+    """Shaded minutes on today's sun path; shaded and not yet learned periods as attributes."""
+
+    _attr_translation_key = "shade_today"
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_icon = "mdi:weather-sunny-off"
+
+    def __init__(self, coordinator, sub_id: str, device: DeviceInfo) -> None:
+        super().__init__(coordinator, f"{sub_id}_shade_today", device)
+        self._sub_id = sub_id
+        self._key: tuple | None = None
+        self._steps: list = []
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def _profile(self) -> list:
+        learned = self.coordinator.learned.get(self._sub_id)
+        day_start = dt_util.start_of_local_day().timestamp()
+        key = (learned.learned_at if learned else None, day_start)
+        if key != self._key:
+            arr = self.coordinator.arrays[self._sub_id]
+            self._steps = day_profile(self.coordinator.site, arr.geometry, learned, day_start)
+            self._key = key
+        return self._steps
+
+    @property
+    def native_value(self) -> int:
+        return shaded_minutes(self._profile())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        def iso(ts: float) -> str:
+            return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat()
+        steps = self._profile()
+        return {"schema_version": ATTR_SCHEMA_VERSION, "step_minutes": STEP_MIN,
+                "periods": [{"start": iso(p["start"]), "end": iso(p["end"]),
+                             "min_transmission": p["min_transmission"]} for p in shade_periods(steps)],
+                "not_learned": [{"start": iso(p["start"]), "end": iso(p["end"])} for p in unknown_periods(steps)]}
 
 
 class LastLearningSensor(NoxcastEntity, SensorEntity):

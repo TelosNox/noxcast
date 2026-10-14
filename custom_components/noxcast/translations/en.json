@@ -134,11 +134,17 @@
       },
       "energy_expected_today": {
         "name": "Expected today"
+      },
+      "shade_today": {
+        "name": "Shade today"
       }
     },
     "image": {
       "shading_map": {
         "name": "Shading map"
+      },
+      "shade_today": {
+        "name": "Shade today"
       }
     }
   },

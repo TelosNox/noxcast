@@ -24,8 +24,9 @@ from .const import (
     WEATHER_SOURCE_OPEN_METEO,
 )
 from . import archive as fc_archive
-from .intraday import clearness_shift, expected_hours
-from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast, learn, usable_samples
+from .intraday import Partial, clearness_shift, expected_hours
+from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
+                    usable_samples)
 from .solar import Site
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
@@ -306,19 +307,45 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 return self._compare[1] if self._compare else []
         return self._compare[1]
 
-    async def _async_today_actual(self, day_start: float) -> dict[str, dict[float, float]]:
-        """Measured hourly mean power (W = Wh) of today per array, from long-term statistics."""
+    async def _async_today_actual(self, day_start: float, now: float
+                                  ) -> tuple[dict[str, dict[float, float]], dict[str, tuple[float, float, float]]]:
+        """Measured mean power (W = Wh) of today's hours per array, and the running hour.
+
+        Hourly statistics are compiled a few minutes after each hour; the hour just ended and the
+        running hour therefore come from 5-minute statistics. Returns (hours, running) with
+        running = (hour start, mean power of the measured part, measured share).
+        """
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
+        hour_now = now - now % 3600
         try:
             if self._factors is None:
                 self._factors = await async_power_factors(self.hass, sensor_ids)
             power = await async_hourly_statistics(self.hass, sensor_ids, dt_util.utc_from_timestamp(day_start), "mean")
+            recent = await async_hourly_statistics(self.hass, sensor_ids,
+                                                   dt_util.utc_from_timestamp(max(hour_now - 3600, day_start)),
+                                                   "mean", "5minute")
         except Exception as err:  # noqa: BLE001 – without measurements there is simply no correction
             _LOGGER.debug("Today's statistics unavailable: %s", err)
-            return {}
-        return {sub_id: _sum_series([{t: v * self._factors.get(s, 1.0) for t, v in power.get(s, {}).items()
-                                      if v is not None} for s in arr.sensors])
-                for sub_id, arr in self.arrays.items()}
+            return {}, {}
+
+        def scaled(stats: dict[str, dict[float, float | None]], sensors: list[str]) -> dict[float, float]:
+            return _sum_series([{t: v * self._factors.get(s, 1.0) for t, v in stats.get(s, {}).items()
+                                 if v is not None} for s in sensors])
+
+        hours: dict[str, dict[float, float]] = {}
+        running: dict[str, tuple[float, float, float]] = {}
+        for sub_id, arr in self.arrays.items():
+            hourly = scaled(power, arr.sensors)
+            slots = scaled(recent, arr.sensors)
+            prev = hour_now - 3600
+            done = [v for t, v in slots.items() if prev <= t < hour_now]
+            if prev >= day_start and prev not in hourly and len(done) >= RECENT_MIN_SLOTS_HOUR:
+                hourly[prev] = sum(done) / len(done)
+            part = [v for t, v in slots.items() if hour_now <= t < now]
+            if len(part) >= RECENT_MIN_SLOTS_RUNNING:
+                running[sub_id] = (hour_now, sum(part) / len(part), len(part) / 12)
+            hours[sub_id] = hourly
+        return hours, running
 
     async def _async_update_data(self) -> NoxcastData:
         try:
@@ -358,8 +385,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self._morning = {sid: {t: v for t, v in h.items() if t < day_end} for sid, h in result.arrays.items()}
         result.morning_fixed = self._morning_fixed
 
-        actual = await self._async_today_actual(day_start)
         now = dt_util.utcnow().timestamp()
+        actual, running = await self._async_today_actual(day_start, now)
         temps = {w.start: w.temp for w in weather}
         clear_weather = [clearsky_weather(self.site, t, temps.get(t))
                          for t in sorted(result.forecast.get(next(iter(self.arrays), None), {})) if t < day_end]
@@ -368,7 +395,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             result.morning[sub_id] = self._morning.get(sub_id) or today
             clear = await self.hass.async_add_executor_job(
                 forecast, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), clear_weather)
-            shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w)
+            partial = None
+            if sub_id in running:
+                start, power, share = running[sub_id]
+                profile = await self.hass.async_add_executor_job(
+                    clearsky_profile, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), start,
+                    temps.get(start))
+                measured = profile[:round(share * len(profile))]
+                if measured and sum(profile) > 0:
+                    partial = Partial(start, power, share,
+                                      (sum(measured) / len(measured)) / (sum(profile) / len(profile)))
+            shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w, partial)
             result.correction[sub_id] = None if shift is None else round(shift, 3)
             result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), clear, now, shift)
         for series in (result.forecast, result.morning, result.expected):
@@ -390,6 +427,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """A forecast exists and is recent enough; short weather outages do not blank the sensors."""
         data = self.data
         return bool(data and data.updated and dt_util.utcnow() - data.updated < STALE_AFTER)
+
+
+RECENT_MIN_SLOTS_HOUR = 10       # 5-minute values needed to stand in for a just-ended hour
+RECENT_MIN_SLOTS_RUNNING = 3     # 5-minute values (15 minutes) before the running hour counts
 
 
 def _sum_series(series: list[dict[float, float]]) -> dict[float, float]:

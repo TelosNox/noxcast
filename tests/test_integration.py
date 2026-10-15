@@ -45,8 +45,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
     weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
 
-    async def fake_stats(_hass, ids, _start, kind):
-        return _statistics(site, 30) if kind == "mean" else {}
+    async def fake_stats(_hass, ids, _start, kind, period="hour"):
+        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
 
     for sensor in ARRAY["power_sensors"]:
         hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})

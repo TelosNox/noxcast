@@ -183,3 +183,11 @@ def test_direction_factor_applies_to_beam_and_may_exceed_one():
     more = model.forecast(SITE, GEO, boosted, [hour])[hour.start]
     assert 1.03 < more / base < 1.1                                  # beam only, diffuse unchanged
     assert model.direction_factor(model.LearnedArray(), 180, 40) == 1.0
+
+
+def test_clearsky_profile_matches_hourly_clear_sky():
+    learned = model.LearnedArray(efficiency=0.9, temp_coeff=0.0)
+    start = 1781258400.0
+    profile = model.clearsky_profile(SITE, GEO, learned, start)
+    hourly = model.forecast(SITE, GEO, learned, [model.clearsky_weather(SITE, start)])[start]
+    assert len(profile) == 12 and abs(sum(profile) / 12 / hourly - 1) < 0.02

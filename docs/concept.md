@@ -187,6 +187,10 @@ step.
   were clearer than forecast, the coming hours get fewer clouds, never more than a clear sky. An
   hour already forecast as sunny is not lifted. Half of the shift applies to the current hour,
   halving every further hour, because the weather forecast itself is updated during the day.
+  Hourly statistics are compiled a few minutes after each hour, so the hour just ended and the
+  running hour come from 5-minute statistics. The running hour counts from 15 measured minutes,
+  weighted by its measured share and compared with the clear-sky profile of the measured part;
+  a change in the weather shows within half an hour instead of after the next full hour.
 - With a weather entity as source, Open-Meteo is computed in parallel and archived, so the
   forecast error of both sources and of their mean can be compared before mixing them.
 - Energy dashboard solar forecast.

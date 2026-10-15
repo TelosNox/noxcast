@@ -37,3 +37,20 @@ def test_cloudy_hours_get_fewer_clouds_with_decay():
 def test_negative_shift_never_below_zero():
     out = intraday.expected_hours(CLOUDY, {}, CLEAR, now=10 * H, shift=-1.1)
     assert all(v >= 0 for v in out.values())
+
+
+def test_running_hour_counts_with_its_measured_share():
+    # forecast cloudy, the running hour is clear for its first half: the shift appears before the hour ends
+    partial = intraday.Partial(start=10 * H, power=800.0, share=0.5, profile=1.0)
+    shift = intraday.clearness_shift(CLOUDY, {}, CLEAR, now=10.5 * H, peak_w=1000, partial=partial)
+    assert abs(shift - 0.5) < 1e-9
+    # with a completed hour as forecast, the half hour weighs less than a full hour
+    shift = intraday.clearness_shift(CLOUDY, {9 * H: 400.0}, CLEAR, now=10.5 * H, peak_w=1000, partial=partial)
+    assert abs(shift - (0.5 * 400) / (0.5 * 800 + 0.6 * 800)) < 1e-9
+
+
+def test_partial_is_scaled_by_the_clear_sky_profile():
+    # early in a morning hour the clear sky is only 60 % of the hour mean: 240 W measured is the forecast
+    partial = intraday.Partial(start=10 * H, power=240.0, share=0.25, profile=0.6)
+    shift = intraday.clearness_shift(CLOUDY, {}, CLEAR, now=10.25 * H, peak_w=1000, partial=partial)
+    assert abs(shift) < 1e-9

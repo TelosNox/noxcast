@@ -477,6 +477,24 @@ def clearsky_weather(site: Site, start: float, temp: float | None = None) -> Wea
     return WeatherHour(start, ghi / SUBSTEPS, dni / SUBSTEPS, dhi / SUBSTEPS, temp)
 
 
+def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float, temp: float | None = None,
+                     steps: int = 12) -> list[float]:
+    """Clear-sky power (W) of one hour in equal steps, e.g. to compare a partly measured hour."""
+    dni_extra = extra_radiation(start + 1800)
+    out = []
+    for i in range(steps):
+        sun = sun_position(site, start + (i + 0.5) * 3600 / steps)
+        if sun.elevation <= 0:
+            out.append(0.0)
+            continue
+        ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
+        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+        poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
+            learned, sun.azimuth, sun.elevation) + diff
+        out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa) * poa / 1000)
+    return out
+
+
 def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> dict[float, float]:
     """Expected energy per hour (Wh), keyed by hour start (UNIX seconds)."""
     out = {}

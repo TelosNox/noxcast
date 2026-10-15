@@ -41,7 +41,7 @@ def _statistics(site: solar.Site, days: int):
     return {"sensor.pv1": series, "sensor.pv2": dict(series)}
 
 
-async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
+async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> None:
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
     weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
 
@@ -95,6 +95,13 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant) -> None:
     assert len(tomorrow) == 2                                # total + array
     assert all(float(s.state) > 1 for s in tomorrow)
     assert all(s.attributes["schema_version"] == 1 and len(s.attributes["hourly"]) == 24 for s in tomorrow)
+
+    client = await hass_ws_client(hass)                      # data for the sidebar panel
+    await client.send_json_auto_id({"type": "noxcast/learned"})
+    msg = await client.receive_json()
+    assert msg["success"]
+    arr = msg["result"]["arrays"][0]
+    assert arr["name"] == "Roof" and arr["learned"]["efficiency"] > 0.8 and "cells" in arr["learned"]
 
 
 async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> None:

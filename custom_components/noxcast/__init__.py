@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
+from .panel import async_setup_panel
 
 PLATFORMS = [Platform.IMAGE, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -50,6 +51,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(DOMAIN, SERVICE_EXCLUDE_PERIOD, exclude_period, schema=EXCLUDE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RELEARN, relearn)
+    await async_setup_panel(hass)
     return True
 
 

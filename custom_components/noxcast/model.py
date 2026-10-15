@@ -1,6 +1,6 @@
 """Learning and forecasting for one PV array (pure Python, no Home Assistant imports).
 
-Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun) + diffuse_poa) / 1000
+Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun) + diffuse_poa(S)) / 1000
 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
@@ -17,6 +17,9 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
   positions on clear hours: reflections, geometry and model errors that are not shade.
+- S: sky view, the share of the isotropic sky diffuse the plane sees (houses opposite, an overhang
+  above). Learned from overcast hours, which carry almost only diffuse light; the other parameters
+  are learned again with it, since clear hours contain diffuse light too.
 """
 from __future__ import annotations
 
@@ -53,6 +56,11 @@ DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
 DIRECTION_EL_STEP = 15.0
 DIRECTION_MIN_SAMPLES = 8
 DIRECTION_LIMITS = (0.8, 1.2)
+OVERCAST_KT = 0.4                # satellite clearness below this: almost only diffuse light
+SKY_VIEW_MIN_CLEARSKY = 100.0    # W/m² clear-sky GHI, so that overcast hours carry a usable signal
+SKY_VIEW_MIN_HOURS = 30
+SKY_VIEW_LIMITS = (0.2, 1.0)
+SKY_VIEW_ITERATIONS = 4
 
 
 @dataclass(frozen=True)
@@ -79,6 +87,7 @@ class LearnedArray:
     temp_source: str = "default"                               # datasheet | learned | default | none
     cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
     direction: dict[str, float] = field(default_factory=dict)  # coarse "az_idx,el_idx" -> beam factor (non-shade)
+    sky_view: float = 1.0                                      # share of the isotropic sky diffuse seen
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
     clear_filter: bool = False                                 # satellite pre-filter was applied
@@ -137,7 +146,8 @@ def temperature_factor(temp_coeff: float, air_temp: float | None, poa_w: float) 
     return max(1.0 + temp_coeff * (t_cell - TEMP_REF), 0.5)
 
 
-def clearsky_hour(site: Site, geo: ArrayGeometry, start: float) -> tuple[float, float, float, float, float]:
+def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
+                  sky_view: float = 1.0) -> tuple[float, float, float, float, float]:
     """Hourly means of clear-sky (beam, diffuse) on the plane, mean sun (azimuth, elevation) and GHI.
 
     The sun position is averaged over the sub-steps where the sun is up, so an hourly mean value
@@ -153,7 +163,7 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float) -> tuple[float, 
         if sun.elevation <= 0:
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, pressure, dni_extra)
-        b, d = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+        b, d = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
         beam += b
         diff += d
         ghi_sum += ghi
@@ -210,17 +220,73 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
           air_temp: dict[float, float] | None = None, satellite_ghi: dict[float, float] | None = None,
           datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS) -> LearnedArray:
-    """Learn efficiency, temperature coefficient and shading map from (hour_start, mean power W) samples.
+    """Learn efficiency, temperature coefficient, shading map and sky view from (hour_start, mean power W) samples.
 
     air_temp: air temperature (°C) at the middle of each hour.
     satellite_ghi: measured hourly mean GHI (W/m²) used to pre-select clear hours (optional).
     datasheet_temp_coeff: Pmax temperature coefficient per K; used as fixed value instead of learning it.
       Learning over cell-temperature bins also picks up irradiance-dependent model errors, so a known
       datasheet value is more robust.
+
+    The sky view needs satellite irradiance. It and the other parameters depend on each other, so
+    they are learned alternately until the sky view settles.
     """
+    args = dict(air_temp=air_temp, satellite_ghi=satellite_ghi, datasheet_temp_coeff=datasheet_temp_coeff,
+                half_life_days=half_life_days)
+    learned = _learn(site, geo, samples, now, sky_view=1.0, **args)
+    if satellite_ghi is None:
+        return learned
+    for _ in range(SKY_VIEW_ITERATIONS):
+        sky = learn_sky_view(site, geo, learned, samples, satellite_ghi, air_temp)
+        if sky is None or abs(sky - learned.sky_view) < 0.01:
+            break
+        learned = _learn(site, geo, samples, now, sky_view=sky, **args)
+    return learned
+
+
+def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
+                   satellite_ghi: dict[float, float], air_temp: dict[float, float] | None = None) -> float | None:
+    """Share of the isotropic sky diffuse the plane sees, from overcast hours (None without enough of them).
+
+    What the installation produced beyond beam and ground reflection, relative to the sky diffuse a
+    free plane would get from the measured irradiance.
+    """
+    seen = free = 0.0
+    hours = 0
+    for t, p in samples:
+        ghi = satellite_ghi.get(t)
+        cs_ghi = clearsky_hour(site, geo, t)[4]
+        if ghi is None or cs_ghi < SKY_VIEW_MIN_CLEARSKY or ghi / cs_ghi >= OVERCAST_KT:
+            continue
+        dni_extra = extra_radiation(t + 1800)
+        rest = sky = 0.0
+        for i in range(SUBSTEPS):
+            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+            if sun.elevation <= 0:
+                continue
+            dni, dhi = erbs(ghi, sun.zenith, dni_extra)
+            beam, ground = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=0.0)
+            _, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+            rest += beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
+                learned, sun.azimuth, sun.elevation) + ground
+            sky += diff - ground
+        rest, sky = rest / SUBSTEPS, sky / SUBSTEPS
+        temp = air_temp.get(t) if air_temp else None
+        f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view) if temp is not None else 1.0
+        seen += p * 1000 / (geo.peak_w * learned.efficiency * f) - rest
+        free += sky
+        hours += 1
+    if hours < SKY_VIEW_MIN_HOURS or free <= 0:
+        return None
+    return round(min(max(seen / free, SKY_VIEW_LIMITS[0]), SKY_VIEW_LIMITS[1]), 3)
+
+
+def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
+           air_temp: dict[float, float] | None, satellite_ghi: dict[float, float] | None,
+           datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float) -> LearnedArray:
     rows = []
     for t, p in samples:
-        beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t)
+        beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, sky_view)
         if el <= 0:
             continue
         age = max(now - t, 0) / 86400.0
@@ -230,7 +296,7 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
         temp = air_temp.get(t) if air_temp else None
         rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp))
     if not rows:
-        return LearnedArray(learned_at=now)
+        return LearnedArray(sky_view=sky_view, learned_at=now)
 
     # optional satellite pre-filter: only clear hours are used for efficiency and shading
     with_kt = [r for r in rows if r[8] is not None]
@@ -331,7 +397,7 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
                      for (ai, ei), v in obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
-                           cells=cells, direction=direction, samples=len(rows), clear_filter=clear_filter,
+                           cells=cells, direction=direction, sky_view=sky_view, samples=len(rows), clear_filter=clear_filter,
                            first_sample=rows[0][0], learned_at=now)
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
@@ -488,7 +554,7 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
             out.append(0.0)
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
         poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
             learned, sun.azimuth, sun.elevation) + diff
         out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa) * poa / 1000)
@@ -509,7 +575,8 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                 dni, dhi = erbs(wh.ghi, sun.zenith, dni_extra)
             else:
                 dni, dhi = wh.dni, wh.dhi
-            beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra)
+            beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra,
+                                        sky_view=learned.sky_view)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
                 learned, sun.azimuth, sun.elevation) + diff
             total += geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa) * poa / 1000

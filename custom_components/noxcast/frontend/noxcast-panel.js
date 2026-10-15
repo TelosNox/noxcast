@@ -457,7 +457,7 @@ class NoxcastPanel extends HTMLElement {
   _updateDay() {
     const arr = this._array(this._state.arrayId), root = this.shadowRoot;
     const line = root.getElementById("nx-daypath");
-    if (!arr || !line) { this._render(); return; }
+    if (!arr || !line) { this._stop(); return; }          // map not shown: nothing to move
     line.setAttribute("points", this._path(arr, this._dayStart(), this._geo(arr, 840, 400)));
     root.getElementById("nx-daylabel").textContent = this._dayLabel();
     root.getElementById("nx-daybox").innerHTML = this._dayStrip(arr);
@@ -533,7 +533,7 @@ class NoxcastPanel extends HTMLElement {
     const s = this._state, a = el.dataset.action;
     if (a === "overview") { s.view = "overview"; s.sel = null; this._stop(); }
     else if (a === "open") { s.view = "array"; s.arrayId = el.dataset.id; s.layer = el.dataset.layer || "shade"; s.mode = "map"; s.sel = null; }
-    else if (a === "mode") s.mode = el.dataset.mode;
+    else if (a === "mode") { s.mode = el.dataset.mode; if (s.mode !== "map") this._stop(); }
     else if (a === "layer") s.layer = el.dataset.layer;
     else if (a === "cell") s.sel = [Number(el.dataset.ai), Number(el.dataset.ei)];
     else if (a === "close") s.sel = null;

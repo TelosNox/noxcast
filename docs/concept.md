@@ -243,6 +243,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 - Energy dashboard solar forecast.
 - Diagnostics: shading-map coverage, last learning run, excluded hours with reason,
   forecast error of the last 30 days.
+- Sidebar panel "Noxcast" (no dashboard setup needed): what the system has learned, to check
+  whether it can be right. An overview with all arrays (shade, reflection, direction factor as
+  small maps and key figures) leads to one array: the full map over sun azimuth and elevation with
+  sun paths, a date slider that moves the sun path through the year (with the day as a timeline),
+  details per cell (values, when the sun is there) and a year grid of month × hour for those who do
+  not think in sun angles. Follows the Home Assistant theme (light and dark). Data comes from the
+  websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and
   elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.
 - Shade today per array: today's sun path through the shading map in 10-minute steps. A sensor

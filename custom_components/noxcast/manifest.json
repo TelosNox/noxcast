@@ -1,9 +1,10 @@
 {
   "domain": "noxcast",
   "name": "Noxcast",
+  "after_dependencies": ["frontend", "http", "panel_custom"],
   "codeowners": ["@TelosNox"],
   "config_flow": true,
-  "dependencies": ["recorder"],
+  "dependencies": ["recorder", "websocket_api"],
   "documentation": "https://github.com/TelosNox/noxcast",
   "integration_type": "service",
   "iot_class": "cloud_polling",

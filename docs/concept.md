@@ -19,6 +19,7 @@ The forecast is built from four independently learned parts:
 | Geometry and efficiency per array | clear-sky hours | almost never (soiling, ageing) |
 | Shading map (sun azimuth × sun elevation) | clear-sky hours, only where direct light is geometrically possible | rarely (tree, new building) |
 | Direction factor (non-shade effects on beam) | clear-sky hours at unshaded positions | rarely |
+| Reflected light (sunlit surroundings) | clear-sky hours where the module gets little beam | rarely |
 | Sky view (share of the sky diffuse the array sees) | overcast hours with satellite irradiance | rarely |
 | Weather forecast correction and uncertainty | all hours, forecast vs. actual | continuously |
 
@@ -41,6 +42,8 @@ the weather enters first and every later step works on its result:
    morning shadow costs almost nothing, on a clear day it costs everything.
 4. **Sky view:** share of the isotropic sky diffuse not obstructed by surroundings, applied to
    the sky diffuse only (ground reflection unchanged).
+   **Reflected light:** sunlit walls or roofs in front of the module add light in proportion to
+   the direct normal irradiance, learned per sun position.
 5. **Temperature:** loss from air temperature and irradiance, applied to the result.
 6. **Efficiency:** one factor for everything else (inverter, cables, tolerance, soiling).
 
@@ -123,9 +126,11 @@ values without such a shape. The shading map therefore follows physical rules af
   walls give edges across azimuth.
 
 What remains at unshaded positions on clear hours goes into a separate, coarse direction factor on
-the beam part (20° × 15° bins, median, 0.8–1.2). It may exceed 1, e.g. light reflected by a wall
-at low sun, and covers geometry and model errors. The map shows shade only; the direction factor
-is reported as a key figure.
+the beam part (20° × 15° bins, median, 0.8–1.2). It may exceed 1 and covers geometry and model
+errors. Light reflected by the surroundings is learned apart from it (see below). Both are learned
+against the measured irradiance, split into beam and diffuse exactly as in the forecast, so that
+they correct the forecast's own chain and not a clear-sky estimate. The map shows shade only; the
+direction factor is reported as a key figure.
 
 Two modules of the same array that deliver equally at a sun position rule out partial shade
 there; diverging modules confirm it. The roof analysis showed exactly that: the wall in the east
@@ -153,6 +158,26 @@ geometric estimate for the balcony gave 46–55 %. The daily error fell from 20 
 balcony and from 13 % to 7 % on the roof; overcast days had been overestimated by 65 % and 34 %.
 Partly cloudy hours now come out 7–16 % low, clear balcony days about 4 % low: one isotropic
 factor cannot fit every sky.
+
+### Reflected light
+
+Sunlit surfaces in front of the module, such as a bright wall or a glass roof, send light to it.
+Unlike shade this light does not depend on how the sun meets the module but on how strongly the
+sun lights the surface, so it is modelled as an addition proportional to the direct normal
+irradiance, per coarse sun-position bin (same bins as the direction factor). On overcast days it
+vanishes like a shadow does.
+
+Where the module gets a lot of direct light itself, "a little more beam" and "light from a wall"
+cannot be told apart in hourly data. The reflection is therefore learned only where the beam on the
+plane is below 30 % of the direct normal irradiance (grazing sun or sun behind the plane), as the
+median of what remains beyond beam and diffuse; never negative, at most 0.3. The direction factor is
+learned after it on the rest. In a setup with a lot of reflected light (a white wall opposite, a
+neighbour's glass front) this keeps the direction factor from running into its limit.
+
+On one installation the steep balcony array showed 3.5–4.6 % of the direct normal irradiance from
+south-west to west at low sun, where bright house walls opposite are lit while the module only gets
+grazing light; the roof array showed none. Together with learning against the measured irradiance
+the balcony's clear-day bias went from −4.5 % to −1.5 %.
 
 ## Requirements
 

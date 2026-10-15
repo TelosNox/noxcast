@@ -176,7 +176,8 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
                 "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter,
                 "direction_factor": [min(learned.direction.values()), max(learned.direction.values())]
                 if learned.direction else None,
-                "sky_view": learned.sky_view}
+                "sky_view": learned.sky_view,
+                "reflection_max": max(learned.reflection.values()) if learned.reflection else None}
 
 
 class ShadeTodaySensor(NoxcastEntity, SensorEntity):

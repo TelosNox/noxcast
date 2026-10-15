@@ -234,3 +234,38 @@ def test_sky_view_is_learned_from_overcast_hours():
 
 def test_sky_view_needs_satellite_data():
     assert model.learn(SITE, GEO, make_samples(60), now=START + 60 * 86400).sky_view == 1.0
+
+
+REFLECTION = 0.05
+
+
+def make_reflection_samples(days: int = 200):
+    """Clear days; a sunlit wall adds light from the west at low sun, where the module gets little beam."""
+    samples, sat = [], {}
+    for d in range(days):
+        for h in range(24):
+            t = START + 60 * 86400 + d * 86400 + h * 3600
+            dni_extra = solar.extra_radiation(t + 1800)
+            power = ghi_sum = 0.0
+            for i in range(model.SUBSTEPS):
+                sun = solar.sun_position(SITE, t + (i + 0.5) * 3600 / model.SUBSTEPS)
+                if sun.elevation <= 0:
+                    continue
+                ghi = solar.clearsky_simplified_solis(sun.elevation, SITE.pressure, dni_extra)[0]
+                dni, dhi = solar.erbs(ghi, sun.zenith, dni_extra)
+                beam, diff = solar.plane_of_array(GEO.tilt, GEO.azimuth, sun, dni, dhi, ghi, dni_extra)
+                wall = REFLECTION * dni if 230 <= sun.azimuth <= 290 and sun.elevation < 30 else 0.0
+                power += GEO.peak_w * EFF * (beam + diff + wall) / 1000
+                ghi_sum += ghi
+            samples.append((t, power / model.SUBSTEPS))
+            sat[t] = ghi_sum / model.SUBSTEPS
+    return samples, sat
+
+
+def test_reflection_is_learned_where_the_module_gets_little_beam():
+    samples, sat = make_reflection_samples()
+    learned = model.learn(SITE, GEO, samples, now=START + 260 * 86400, satellite_ghi=sat)
+    assert 0.03 < model.reflection_factor(learned, 260, 15) < 0.07
+    assert model.reflection_factor(learned, 100, 30) == 0.0
+    assert all(v >= 0 for v in learned.reflection.values())
+    assert max(learned.direction.values()) < 1.1             # the wall is not pushed into the direction factor

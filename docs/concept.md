@@ -19,7 +19,7 @@ The forecast is built from four independently learned parts:
 | Geometry and efficiency per array | clear-sky hours | almost never (soiling, ageing) |
 | Shading map (sun azimuth × sun elevation) | clear-sky hours, only where direct light is geometrically possible | rarely (tree, new building) |
 | Direction factor (non-shade effects on beam) | clear-sky hours at unshaded positions | rarely |
-| Diffuse factor (obstructed sky) | overcast days | rarely |
+| Sky view (share of the sky diffuse the array sees) | overcast hours with satellite irradiance | rarely |
 | Weather forecast correction and uncertainty | all hours, forecast vs. actual | continuously |
 
 Only the last part is "machine learning" in the narrow sense, and even there conditional
@@ -39,7 +39,8 @@ the weather enters first and every later step works on its result:
    tilt fit compensated with about 8° too steep modules on both arrays.
 3. **Shading:** learned transmission applied to the **beam part only** – on an overcast day a
    morning shadow costs almost nothing, on a clear day it costs everything.
-4. **Diffuse factor:** share of the sky not obstructed by surroundings.
+4. **Sky view:** share of the isotropic sky diffuse not obstructed by surroundings, applied to
+   the sky diffuse only (ground reflection unchanged).
 5. **Temperature:** loss from air temperature and irradiance, applied to the result.
 6. **Efficiency:** one factor for everything else (inverter, cables, tolerance, soiling).
 
@@ -86,7 +87,7 @@ Consequences:
   shading cell: clouds are already removed, so a high percentile would only pick satellite errors
   (it gave 100 % system efficiency in a first test). Cells with too few clear hours keep the
   90th percentile over all hours, so coverage does not drop.
-- **Regressions over many hours** (diffuse factor, temperature loss) may use satellite irradiance
+- **Regressions over many hours** (sky view, temperature loss) may use satellite irradiance
   directly, because hourly errors are random and average out.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
@@ -131,6 +132,27 @@ there; diverging modules confirm it. The roof analysis showed exactly that: the 
 shades one module more than the other, while the reduced output at high south-west sun was equal
 on both modules and is therefore no shade. Using per-module sensors as shade evidence is a later
 step.
+
+### Sky view
+
+Diffuse light reaches the module from the whole half-space in front of it, weighted by the cosine
+of the angle to the module normal. Everything in that half-space that hides sky costs diffuse
+light: houses opposite, an overhang or the floor above a balcony module, a neighbouring roof.
+Hiding ground costs little, since the ground reflects only about a fifth of the light. The
+shading map cannot see this, because it is learned from the beam part on clear hours.
+
+The sky view is learned from overcast hours (satellite clearness below 0.4), which carry almost
+only diffuse light: what the installation produced beyond beam and ground reflection, relative to
+the sky diffuse a free plane would receive from the measured irradiance (limits 0.2–1). Clear
+hours contain diffuse light too, so efficiency, shading map and direction factor are learned again
+with the new value until it settles. Without satellite data the sky view stays 1.
+
+On one installation the hindcast against satellite irradiance gave a sky view of 0.45 for a steep
+balcony array (houses opposite up to about 27°, a floor above) and 0.69 for a roof array; a
+geometric estimate for the balcony gave 46–55 %. The daily error fell from 20 % to 9 % on the
+balcony and from 13 % to 7 % on the roof; overcast days had been overestimated by 65 % and 34 %.
+Partly cloudy hours now come out 7–16 % low, clear balcony days about 4 % low: one isotropic
+factor cannot fit every sky.
 
 ## Requirements
 
@@ -205,7 +227,7 @@ step.
 - Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast
-  source (e.g. the diffuse factor).
+  source (e.g. the sky view).
 
 ## Architecture
 
@@ -245,27 +267,23 @@ provide uncertainty bands, 15-minute values and intraday updates from the start.
 
 ## Roadmap (agreed next steps)
 
-Done: temperature loss (learned coefficient or datasheet value, fixed heating) and the optional
-satellite filter with configurable sources.
+Done: temperature loss (learned coefficient or datasheet value, fixed heating), the optional
+satellite filter with configurable sources and the sky view per array (learned against satellite
+irradiance; whether the forecast source's overcast irradiance matches is checked with the forecast
+archive).
 
-1. **Diffuse factor per array**, learned from overcast hours: share of the modelled sky light
-   the array really receives (obstructed sky, e.g. a wall behind the modules or a balcony above).
-   A first check against satellite irradiance showed only 50–67 % of the modelled diffuse output
-   in overcast hours on one installation. Validate against the forecast source (e.g. DWD) before
-   building, because the factor must match the irradiance the forecast uses. Not direction
-   dependent: the shading map already covers direction-dependent losses.
-2. **Geometry check** as diagnostic: tilt and azimuth that fit clear unshaded hours best, with a
+1. **Geometry check** as diagnostic: tilt and azimuth that fit clear unshaded hours best, with a
    hint on clear deviations. Never applied automatically, since the shading map depends on the
    geometry. Steep arrays are sensitive to azimuth; flat ones are not, so the hint needs a
    confidence measure.
-3. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
+2. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
    fixed value to be updated by the user), assignment to the arrays it charges. An hour counts
    as possibly curtailed for those arrays when its maximum state of charge reaches the limit
    within a small tolerance. The maximum is robust against saw-tooth charging when MPPTs
    throttle in steps. A plateau-only detection is not used: a constant state of charge can also
    mean PV exactly covers the load.
-4. **Optional power limit per sensor** (e.g. 500 W per MPPT): forecast capped per sensor;
+3. **Optional power limit per sensor** (e.g. 500 W per MPPT): forecast capped per sensor;
    hours near the limit are excluded from learning.
-5. **Finer shading map from 5-minute statistics** (kept ~10 days by the recorder) for narrow,
+4. **Finer shading map from 5-minute statistics** (kept ~10 days by the recorder) for narrow,
    moving shadows such as masts or chimneys; aggregates per cell are stored because the raw
    data expires.

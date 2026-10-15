@@ -191,3 +191,46 @@ def test_clearsky_profile_matches_hourly_clear_sky():
     profile = model.clearsky_profile(SITE, GEO, learned, start)
     hourly = model.forecast(SITE, GEO, learned, [model.clearsky_weather(SITE, start)])[start]
     assert len(profile) == 12 and abs(sum(profile) / 12 / hourly - 1) < 0.02
+
+
+SKY_VIEW = 0.5
+
+
+def make_sky_view_samples(days: int = 240):
+    """Clear and overcast days for a plane that sees only half of the sky; satellite GHI as measured."""
+    rng = random.Random(3)
+    samples, sat = [], {}
+    for d in range(days):
+        cloud = 1.0 if rng.random() < 0.5 else 0.25
+        for h in range(24):
+            t = START + d * 86400 + h * 3600
+            dni_extra = solar.extra_radiation(t + 1800)
+            power = ghi_sum = 0.0
+            for i in range(model.SUBSTEPS):
+                sun = solar.sun_position(SITE, t + (i + 0.5) * 3600 / model.SUBSTEPS)
+                if sun.elevation <= 0:
+                    continue
+                ghi = solar.clearsky_simplified_solis(sun.elevation, SITE.pressure, dni_extra)[0] * cloud
+                dni, dhi = solar.erbs(ghi, sun.zenith, dni_extra)
+                beam, diff = solar.plane_of_array(GEO.tilt, GEO.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=SKY_VIEW)
+                power += GEO.peak_w * EFF * (beam + diff) / 1000
+                ghi_sum += ghi
+            samples.append((t, power / model.SUBSTEPS))
+            sat[t] = ghi_sum / model.SUBSTEPS
+    return samples, sat
+
+
+def test_sky_view_is_learned_from_overcast_hours():
+    samples, sat = make_sky_view_samples()
+    learned = model.learn(SITE, GEO, samples, now=START + 240 * 86400, satellite_ghi=sat)
+    assert abs(learned.sky_view - SKY_VIEW) < 0.08
+    assert abs(learned.efficiency - EFF) < 0.03
+    overcast = [t for t, _ in samples if sat[t] > 30 and sat[t] / max(model.clearsky_hour(SITE, GEO, t)[4], 1) < 0.4]
+    weather = [model.WeatherHour(start=t, ghi=sat[t]) for t in overcast]
+    fc = model.forecast(SITE, GEO, learned, weather)
+    actual = dict(samples)
+    assert abs(sum(fc.values()) / sum(actual[t] for t in overcast) - 1) < 0.08
+
+
+def test_sky_view_needs_satellite_data():
+    assert model.learn(SITE, GEO, make_samples(60), now=START + 60 * 86400).sky_view == 1.0

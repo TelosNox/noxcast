@@ -1,6 +1,6 @@
 """Learning and forecasting for one PV array (pure Python, no Home Assistant imports).
 
-Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun) + diffuse_poa(S)) / 1000
+Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun) + diffuse_poa(S) + R(sun) · DNI) / 1000
 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
@@ -16,7 +16,12 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   clear hours. The map holds shade only: per azimuth it rises with elevation to a free band and may
   fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
-  positions on clear hours: reflections, geometry and model errors that are not shade.
+  positions on clear hours: geometry and model errors that are not shade.
+- R: reflected light per coarse sun-position bin, relative to the direct normal irradiance: sunlit
+  walls or roofs in front of the module. It does not depend on how the sun meets the module, so
+  it is learned where the module itself gets little direct light; elsewhere it cannot be told
+  apart from D. Only additive, never negative.
+  D and R are learned against the measured irradiance split as in the forecast.
 - S: sky view, the share of the isotropic sky diffuse the plane sees (houses opposite, an overhang
   above). Learned from overcast hours, which carry almost only diffuse light; the other parameters
   are learned again with it, since clear hours contain diffuse light too.
@@ -56,6 +61,9 @@ DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
 DIRECTION_EL_STEP = 15.0
 DIRECTION_MIN_SAMPLES = 8
 DIRECTION_LIMITS = (0.8, 1.2)
+REFLECTION_MAX_BEAM_SHARE = 0.3  # learn reflection only where beam on the plane is below this share of DNI
+REFLECTION_MIN_DNI = 100.0       # W/m²
+REFLECTION_LIMIT = 0.3           # W/m² on the plane per W/m² DNI
 OVERCAST_KT = 0.4                # satellite clearness below this: almost only diffuse light
 SKY_VIEW_MIN_CLEARSKY = 100.0    # W/m² clear-sky GHI, so that overcast hours carry a usable signal
 SKY_VIEW_MIN_HOURS = 30
@@ -88,6 +96,7 @@ class LearnedArray:
     cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
     direction: dict[str, float] = field(default_factory=dict)  # coarse "az_idx,el_idx" -> beam factor (non-shade)
     sky_view: float = 1.0                                      # share of the isotropic sky diffuse seen
+    reflection: dict[str, float] = field(default_factory=dict) # coarse "az_idx,el_idx" -> plane W/m² per W/m² DNI
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
     clear_filter: bool = False                                 # satellite pre-filter was applied
@@ -268,7 +277,8 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
             beam, ground = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=0.0)
             _, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
             rest += beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
-                learned, sun.azimuth, sun.elevation) + ground
+                learned, sun.azimuth, sun.elevation) + ground + reflection_factor(
+                learned, sun.azimuth, sun.elevation) * dni
             sky += diff - ground
         rest, sky = rest / SUBSTEPS, sky / SUBSTEPS
         temp = air_temp.get(t) if air_temp else None
@@ -380,24 +390,44 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
 
     cells = shape_cells(cells)
     direction: dict[str, float] = {}
+    reflection: dict[str, float] = {}
     if clear_filter:
-        # what remains at unshaded positions on clear hours is not shade: reflections, geometry and
-        # model errors, in both directions; kept apart from the shading map, smooth and coarse
-        probe = LearnedArray(cells=cells)
-        obs: dict[tuple[int, int], list[float]] = {}
+        # what remains at unshaded positions on clear hours is not shade; kept apart from the shading
+        # map, smooth and coarse. Modelled with the measured irradiance split as in the forecast.
+        probe = LearnedArray(cells=cells, sky_view=sky_view)
+        parts = []                                       # (bin, plane-equivalent observed, beam, diffuse, dni)
         for r in basis:
-            t, p, beam, diff, az, el = r[:6]
-            k = scale(r)
-            beam_w = geo.peak_w * beam / 1000 * k
-            if beam_w <= MIN_BEAM_W or transmission(probe, az, el) < 0.999:
+            t, p, _, _, az, el = r[:6]
+            if transmission(probe, az, el) < 0.999:
                 continue
-            tr = (p / (efficiency * f_temp(r)) - geo.peak_w * diff / 1000 * k) / beam_w
-            obs.setdefault((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), []).append(tr)
-        direction = {_key(ai, ei): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
-                     for (ai, ei), v in obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
+            beam, diff, dni = _measured_parts(site, geo, probe, t, satellite_ghi[t])
+            if dni < REFLECTION_MIN_DNI:
+                continue
+            f = temperature_factor(temp_coeff, r[9], beam + diff) if r[9] is not None else 1.0
+            observed = p * 1000 / (geo.peak_w * efficiency * f)
+            parts.append(((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), observed, beam, diff, dni))
+
+        # reflected light where the module itself gets little direct light: sunlit walls in front
+        refl_obs: dict[tuple[int, int], list[float]] = {}
+        for b, observed, beam, diff, dni in parts:
+            if beam < REFLECTION_MAX_BEAM_SHARE * dni:
+                refl_obs.setdefault(b, []).append((observed - beam - diff) / dni)
+        refl_bins = {b: min(max(_quantile(v, 0.5), 0.0), REFLECTION_LIMIT) for b, v in refl_obs.items()
+                     if len(v) >= DIRECTION_MIN_SAMPLES}
+        reflection = {_key(*b): round(v, 3) for b, v in refl_bins.items() if v >= 0.005}
+
+        # the rest on the beam part, in both directions: geometry and model errors
+        dir_obs: dict[tuple[int, int], list[float]] = {}
+        for b, observed, beam, diff, dni in parts:
+            if geo.peak_w * beam / 1000 <= MIN_BEAM_W:
+                continue
+            dir_obs.setdefault(b, []).append((observed - diff - refl_bins.get(b, 0.0) * dni) / beam)
+        direction = {_key(*b): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
+                     for b, v in dir_obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
-                           cells=cells, direction=direction, sky_view=sky_view, samples=len(rows), clear_filter=clear_filter,
+                           cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
+                           samples=len(rows), clear_filter=clear_filter,
                            first_sample=rows[0][0], learned_at=now)
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
@@ -417,6 +447,23 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     learned.coverage = round(len(reachable & {tuple(map(int, k.split(","))) for k in cells}) / len(reachable), 3) \
         if reachable else 0.0
     return learned
+
+
+def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float,
+                    ghi: float) -> tuple[float, float, float]:
+    """Hourly means of shaded beam and diffuse on the plane and of DNI, from measured GHI (Erbs split)."""
+    dni_extra = extra_radiation(start + 1800)
+    beam_sum = diff_sum = dni_sum = 0.0
+    for i in range(SUBSTEPS):
+        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+        if sun.elevation <= 0 or ghi <= 0:
+            continue
+        dni, dhi = erbs(ghi, sun.zenith, dni_extra)
+        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
+        beam_sum += beam * transmission(learned, sun.azimuth, sun.elevation)
+        diff_sum += diff
+        dni_sum += dni
+    return beam_sum / SUBSTEPS, diff_sum / SUBSTEPS, dni_sum / SUBSTEPS
 
 
 def _isotonic(values: list[float], increasing: bool = True) -> list[float]:
@@ -518,8 +565,17 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
 
 def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:
     """Bilinear between coarse bin centres; bins without data count as 1."""
-    if not learned.direction:
-        return 1.0
+    return _coarse(learned.direction, azimuth, elevation, 1.0)
+
+
+def reflection_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:
+    """Reflected light on the plane per W/m² DNI; bilinear between coarse bin centres, missing bins 0."""
+    return _coarse(learned.reflection, azimuth, elevation, 0.0)
+
+
+def _coarse(values: dict[str, float], azimuth: float, elevation: float, default: float) -> float:
+    if not values:
+        return default
     fa = azimuth / DIRECTION_AZ_STEP - 0.5
     fe = elevation / DIRECTION_EL_STEP - 0.5
     a0, e0 = math.floor(fa), math.floor(fe)
@@ -527,7 +583,7 @@ def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) ->
     value = 0.0
     for ai, wa in ((a0, 1 - da), (a0 + 1, da)):
         for ei, we in ((e0, 1 - de), (e0 + 1, de)):
-            value += wa * we * learned.direction.get(_key(ai % 18, ei), 1.0)
+            value += wa * we * values.get(_key(ai % 18, ei), default)
     return value
 
 
@@ -556,7 +612,7 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
         beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
         poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
-            learned, sun.azimuth, sun.elevation) + diff
+            learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
         out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa) * poa / 1000)
     return out
 
@@ -578,7 +634,7 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
             beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra,
                                         sky_view=learned.sky_view)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
-                learned, sun.azimuth, sun.elevation) + diff
+                learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
             total += geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa) * poa / 1000
         out[wh.start] = total / SUBSTEPS
     return out

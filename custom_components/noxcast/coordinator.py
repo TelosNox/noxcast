@@ -24,6 +24,7 @@ from .const import (
     WEATHER_SOURCE_OPEN_METEO,
 )
 from . import archive as fc_archive
+from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours
 from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
                     usable_samples)
@@ -54,6 +55,7 @@ class NoxcastData:
     morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
     expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
     correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
+    effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
     updated: datetime | None = None
 
@@ -408,6 +410,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w, partial)
             result.correction[sub_id] = None if shift is None else round(shift, 3)
             result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), clear, now, shift)
+            result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, today, result.expected[sub_id],
+                                                               day_start, day_end)
         for series in (result.forecast, result.morning, result.expected):
             total: dict[float, float] = {}
             for hours in list(series.values()):
@@ -421,6 +425,24 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._archive_forecast(weather, result, alt)
         self._store.async_delay_save(self._store_data, 60)
         return result
+
+    async def _async_effects(self, sub_id: str, arr: ArrayConfig, weather: list[WeatherHour],
+                             today: dict[float, float], expected: dict[float, float], day_start: float,
+                             day_end: float) -> dict:
+        """Shade loss and reflection gain of today, scaled like the expected output, with significant periods."""
+        learned = self.learned.get(sub_id)
+        if learned is None:
+            return {"loss": {}, "gain": {}, "periods": []}
+        hours = [w for w in weather if day_start <= w.start < day_end]
+        loss, gain = await self.hass.async_add_executor_job(hourly_effects, self.site, arr.geometry, learned, hours)
+
+        def scaled(series: dict[float, float]) -> dict[float, float]:
+            return {t: v * (expected.get(t, 0.0) / today[t] if today.get(t) else 1.0) for t, v in series.items()}
+
+        loss, gain = scaled(loss), scaled(gain)
+        periods = await self.hass.async_add_executor_job(
+            significant_periods, self.site, arr.geometry, learned, day_start, loss, gain, sum(expected.values()))
+        return {"loss": loss, "gain": gain, "periods": periods}
 
     @property
     def forecast_available(self) -> bool:

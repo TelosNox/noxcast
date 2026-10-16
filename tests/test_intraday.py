@@ -54,3 +54,12 @@ def test_partial_is_scaled_by_the_clear_sky_profile():
     partial = intraday.Partial(start=10 * H, power=240.0, share=0.25, profile=0.6)
     shift = intraday.clearness_shift(CLOUDY, {}, CLEAR, now=10.25 * H, peak_w=1000, partial=partial)
     assert abs(shift) < 1e-9
+
+
+def test_held_forecast_keeps_hours_that_have_begun():
+    day = 1_000_000.0
+    first = intraday.held_forecast({}, {day + 3600 * h: 100.0 for h in range(8, 12)}, day + 3600 * 7, day)
+    later = intraday.held_forecast(first, {day + 3600 * h: 60.0 for h in range(10, 12)}, day + 3600 * 9.5, day)
+    assert later[day + 3600 * 9] == 100.0            # running hour keeps its value
+    assert later[day + 3600 * 10] == 60.0            # hours ahead follow the latest forecast
+    assert intraday.held_forecast(later, {}, day + 86400 + 3600, day + 86400) == {}   # a new day starts empty

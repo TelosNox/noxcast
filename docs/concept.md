@@ -250,16 +250,27 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   details per cell (values, when the sun is there) and a year grid of month × hour for those who do
   not think in sun angles. Follows the Home Assistant theme (light and dark). Data comes from the
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
-- Day card `custom:noxcast-card` (registered automatically, appears in the card picker): the power
-  flow now (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the
-  home), today's expected yield stacked per array with the summed shade loss on top, house load
-  (measured, then the mean of the last 7 days), battery level (measured, then simulated with the
-  configured capacities, "full" marker) and the surplus left unused once the batteries are full.
-  One lane per array marks today's shade periods (always; what they cost shows in the band) and
-  reflection where it adds max(15 Wh, min(50 Wh, 10 % of the day)) or more. An effect is the
-  forecast with vs without the learned part under today's weather. Curves are drawn as monotone
-  cubics through the hour centres (smooth, no overshoot). Data from the websocket command `noxcast/today`, live values from the
-  configured entities.
+- Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
+  (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home) and the
+  calendar day from sunrise to sunset on one time axis:
+  - PV with a kW grid: the expectation pale, the part already past (= actual) solid, the forecast
+    as a dashed contour. Hours ahead follow the latest forecast; an hour keeps its value once it has
+    begun, so a deviation stays visible instead of being replaced by the actual value. The shade
+    loss is hatched below the potential without shade.
+  - House load per hour (measured, then the mean of the last 7 days), capped at the PV scale;
+    higher peaks are marked with their value. Blue where the load is above the generation.
+  - One lane per array: shade periods always, reflection where it adds max(15 Wh, min(50 Wh,
+    10 % of the day)) or more. An effect is the forecast with vs without the learned part under
+    today's weather.
+  - Battery level (measured, then simulated between the configured min/max limits): red where it
+    sits at the upper limit with surplus (lost), orange within 5 % of it. The night is not drawn
+    on the time axis; end caps show the level at the start of charging today and the expected
+    level at the start of charging tomorrow (or when it runs empty).
+  - A planning line (surplus until, battery full, unused kWh; in the evening whether the battery
+    lasts until tomorrow) and the three numbers actual, expected and morning forecast; after
+    sunset actual against the morning forecast. The card reloads every 5 minutes, when it becomes
+    visible again and after midnight.
+  Data from the websocket command `noxcast/today`, live values from the configured entities.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and
   elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.
 - Shade today per array: today's sun path through the shading map in 10-minute steps. A sensor

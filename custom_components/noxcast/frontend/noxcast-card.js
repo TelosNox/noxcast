@@ -285,9 +285,11 @@ class NoxcastCard extends HTMLElement {
     const load = m.load;
     const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 116;
     const x = (ts) => X0 + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (X1 - X0);
-    const top = Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
+    // fixed scale: installed peak power + 10 %, so a weak day shows as a low curve
+    const peakW = arrays.reduce((a, arr) => a + (arr.peak_w || 0), 0);
+    const top = peakW > 0 ? peakW * 1.1 : Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
     const step = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find((s) => top / s <= 4) || 20000;
-    const ymax = Math.ceil(top / step) * step;
+    const ymax = peakW > 0 ? top : Math.ceil(top / step) * step;
     const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 12);
     const pts = (f) => [[x(t0), y(0)], ...dayH.map((h) => [x(h + H / 2), y(f(h))]), [x(t1), y(0)]];
     const fill = (p) => `${line(p)} L${p[p.length - 1][0].toFixed(1)},${(Hp - 2).toFixed(1)} L${p[0][0].toFixed(1)},${(Hp - 2).toFixed(1)} Z`;
@@ -301,7 +303,14 @@ class NoxcastCard extends HTMLElement {
     const lv = (h) => load(h) ?? 0;
     const grid = []; for (let v = step; v <= ymax + 1e-9; v += step) grid.push(v);
     const kw = (v) => (v / 1000).toLocaleString(this._lang, { maximumFractionDigits: 2 });
-    const spikes = hasLoad ? dayH.filter((h) => (m.loadMax(h) ?? lv(h)) > ymax) : [];
+    // load above the scale: one marker per run of hours, at its highest value
+    const spikes = [];
+    for (const h of hasLoad ? dayH : []) {
+      const v = m.loadMax(h) ?? lv(h);
+      if (v <= ymax) continue;
+      const last = spikes[spikes.length - 1];
+      if (last && h - last.end <= H) { last.end = h; if (v > last.v) Object.assign(last, { h, v }); } else spikes.push({ h, end: h, v });
+    }
     let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>
         <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}</text>`).join("")}
       <text x="${X1 + 3}" y="${(y(ymax) - 9).toFixed(1)}" class="ax">kW</text>
@@ -312,8 +321,8 @@ class NoxcastCard extends HTMLElement {
       ${hasLoad ? `<path d="${between((h) => Math.max(lv(h), exp(h)), exp)}" fill="${P.grid}" fill-opacity=".3"></path>` : ""}
       <path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
       ${hasLoad ? `<path d="${line(dayH.map((h) => [x(h + H / 2), y(lv(h))]))}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
-      ${spikes.map((h) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
-        <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(m.loadMax(h) ?? lv(h))} kW</text>`; }).join("")}
+      ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
+        <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
     // one lane per array: shade always, reflection where it adds something

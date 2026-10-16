@@ -1,7 +1,7 @@
 {
   "domain": "noxcast",
   "name": "Noxcast",
-  "after_dependencies": ["frontend", "http", "panel_custom"],
+  "after_dependencies": ["frontend", "http", "lovelace", "panel_custom"],
   "codeowners": ["@TelosNox"],
   "config_flow": true,
   "dependencies": ["recorder", "websocket_api"],

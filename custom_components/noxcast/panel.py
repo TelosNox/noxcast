@@ -112,7 +112,7 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
         for sub_id, arr in coordinator.arrays.items():
             effects = data.effects.get(sub_id, {})
             arrays.append({
-                "id": sub_id, "name": arr.name,
+                "id": sub_id, "name": arr.name, "peak_w": arr.geometry.peak_w,
                 "expected": series(data.expected.get(sub_id, {})),
                 "morning": series(data.morning.get(sub_id, {})),
                 "forecast": series(data.held.get(sub_id, {})),

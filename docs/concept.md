@@ -253,12 +253,12 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 - Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home) and the
   calendar day from sunrise to sunset on one time axis:
-  - PV with a kW grid: the expectation pale, the part already past (= actual) solid, the forecast
+  - PV on a fixed kW scale (installed peak power + 10 %, so a weak day shows as a low curve): the expectation pale, the part already past (= actual) solid, the forecast
     as a dashed contour. Hours ahead follow the latest forecast; an hour keeps its value once it has
     begun, so a deviation stays visible instead of being replaced by the actual value. The shade
     loss is hatched below the potential without shade.
   - House load per hour (measured, then the mean of the last 7 days), capped at the PV scale;
-    higher peaks are marked with their value. Blue where the load is above the generation.
+    higher peaks are marked once per run of hours with their highest value. Blue where the load is above the generation.
   - One lane per array: shade periods always, reflection where it adds max(15 Wh, min(50 Wh,
     10 % of the day)) or more. An effect is the forecast with vs without the learned part under
     today's weather.

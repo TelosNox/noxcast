@@ -418,6 +418,12 @@ class NoxcastCard extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-card", NoxcastCard);
+// Loaded as an extra module before the frontend starts; the registry the dashboard uses can differ from
+// the one present at that moment, so register again until the element is known there.
+const register = () => {
+  if (!customElements.get("noxcast-card")) customElements.define("noxcast-card", class extends NoxcastCard {});
+};
+register();
+for (const delay of [0, 500, 2000, 5000, 15000]) setTimeout(register, delay);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield per array, effects and surplus", preview: false });

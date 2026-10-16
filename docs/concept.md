@@ -268,7 +268,8 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     level at the start of charging tomorrow (or when it runs empty).
   - A planning line (surplus until, battery full, unused kWh; in the evening whether the battery
     lasts until tomorrow) and the three numbers actual, expected and morning forecast; after
-    sunset actual against the morning forecast. The card reloads every 5 minutes, when it becomes
+    sunset actual against the morning forecast. A legend lists only what the chart shows (`legend: false`
+    hides it). The card reloads every 5 minutes, when it becomes
     visible again and after midnight.
   Data from the websocket command `noxcast/today`, live values from the configured entities.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and

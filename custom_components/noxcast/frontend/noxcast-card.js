@@ -13,18 +13,25 @@
 //   - { entity: sensor.bat_power, soc: sensor.bat_soc, capacity: 1.9, name: Pro, invert: false }  # positive = charging
 //     # optional limits in percent, a number or an entity: max_soc (default 100), min_soc (default 0)
 // export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
+// legend: true                         # legend below the chart, only for what is shown
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
     refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose früh",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
-    lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um" },
+    lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um",
+    lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV",
+      loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
+      near: "fast voll" } },
   en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
     refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "morning forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
-    lasts: "battery lasts until tomorrow", emptyAt: "battery empty at" },
+    lasts: "battery lasts until tomorrow", emptyAt: "battery empty at",
+    lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV",
+      loss: "lost to shade", shade: "shade", refl: "reflection", bat: "battery", lost: "full, surplus lost",
+      near: "almost full" } },
 };
 
 const PALETTE = {
@@ -195,6 +202,9 @@ class NoxcastCard extends HTMLElement {
       .big { font-size: 18px; font-weight: 500; }
       .warn { font-size: 12px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
+      .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--secondary-text-color); }
+      .legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+      .legend svg { width: 16px; height: 10px; display: inline-block; }
       .ax { font-size: 9px; fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
       .divider { border-top: 1px solid var(--divider-color); padding-top: 8px; }
     </style>
@@ -341,6 +351,7 @@ class NoxcastCard extends HTMLElement {
     const B0 = Ly + arrays.length * (Lh + 4) + 26, Bh = 22, ys = (f) => B0 + Bh - Math.max(0, Math.min(1, f)) * Bh;
     const bat = m.battery;
     let batSvg = "", sim = null, chargeToday = null, chargeTom = null;
+    const seenZones = new Set();
     if (bat) {
       chargeToday = dayH.find((h) => load(h) !== null && pv(h) > lv(h)) ?? t0;
       const tomH = [...tomM.keys()].sort((a, b) => a - b);
@@ -353,7 +364,7 @@ class NoxcastCard extends HTMLElement {
         return f >= bat.max - 0.05 ? P.near : null;
       };
       // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable
-      const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; return c ? `<rect x="${x(h).toFixed(1)}" y="${B0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Bh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
+      const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; if (c) seenZones.add(c); return c ? `<rect x="${x(h).toFixed(1)}" y="${B0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Bh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
       const past = m.socPast.filter(([ts]) => ts >= t0 && ts <= Math.min(now, t1)).map(([ts, f]) => [x(ts), ys(f)]);
       const fut = sim.points.filter(([ts]) => ts <= t1).map(([ts, f]) => [x(ts), ys(f)]);
       const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
@@ -410,12 +421,32 @@ class NoxcastCard extends HTMLElement {
       : `<span>${t.actual} <span class="big">${this._kwh(ist)}</span></span>
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
-    el.innerHTML = `${svg}
+    el.innerHTML = `${svg}${this._config.legend === false ? "" : this._legend({
+        actual: now > t0, loss: lossTotal > 1, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
+        shade: arrays.some((a) => a.periods.some((p) => p.type === "shade")),
+        refl: arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
+        bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
       ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
       <div class="row">${numbers}
         ${lossTotal >= 50 ? `<span style="color:${P.shade}">${t.shade} −${this._kwh(lossTotal)}</span>` : ""}
         <span class="muted">${t.tomorrow} <b style="color:var(--primary-text-color);font-weight:500">${this._kwh(tomorrow)}</b></span>
       </div>`;
+  }
+
+  // legend for what the chart shows right now
+  _legend(on) {
+    const P = this._p, l = this._t.lg;
+    const sw = (inner) => `<svg width="16" height="10" aria-hidden="true">${inner}</svg>`;
+    const box = (fill, op = 1) => sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="${fill}" fill-opacity="${op}"></rect>`);
+    const dash = (stroke, d) => sw(`<line x1="0" y1="5" x2="16" y2="5" stroke="${stroke}" stroke-width="1.8"${d ? ` stroke-dasharray="3 2"` : ""}></line>`);
+    const items = [
+      [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast],
+      [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
+      [on.load, dash(P.home, false), l.load], [on.deficit, box(P.grid, 0.3), l.deficit],
+      [on.shade, box(P.shade), l.shade], [on.refl, box(P.refl), l.refl],
+      [on.bat, box(P.bat, 0.45), l.bat], [on.lost, box(P.lost, 0.85), l.lost], [on.near, box(P.near, 0.85), l.near],
+    ];
+    return `<div class="legend">${items.filter(([show]) => show).map(([, icon, text]) => `<span>${icon}${text}</span>`).join("")}</div>`;
   }
 
   // arrays of today in the configured order (by group name / array), else all

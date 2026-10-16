@@ -1,6 +1,7 @@
 """Sidebar panel "Noxcast" and the day card, both fed by websocket commands."""
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 URL_BASE = "/noxcast_panel"
 PANEL_PATH = "noxcast"
@@ -26,7 +29,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
-    from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
 
     version = await hass.async_add_executor_job(_version, "noxcast-panel.js")
@@ -37,7 +39,32 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         hass, frontend_url_path=PANEL_PATH, webcomponent_name="noxcast-panel",
         module_url=f"{URL_BASE}/noxcast-panel.js?v={version}", sidebar_title="Noxcast",
         sidebar_icon="mdi:solar-power-variant", require_admin=False, config={})
-    add_extra_js_url(hass, f"{URL_BASE}/noxcast-card.js?v={card_version}")       # card picker without a resource
+    await _async_register_card(hass, f"{URL_BASE}/noxcast-card.js?v={card_version}")
+
+
+async def _async_register_card(hass: HomeAssistant, url: str) -> None:
+    """Keep the day card in the Lovelace resources, like a card installed through HACS.
+
+    Dashboards load resources once the frontend runs, so the card is known wherever it is used. With
+    resources in YAML mode nothing is written; the card is then added there by hand.
+    """
+    from homeassistant.components.lovelace.const import LOVELACE_DATA
+
+    data = hass.data.get(LOVELACE_DATA)
+    if data is None or data.resource_mode != "storage":
+        _LOGGER.info("Lovelace resources are not in storage mode; add %s as a module resource", url)
+        return
+    resources = data.resources
+    if not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+    base = url.split("?")[0]
+    for item in resources.async_items():
+        if item["url"].split("?")[0] == base:
+            if item["url"] != url:
+                await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+            return
+    await resources.async_create_item({"res_type": "module", "url": url})
 
 
 def _version(name: str) -> str:

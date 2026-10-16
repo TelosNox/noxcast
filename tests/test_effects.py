@@ -39,9 +39,16 @@ def test_shade_loss_is_reported_with_its_period():
     assert datetime.fromtimestamp(periods[0]["start"], TZ).hour < 10
 
 
-def test_small_effects_are_dropped():
+def test_shade_is_shown_even_when_it_costs_little():
     learned = _morning_shade()
     loss, gain = effects.hourly_effects(SITE, GEO, learned, _weather(0.05))   # overcast: shade costs little
+    periods = effects.significant_periods(SITE, GEO, learned, DAY, loss, gain, 3000)
+    assert [p["type"] for p in periods] == ["shade"] and periods[0]["wh"] < 15
+
+
+def test_small_reflection_is_dropped():
+    learned = model.LearnedArray(efficiency=0.9, cells=_cells(1.0), reflection={"11,1": 0.05, "12,1": 0.05})
+    loss, gain = effects.hourly_effects(SITE, GEO, learned, _weather(0.05))
     assert effects.significant_periods(SITE, GEO, learned, DAY, loss, gain, 3000) == []
 
 

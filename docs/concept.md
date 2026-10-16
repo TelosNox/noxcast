@@ -255,9 +255,10 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   home), today's expected yield stacked per array with the summed shade loss on top, house load
   (measured, then the mean of the last 7 days), battery level (measured, then simulated with the
   configured capacities, "full" marker) and the surplus left unused once the batteries are full.
-  One lane per array marks only significant effects (shade, reflection): an effect is the forecast
-  with vs without the learned part under today's weather, reported from max(15 Wh, min(50 Wh,
-  10 % of the day)). Data from the websocket command `noxcast/today`, live values from the
+  One lane per array marks today's shade periods (always; what they cost shows in the band) and
+  reflection where it adds max(15 Wh, min(50 Wh, 10 % of the day)) or more. An effect is the
+  forecast with vs without the learned part under today's weather. Curves are drawn as monotone
+  cubics through the hour centres (smooth, no overshoot). Data from the websocket command `noxcast/today`, live values from the
   configured entities.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and
   elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.

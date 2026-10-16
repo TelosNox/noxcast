@@ -25,7 +25,7 @@ from .const import (
 )
 from . import archive as fc_archive
 from .effects import hourly_effects, significant_periods
-from .intraday import Partial, clearness_shift, expected_hours
+from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
                     usable_samples)
 from .solar import Site
@@ -54,6 +54,7 @@ class NoxcastData:
     forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
     morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
     expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
+    held: dict[str, dict[float, float]] = field(default_factory=dict)  # today: latest forecast, held once the hour began
     correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
@@ -102,6 +103,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
         self._hours: dict[str, dict[float, float]] = {}
         self._morning: dict[str, dict[float, float]] = {}
+        self._held: dict[str, dict[float, float]] = {}
         self._morning_fixed: datetime | None = None
         self._factors: dict[str, float] | None = None
         self._compare: tuple[float, list[WeatherHour]] | None = None      # (fetched at, hours)
@@ -410,6 +412,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w, partial)
             result.correction[sub_id] = None if shift is None else round(shift, 3)
             result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), clear, now, shift)
+            corrected = {t: v for t, v in result.expected[sub_id].items() if t > now}
+            self._held[sub_id] = held_forecast(self._held.get(sub_id) or result.morning[sub_id], corrected, now,
+                                               day_start)
+            result.held[sub_id] = self._held[sub_id]
             result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, today, result.expected[sub_id],
                                                                day_start, day_end)
         for series in (result.forecast, result.morning, result.expected):

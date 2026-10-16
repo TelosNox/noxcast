@@ -96,7 +96,7 @@ def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
 @websocket_api.websocket_command({vol.Required("type"): WS_TODAY})
 @callback
 def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Today per array for the day card: expected Wh per hour, the morning forecast, effects and tomorrow."""
+    """Today per array for the day card: expected, held and morning forecast per hour, effects and tomorrow."""
     tomorrow_start = dt_util.start_of_local_day(dt_util.now().date() + timedelta(days=1)).timestamp()
     tomorrow_end = tomorrow_start + 86400
 
@@ -115,6 +115,9 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                 "id": sub_id, "name": arr.name,
                 "expected": series(data.expected.get(sub_id, {})),
                 "morning": series(data.morning.get(sub_id, {})),
+                "forecast": series(data.held.get(sub_id, {})),
+                "tomorrow": series({t: v for t, v in data.forecast.get(sub_id, {}).items()
+                                    if tomorrow_start <= t < tomorrow_end}),
                 "loss": series(effects.get("loss", {})),
                 "gain": series(effects.get("gain", {})),
                 "periods": effects.get("periods", []),

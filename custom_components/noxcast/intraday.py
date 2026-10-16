@@ -74,3 +74,17 @@ def expected_hours(forecast: dict[float, float], actual: dict[float, float], cle
         k = wh / c + shift * STRENGTH * 0.5 ** (ahead / HALF_LIFE_HOURS)
         out[t] = c * min(max(k, 0.0), max(CLEARNESS_MAX, wh / c))
     return out
+
+
+def held_forecast(previous: dict[float, float], current: dict[float, float], now: float,
+                  day_start: float) -> dict[float, float]:
+    """Today's forecast per hour, held once the hour has begun.
+
+    Hours still ahead follow the latest forecast; an hour that has begun keeps the value it had
+    before, so the deviation of the actual value stays visible instead of being replaced by it.
+    """
+    held = {t: v for t, v in previous.items() if t >= day_start}
+    for t, v in current.items():
+        if t > now or t not in held:
+            held[t] = v
+    return dict(sorted(held.items()))

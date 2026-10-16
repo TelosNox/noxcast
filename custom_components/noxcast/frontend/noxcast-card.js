@@ -258,9 +258,10 @@ class NoxcastCard extends HTMLElement {
     const x = (ts) => ((ts - t0) / (t1 - t0)) * W;
     const y = (p) => H - 1 - (p / peak) * (H - 6);
     const pts = (f) => [[t0, 0], ...allH.map((h) => [h + 1800, f(h)]), [t1, 0]];
+    const px = (series, fy) => series.map(([a, b]) => [x(a), fy(b)]);
     const area = (lo, hi) => {
-      const top = pts(hi), bot = pts(lo).reverse();
-      return "M" + top.map(([a, b]) => `${x(a).toFixed(1)},${y(b).toFixed(1)}`).join(" L") + " " + bot.map(([a, b]) => `L${x(a).toFixed(1)},${y(b).toFixed(1)}`).join(" ") + " Z";
+      const top = px(pts(hi), y), bot = px(pts(lo).reverse(), y);
+      return `M${top[0][0].toFixed(1)},${top[0][1].toFixed(1)}${curve(top)} L${bot[0][0].toFixed(1)},${bot[0][1].toFixed(1)}${curve(bot)} Z`;
     };
     const nowX = Math.max(0, Math.min(W, x(now)));
 
@@ -299,10 +300,10 @@ class NoxcastCard extends HTMLElement {
     const ys = (f) => H - 1 - f * (H - 12);
     const loadLine = (from, to, dash) => {
       const p = allH.filter((h) => h + 1800 >= from && h + 1800 <= to && load[h] !== undefined);
-      return p.length > 1 ? `<path d="M${p.map((h) => `${x(h + 1800).toFixed(1)},${y(load[h]).toFixed(1)}`).join(" L")}" fill="none" stroke="${P.home}" stroke-width="1.8"${dash ? ` stroke-dasharray="4 3"` : ""}></path>` : "";
+      return p.length > 1 ? `<path d="${line(p.map((h) => [x(h + 1800), y(load[h])]))}" fill="none" stroke="${P.home}" stroke-width="1.8"${dash ? ` stroke-dasharray="4 3"` : ""}></path>` : "";
     };
     const socLine = (series, dash) => series.length > 1
-      ? `<path d="M${series.map(([ts, f]) => `${x(ts).toFixed(1)},${ys(f).toFixed(1)}`).join(" L")}" fill="none" stroke="${P.bat}" stroke-width="2"${dash ? ` stroke-dasharray="4 3"` : ""}></path>` : "";
+      ? `<path d="${line(px(series, ys))}" fill="none" stroke="${P.bat}" stroke-width="2"${dash ? ` stroke-dasharray="4 3"` : ""}></path>` : "";
     const unusedArea = Object.keys(unusedAt).length
       ? `<path d="${area((h) => load[h] || 0, (h) => (load[h] || 0) + (unusedAt[h] || 0))}" fill="url(#nx-unused)"></path>` : "";
     const fullMark = fullAt !== null
@@ -416,6 +417,32 @@ class NoxcastCard extends HTMLElement {
   _esc(s) {
     return String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   }
+}
+
+// Smooth path through points (pixels) without overshoot: monotone cubic (Fritsch-Carlson), as " C..." segments.
+function curve(p) {
+  const n = p.length, f = (v) => v.toFixed(1);
+  if (n < 3) return p.slice(1).map(([a, b]) => ` L${f(a)},${f(b)}`).join("");
+  const m = [], t = [];
+  for (let k = 0; k < n - 1; k++) m.push((p[k + 1][1] - p[k][1]) / (p[k + 1][0] - p[k][0] || 1e-9));
+  t.push(m[0]);
+  for (let k = 1; k < n - 1; k++) t.push(m[k - 1] * m[k] <= 0 ? 0 : (m[k - 1] + m[k]) / 2);
+  t.push(m[n - 2]);
+  for (let k = 0; k < n - 1; k++) {
+    if (m[k] === 0) { t[k] = 0; t[k + 1] = 0; continue; }
+    const a = t[k] / m[k], b = t[k + 1] / m[k], s = a * a + b * b;
+    if (s > 9) { const tau = 3 / Math.sqrt(s); t[k] = tau * a * m[k]; t[k + 1] = tau * b * m[k]; }
+  }
+  let out = "";
+  for (let k = 0; k < n - 1; k++) {
+    const dx = (p[k + 1][0] - p[k][0]) / 3;
+    out += ` C${f(p[k][0] + dx)},${f(p[k][1] + t[k] * dx)} ${f(p[k + 1][0] - dx)},${f(p[k + 1][1] - t[k + 1] * dx)} ${f(p[k + 1][0])},${f(p[k + 1][1])}`;
+  }
+  return out;
+}
+
+function line(p) {
+  return `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${curve(p)}`;
 }
 
 customElements.define("noxcast-card", NoxcastCard);

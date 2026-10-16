@@ -1,8 +1,8 @@
 """Today's significant effects per array: what shade costs and reflected light adds (pure Python).
 
 An effect is the difference between the forecast with and without the learned part, under today's
-weather: on an overcast day a shadow costs almost nothing and drops out by itself. Only effects
-that matter for the day are reported, with their time span.
+weather: on an overcast day a shadow costs almost nothing. Shade periods are always reported with
+their cost; reflection only where it adds a relevant amount.
 """
 from __future__ import annotations
 
@@ -35,13 +35,16 @@ def _overlap_wh(series: dict[float, float], start: float, end: float) -> float:
 
 def significant_periods(site: Site, geo: ArrayGeometry, learned: LearnedArray, day_start: float,
                         loss: dict[float, float], gain: dict[float, float], day_wh: float) -> list[dict]:
-    """Shade and reflection periods of the day that matter: {type, start, end, wh}."""
+    """Shade and reflection periods of the day: {type, start, end, wh}.
+
+    Shade periods are always reported (where the sun is behind an obstacle), with what they cost
+    under today's weather; the band shows the cost. Reflection only where it adds a relevant amount.
+    """
     threshold = max(EFFECT_FLOOR_WH, min(EFFECT_MIN_WH, EFFECT_MIN_SHARE * day_wh))
     out = []
     for p in shade.shade_periods(shade.day_profile(site, geo, learned, day_start)):
-        wh = _overlap_wh(loss, p["start"], p["end"])
-        if wh >= threshold:
-            out.append({"type": "shade", "start": p["start"], "end": p["end"], "wh": round(wh)})
+        out.append({"type": "shade", "start": p["start"], "end": p["end"],
+                    "wh": round(_overlap_wh(loss, p["start"], p["end"]))})
     run: list[float] = []
     for t in sorted(gain) + [None]:
         if t is not None and gain[t] >= GAIN_MIN_HOUR_WH and (not run or t - run[-1] == 3600):

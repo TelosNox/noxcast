@@ -237,9 +237,9 @@ class NoxcastCard extends HTMLElement {
     if (!el) return;
     const P = this._p, t = this._t, v = this._live();
     // allocation of the flows, all values >= 0
-    const pvHome = Math.min(v.pv, v.home);
     const charge = Math.max(v.bat, 0), discharge = Math.max(-v.bat, 0);
-    const pvBat = Math.min(v.pv - pvHome, charge);
+    const pvBat = Math.min(v.pv, charge);                    // a charging battery takes PV first, the grid only covers the rest
+    const pvHome = Math.min(v.pv - pvBat, v.home);
     const pvGrid = Math.max(v.pv - pvHome - pvBat, 0);
     const batHome = Math.min(discharge, v.home - pvHome);
     const gridHome = Math.max(v.home - pvHome - batHome, 0);

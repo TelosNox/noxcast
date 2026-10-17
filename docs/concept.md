@@ -270,7 +270,7 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   - A planning line (surplus until, battery full, unused kWh; in the evening whether the battery
     lasts until tomorrow) and the three numbers actual, expected and morning forecast; after
     sunset actual against the morning forecast. A legend lists only what the chart shows (`legend: false`
-    hides it). A visual editor covers every option: text size (`font_scale`, 0.8 to 1.6), legend, main
+    hides it). A visual editor covers every option: text size of the flow (`font_scale`, 0.8 to 1.6; the flow numbers are larger than the rows below), legend, main
     entities, PV groups and batteries with their limits. The card reloads every 5 minutes, when it becomes
     visible again and after midnight.
   Data from the websocket command `noxcast/today`, live values from the configured entities.

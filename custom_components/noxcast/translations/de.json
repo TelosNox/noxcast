@@ -8,12 +8,14 @@
           "weather_source": "Wetterquelle",
           "weather_entity": "Wetter-Entität",
           "soc_sensors": "Akku-Ladezustand",
-          "soc_full_pct": "Akku gilt als voll ab"
+          "soc_full_pct": "Akku gilt als voll ab",
+          "house_load": "Hausverbrauch"
         },
         "data_description": {
           "weather_entity": "Muss stündliche Strahlung liefern (z. B. DWD sun_irradiance).",
           "soc_sensors": "Stunden mit vollem Akku werden beim Lernen ignoriert, weil dann abgeregelt sein kann.",
-          "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird."
+          "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
+          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement)."
         }
       },
       "reconfigure": {
@@ -22,7 +24,11 @@
           "weather_source": "Wetterquelle",
           "weather_entity": "Wetter-Entität",
           "soc_sensors": "Akku-Ladezustand",
-          "soc_full_pct": "Akku gilt als voll ab"
+          "soc_full_pct": "Akku gilt als voll ab",
+          "house_load": "Hausverbrauch"
+        },
+        "data_description": {
+          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement)."
         }
       }
     },
@@ -30,7 +36,10 @@
       "weather_entity_required": "Bitte eine Wetter-Entität wählen.",
       "no_irradiance": "Diese Wetter-Entität liefert keine Strahlung in der Stundenprognose.",
       "weather_unavailable": "Die Wetter-Entität hat keine Prognose geliefert.",
-      "soc_unit": "Akku-Sensoren müssen den Ladezustand in % liefern."
+      "soc_unit": "Akku-Sensoren müssen den Ladezustand in % liefern.",
+      "sensor_missing": "Der gewählte Sensor existiert nicht.",
+      "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
+      "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt."
     },
     "abort": {
       "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
@@ -90,6 +99,46 @@
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."
       }
+    },
+    "consumer": {
+      "entry_type": "Verbraucher",
+      "initiate_flow": {
+        "user": "Verbraucher hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Verbraucher",
+          "description": "Ein Gerät mit eigenem Leistungssensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert.",
+          "data": {
+            "name": "Name",
+            "power_sensor": "Leistungssensor",
+            "timing": "Zeitbindung"
+          },
+          "data_description": {
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
+          }
+        },
+        "reconfigure": {
+          "title": "Verbraucher",
+          "description": "Ein Gerät mit eigenem Leistungssensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert.",
+          "data": {
+            "name": "Name",
+            "power_sensor": "Leistungssensor",
+            "timing": "Zeitbindung"
+          },
+          "data_description": {
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
+          }
+        }
+      },
+      "error": {
+        "sensor_missing": "Der gewählte Sensor existiert nicht.",
+        "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
+        "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt."
+      },
+      "abort": {
+        "reconfigure_successful": "PV-Gruppe gespeichert."
+      }
     }
   },
   "selector": {
@@ -97,6 +146,12 @@
       "options": {
         "entity": "Wetter-Entität aus Home Assistant",
         "open_meteo": "Open-Meteo (Internet)"
+      }
+    },
+    "timing": {
+      "options": {
+        "fixed": "Fest",
+        "flexible": "Flexibel"
       }
     }
   },
@@ -137,6 +192,12 @@
       },
       "shade_today": {
         "name": "Schatten heute"
+      },
+      "load_remaining_today": {
+        "name": "Last Rest heute"
+      },
+      "load_tomorrow": {
+        "name": "Last morgen"
       }
     },
     "image": {

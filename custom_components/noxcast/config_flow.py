@@ -19,6 +19,7 @@ from .const import (
     CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
+    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS,
 )
 from .sources import (
     NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
@@ -36,7 +37,31 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
         vol.Required(CONF_SOC_FULL, default=defaults.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)):
             selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")),
+        vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
     })
+
+
+def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema({
+        vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
+        vol.Required(CONF_POWER_SENSOR, default=defaults.get(CONF_POWER_SENSOR)):
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])):
+            selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING)),
+    })
+
+
+def _power_sensor_error(hass: HomeAssistant, entity_id: str | None) -> str | None:
+    """A power sensor must report W/kW as measurement, so it has long-term statistics."""
+    state = hass.states.get(entity_id) if entity_id else None
+    if state is None:
+        return "sensor_missing"
+    if state.attributes.get("unit_of_measurement") not in POWER_UNIT_FACTORS:
+        return "sensor_unit"
+    if state.attributes.get("state_class") != "measurement":
+        return "sensor_state_class"
+    return None
 
 
 def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -59,6 +84,8 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
 
 
 async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
+    if user_input.get(CONF_HOUSE_LOAD) and (err := _power_sensor_error(flow.hass, user_input[CONF_HOUSE_LOAD])):
+        return {CONF_HOUSE_LOAD: err}
     for entity_id in user_input.get(CONF_SOC_SENSORS) or []:
         state = flow.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
@@ -108,7 +135,31 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_ARRAY: ArraySubentryFlow}
+        return {SUBENTRY_ARRAY: ArraySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow}
+
+
+class ConsumerSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a consumer with its own power sensor."""
+
+    def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
+        if user_input is None:
+            return {}
+        err = _power_sensor_error(self.hass, user_input.get(CONF_POWER_SENSOR))
+        return {CONF_POWER_SENSOR: err} if err else {}
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors = self._errors(user_input)
+        if user_input is not None and not errors:
+            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
+        return self.async_show_form(step_id="user", data_schema=_consumer_schema(user_input or {}), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        errors = self._errors(user_input)
+        if user_input is not None and not errors:
+            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME], data=user_input)
+        return self.async_show_form(step_id="reconfigure", data_schema=_consumer_schema(user_input or dict(subentry.data)),
+                                    errors=errors)
 
 
 class ArraySubentryFlow(ConfigSubentryFlow):
@@ -137,13 +188,8 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     if not sensors:
         return {CONF_POWER_SENSORS: "sensor_required"}
     for entity_id in sensors:
-        state = hass.states.get(entity_id)
-        if state is None:
-            return {CONF_POWER_SENSORS: "sensor_missing"}
-        if state.attributes.get("unit_of_measurement") not in POWER_UNIT_FACTORS:
-            return {CONF_POWER_SENSORS: "sensor_unit"}
-        if state.attributes.get("state_class") != "measurement":
-            return {CONF_POWER_SENSORS: "sensor_state_class"}
+        if err := _power_sensor_error(hass, entity_id):
+            return {CONF_POWER_SENSORS: err}
     valid = user_input.get(CONF_VALID_SINCE)
     if valid and (dt_util.parse_date(valid) is None or dt_util.parse_date(valid) > dt_util.now().date()):
         return {CONF_VALID_SINCE: "date_in_future"}

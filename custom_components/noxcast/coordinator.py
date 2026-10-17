@@ -20,10 +20,12 @@ from .const import (
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
-    FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
+    FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
+    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
 )
 from . import archive as fc_archive
+from . import load as lf
 from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
@@ -47,6 +49,20 @@ class ArrayConfig:
     temp_coeff: float | None = None          # per K, from the datasheet
 
 
+@dataclass(frozen=True)
+class ConsumerConfig:
+    subentry_id: str
+    name: str
+    sensor: str
+    timing: str
+
+
+def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
+    return {sub_id: ConsumerConfig(sub_id, sub.data[CONF_NAME], sub.data[CONF_POWER_SENSOR],
+                                   sub.data.get(CONF_TIMING, lf.TIMING_FIXED))
+            for sub_id, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_CONSUMER}
+
+
 @dataclass
 class NoxcastData:
     """Hourly Wh per array (subentry_id) and as total (key None)."""
@@ -59,6 +75,7 @@ class NoxcastData:
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
     updated: datetime | None = None
+    load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -96,6 +113,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=None)
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
+        self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
+        self.consumers = consumer_configs(entry)
+        self.load_profile: lf.Profile | None = None
+        self.consumer_profiles: dict[str, lf.Profile] = {}
+        self.load_backtest: dict | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
@@ -123,6 +145,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             for sub_id, data in stored.get("arrays", {}).items():
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
+            load = stored.get("load") or {}
+            if self.house_load and load.get("key") == self._load_key():
+                self.load_profile = lf.Profile.from_dict(load["base"])
+                self.consumer_profiles = {sid: lf.Profile.from_dict(p) for sid, p in load.get("consumers", {}).items()
+                                          if sid in self.consumers}
+                self.load_backtest = load.get("backtest")
             if stored.get("last_learning"):
                 self.last_learning = dt_util.parse_datetime(stored["last_learning"])
             day_start = dt_util.start_of_local_day().timestamp()
@@ -157,7 +185,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     @callback
     def _async_started(self, _hass: HomeAssistant) -> None:
-        if set(self.learned) != set(self.arrays):
+        if set(self.learned) != set(self.arrays) or (self.house_load and self.load_profile is None):
             self.config_entry.async_create_background_task(self.hass, self.async_learn(), "noxcast initial learning")
 
     async def _async_nightly(self, _now: datetime) -> None:
@@ -167,6 +195,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         a = self.arrays[sub_id]
         return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since, a.temp_coeff,
                 bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False))]
+
+    def _load_key(self) -> list:
+        return [self.house_load, sorted([c.subentry_id, c.sensor] for c in self.consumers.values())]
 
     def _option(self, key: str, default=None):
         return self.config_entry.options.get(key, default)
@@ -201,6 +232,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                        for sid, la in self.learned.items() if sid in self.arrays},
             # today's hours survive a restart even if the weather source no longer reports past hours
             "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
+            "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
+                     "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
+                     "backtest": self.load_backtest} if self.load_profile else None,
             "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
         }
@@ -265,8 +299,64 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                          arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
                          result.coverage * 100, result.samples, result.clear_filter, result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
+        if self.house_load:
+            await self._async_learn_load(now)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
+
+    async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, dict[float, float]]:
+        """House load and consumer power in W: {sensor: {hour start: mean W}}."""
+        ids = [self.house_load] + [c.sensor for c in self.consumers.values()]
+        factors = await async_power_factors(self.hass, ids)
+        stats = await async_hourly_statistics(self.hass, ids, start, "mean", period)
+        return {sid: {t: v * factors.get(sid, 1.0) for t, v in stats.get(sid, {}).items() if v is not None}
+                for sid in ids}
+
+    async def _async_learn_load(self, now: datetime) -> None:
+        """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""
+        days = lf.PROFILE_DAYS + lf.BACKTEST_DAYS + 1
+        series = await self._async_load_series(now - timedelta(days=days))
+        tz = dt_util.get_default_time_zone()
+        until = dt_util.start_of_local_day().timestamp()
+        load = series.get(self.house_load, {})
+        if not load:
+            _LOGGER.warning("No long-term statistics for the house load %s; load forecast disabled", self.house_load)
+            return
+        consumers = {sid: series.get(c.sensor, {}) for sid, c in self.consumers.items()}
+        base = lf.base_series(load, list(consumers.values()))
+        profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
+        cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
+                for sid, s in consumers.items()}
+        backtest = await self.hass.async_add_executor_job(
+            lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp())
+        self.load_profile, self.consumer_profiles, self.load_backtest = profile, cons, backtest
+        _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
+
+    async def _async_load_forecast(self, now: float, end: float) -> lf.LoadForecast | None:
+        """Load forecast with the correction from the last hours and the consumers running now."""
+        if not self.house_load or self.load_profile is None:
+            return None
+        tz = dt_util.get_default_time_zone()
+        try:
+            series = await self._async_load_series(dt_util.utc_from_timestamp(now - (lf.K_HOURS + 2) * 3600))
+        except Exception as err:  # noqa: BLE001 – without recent values the profile alone is used
+            _LOGGER.debug("Recent load statistics unavailable: %s", err)
+            series = {}
+        base = lf.base_series(series.get(self.house_load, {}),
+                              [series.get(c.sensor, {}) for c in self.consumers.values()])
+        k = lf.correction(base, self.load_profile, tz, now)
+        running = {}
+        for sid, c in self.consumers.items():
+            state = self.hass.states.get(c.sensor)
+            try:
+                w = float(state.state) * POWER_UNIT_FACTORS.get(state.attributes.get("unit_of_measurement"), 1.0)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if w >= RUNNING_W:
+                running[sid] = w
+        consumers = [lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()))
+                     for sid, c in self.consumers.items()]
+        return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
 
     def _archive_data(self) -> dict:
         return {"days": self.forecast_archive}
@@ -425,6 +515,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     total[t] = total.get(t, 0.0) + wh
             series[None] = dict(sorted(total.items()))
 
+        result.load = await self._async_load_forecast(
+            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp())
+
         alt = None
         if alt_forecasts:
             alt = {COMPARE_SOURCE: ({w.start: w.ghi for w in compare}, alt_forecasts)}
@@ -459,6 +552,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
 RECENT_MIN_SLOTS_HOUR = 10       # 5-minute values needed to stand in for a just-ended hour
 RECENT_MIN_SLOTS_RUNNING = 3     # 5-minute values (15 minutes) before the running hour counts
+RUNNING_W = 20                   # a consumer drawing at least this much counts as running
 
 
 def _sum_series(series: list[dict[float, float]]) -> dict[float, float]:

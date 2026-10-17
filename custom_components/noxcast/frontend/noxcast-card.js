@@ -45,13 +45,15 @@ const PALETTE = {
 
 const ACTIVE_W = 5;
 const REFRESH_MS = 5 * 60 * 1000;
+// symmetric: PV paths on top (y 80), grid <-> battery in the middle (y 88), paths to the home below (y 96);
+// where grid <-> battery crosses PV -> home it bridges over it, so the two read as separate paths
 const FLOW_PATHS = {
   pvHome: "M204 62 L204 146",
-  pvBat: "M212 62 L212 78 Q212 88 222 88 L352 88",
-  pvGrid: "M196 62 L196 66 Q196 76 186 76 L52 76",
-  gridHome: "M52 88 L186 88 Q196 88 196 98 L196 146",
-  batHome: "M352 100 L222 100 Q212 100 212 110 L212 146",
-  gridBat: "M52 82 L352 82",
+  pvBat: "M212 62 L212 70 Q212 80 222 80 L352 80",
+  pvGrid: "M196 62 L196 70 Q196 80 186 80 L52 80",
+  gridHome: "M52 96 L186 96 Q196 96 196 106 L196 146",
+  batHome: "M352 96 L222 96 Q212 96 212 106 L212 146",
+  gridBat: "M52 88 L198 88 A6 6 0 0 1 210 88 L352 88",          // bridge over PV -> home
 };
 
 class NoxcastCard extends HTMLElement {

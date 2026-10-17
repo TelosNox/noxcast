@@ -252,7 +252,8 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
 - Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home; lines
-  have one width and the speed of the dots shows the power, so no line covers another) and the
+  have one width and the speed of the dots shows the power, so no line covers another; a charging battery takes PV before the grid; the house icon is coloured
+  by its sources PV, battery and grid in proportion to their share) and the
   calendar day from sunrise to sunset on one time axis:
   - PV on a fixed kW scale (installed peak power + 10 %, so a weak day shows as a low curve): the expectation pale, the part already past (= actual) solid, the forecast
     as a dashed contour. Hours ahead follow the latest forecast; an hour keeps its value once it has

@@ -45,6 +45,14 @@ const PALETTE = {
 
 const ACTIVE_W = 5;
 const REFRESH_MS = 5 * 60 * 1000;
+const FLOW_PATHS = {
+  pvHome: "M204 62 L204 146",
+  pvBat: "M212 62 L212 78 Q212 88 222 88 L352 88",
+  pvGrid: "M196 62 L196 66 Q196 76 186 76 L52 76",
+  gridHome: "M52 88 L186 88 Q196 88 196 98 L196 146",
+  batHome: "M352 100 L222 100 Q212 100 212 110 L212 146",
+  gridBat: "M52 82 L352 82",
+};
 
 class NoxcastCard extends HTMLElement {
   static getStubConfig() {
@@ -77,9 +85,12 @@ class NoxcastCard extends HTMLElement {
       document.addEventListener("visibilitychange", this._onVisible);
     }
     if (this._hass && this._stale(60)) this._refresh();
+    if (this._flow) this._animate();
   }
 
   disconnectedCallback() {
+    cancelAnimationFrame(this._frame);
+    this._frame = null;
     clearInterval(this._timer);
     clearTimeout(this._midnight);
     this._timer = null;
@@ -214,6 +225,7 @@ class NoxcastCard extends HTMLElement {
     this._renderBand();
   }
 
+  // The flow is built once; later updates only change colours, texts and speeds, so the dots never jump.
   _renderFlow() {
     const el = this.shadowRoot && this.shadowRoot.getElementById("flow");
     if (!el) return;
@@ -227,29 +239,44 @@ class NoxcastCard extends HTMLElement {
     const gridHome = Math.max(v.home - pvHome - batHome, 0);
     const gridBat = Math.max(charge - pvBat, 0);
     const batGrid = Math.max(discharge - batHome, 0);
-    const paths = {
-      pvHome: ["M204 62 L204 146", pvHome, P.pv, false],
-      pvBat: ["M212 62 L212 78 Q212 88 222 88 L352 88", pvBat, P.pv, false],
-      pvGrid: ["M196 62 L196 66 Q196 76 186 76 L52 76", pvGrid, P.pv, false],
-      gridHome: ["M52 88 L186 88 Q196 88 196 98 L196 146", gridHome, P.grid, false],
-      batHome: ["M352 100 L222 100 Q212 100 212 110 L212 146", batHome, P.bat, false],
-      gridBat: ["M52 82 L352 82", Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat],
+    const flows = {
+      pvHome: [pvHome, P.pv, 1], pvBat: [pvBat, P.pv, 1], pvGrid: [pvGrid, P.pv, 1], gridHome: [gridHome, P.grid, 1],
+      batHome: [batHome, P.bat, 1], gridBat: [Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat ? -1 : 1],
     };
-    const w = (p) => Math.max(2, Math.min(9, p / 45)).toFixed(1);
-    let lines = "";
-    for (const [d, p, color, reverse] of Object.values(paths)) {
-      if (p < ACTIVE_W) { lines += `<path d="${d}" fill="none" stroke="${P.rail}" stroke-width="2" stroke-linecap="round"></path>`; continue; }
-      const dur = Math.max(0.8, 3 - p / 400).toFixed(2);
-      lines += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${w(p)}" stroke-opacity="0.85" stroke-linecap="round" stroke-linejoin="round"></path>
-        <circle r="3.5" fill="${color}"><animateMotion dur="${dur}s" repeatCount="indefinite" path="${d}"${reverse ? ` keyPoints="1;0" keyTimes="0;1" calcMode="linear"` : ""}></animateMotion></circle>`;
+    const height = v.bats.length > 1 ? 196 : 186;
+    if (!this._flow || this._flow.height !== height || !el.contains(this._flow.svg)) {
+      el.innerHTML = `<svg viewBox="0 0 408 ${height}" role="img">
+        ${Object.entries(FLOW_PATHS).map(([k, d]) => `<path data-k="${k}" d="${d}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
+        ${Object.keys(FLOW_PATHS).map((k) => `<circle data-dot="${k}" r="4.5" stroke-width="2" visibility="hidden"></circle>`).join("")}
+        <g data-labels></g></svg>`;
+      const svg = el.querySelector("svg");
+      const lines = {}, dots = {};
+      for (const k of Object.keys(FLOW_PATHS)) {
+        const path = svg.querySelector(`[data-k="${k}"]`);
+        lines[k] = { path, len: path.getTotalLength ? path.getTotalLength() : 0, pos: 0, speed: 0, dir: 1 };
+        dots[k] = svg.querySelector(`[data-dot="${k}"]`);
+      }
+      this._flow = { svg, lines, dots, height, labels: svg.querySelector("[data-labels]") };
+    }
+    const f = this._flow;
+    f.svg.setAttribute("aria-label", `${t.pv} ${Math.round(v.pv)} W, ${t.home} ${Math.round(v.home)} W, ${t.grid} ${Math.round(v.grid)} W, ${t.battery} ${Math.round(v.bat)} W`);
+    for (const [k, [p, color, dir]] of Object.entries(flows)) {
+      const line = f.lines[k], dot = f.dots[k], on = p >= ACTIVE_W;
+      line.path.setAttribute("stroke", on ? color : P.rail);
+      line.path.setAttribute("stroke-width", on ? "3.5" : "2");
+      line.path.setAttribute("stroke-opacity", on ? "0.85" : "1");
+      line.speed = on ? Math.min(140, 18 + p / 8) : 0;         // px per second: the speed carries the power
+      line.dir = dir;
+      dot.setAttribute("fill", "var(--card-background-color, #fff)");
+      dot.setAttribute("stroke", color);
+      dot.setAttribute("visibility", on && line.len ? "visible" : "hidden");
     }
     const fmtW = (x) => `${Math.round(x).toLocaleString(this._lang)} W`;
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     const groups = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`).join(" · ");
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${138 + i * 14}" text-anchor="end" font-size="11" class="muted" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${138 + i * 14}" text-anchor="end" font-size="11" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
     const gridLabel = v.grid > 0 ? `${fmtW(v.grid)} ↓` : v.grid < 0 ? `${fmtW(-v.grid)} ↑` : "0 W";
-    el.innerHTML = `<svg viewBox="0 0 408 ${v.bats.length > 1 ? 196 : 186}" role="img" aria-label="${t.pv} ${fmtW(v.pv)}, ${t.home} ${fmtW(v.home)}, ${t.grid} ${gridLabel}, ${t.battery} ${fmtW(v.bat)}">
-      ${lines}
+    f.labels.innerHTML = `
       <g opacity="${op(v.pv)}">
         <path d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>
         <text x="204" y="54" text-anchor="middle" font-size="17" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
@@ -267,8 +294,33 @@ class NoxcastCard extends HTMLElement {
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
       <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${P.home}" stroke-width="2" stroke-linejoin="round"></path>
-      <text x="204" y="192" text-anchor="middle" font-size="15" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>
-    </svg>`;
+      <text x="204" y="192" text-anchor="middle" font-size="15" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>`;
+    this._animate();
+  }
+
+  // moves the dots frame by frame; a speed change only changes the pace, never the position
+  _animate() {
+    if (this._frame || !this.isConnected) return;
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let last = performance.now();
+    const step = (time) => {
+      this._frame = null;
+      const f = this._flow;
+      if (!f || !this.isConnected) return;
+      const dt = Math.min(0.1, (time - last) / 1000);
+      last = time;
+      let moving = false;
+      for (const [k, line] of Object.entries(f.lines)) {
+        if (!line.speed || !line.len) continue;
+        moving = true;
+        if (!reduced) line.pos = (line.pos + line.dir * line.speed * dt + line.len) % line.len;
+        const pt = line.path.getPointAtLength(reduced ? line.len / 2 : line.pos);
+        f.dots[k].setAttribute("cx", pt.x.toFixed(1));
+        f.dots[k].setAttribute("cy", pt.y.toFixed(1));
+      }
+      if (moving && !reduced) this._frame = requestAnimationFrame(step);
+    };
+    this._frame = requestAnimationFrame(step);
   }
 
   _renderBand() {

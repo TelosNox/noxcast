@@ -19,7 +19,7 @@
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
     refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
-    noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose früh",
+    noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
     lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um",
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV",
@@ -27,7 +27,7 @@ const TEXT = {
       near: "fast voll" } },
   en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
     refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
-    noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "morning forecast",
+    noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
     lasts: "battery lasts until tomorrow", emptyAt: "battery empty at",
     lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV",
@@ -215,11 +215,11 @@ class NoxcastCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
       .muted { color: var(--secondary-text-color); }
-      .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: calc(13px * var(--nx-scale, 1)); }
-      .big { font-size: calc(18px * var(--nx-scale, 1)); font-weight: 500; }
-      .warn { font-size: calc(12px * var(--nx-scale, 1)); font-weight: 500; padding: 2px 6px; border-radius: 4px; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+      .big { font-size: 16px; font-weight: 500; }
+      .warn { font-size: 12px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
-      .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: calc(11px * var(--nx-scale, 1)); color: var(--secondary-text-color); }
+      .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--secondary-text-color); }
       .legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
       .legend svg { width: 16px; height: 10px; display: inline-block; }
       .ax { font-size: calc(9px * min(var(--nx-scale, 1), 1.2)); fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
@@ -249,7 +249,8 @@ class NoxcastCard extends HTMLElement {
       pvHome: [pvHome, P.pv, 1], pvBat: [pvBat, P.pv, 1], pvGrid: [pvGrid, P.pv, 1], gridHome: [gridHome, P.grid, 1],
       batHome: [batHome, P.bat, 1], gridBat: [Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat ? -1 : 1],
     };
-    const sc = this._scale, fs = (n) => (n * sc).toFixed(1);
+    const sc = this._scale * 1.3,      // the live numbers are the main reading, larger than the rows below
+          fs = (n) => (n * sc).toFixed(1);
     const lift = (sc - 1) * 18;                  // larger text: PV symbol and groups move up
     const subY = (i) => 122 + 16 * sc + i * 14 * sc, homeY = 176 + 16 * sc;
     const height = Math.ceil(Math.max(homeY + 4, v.bats.length > 1 ? subY(Math.min(v.bats.length, 3) - 1) + 4 : 0, 186));

@@ -14,6 +14,7 @@
 //     # optional limits in percent, a number or an entity: max_soc (default 100), min_soc (default 0)
 // export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
 // legend: true                         # legend below the chart, only for what is shown
+// font_scale: 1                        # text size, 0.8 to 1.6 (also in the visual editor)
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -57,6 +58,8 @@ const FLOW_PATHS = {
 };
 
 class NoxcastCard extends HTMLElement {
+  static getConfigElement() { return document.createElement("noxcast-card-editor"); }
+
   static getStubConfig() {
     return { pv: { groups: [] }, grid: { entity: "" }, home: { entity: "" }, batteries: [] };
   }
@@ -120,6 +123,7 @@ class NoxcastCard extends HTMLElement {
   get _p() { return this._hass.themes && this._hass.themes.darkMode ? PALETTE.dark : PALETTE.light; }
   get _lang() { return this._hass.language || "en"; }
   get _tz() { return this._hass.config.time_zone; }
+  get _scale() { return Math.min(1.6, Math.max(0.8, Number(this._config.font_scale) || 1)); }
 
   // ------------------------------------------------------------ live values (W, canonical signs)
 
@@ -211,17 +215,17 @@ class NoxcastCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
       .muted { color: var(--secondary-text-color); }
-      .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
-      .big { font-size: 18px; font-weight: 500; }
-      .warn { font-size: 12px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: calc(13px * var(--nx-scale, 1)); }
+      .big { font-size: calc(18px * var(--nx-scale, 1)); font-weight: 500; }
+      .warn { font-size: calc(12px * var(--nx-scale, 1)); font-weight: 500; padding: 2px 6px; border-radius: 4px; }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
-      .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--secondary-text-color); }
+      .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: calc(11px * var(--nx-scale, 1)); color: var(--secondary-text-color); }
       .legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
       .legend svg { width: 16px; height: 10px; display: inline-block; }
-      .ax { font-size: 9px; fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
+      .ax { font-size: calc(9px * min(var(--nx-scale, 1), 1.2)); fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
       .divider { border-top: 1px solid var(--divider-color); padding-top: 8px; }
     </style>
-    <ha-card><div id="flow"></div><div id="band" class="divider"></div></ha-card>`;
+    <ha-card style="--nx-scale:${this._scale}"><div id="flow"></div><div id="band" class="divider"></div></ha-card>`;
     this._sig = this._signature();
     this._renderFlow();
     this._renderBand();
@@ -245,9 +249,12 @@ class NoxcastCard extends HTMLElement {
       pvHome: [pvHome, P.pv, 1], pvBat: [pvBat, P.pv, 1], pvGrid: [pvGrid, P.pv, 1], gridHome: [gridHome, P.grid, 1],
       batHome: [batHome, P.bat, 1], gridBat: [Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat ? -1 : 1],
     };
-    const height = v.bats.length > 1 ? 196 : 186;
-    if (!this._flow || this._flow.height !== height || !el.contains(this._flow.svg)) {
-      el.innerHTML = `<svg viewBox="0 0 408 ${height}" role="img">
+    const sc = this._scale, fs = (n) => (n * sc).toFixed(1);
+    const lift = (sc - 1) * 18;                  // larger text: PV symbol and groups move up
+    const subY = (i) => 122 + 16 * sc + i * 14 * sc, homeY = 176 + 16 * sc;
+    const height = Math.ceil(Math.max(homeY + 4, v.bats.length > 1 ? subY(Math.min(v.bats.length, 3) - 1) + 4 : 0, 186));
+    if (!this._flow || this._flow.height !== height + lift || !el.contains(this._flow.svg)) {
+      el.innerHTML = `<svg viewBox="0 ${(-lift).toFixed(1)} 408 ${(height + lift).toFixed(1)}" role="img">
         ${Object.entries(FLOW_PATHS).map(([k, d]) => `<path data-k="${k}" d="${d}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
         ${Object.keys(FLOW_PATHS).map((k) => `<circle data-dot="${k}" r="4.5" stroke-width="2" visibility="hidden"></circle>`).join("")}
         <g data-labels></g></svg>`;
@@ -258,7 +265,7 @@ class NoxcastCard extends HTMLElement {
         lines[k] = { path, len: path.getTotalLength ? path.getTotalLength() : 0, pos: 0, speed: 0, dir: 1 };
         dots[k] = svg.querySelector(`[data-dot="${k}"]`);
       }
-      this._flow = { svg, lines, dots, height, labels: svg.querySelector("[data-labels]") };
+      this._flow = { svg, lines, dots, height: height + lift, labels: svg.querySelector("[data-labels]") };
     }
     const f = this._flow;
     f.svg.setAttribute("aria-label", `${t.pv} ${Math.round(v.pv)} W, ${t.home} ${Math.round(v.home)} W, ${t.grid} ${Math.round(v.grid)} W, ${t.battery} ${Math.round(v.bat)} W`);
@@ -276,27 +283,27 @@ class NoxcastCard extends HTMLElement {
     const fmtW = (x) => `${Math.round(x).toLocaleString(this._lang)} W`;
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     const groups = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`).join(" · ");
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${138 + i * 14}" text-anchor="end" font-size="11" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
     const gridLabel = v.grid > 0 ? `${fmtW(v.grid)} ↓` : v.grid < 0 ? `${fmtW(-v.grid)} ↑` : "0 W";
     f.labels.innerHTML = `
       <g opacity="${op(v.pv)}">
-        <path d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>
-        <text x="204" y="54" text-anchor="middle" font-size="17" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
-        ${groups ? `<text x="204" y="8" text-anchor="middle" font-size="11" fill="${P.pvText}">${groups}</text>` : ""}
+        <path transform="translate(0 ${(-lift).toFixed(1)})" d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>
+        <text x="204" y="54" text-anchor="middle" font-size="${fs(17)}" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
+        ${groups ? `<text x="204" y="${(8 - lift).toFixed(1)}" text-anchor="middle" font-size="${fs(11)}" fill="${P.pvText}">${groups}</text>` : ""}
       </g>
       <g opacity="${op(v.grid)}">
         <path d="M22 96l6-22l6 22M25 86h6M20 96h16" fill="none" stroke="${P.grid}" stroke-width="2" stroke-linecap="round"></path>
-        <text x="6" y="122" font-size="15" font-weight="500" fill="${P.grid}">${gridLabel}</text>
+        <text x="6" y="122" font-size="${fs(15)}" font-weight="500" fill="${P.grid}">${gridLabel}</text>
       </g>
       <g opacity="${op(v.bat)}">
         <rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
         <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
         <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>
-        <text x="402" y="122" text-anchor="end" font-size="15" font-weight="500" fill="${P.bat}">${v.bat > 0 ? "+" : ""}${fmtW(v.bat)}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
+        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${v.bat > 0 ? "+" : ""}${fmtW(v.bat)}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
       <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${P.home}" stroke-width="2" stroke-linejoin="round"></path>
-      <text x="204" y="192" text-anchor="middle" font-size="15" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>`;
+      <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>`;
     this._animate();
   }
 
@@ -648,6 +655,62 @@ function line(p) {
   return `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${curve(p)}`;
 }
 
+// Visual editor: text size and the main entities; groups and batteries are lists, edited in YAML.
+class NoxcastCardEditor extends HTMLElement {
+  setConfig(config) { this._config = config; this._render(); }
+  set hass(hass) { this._hass = hass; this._render(); }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    const de = (this._hass.language || "en").startsWith("de");
+    if (!this._form) {
+      this.innerHTML = `<p style="margin:0 0 8px;color:var(--secondary-text-color);font-size:13px">${de
+        ? "PV-Gruppen und Akkus werden im YAML-Modus des Editors gepflegt."
+        : "PV groups and batteries are edited in the editor's YAML mode."}</p>`;
+      this._form = document.createElement("ha-form");
+      this._form.addEventListener("value-changed", (ev) => {
+        const v = ev.detail.value, c = { ...this._config };
+        for (const k of ["font_scale", "legend", "export"]) c[k] = v[k];
+        c.pv = { ...(this._config.pv || {}), entity: v.pv_entity || undefined };
+        c.grid = { ...(this._config.grid || {}), entity: v.grid_entity || undefined, invert: v.grid_invert || undefined };
+        c.home = { ...(this._config.home || {}), entity: v.home_entity || undefined };
+        if (c.legend !== false) delete c.legend;
+        if (!c.export) delete c.export;
+        if (c.font_scale === 1) delete c.font_scale;
+        this._config = c;
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
+      });
+      this.appendChild(this._form);
+    }
+    const label = {
+      font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
+      export: de ? "Überschuss wird eingespeist (nicht als Verlust werten)" : "Surplus is fed in (not counted as lost)",
+      pv_entity: de ? "PV gesamt (optional, sonst Summe der Gruppen)" : "PV total (optional, otherwise the sum of the groups)",
+      grid_entity: de ? "Netz (positiv = Bezug)" : "Grid (positive = import)", grid_invert: de ? "Netz-Vorzeichen umkehren" : "Invert grid sign",
+      home_entity: de ? "Hausverbrauch" : "House load",
+    };
+    const sensor = { entity: { domain: "sensor" } };
+    this._form.hass = this._hass;
+    this._form.schema = [
+      { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
+      { name: "legend", selector: { boolean: {} } },
+      { name: "pv_entity", selector: sensor },
+      { name: "grid_entity", selector: sensor },
+      { name: "grid_invert", selector: { boolean: {} } },
+      { name: "home_entity", selector: sensor },
+      { name: "export", selector: { boolean: {} } },
+    ];
+    const c = this._config;
+    this._form.data = {
+      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, export: !!c.export,
+      pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
+      grid_invert: !!(c.grid && c.grid.invert), home_entity: (c.home && c.home.entity) || "",
+    };
+    this._form.computeLabel = (item) => label[item.name] || item.name;
+  }
+}
+
 customElements.define("noxcast-card", NoxcastCard);
+customElements.define("noxcast-card-editor", NoxcastCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield per array, effects and surplus", preview: false });

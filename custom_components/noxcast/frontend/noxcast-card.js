@@ -281,6 +281,18 @@ class NoxcastCard extends HTMLElement {
       dot.setAttribute("stroke", color);
       dot.setAttribute("visibility", on && line.len ? "visible" : "hidden");
     }
+    // the house shows where its power comes from: hard colour bands left to right, PV, battery, grid, by share
+    const srcs = [[pvHome, P.pv], [batHome, P.bat], [gridHome, P.grid]].filter(([w]) => w >= ACTIVE_W);
+    const srcSum = srcs.reduce((a, [w]) => a + w, 0);
+    let homeGrad = "", homeStroke = P.home;
+    if (srcs.length === 1) homeStroke = srcs[0][1];
+    else if (srcs.length > 1) {
+      let at = 0;
+      const stops = srcs.map(([w, col]) => { const a = at; at += w / srcSum;
+        return `<stop offset="${a.toFixed(3)}" stop-color="${col}"></stop><stop offset="${at.toFixed(3)}" stop-color="${col}"></stop>`; }).join("");
+      homeGrad = `<defs><linearGradient id="nx-home" gradientUnits="userSpaceOnUse" x1="190" y1="0" x2="218" y2="0">${stops}</linearGradient></defs>`;
+      homeStroke = "url(#nx-home)";
+    }
     const fmtW = (x) => `${Math.round(x).toLocaleString(this._lang)} W`;
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     const groups = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`).join(" · ");
@@ -303,7 +315,8 @@ class NoxcastCard extends HTMLElement {
         <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${v.bat > 0 ? "+" : ""}${fmtW(v.bat)}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
-      <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${P.home}" stroke-width="2" stroke-linejoin="round"></path>
+      ${homeGrad}
+      <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${homeStroke}" stroke-width="2.5" stroke-linejoin="round"></path>
       <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>`;
     this._animate();
   }

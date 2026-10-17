@@ -299,17 +299,145 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 - Special cases: east-west roofs, vertical and bifacial modules, several arrays on one
   inverter, daylight saving time.
 
-## Later: surplus and grid draw
+## Load forecast and surplus (planned)
 
-Two user types with the same planning problem and different objectives:
+Status: concept, nothing built yet. Today the day card computes a simple version in the browser
+(7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
+dashboard is open, so automations cannot use it. The model below moves into the integration and
+the card only reads its sensors.
 
-- **Tight on PV:** the battery must not be full before production ends; start consumers early
-  enough to absorb the peak. Plan with P50 / P90.
+Two user types share the planning problem with different objectives:
+
+- **Tight on PV:** the battery must not be full before production ends; flexible consumers should
+  absorb the peak. Plan with P50 / P90.
 - **Plenty of PV:** avoid running consumers in weak periods to avoid grid draw. Plan with P10.
 
-Requires a load forecast (base-load profile per weekday and hour, large consumers), a battery
-simulation and outputs such as "latest start" windows. The generation part must therefore
-provide uncertainty bands, 15-minute values and intraday updates from the start.
+### Consumers: kind and timing
+
+Every consumer is described by its behaviour, not by the device. Two independent properties:
+
+**Kind** (how it draws power):
+
+| Kind | Examples | Shape | While on | While off |
+|---|---|---|---|---|
+| Base load | fridge, router, standby, light | continuous, varies by hour | – | profile × k |
+| Program | washer, dryer, dishwasher | one run with an end, energy per run roughly fixed | remaining energy (from remaining time, otherwise the learned run duration) | – (see timing) |
+| Session | PC, TV, console | on, then open-ended, fluctuating power | current power until the learned end, conditioned on the start time | learned on-probability per hour × typical power |
+| Regulated | air conditioning, heat pump, heating rod | power follows an outside quantity | current power, damped | learned relation to the temperature forecast |
+
+**Timing** (when it runs):
+
+- `fixed`: runs regardless of surplus (dishwasher after dinner, PCs). Part of the load forecast.
+- `flexible`: runs when it makes sense; the forecast is used to choose that moment (the washer
+  usually has no plan of its own). Not part of the load forecast unless it is running; an output
+  of the planning instead.
+- `surplus_only` (later): only runs on surplus (heating rod with surplus control). Consumes the
+  surplus after the forecast, never predicted as load.
+
+A session's end is learned, not assumed: in one household PCs stay on until bedtime, in another
+they run for two hours. The model learns the expected remaining duration given the time of day
+the session is observed ("on at 14:00, median 9 h left").
+
+### Learning
+
+- **Base load** = total house load minus all configured consumers, median per hour and day type
+  from 4 to 8 weeks of recorder statistics (median, so rare runs and spikes do not bend it).
+  Past runs of flexible consumers are removed as well, otherwise they would reappear as "midday
+  load" and the forecast would anticipate the very surplus they used.
+- **Short-term correction k:** ratio of the cleaned base load of the last 4 h to the profile of
+  the same hours, clamped (0.35 to 1.3), decaying towards 1 with the distance to the target hour
+  (half-life about 1.4 h). Proven in a template prototype: a running large consumer no longer
+  inflates the rest of the day, and a low night does not scale down the midday.
+- **Program:** energy per run, duration and power curve over the run (so the heating phase of a
+  washer lands at the start). For `fixed` programs also the start-time distribution and runs per
+  day (median and maximum, so a third run is not predicted after two).
+- **Session:** on-probability per hour, typical power, remaining duration by time of day.
+- **Regulated:** power against temperature as a hinge (threshold plus slope), per hour; dropped
+  when no relation is visible.
+- **Day types:** weekday / weekend by default; optionally any sensor as key (presence, holiday
+  switch), profiles are then learned per state. Later: day types from the data itself, with the
+  morning load deciding which type today is.
+- Outlier days (guests, outage, holiday without a sensor) are detected and excluded, as for PV.
+
+### Forecast and battery simulation
+
+```
+load(h) = base_profile[day type, h] × k(h)
+        + Σ fixed programs   (running: remaining energy; otherwise learned starts, capped)
+        + Σ sessions         (on: current power until learned end; off: probability × power)
+        + Σ regulated        (temperature forecast)
+        + Σ running flexible programs (remaining energy only)
+```
+
+The battery is simulated hour by hour from now until tomorrow's charge start (first hour with PV
+above load), not until midnight, so "battery empty at" is part of the result:
+
+- Limits per battery (`max_soc` / `min_soc`, number or entity), capacity per battery.
+- Charge and discharge power limits: above them surplus is fed in or drawn from the grid although
+  the battery still has room or charge.
+- Round-trip efficiency by coupling: DC-coupled batteries lose little (default about 95 %),
+  AC-coupled ones more (about 90 %); configurable. Inverter losses are already inside the
+  measured PV and house load and are not counted again.
+
+### Planning flexible consumers
+
+The forecast gives the surplus without flexible consumers. Each flexible consumer has a run
+profile (energy, duration, power curve: learned from its sensor or entered by hand / from a
+template). Planning places runs into that surplus, counting only what would not go into the
+battery anyway:
+
+- best start window today, with its PV share ("11:00–12:30, 95 % from PV");
+- PV share if started now (for a notification or a smart start);
+- whether today is worth it or tomorrow is clearly better.
+
+Several flexible consumers are placed one after the other by a configured priority, so washer
+and dryer are not both offered the same midday hour.
+
+### Without own sensors
+
+The model degrades in steps; each step works on its own and every sensor adds precision.
+
+0. **House load only** (or grid + PV + battery): one profile from the total load (median per hour
+   and day type) with k. Flexible planning still works with run profiles entered by hand.
+   A running device only shows as higher actual load, which k carries for the next hours.
+1. **Events from the total load** (later, optional): steps above a threshold that hold for a while
+   and fall again are clustered by power, duration and energy. They are removed from the base
+   profile, offered as suggestions ("device ~2.1 kW, ~1.5 h") to become a run profile, and a live
+   step that matches a cluster counts as a weak "running". Equally strong devices cannot be told
+   apart; sessions are too small and noisy and stay in the base load.
+2. **Individual sensors:** each configured consumer leaves the base load and brings its own
+   behaviour; a day-type sensor splits the profiles.
+
+### Outputs
+
+- Surplus today: total, into the battery, lost without intervention, lost after the plan.
+- Lost from (time), highest state of charge and when, battery empty at, remaining load today.
+- Per flexible consumer: best window, PV share now, PV share in the best window.
+- Attributes with the contribution of every term and the data basis ("base load from total load,
+  3 consumers separated, day type weekday, 28 days of data"). With little data the result is a
+  band ("lost 0.4–1.2 kWh") instead of a falsely precise number.
+- Entity IDs and attributes follow the versioned public interface; they are fixed before the
+  first release of this part.
+
+### Verification
+
+- Backtest from the recorder: for every hour of past weeks, forecast with the knowledge of that
+  moment and compare with what happened (error of the remaining load, of the lost surplus, hit
+  rate of the warning level).
+- Parallel run against an existing template solution; switch over only when Noxcast is measurably
+  better.
+
+### Order
+
+1. Base-load profile with consumer configuration and backtest.
+2. Battery simulation and sensors; the card reads them.
+3. Flexible planning.
+4. Sessions, fixed programs with learned starts, day types.
+5. Temperature (regulated consumers).
+6. Event detection without sensors.
+
+The generation part must provide uncertainty bands, 15-minute values and intraday updates for
+this.
 
 ## Prototype findings (one installation, Oct 2026)
 

@@ -14,7 +14,7 @@
 //     # optional limits in percent, a number or an entity: max_soc (default 100), min_soc (default 0)
 // export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
 // legend: true                         # legend below the chart, only for what is shown
-// font_scale: 1                        # text size, 0.8 to 1.6 (also in the visual editor)
+// font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -655,43 +655,67 @@ function line(p) {
   return `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${curve(p)}`;
 }
 
-// Visual editor: text size and the main entities; groups and batteries are lists, edited in YAML.
+// Visual editor: text size, main entities, PV groups and batteries as editable lists.
 class NoxcastCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._render(); }
   set hass(hass) { this._hass = hass; this._render(); }
 
-  _render() {
-    if (!this._hass || !this._config) return;
-    const de = (this._hass.language || "en").startsWith("de");
-    if (!this._form) {
-      this.innerHTML = `<p style="margin:0 0 8px;color:var(--secondary-text-color);font-size:13px">${de
-        ? "PV-Gruppen und Akkus werden im YAML-Modus des Editors gepflegt."
-        : "PV groups and batteries are edited in the editor's YAML mode."}</p>`;
-      this._form = document.createElement("ha-form");
-      this._form.addEventListener("value-changed", (ev) => {
-        const v = ev.detail.value, c = { ...this._config };
-        for (const k of ["font_scale", "legend", "export"]) c[k] = v[k];
-        c.pv = { ...(this._config.pv || {}), entity: v.pv_entity || undefined };
-        c.grid = { ...(this._config.grid || {}), entity: v.grid_entity || undefined, invert: v.grid_invert || undefined };
-        c.home = { ...(this._config.home || {}), entity: v.home_entity || undefined };
-        if (c.legend !== false) delete c.legend;
-        if (!c.export) delete c.export;
-        if (c.font_scale === 1) delete c.font_scale;
-        this._config = c;
-        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
-      });
-      this.appendChild(this._form);
-    }
-    const label = {
+  get _de() { return (this._hass.language || "en").startsWith("de"); }
+
+  _emit(c) {
+    this._config = c;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
+  }
+
+  _labels() {
+    const de = this._de;
+    return {
       font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
       export: de ? "Überschuss wird eingespeist (nicht als Verlust werten)" : "Surplus is fed in (not counted as lost)",
       pv_entity: de ? "PV gesamt (optional, sonst Summe der Gruppen)" : "PV total (optional, otherwise the sum of the groups)",
       grid_entity: de ? "Netz (positiv = Bezug)" : "Grid (positive = import)", grid_invert: de ? "Netz-Vorzeichen umkehren" : "Invert grid sign",
       home_entity: de ? "Hausverbrauch" : "House load",
+      entity: de ? "Leistung" : "Power", name: "Name", invert: de ? "Vorzeichen umkehren" : "Invert sign",
+      array: de ? "Noxcast-Fläche (optional, sonst der Name)" : "Noxcast array (optional, otherwise the name)",
+      soc: de ? "Ladestand" : "State of charge", capacity: de ? "Kapazität (kWh)" : "Capacity (kWh)",
+      max_soc: de ? "Ladegrenze oben (%)" : "Upper limit (%)", max_soc_entity: de ? "… oder als Entität" : "… or as an entity",
+      min_soc: de ? "Entladegrenze unten (%)" : "Lower limit (%)", min_soc_entity: de ? "… oder als Entität" : "… or as an entity",
     };
-    const sensor = { entity: { domain: "sensor" } };
-    this._form.hass = this._hass;
-    this._form.schema = [
+  }
+
+  _form(schema, data, onChange) {
+    const f = document.createElement("ha-form");
+    const label = this._labels();
+    f.hass = this._hass; f.schema = schema; f.data = data;
+    f.computeLabel = (item) => label[item.name] || item.name;
+    f.addEventListener("value-changed", (ev) => { ev.stopPropagation(); f.data = ev.detail.value; onChange(ev.detail.value); });
+    return f;
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    const c = this._config, groups = (c.pv && c.pv.groups) || [], bats = c.batteries || [];
+    const shape = `${groups.length}/${bats.length}/${this._de}`;
+    if (this._shape === shape) {                       // only refresh hass, keeps the focus while typing
+      for (const f of this.querySelectorAll("ha-form")) f.hass = this._hass;
+      return;
+    }
+    this._shape = shape;
+    const de = this._de, sensor = { entity: { domain: "sensor" } }, entity = { entity: {} };
+    const percent = { number: { min: 0, max: 100, step: 1, mode: "box", unit_of_measurement: "%" } };
+    this.innerHTML = `<style>
+        .nx-sec { margin: 16px 0 4px; font-weight: 500; }
+        .nx-item { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+        .nx-head { display: flex; justify-content: space-between; align-items: center; color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
+        .nx-btn { background: none; border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 10px;
+          color: var(--primary-color); font: inherit; cursor: pointer; }
+      </style><div id="main"></div>
+      <div class="nx-sec">${de ? "PV-Gruppen" : "PV groups"}</div><div id="groups"></div>
+      <button class="nx-btn" id="addGroup">+ ${de ? "Gruppe" : "group"}</button>
+      <div class="nx-sec">${de ? "Akkus" : "Batteries"}</div><div id="bats"></div>
+      <button class="nx-btn" id="addBat">+ ${de ? "Akku" : "battery"}</button>`;
+
+    this.querySelector("#main").appendChild(this._form([
       { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
       { name: "legend", selector: { boolean: {} } },
       { name: "pv_entity", selector: sensor },
@@ -699,14 +723,68 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "grid_invert", selector: { boolean: {} } },
       { name: "home_entity", selector: sensor },
       { name: "export", selector: { boolean: {} } },
-    ];
-    const c = this._config;
-    this._form.data = {
+    ], {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, export: !!c.export,
       pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
       grid_invert: !!(c.grid && c.grid.invert), home_entity: (c.home && c.home.entity) || "",
+    }, (v) => {
+      const n = { ...this._config };
+      for (const k of ["font_scale", "legend", "export"]) n[k] = v[k];
+      n.pv = { ...(n.pv || {}), entity: v.pv_entity || undefined };
+      n.grid = { ...(n.grid || {}), entity: v.grid_entity || undefined, invert: v.grid_invert || undefined };
+      n.home = { ...(n.home || {}), entity: v.home_entity || undefined };
+      if (n.legend !== false) delete n.legend;
+      if (!n.export) delete n.export;
+      if (n.font_scale === 1) delete n.font_scale;
+      this._emit(n);
+    }));
+
+    const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, x]) => x !== undefined && x !== "" && x !== false && x !== null));
+    const setGroups = (list) => this._emit({ ...this._config, pv: { ...(this._config.pv || {}), groups: list } });
+    const setBats = (list) => this._emit({ ...this._config, batteries: list });
+    const item = (box, title, form, remove) => {
+      const el = document.createElement("div");
+      el.className = "nx-item";
+      el.innerHTML = `<div class="nx-head"><span>${title}</span><button class="nx-btn">${de ? "Entfernen" : "Remove"}</button></div>`;
+      el.querySelector("button").addEventListener("click", remove);
+      el.appendChild(form);
+      box.appendChild(el);
     };
-    this._form.computeLabel = (item) => label[item.name] || item.name;
+
+    const gBox = this.querySelector("#groups");
+    groups.forEach((g, i) => item(gBox, `${de ? "Gruppe" : "Group"} ${i + 1}`, this._form([
+      { name: "entity", selector: sensor }, { name: "name", selector: { text: {} } },
+      { name: "array", selector: { text: {} } }, { name: "invert", selector: { boolean: {} } },
+    ], { entity: g.entity || "", name: g.name || "", array: g.array || "", invert: !!g.invert }, (v) => {
+      const list = [...((this._config.pv && this._config.pv.groups) || [])];
+      list[i] = clean({ ...list[i], ...v });
+      setGroups(list);
+    }), () => setGroups(((this._config.pv && this._config.pv.groups) || []).filter((_, j) => j !== i))));
+
+    // a limit is a number or an entity; the entity wins when both are set
+    const limit = (x) => (typeof x === "string" && x.includes(".") ? { e: x, n: undefined }
+      : { e: "", n: x === undefined || x === "" ? undefined : Number(x) });
+    const bBox = this.querySelector("#bats");
+    bats.forEach((b, i) => {
+      const mx = limit(b.max_soc), mn = limit(b.min_soc);
+      item(bBox, `${de ? "Akku" : "Battery"} ${i + 1}`, this._form([
+        { name: "entity", selector: sensor }, { name: "soc", selector: sensor },
+        { name: "name", selector: { text: {} } },
+        { name: "capacity", selector: { number: { min: 0, max: 100, step: 0.1, mode: "box", unit_of_measurement: "kWh" } } },
+        { name: "invert", selector: { boolean: {} } },
+        { name: "max_soc", selector: percent }, { name: "max_soc_entity", selector: entity },
+        { name: "min_soc", selector: percent }, { name: "min_soc_entity", selector: entity },
+      ], { entity: b.entity || "", soc: b.soc || "", name: b.name || "", capacity: b.capacity, invert: !!b.invert,
+        max_soc: mx.n, max_soc_entity: mx.e, min_soc: mn.n, min_soc_entity: mn.e }, (v) => {
+        const list = [...(this._config.batteries || [])];
+        const { max_soc_entity, min_soc_entity, ...rest } = v;
+        list[i] = clean({ ...list[i], ...rest, max_soc: max_soc_entity || rest.max_soc, min_soc: min_soc_entity || rest.min_soc });
+        setBats(list);
+      }), () => setBats((this._config.batteries || []).filter((_, j) => j !== i)));
+    });
+
+    this.querySelector("#addGroup").addEventListener("click", () => setGroups([...groups, { entity: "" }]));
+    this.querySelector("#addBat").addEventListener("click", () => setBats([...bats, { entity: "", soc: "", capacity: 1 }]));
   }
 }
 

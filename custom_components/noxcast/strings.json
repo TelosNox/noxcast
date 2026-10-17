@@ -8,12 +8,14 @@
           "weather_source": "Weather source",
           "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
-          "soc_full_pct": "Battery considered full at"
+          "soc_full_pct": "Battery considered full at",
+          "house_load": "House load"
         },
         "data_description": {
           "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
           "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
-          "soc_full_pct": "State of charge from which curtailment is assumed."
+          "soc_full_pct": "State of charge from which curtailment is assumed.",
+          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement)."
         }
       },
       "reconfigure": {
@@ -22,7 +24,11 @@
           "weather_source": "Weather source",
           "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
-          "soc_full_pct": "Battery considered full at"
+          "soc_full_pct": "Battery considered full at",
+          "house_load": "House load"
+        },
+        "data_description": {
+          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement)."
         }
       }
     },
@@ -30,7 +36,10 @@
       "weather_entity_required": "Select a weather entity.",
       "no_irradiance": "This weather entity provides no irradiance in its hourly forecast.",
       "weather_unavailable": "The weather entity did not return a forecast.",
-      "soc_unit": "Battery sensors must report their state of charge in %."
+      "soc_unit": "Battery sensors must report their state of charge in %.",
+      "sensor_missing": "The selected sensor does not exist.",
+      "sensor_unit": "Power sensors must report W or kW.",
+      "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics."
     },
     "abort": {
       "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
@@ -90,6 +99,46 @@
       "abort": {
         "reconfigure_successful": "PV array saved."
       }
+    },
+    "consumer": {
+      "entry_type": "Consumer",
+      "initiate_flow": {
+        "user": "Add consumer"
+      },
+      "step": {
+        "user": {
+          "title": "Consumer",
+          "description": "A device with its own power sensor. Its power is removed from the base load and forecast separately.",
+          "data": {
+            "name": "Name",
+            "power_sensor": "Power sensor",
+            "timing": "Timing"
+          },
+          "data_description": {
+            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs."
+          }
+        },
+        "reconfigure": {
+          "title": "Consumer",
+          "description": "A device with its own power sensor. Its power is removed from the base load and forecast separately.",
+          "data": {
+            "name": "Name",
+            "power_sensor": "Power sensor",
+            "timing": "Timing"
+          },
+          "data_description": {
+            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs."
+          }
+        }
+      },
+      "error": {
+        "sensor_missing": "The selected sensor does not exist.",
+        "sensor_unit": "Power sensors must report W or kW.",
+        "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics."
+      },
+      "abort": {
+        "reconfigure_successful": "PV array saved."
+      }
     }
   },
   "selector": {
@@ -97,6 +146,12 @@
       "options": {
         "entity": "Home Assistant weather entity",
         "open_meteo": "Open-Meteo (internet)"
+      }
+    },
+    "timing": {
+      "options": {
+        "fixed": "Fixed",
+        "flexible": "Flexible"
       }
     }
   },
@@ -137,6 +192,12 @@
       },
       "shade_today": {
         "name": "Shade today"
+      },
+      "load_remaining_today": {
+        "name": "Load rest of today"
+      },
+      "load_tomorrow": {
+        "name": "Load tomorrow"
       }
     },
     "image": {

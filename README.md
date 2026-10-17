@@ -17,6 +17,11 @@ shading, and the irradiance forecast of your weather source – every number exp
 - Hours with a full battery (possible curtailment) and excluded periods are ignored.
 - The forecast combines clear-sky geometry, the shading map and the hourly irradiance of a
   weather entity (e.g. DWD `sun_irradiance`) or Open-Meteo, for today, tomorrow and the day after.
+- Optional load forecast: with a house load sensor, Noxcast learns a base-load profile (median per
+  hour, workday / weekend, last 6 weeks) without the consumers you add with their own power
+  sensor. Fixed consumers follow their own profile; flexible ones (e.g. a washer you start on
+  surplus) only count while they run. A short-term correction follows today's level for the next
+  hours.
 
 ## Installation
 
@@ -25,14 +30,17 @@ HACS → Integrations → ⋮ → Custom repositories → `https://github.com/Te
 `custom_components/noxcast` into your `config/custom_components`.
 
 Then: Settings → Devices & services → Add integration → **Noxcast**, choose the weather source,
-and add one **PV array** per orientation.
+and add one **PV array** per orientation. For the load forecast, set the house load sensor in the
+entry and add a **Consumer** for each device with its own power sensor.
 
 ## Entities
 
 Per array and in total: forecast today, tomorrow, day after tomorrow (kWh, attribute `hourly`
 with ISO timestamps → kWh, `schema_version` 1) and remaining today. Diagnostics: system
 efficiency, shading map coverage, last learning run. The total is available as solar forecast
-in the energy dashboard.
+in the energy dashboard. With a house load sensor: load rest of today and tomorrow (kWh,
+attributes `hourly`, `base`, `consumers`, `correction`, `profile_days` and `backtest` with the
+mean error of the replayed last 14 days next to a naive 7-day mean).
 
 ## Services
 

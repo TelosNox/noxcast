@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
+from . import load as lf
 from .const import ATTR_SCHEMA_VERSION, COMPARE_SOURCE, DOMAIN, ERROR_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
@@ -77,6 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                               entry_type=DeviceEntryType.SERVICE)
     async_add_entities([ForecastSensor(coordinator, d, None, total_device) for d in FORECASTS]
                        + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
+    if coordinator.house_load:
+        async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
 
     for sub_id, arr in coordinator.arrays.items():
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
@@ -93,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
 
 class NoxcastEntity(CoordinatorEntity[NoxcastCoordinator]):
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"hourly"})      # keep the recorder database small
+    _unrecorded_attributes = frozenset({"hourly", "backtest"})      # keep the recorder database small
 
     def __init__(self, coordinator: NoxcastCoordinator, unique_id: str, device: DeviceInfo) -> None:
         super().__init__(coordinator)
@@ -287,3 +290,59 @@ class ForecastErrorSensor(NoxcastEntity, SensorEntity):
                                  "primary_error": round(sum(abs(f - a) for f, a in own.values()) / own_actual * 100, 1)
                                  if own_actual > 0 else None}
         return {"days": days, "archived_days": len(archive), "per_array": per_array, "comparison": sources}
+
+
+class LoadSensor(NoxcastEntity, SensorEntity):
+    """House load forecast: rest of today (offset 0) or tomorrow (offset 1), with its parts as attributes."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:home-lightning-bolt-outline"
+
+    def __init__(self, coordinator, device: DeviceInfo, offset: int) -> None:
+        key = "load_remaining_today" if offset == 0 else "load_tomorrow"
+        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_{key}", device)
+        self._attr_translation_key = key
+        self._offset = offset
+
+    def _forecast(self) -> lf.LoadForecast | None:
+        data = self.coordinator.data
+        return data.load if data is not None else None
+
+    @property
+    def available(self) -> bool:
+        return self._forecast() is not None
+
+    @property
+    def native_value(self) -> float | None:
+        fc = self._forecast()
+        if fc is None:
+            return None
+        a, b = _day_bounds(self._offset)
+        if self._offset == 0:
+            return round(lf.remaining(fc.hours, dt_util.utcnow().timestamp(), b) / 1000, 3)
+        hours = [wh for t, wh in fc.hours.items() if a <= t < b]
+        return round(sum(hours) / 1000, 3) if len(hours) >= MIN_DAY_HOURS else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        fc = self._forecast()
+        if fc is None:
+            return None
+        a, b = _day_bounds(self._offset)
+
+        def day_sum(series: dict[float, float]) -> float:
+            return round(sum(wh for t, wh in series.items() if a <= t < b) / 1000, 3)
+
+        names = {sid: c.name for sid, c in self.coordinator.consumers.items()}
+        profile = self.coordinator.load_profile
+        return {
+            "schema_version": ATTR_SCHEMA_VERSION,
+            "hourly": hourly_attribute(fc.hours, self._offset),
+            "base": day_sum(fc.base),
+            "consumers": {names.get(sid, sid): day_sum(series) for sid, series in fc.consumers.items()},
+            "correction": fc.k if self._offset == 0 else None,
+            "profile_days": profile.days if profile else 0,
+            "backtest": self.coordinator.load_backtest,
+        }

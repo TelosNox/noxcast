@@ -11,6 +11,13 @@ CONF_SOC_FULL = "soc_full_pct"
 WEATHER_SOURCE_ENTITY = "entity"
 WEATHER_SOURCE_OPEN_METEO = "open_meteo"
 DEFAULT_SOC_FULL = 95
+CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
+
+# consumer subentry: a device with its own power sensor, removed from the base load
+SUBENTRY_CONSUMER = "consumer"
+CONF_POWER_SENSOR = "power_sensor"
+CONF_TIMING = "timing"                   # fixed: part of the load forecast; flexible: the forecast picks its moment
+TIMING_OPTIONS = ("fixed", "flexible")
 
 # array subentry
 SUBENTRY_ARRAY = "array"

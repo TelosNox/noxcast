@@ -260,7 +260,7 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     begun, so a deviation stays visible instead of being replaced by the actual value. The shade
     loss is hatched below the potential without shade.
   - House load per hour (measured, then the mean of the last 7 days), capped at the PV scale;
-    higher peaks are marked once per run of hours with their highest value. Blue where the load is above the generation.
+    hours whose mean is cut off by the scale are marked once per run with their highest mean. Blue where the load is above the generation.
   - One lane per array: shade periods always, reflection where it adds max(15 Wh, min(50 Wh,
     10 % of the day)) or more. An effect is the forecast with vs without the learned part under
     today's weather.

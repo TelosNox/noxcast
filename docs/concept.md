@@ -373,7 +373,8 @@ load(h) = base_profile[day type, h] × k(h)
 The battery is simulated hour by hour from now until tomorrow's charge start (first hour with PV
 above load), not until midnight, so "battery empty at" is part of the result:
 
-- Limits per battery (`max_soc` / `min_soc`, number or entity), capacity per battery.
+- Limits per battery (`max_soc` / `min_soc`, number or entity, plus an optional reserve in percent
+  points above `min_soc` where discharging stops in practice, e.g. a feed-in stop rule), capacity per battery.
 - Charge and discharge power limits: above them surplus is fed in or drawn from the grid although
   the battery still has room or charge.
 - Round-trip efficiency by coupling: DC-coupled batteries lose little (default about 95 %),

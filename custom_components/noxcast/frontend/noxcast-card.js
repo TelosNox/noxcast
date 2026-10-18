@@ -12,6 +12,7 @@
 // batteries:
 //   - { entity: sensor.bat_power, soc: sensor.bat_soc, capacity: 1.9, name: Pro, invert: false }  # positive = charging
 //     # optional limits in percent, a number or an entity: max_soc (default 100), min_soc (default 0)
+//     # reserve: percent points above min_soc where discharging stops in practice (e.g. a feed-in rule)
 // export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
@@ -573,7 +574,7 @@ class NoxcastCard extends HTMLElement {
     const battery = {
       cap: capWh,
       max: bats.reduce((a, b) => a + Number(b.capacity) * 1000 * this._limit(b.max_soc, 100) / 100, 0) / capWh,
-      min: bats.reduce((a, b) => a + Number(b.capacity) * 1000 * this._limit(b.min_soc, 0) / 100, 0) / capWh,
+      min: bats.reduce((a, b) => a + Number(b.capacity) * 1000 * Math.min(100, this._limit(b.min_soc, 0) + (Number(b.reserve) || 0)) / 100, 0) / capWh,
       now: this._live().socAll === null ? null : this._live().socAll / 100,
     };
     const socPast = [];
@@ -693,6 +694,7 @@ class NoxcastCardEditor extends HTMLElement {
       soc: de ? "Ladestand" : "State of charge", capacity: de ? "Kapazität (kWh)" : "Capacity (kWh)",
       max_soc: de ? "Ladegrenze oben (%)" : "Upper limit (%)", max_soc_entity: de ? "… oder als Entität" : "… or as an entity",
       min_soc: de ? "Entladegrenze unten (%)" : "Lower limit (%)", min_soc_entity: de ? "… oder als Entität" : "… or as an entity",
+      reserve: de ? "Reserve über der Entladegrenze (Prozentpunkte, z. B. Einspeisestopp)" : "Reserve above the lower limit (percent points, e.g. a feed-in stop)",
     };
   }
 
@@ -787,8 +789,9 @@ class NoxcastCardEditor extends HTMLElement {
         { name: "invert", selector: { boolean: {} } },
         { name: "max_soc", selector: percent }, { name: "max_soc_entity", selector: entity },
         { name: "min_soc", selector: percent }, { name: "min_soc_entity", selector: entity },
+        { name: "reserve", selector: { number: { min: 0, max: 50, step: 1, mode: "box", unit_of_measurement: "%" } } },
       ], { entity: b.entity || "", soc: b.soc || "", name: b.name || "", capacity: b.capacity, invert: !!b.invert,
-        max_soc: mx.n, max_soc_entity: mx.e, min_soc: mn.n, min_soc_entity: mn.e }, (v) => {
+        max_soc: mx.n, max_soc_entity: mx.e, min_soc: mn.n, min_soc_entity: mn.e, reserve: b.reserve }, (v) => {
         const list = [...(this._config.batteries || [])];
         const { max_soc_entity, min_soc_entity, ...rest } = v;
         list[i] = clean({ ...list[i], ...rest, max_soc: max_soc_entity || rest.max_soc, min_soc: min_soc_entity || rest.min_soc });

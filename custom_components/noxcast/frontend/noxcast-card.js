@@ -194,7 +194,7 @@ class NoxcastCard extends HTMLElement {
     if (!ids.length) return { stats: {}, dayStart };
     const res = await this._hass.connection.sendMessagePromise({
       type: "recorder/statistics_during_period", start_time: new Date(dayStart - 7 * 86400000).toISOString(),
-      end_time: now.toISOString(), statistic_ids: ids, period: "hour", types: ["mean", "max"],
+      end_time: now.toISOString(), statistic_ids: ids, period: "hour", types: ["mean"],
     });
     return { stats: res, dayStart };
   }
@@ -388,10 +388,10 @@ class NoxcastCard extends HTMLElement {
     const lv = (h) => load(h) ?? 0;
     const grid = []; for (let v = step; v <= ymax + 1e-9; v += step) grid.push(v);
     const kw = (v) => (v / 1000).toLocaleString(this._lang, { maximumFractionDigits: 2 });
-    // load above the scale: one marker per run of hours, at its highest value
+    // drawn load cut off by the scale: one marker per run of hours, at its highest hourly mean
     const spikes = [];
     for (const h of hasLoad ? dayH : []) {
-      const v = m.loadMax(h) ?? lv(h);
+      const v = lv(h);
       if (v <= ymax) continue;
       const last = spikes[spikes.length - 1];
       if (last && h - last.end <= H) { last.end = h; if (v > last.v) Object.assign(last, { h, v }); } else spikes.push({ h, end: h, v });
@@ -551,11 +551,11 @@ class NoxcastCard extends HTMLElement {
     const homeId = c.home && c.home.entity;
     const scale = homeId && this._hass.states[homeId] && (this._hass.states[homeId].attributes.unit_of_measurement || "").toLowerCase() === "kw" ? 1000 : 1;
     const today = this._data.dayStart / 1000;
-    const measured = new Map(), peaks = new Map(), byHour = new Map();
+    const measured = new Map(), byHour = new Map();
     for (const r of stats[homeId] || []) {
       const ts = r.start / 1000;
       if (r.mean === null || r.mean === undefined) continue;
-      if (ts >= today) { measured.set(ts, r.mean * scale); if (r.max !== null && r.max !== undefined) peaks.set(ts, r.max * scale); }
+      if (ts >= today) measured.set(ts, r.mean * scale);
       const k = (((ts - today) % 86400) + 86400) % 86400;
       if (ts < today) { const l = byHour.get(k) || []; l.push(r.mean * scale); byHour.set(k, l); }
     }
@@ -566,11 +566,10 @@ class NoxcastCard extends HTMLElement {
       const l = byHour.get((((h - today) % 86400) + 86400) % 86400);
       return l && l.length ? l.reduce((a, b) => a + b, 0) / l.length : null;
     };
-    const loadMax = (h) => (peaks.has(h) ? peaks.get(h) : null);
 
     const bats = (c.batteries || []).filter((b) => Number(b.capacity) > 0);
     const capWh = bats.reduce((a, b) => a + Number(b.capacity) * 1000, 0);
-    if (!capWh) return { load, loadMax, battery: null, socPast: [], socAt: () => null };
+    if (!capWh) return { load, battery: null, socPast: [], socAt: () => null };
     const battery = {
       cap: capWh,
       max: bats.reduce((a, b) => a + Number(b.capacity) * 1000 * this._limit(b.max_soc, 100) / 100, 0) / capWh,
@@ -594,7 +593,7 @@ class NoxcastCard extends HTMLElement {
       for (const p of socPast) if (Math.abs(p[0] - ts) < Math.abs(best[0] - ts)) best = p;
       return Math.abs(best[0] - ts) <= 5400 ? best[1] : null;
     };
-    return { load, loadMax, battery, socPast, socAt };
+    return { load, battery, socPast, socAt };
   }
 
   // battery from now until `end`: level points, when it is full or empty, and surplus it cannot take

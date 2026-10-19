@@ -217,6 +217,9 @@ class NoxcastCard extends HTMLElement {
       ha-card { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
       .muted { color: var(--secondary-text-color); }
       .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+      #band { container-type: inline-size; }
+      .nums { flex-wrap: nowrap; gap: 4px 8px; font-size: clamp(10px, 3.2cqw, 13px); white-space: nowrap; }
+      .nums .big { font-size: clamp(13px, 4cqw, 16px); }
       .big { font-size: 16px; font-weight: 500; }
       .warn { font-size: 12px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -256,10 +259,11 @@ class NoxcastCard extends HTMLElement {
     const sc = this._scale * 1.3,      // the live numbers are the main reading, larger than the rows below
           fs = (n) => (n * sc).toFixed(1);
     const lift = (sc - 1) * 18;                  // larger text: PV symbol and groups move up
+    const top = 10 - lift;                       // groups sit beside the PV symbol, so nothing is above it
     const subY = (i) => 122 + 16 * sc + i * 14 * sc, homeY = 176 + 16 * sc;
     const height = Math.ceil(Math.max(homeY + 4, v.bats.length > 1 ? subY(Math.min(v.bats.length, 3) - 1) + 4 : 0, 186));
-    if (!this._flow || this._flow.height !== height + lift || !el.contains(this._flow.svg)) {
-      el.innerHTML = `<svg viewBox="0 ${(-lift).toFixed(1)} 408 ${(height + lift).toFixed(1)}" role="img">
+    if (!this._flow || this._flow.height !== height - top || !el.contains(this._flow.svg)) {
+      el.innerHTML = `<svg viewBox="0 ${top.toFixed(1)} 408 ${(height - top).toFixed(1)}" role="img">
         ${Object.entries(FLOW_PATHS).map(([k, d]) => `<path data-k="${k}" d="${d}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
         ${Object.keys(FLOW_PATHS).map((k) => `<circle data-dot="${k}" r="4.5" stroke-width="2" visibility="hidden"></circle>`).join("")}
         <g data-labels></g></svg>`;
@@ -270,7 +274,7 @@ class NoxcastCard extends HTMLElement {
         lines[k] = { path, len: path.getTotalLength ? path.getTotalLength() : 0, pos: 0, speed: 0, dir: 1 };
         dots[k] = svg.querySelector(`[data-dot="${k}"]`);
       }
-      this._flow = { svg, lines, dots, height: height + lift, labels: svg.querySelector("[data-labels]") };
+      this._flow = { svg, lines, dots, height: height - top, labels: svg.querySelector("[data-labels]") };
     }
     const f = this._flow;
     f.svg.setAttribute("aria-label", `${t.pv} ${Math.round(v.pv)} W, ${t.home} ${Math.round(v.home)} W, ${t.grid} ${Math.round(v.grid)} W, ${t.battery} ${Math.round(v.bat)} W`);
@@ -299,14 +303,19 @@ class NoxcastCard extends HTMLElement {
     }
     const fmtW = (x) => `${Math.round(x).toLocaleString(this._lang)} W`;
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
-    const groups = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`).join(" · ");
+    // groups left and right of the PV symbol: first half left, the rest right
+    const gText = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`);
+    const half = Math.ceil(gText.length / 2);
+    const gY = (27 - lift).toFixed(1);
+    const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
+        <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
     const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
     const gridLabel = v.grid > 0 ? `${fmtW(v.grid)} ↓` : v.grid < 0 ? `${fmtW(-v.grid)} ↑` : "0 W";
     f.labels.innerHTML = `
       <g opacity="${op(v.pv)}">
         <path transform="translate(0 ${(-lift).toFixed(1)})" d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>
         <text x="204" y="54" text-anchor="middle" font-size="${fs(17)}" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
-        ${groups ? `<text x="204" y="${(8 - lift).toFixed(1)}" text-anchor="middle" font-size="${fs(11)}" fill="${P.pvText}">${groups}</text>` : ""}
+        ${groups}
       </g>
       <g opacity="${op(v.grid)}">
         <path d="M22 96l6-22l6 22M25 86h6M20 96h16" fill="none" stroke="${P.grid}" stroke-width="2" stroke-linecap="round"></path>
@@ -511,7 +520,7 @@ class NoxcastCard extends HTMLElement {
         refl: arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
       ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
-      <div class="row">${numbers}
+      <div class="row nums">${numbers}
         ${lossTotal >= 50 ? `<span style="color:${P.shade}">${t.shade} −${this._kwh(lossTotal)}</span>` : ""}
         <span class="muted">${t.tomorrow} <b style="color:var(--primary-text-color);font-weight:500">${this._kwh(tomorrow)}</b></span>
       </div>`;

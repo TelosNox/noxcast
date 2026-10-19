@@ -241,11 +241,14 @@ class NoxcastCard extends HTMLElement {
     const charge = Math.max(v.bat, 0), discharge = Math.max(-v.bat, 0);
     const pvBat = Math.min(v.pv, charge);                    // a charging battery takes PV first, the grid only covers the rest
     const pvHome = Math.min(v.pv - pvBat, v.home);
-    const pvGrid = Math.max(v.pv - pvHome - pvBat, 0);
-    const batHome = Math.min(discharge, v.home - pvHome);
-    const gridHome = Math.max(v.home - pvHome - batHome, 0);
-    const gridBat = Math.max(charge - pvBat, 0);
-    const batGrid = Math.max(discharge - batHome, 0);
+    // sensors rarely add up exactly: flows to and from the grid never exceed what the grid sensor shows
+    const gridKnown = !!(this._config.grid && this._config.grid.entity);
+    const imp = gridKnown ? Math.max(v.grid, 0) : Infinity, exp = gridKnown ? Math.max(-v.grid, 0) : Infinity;
+    const pvGrid = Math.min(Math.max(v.pv - pvHome - pvBat, 0), exp);
+    const batHome = Math.max(Math.min(discharge, v.home - pvHome), 0);
+    const gridHome = Math.min(Math.max(v.home - pvHome - batHome, 0), imp);
+    const gridBat = Math.min(Math.max(charge - pvBat, 0), imp - gridHome);
+    const batGrid = Math.min(Math.max(discharge - batHome, 0), exp - pvGrid);
     const flows = {
       pvHome: [pvHome, P.pv, 1], pvBat: [pvBat, P.pv, 1], pvGrid: [pvGrid, P.pv, 1], gridHome: [gridHome, P.grid, 1],
       batHome: [batHome, P.bat, 1], gridBat: [Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat ? -1 : 1],
@@ -397,6 +400,9 @@ class NoxcastCard extends HTMLElement {
       const last = spikes[spikes.length - 1];
       if (last && h - last.end <= H) { last.end = h; if (v > last.v) Object.assign(last, { h, v }); } else spikes.push({ h, end: h, v });
     }
+    // lines get a halo in the card colour, so they stay visible on the PV area in both themes
+    const halo = (d) => `<path d="${d}" fill="none" stroke="var(--card-background-color, #fff)" stroke-width="4" stroke-opacity=".75" stroke-linejoin="round"></path>`;
+    const loadLine = hasLoad ? line(dayH.map((h) => [x(h + H / 2), y(lv(h))])) : "";
     let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>
         <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}</text>`).join("")}
       <text x="${X1 + 3}" y="${(y(ymax) - 9).toFixed(1)}" class="ax">kW</text>
@@ -405,8 +411,8 @@ class NoxcastCard extends HTMLElement {
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
       <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
       ${hasLoad ? `<path d="${between((h) => Math.max(lv(h), exp(h)), exp)}" fill="${P.grid}" fill-opacity=".3"></path>` : ""}
-      <path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
-      ${hasLoad ? `<path d="${line(dayH.map((h) => [x(h + H / 2), y(lv(h))]))}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
+      ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
+      ${hasLoad ? `${halo(loadLine)}<path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
       ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;

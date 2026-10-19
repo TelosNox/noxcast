@@ -386,11 +386,11 @@ class NoxcastCard extends HTMLElement {
 
     const m = this._model(now);
     const load = m.load;
-    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 116;
+    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 100;
     const x = (ts) => X0 + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (X1 - X0);
-    // fixed scale: installed peak power + 10 %, so a weak day shows as a low curve
+    // fixed scale: installed peak power, so a weak day shows as a low curve
     const peakW = arrays.reduce((a, arr) => a + (arr.peak_w || 0), 0);
-    const top = peakW > 0 ? peakW * 1.1 : Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
+    const top = peakW > 0 ? peakW : Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
     const step = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find((s) => top / s <= 4) || 20000;
     const ymax = peakW > 0 ? top : Math.ceil(top / step) * step;
     const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 12);

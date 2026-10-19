@@ -301,15 +301,20 @@ class NoxcastCard extends HTMLElement {
       homeGrad = `<defs><linearGradient id="nx-home" gradientUnits="userSpaceOnUse" x1="190" y1="0" x2="218" y2="0">${stops}</linearGradient></defs>`;
       homeStroke = "url(#nx-home)";
     }
-    const fmtW = (x) => `${Math.round(x).toLocaleString(this._lang)} W`;
+    // from 1000 W on in kW with one decimal, so long numbers do not crowd the flow
+    const num = (x) => (Math.abs(x) >= 1000
+      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} k`
+      : `${Math.round(x)} `);
+    const fmtW = (x) => `${num(x)}W`;
+    const small = (x) => (Math.abs(x) >= 1000 ? fmtW(x) : `${Math.round(x)}`);   // group and battery rows
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     // groups left and right of the PV symbol: first half left, the rest right
-    const gText = v.groups.map((g) => `${this._esc(g.name)} ${Math.round(g.w)}`);
+    const gText = v.groups.map((g) => `${this._esc(g.name)} ${small(g.w)}`);
     const half = Math.ceil(gText.length / 2);
     const gY = (27 - lift).toFixed(1);
     const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
         <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${Math.round(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${small(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
     const gridLabel = v.grid > 0 ? `${fmtW(v.grid)} ↓` : v.grid < 0 ? `${fmtW(-v.grid)} ↑` : "0 W";
     f.labels.innerHTML = `
       <g opacity="${op(v.pv)}">

@@ -494,7 +494,7 @@ class NoxcastCard extends HTMLElement {
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
       ${svgPv}${lanes}${batSvg}
-      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1.2"></line>
+      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
         <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${this._hm(h).slice(0, 2)}</text>`).join("")}
     </svg>`;

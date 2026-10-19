@@ -430,7 +430,9 @@ class NoxcastCard extends HTMLElement {
     }).join("");
 
     // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
-    const B0 = Ly + arrays.length * (Lh + 4) + 26, Bh = 22, ys = (f) => B0 + Bh - Math.max(0, Math.min(1, f)) * Bh;
+    // caps (B0, Bh) leave room for their labels; the strip between them also uses the space above
+    const B0 = Ly + arrays.length * (Lh + 4) + 26, Bh = 22;
+    const S0 = Ly + arrays.length * (Lh + 4) + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
     const bat = m.battery;
     let batSvg = "", sim = null, chargeToday = null, chargeTom = null;
     const seenZones = new Set();
@@ -446,7 +448,7 @@ class NoxcastCard extends HTMLElement {
         return f >= bat.max - 0.05 ? P.near : null;
       };
       // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable
-      const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; if (c) seenZones.add(c); return c ? `<rect x="${x(h).toFixed(1)}" y="${B0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Bh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
+      const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; if (c) seenZones.add(c); return c ? `<rect x="${x(h).toFixed(1)}" y="${S0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Sh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
       const past = m.socPast.filter(([ts]) => ts >= t0 && ts <= Math.min(now, t1)).map(([ts, f]) => [x(ts), ys(f)]);
       const fut = sim.points.filter(([ts]) => ts <= t1).map(([ts, f]) => [x(ts), ys(f)]);
       const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
@@ -460,8 +462,8 @@ class NoxcastCard extends HTMLElement {
           <text x="${cx}" y="${by - 3}" text-anchor="middle" class="ax">${label}</text>
           <text x="${cx}" y="${B0 + Bh + 11}" text-anchor="middle" class="ax">${time}</text>`;
       };
-      batSvg = `<rect x="${X0}" y="${B0}" width="${X1 - X0}" height="${Bh}" rx="3" fill="${P.rail}"></rect>
-        ${past.length > 1 ? `<path d="${line(past)} L${past[past.length - 1][0].toFixed(1)},${B0 + Bh} L${past[0][0].toFixed(1)},${B0 + Bh} Z" fill="${P.bat}" fill-opacity=".45"></path>` : ""}${zones}
+      batSvg = `<rect x="${X0}" y="${S0}" width="${X1 - X0}" height="${Sh}" rx="3" fill="${P.rail}"></rect>
+        ${past.length > 1 ? `<path d="${line(past)} L${past[past.length - 1][0].toFixed(1)},${S0 + Sh} L${past[0][0].toFixed(1)},${S0 + Sh} Z" fill="${P.bat}" fill-opacity=".45"></path>` : ""}${zones}
         ${fut.length > 1 ? `<path d="${line(fut)}" fill="none" stroke="${P.bat}" stroke-width="1.8" stroke-dasharray="3 3"></path>` : ""}
         ${sim.full !== null && sim.full < t1 ? `<circle cx="${x(sim.full).toFixed(1)}" cy="${ys(bat.max).toFixed(1)}" r="3" fill="var(--card-background-color, #fff)" stroke="${P.bat}" stroke-width="1.6"></circle>` : ""}
         ${cap(CAPW / 2, startF, chargeToday > now ? t.expected : t.start, this._hm(chargeToday), chargeToday > now, false)}

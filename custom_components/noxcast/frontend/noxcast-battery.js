@@ -199,7 +199,8 @@ class NoxcastBattery extends HTMLElement {
     const max = Math.max(500, ...shown.flatMap(([, pv, load]) => [pv, load])) * 1.08;
     const y = (w) => Hh - 18 - (w / max) * (Hh - 28), ys = (f) => Hh - 18 - f * (Hh - 28);
     const step = [250, 500, 1000, 2000, 5000].find((s) => max / s <= 5) || 10000;
-    let svg = "";
+    let svg = `<defs><linearGradient id="nx-pvfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--nx-pv-line)" stop-opacity=".55"></stop>
+      <stop offset="1" stop-color="var(--nx-pv-line)" stop-opacity=".04"></stop></linearGradient></defs>`;
     for (let w = step; w < max; w += step) svg += `<line x1="${pad}" x2="${W - 30}" y1="${y(w).toFixed(1)}" y2="${y(w).toFixed(1)}" class="rail"></line><text x="${pad - 4}" y="${(y(w) + 3).toFixed(1)}" text-anchor="end" class="ax">${w >= 1000 ? `${w / 1000} k` : w}</text>`;
     for (const f of [0, 0.5, 1]) svg += `<text x="${W - 26}" y="${(ys(f) + 3).toFixed(1)}" class="ax">${f * 100} %</text>`;
     const st = e.storage;
@@ -287,11 +288,13 @@ class NoxcastBattery extends HTMLElement {
       svg { display: block; width: 100%; height: auto; }
       .ax { font-size: 10px; fill: var(--secondary-text-color); }
       .rail { stroke: var(--nx-rail); } .lim { stroke: var(--secondary-text-color); stroke-dasharray: 2 4; opacity: .6; }
-      .pv { fill: var(--nx-pv); stroke: var(--nx-pv-line); stroke-width: 1; }
+      .pv { fill: url(#nx-pvfill); stroke: var(--nx-pv-line); stroke-width: 1.2; stroke-linejoin: round; }
       .load { fill: none; stroke: var(--nx-load); stroke-width: 1.6; }
-      .soc { fill: none; stroke: var(--nx-soc); stroke-width: 2.4; stroke-linejoin: round; }
+      .soc { fill: none; stroke: var(--nx-soc); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round;
+        filter: drop-shadow(0 0 5px color-mix(in srgb, var(--nx-soc) 55%, transparent)); }
       .soc0 { fill: none; stroke: var(--nx-soc0); stroke-width: 1.6; stroke-dasharray: 5 4; }
-      .bar { fill: var(--secondary-text-color); opacity: .45; } .full { fill: var(--nx-soc); } .empty { fill: var(--nx-bad); opacity: .8; }
+      .bar { fill: var(--secondary-text-color); opacity: .35; } .full { fill: var(--nx-soc); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--nx-soc) 50%, transparent)); }
+      .empty { fill: var(--nx-bad); opacity: .85; }
       .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--secondary-text-color); margin-top: 6px; }
       .legend span { display: inline-flex; align-items: center; gap: 5px; }
       .legend i { display: inline-block; } .legend i.ln { width: 16px; height: 0; } .legend i.sw { width: 12px; height: 10px; border-radius: 2px; }

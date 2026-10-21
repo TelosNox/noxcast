@@ -16,6 +16,10 @@ const BAT_TEXT = {
     daysFull: "Tage voll", daysEmpty: "Tage leer", noStats: "Noch keine Statistik für die Ladestand-Sensoren.",
     help: "Alle Akkus zählen als ein Speicher. Überschuss ohne Platz wird eingespeist oder abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
     horizon: "(bis morgen 24 Uhr)", kwh: "kWh", h: "h", today: "heute", tomorrow: "morgen",
+    pred: "Vorhersage und Wirklichkeit", predFull: "Voll: Abweichung", predEmpty: "Leer: Abweichung", predHit: "Voll ja/nein getroffen",
+    predicted: "Vorhersage", happened: "Ist", notReached: "nicht erreicht", open: "offen", maxSoc: "Höchster Ladestand",
+    later: "später", earlier: "früher", min: "min",
+    predHelp: "Morgens, wenn die Tagesprognose festgeschrieben wird, merkt sich Noxcast, wann der Akku laut Simulation voll und wann er leer sein wird. Das Ist kommt aus den 5-Minuten-Statistiken der Ladestand-Sensoren (Home Assistant hält sie etwa zehn Tage). Hohle Punkte: Vorhersage, gefüllte: Ist. Leer zählt bis zum Ladebeginn am nächsten Morgen.",
   },
   en: {
     noBattery: "No battery set up. Add a battery in the Noxcast configuration.",
@@ -30,6 +34,10 @@ const BAT_TEXT = {
     daysFull: "days full", daysEmpty: "days empty", noStats: "No statistics for the state of charge sensors yet.",
     help: "All batteries count as one storage. Surplus without room is fed in or curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
     horizon: "(until tomorrow midnight)", kwh: "kWh", h: "h", today: "today", tomorrow: "tomorrow",
+    pred: "Prediction and reality", predFull: "Full: deviation", predEmpty: "Empty: deviation", predHit: "Full yes/no right",
+    predicted: "Prediction", happened: "Actual", notReached: "not reached", open: "open", maxSoc: "Highest state of charge",
+    later: "later", earlier: "earlier", min: "min",
+    predHelp: "In the morning, when the day's forecast is fixed, Noxcast records when the simulation expects the battery to be full and when empty. The actual times come from the 5-minute statistics of the state of charge sensors (Home Assistant keeps them for about ten days). Hollow dots: prediction, filled: actual. Empty counts until the charge start the next morning.",
   },
 };
 
@@ -106,7 +114,7 @@ class NoxcastBattery extends HTMLElement {
     else if (!e) body = `<section class="card pad">${t.noBattery}</section>`;
     else {
       if (e.storage && !this._v) this._v = this._defaults(e);
-      body = `${e.storage ? this._whatIf(e) : `<section class="card pad">${t.noSim}</section>`}${this._review(e)}`;
+      body = `${e.storage ? this._whatIf(e) : `<section class="card pad">${t.noSim}</section>`}${this._predictions(e)}${this._review(e)}`;
     }
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${body}</div>`;
     this.shadowRoot.querySelectorAll("input[data-k]").forEach((el) => el.addEventListener("input", () => {
@@ -224,6 +232,56 @@ class NoxcastBattery extends HTMLElement {
 
   // ------------------------------------------------------------ review
 
+  // the morning predictions against the 5-minute statistics: a dumbbell per day for full and empty
+  _predictions(e) {
+    const t = this._t, rows = e.predictions || [];
+    if (!rows.length) return "";
+    const rel = (ts, key) => {                        // hours since the day's local midnight, past 24 into the next day
+      const [h, m] = this._hm(ts).split(":").map(Number);
+      return h + m / 60 + (this._dayKey(ts) > key ? 24 : 0);
+    };
+    const dFull = [], dEmpty = [];
+    let hits = 0, judged = 0;
+    for (const r of rows) {
+      const p = r.predicted, a = r.actual;
+      if (p.full_at && a.full_at) dFull.push((a.full_at - p.full_at) / 60);
+      if (p.empty_at && a.empty_at) dEmpty.push((a.empty_at - p.empty_at) / 60);
+      if (a.day_complete) { judged++; if (!!p.full_at === !!a.full_at) hits++; }
+    }
+    const mean = (v) => (v.length ? Math.round(v.reduce((x, y) => x + Math.abs(y), 0) / v.length) : null);
+    const bias = (v) => (v.length ? Math.round(v.reduce((x, y) => x + y, 0) / v.length) : null);
+    const devFig = (v) => (mean(v) === null ? "–" : `±${mean(v)} ${t.min} <span class="muted small">${bias(v) > 0 ? `${bias(v)} ${t.min} ${t.later}` : bias(v) < 0 ? `${-bias(v)} ${t.min} ${t.earlier}` : ""}</span>`);
+    const figs = [[t.predFull, devFig(dFull)], [t.predEmpty, devFig(dEmpty)], [t.predHit, judged ? `${hits} / ${judged}` : "–"]]
+      .map(([k, v]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span></div>`).join("");
+    const W = 900, X0 = 70, X1 = W - 120, rh = 26, h0 = 4, h1 = 34, top = 18;
+    const x = (hr) => X0 + (Math.max(h0, Math.min(h1, hr)) - h0) / (h1 - h0) * (X1 - X0);
+    let svg = "";
+    for (let hr = 6; hr <= h1; hr += 3) svg += `<line x1="${x(hr).toFixed(1)}" x2="${x(hr).toFixed(1)}" y1="${top - 4}" y2="${top + rows.length * rh}" class="rail"></line><text x="${x(hr).toFixed(1)}" y="10" text-anchor="middle" class="ax">${hr % 24}:00</text>`;
+    svg += `<rect x="${x(24).toFixed(1)}" y="${top - 4}" width="${(x(h1) - x(24)).toFixed(1)}" height="${rows.length * rh + 4}" class="night"></rect>`;
+    const pair = (p, a, key, cls, y, done) => {
+      if (!p && !a) return "";
+      let g = "";
+      if (p && a) g += `<line x1="${x(rel(p, key)).toFixed(1)}" x2="${x(rel(a, key)).toFixed(1)}" y1="${y}" y2="${y}" class="${cls} link"></line>`;
+      if (p) g += `<circle cx="${x(rel(p, key)).toFixed(1)}" cy="${y}" r="5" class="${cls} hollow"><title>${t.predicted} ${this._hm(p)}</title></circle>`;
+      if (a) g += `<circle cx="${x(rel(a, key)).toFixed(1)}" cy="${y}" r="5" class="${cls} solid"><title>${t.happened} ${this._hm(a)}</title></circle>`;
+      else if (p) g += `<text x="${(x(rel(p, key)) + 9).toFixed(1)}" y="${y + 3}" class="ax">${done ? t.notReached : t.open}</text>`;
+      return g;
+    };
+    rows.forEach((r, i) => {
+      const y = top + i * rh + rh / 2, p = r.predicted, a = r.actual;
+      svg += `<text x="${X0 - 10}" y="${y + 4}" text-anchor="end" class="ax strong">${this._date(r.date)}</text>`;
+      svg += pair(p.full_at, a.full_at, r.date, "pfull", y - 4, a.day_complete) + pair(p.empty_at, a.empty_at, r.date, "pempty", y + 4, a.complete);
+      const ms = `${p.max_soc === null ? "–" : Math.round(p.max_soc * 100)} / ${Math.round(a.max_soc * 100)} %`;
+      svg += `<text x="${W - 4}" y="${y + 4}" text-anchor="end" class="ax"><title>${t.maxSoc}: ${t.predicted} / ${t.happened}</title>${ms}</text>`;
+    });
+    const H = top + rows.length * rh + 6;
+    return `<section class="card pad"><h3>${t.pred}</h3><div class="figs">${figs}</div>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.pred}">${svg}</svg>
+      <div class="legend"><span><i class="dotp pfull"></i>${t.fullAt}</span><span><i class="dotp pempty"></i>${t.emptyAt}</span>
+        <span>○ ${t.predicted} · ● ${t.happened}</span><span>${t.maxSoc} ${t.predicted} / ${t.happened}</span></div>
+      <p class="help">${t.predHelp}</p></section>`;
+  }
+
   _review(e) {
     const t = this._t, days = e.days || [];
     if (!days.length) return `<section class="card pad"><h3>${t.review}</h3><p class="muted">${t.noStats}</p></section>`;
@@ -304,6 +362,13 @@ class NoxcastBattery extends HTMLElement {
       td { padding: 6px; border-top: 1px solid var(--divider-color); }
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .good { color: var(--nx-good); font-weight: 500; } .bad { color: var(--nx-bad); font-weight: 500; } .chg { font-weight: 500; }
+          .pfull { --c: #F5A524; } .pempty { --c: #8B5CF6; }
+      circle.hollow { fill: var(--card-background-color); stroke: var(--c); stroke-width: 2; }
+      circle.solid { fill: var(--c); filter: drop-shadow(0 0 3px var(--c)); }
+      line.link { stroke: var(--c); stroke-width: 3; stroke-opacity: .35; stroke-linecap: round; }
+      .night { fill: var(--primary-text-color); fill-opacity: .04; }
+      .ax.strong { fill: var(--primary-text-color); font-weight: 500; }
+      .dotp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
     </style>`;
   }
 }

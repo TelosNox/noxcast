@@ -159,3 +159,68 @@ def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_o
         d = days.setdefault(day_of(t), {"date": day_of(t), "min": lo, "max": hi, "hours": 0})
         d["min"], d["max"], d["hours"] = min(d["min"], lo), max(d["max"], hi), d["hours"] + 1
     return [{**d, "min": round(d["min"], 4), "max": round(d["max"], 4)} for d in days.values()]
+
+
+# ---------------------------------------------------------------- prediction against what happened
+
+LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
+PREDICTION_DAYS = 30            # predictions kept
+
+
+def prediction(sim: Simulation, storage: Battery, made: float, day_end: float, until: float) -> dict:
+    """What the morning simulation says about the day: when full, when empty, the highest state of charge.
+
+    "empty" is looked for until `until` (the next charge start), since the battery usually runs empty
+    in the night; "full" and the highest state of charge belong to the day itself.
+    """
+    today = [s for t, s in sim.points if t < day_end]
+    return {"made": made, "until": until,
+            "full_at": sim.full_at if sim.full_at is not None and sim.full_at < day_end else None,
+            "empty_at": sim.empty_at if sim.empty_at is not None and sim.empty_at < until else None,
+            "max_soc": round(max(today), 4) if today else None,
+            "max": storage.max_soc, "min": storage.min_soc}
+
+
+def combined_soc(series: list[tuple[float, dict[float, float]]]) -> dict[float, float]:
+    """All batteries as one storage: state of charge 0..1 weighted by capacity, where every battery has a value.
+
+    series: per battery (capacity_wh, {time: state of charge 0..1}).
+    """
+    cap = sum(c for c, _ in series)
+    if not cap or not series:
+        return {}
+    common = set(series[0][1])
+    for _, s in series[1:]:
+        common &= set(s)
+    return {t: sum(c * s[t] for c, s in series) / cap for t in sorted(common)}
+
+
+def outcome(soc: dict[float, float], pred: dict, day_end: float, step: float = 300.0) -> dict | None:
+    """What happened to a prediction: first time full and empty in the same windows, highest state of charge.
+
+    soc: combined state of charge per period start (5-minute statistics). `complete` tells whether the
+    data already cover the whole window, i.e. whether "not empty" is final.
+    """
+    made, until = pred["made"], pred["until"]
+    day = sorted((t, s) for t, s in soc.items() if made <= t < day_end)
+    if not day:
+        return None
+    full = next((t for t, s in day if s >= pred["max"] - LIMIT_TOLERANCE), None)
+    empty = next((t for t, s in sorted(soc.items()) if made <= t < until and s <= pred["min"] + LIMIT_TOLERANCE), None)
+    last = max(soc)
+    return {"full_at": full, "empty_at": empty, "max_soc": round(max(s for _, s in day), 4),
+            "complete": last + step >= until, "day_complete": last + step >= day_end}
+
+
+def prediction_review(log: dict[str, dict], soc: dict[float, float], day_end_of) -> list[dict]:
+    """Logged predictions with their outcome, oldest first; days without data are left out.
+
+    day_end_of: date key -> end of that local day (timestamp).
+    """
+    out = []
+    for key in sorted(log):
+        pred = log[key]
+        result = outcome(soc, pred, day_end_of(key))
+        if result is not None:
+            out.append({"date": key, "predicted": pred, "actual": result})
+    return out

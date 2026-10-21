@@ -292,6 +292,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     days as lowest and highest state of charge per day from the long-term statistics, with the days
     full and the days at the lower limit. The what-if runs in the browser with the same rules as
     `battery.simulate`.
+    Prediction and reality: the first simulation after the morning fix is kept per day (store,
+    30 days: full and empty time, highest state of charge, limits, the next charge start) and
+    compared with the 5-minute statistics of the state of charge sensors (all batteries as one,
+    weighted by capacity; within 2 percentage points of a limit counts as reached). Shown as a
+    dumbbell per day with the mean deviation of the full and empty times and how often "full or
+    not" was right. Short-term statistics are kept for about ten days, so older predictions have
+    no comparison.
   - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run and archive at a glance;
     notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30
     days), learning and archive errors; every sensor Noxcast reads with role, state, state class and

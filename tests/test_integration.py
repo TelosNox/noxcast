@@ -108,6 +108,9 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     await client.send_json_auto_id({"type": "noxcast/load"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"] == []          # no house load configured
+    await client.send_json_auto_id({"type": "noxcast/diagnostics"})
+    msg = await client.receive_json()
+    assert msg["success"] and msg["result"]["entries"][0]["sensors"][0]["role"] == "pv"
 
 
 async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> None:

@@ -23,6 +23,7 @@ WS_TODAY = f"{DOMAIN}/today"
 WS_ACCURACY = f"{DOMAIN}/accuracy"
 WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
+WS_BATTERY = f"{DOMAIN}/battery"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -32,6 +33,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_accuracy)
     websocket_api.async_register_command(hass, ws_load)
     websocket_api.async_register_command(hass, ws_diagnostics)
+    websocket_api.async_register_command(hass, ws_battery)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
@@ -39,7 +41,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
-                                         "noxcast-diagnostics.js")
+                                         "noxcast-diagnostics.js", "noxcast-battery.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
@@ -238,10 +240,10 @@ def _sensor_roles(entry, coordinator) -> list[tuple[str, str, str]]:
                            ("remaining", "remaining_time"), ("elapsed", "elapsed_time")):
             if getattr(c, attr, None):
                 roles.append((getattr(c, attr), role, c.name))
-    for d in getattr(coordinator, "batteries", {}).values():
+    for sid, d in getattr(coordinator, "batteries", {}).items():
         for key, role in (("soc_sensor", "battery_soc"), ("max_soc_entity", "battery_max"), ("min_soc_entity", "battery_min")):
             if d.get(key):
-                roles.append((d[key], role, d.get("name", "")))
+                roles.append((d[key], role, entry.subentries[sid].title if sid in entry.subentries else ""))
     return roles
 
 
@@ -304,3 +306,65 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
             "sensors": sensors,
         })
     connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
+
+
+REVIEW_DAYS = 30
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_BATTERY})
+@websocket_api.async_response
+async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Battery and surplus for the panel: the storage, PV and load per hour for what-if runs, the last 30 days."""
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.statistics import statistics_during_period
+
+    from . import battery as bt
+    from .const import CONF_CAPACITY, CONF_SOC_SENSOR
+
+    now = dt_util.utcnow()
+    entries = []
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator = entry.runtime_data
+        if not coordinator.batteries:
+            continue
+        data = coordinator.data
+        b = data.battery if data is not None else None
+        result: dict[str, Any] = {"batteries": [{"name": entry.subentries[sid].title if sid in entry.subentries else "",
+                                                 "capacity_kwh": d.get(CONF_CAPACITY), "soc_sensor": d.get(CONF_SOC_SENSOR)}
+                                                for sid, d in coordinator.batteries.items()]}
+        if b:
+            st, sim = b["storage"], b["sim"]
+            pv = dict(data.forecast.get(None, {}))
+            pv.update(data.expected.get(None, {}))
+            load = data.load.hours
+            hours = sorted(t for t in load if t + 3600 > now.timestamp())
+            result.update({
+                "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
+                            "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
+                            "max_discharge_w": st.max_discharge_w},
+                "hours": [[t, round(pv.get(t, 0.0), 1), round(load[t], 1)] for t in hours],
+                "day_end": b["day_end"], "charge_start": b["charge_start"],
+                "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
+                        "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh)},
+            })
+        # review: lowest and highest state of charge per day from the long-term statistics
+        socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
+                for d in coordinator.batteries.values() if d.get(CONF_SOC_SENSOR)}
+        try:
+            stats = await get_instance(hass).async_add_executor_job(
+                statistics_during_period, hass, now - timedelta(days=REVIEW_DAYS), None, set(socs), "hour", None,
+                {"min", "max"})
+        except Exception as err:  # noqa: BLE001 – the what-if part works without statistics
+            _LOGGER.debug("Statistics for the battery review unavailable: %s", err)
+            stats = {}
+
+        def ts(v) -> float:
+            return v.timestamp() if hasattr(v, "timestamp") else float(v)
+
+        series = [(cap, [(ts(r["start"]), r["min"] / 100, r["max"] / 100) for r in stats.get(eid, [])
+                         if r.get("min") is not None and r.get("max") is not None])
+                  for eid, cap in socs.items()]
+        result["days"] = bt.soc_days(series, lambda t: dt_util.as_local(dt_util.utc_from_timestamp(t)).date().isoformat())
+        entries.append(result)
+    connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
+                                       "review_days": REVIEW_DAYS, "entries": entries})

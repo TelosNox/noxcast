@@ -57,3 +57,10 @@ def test_charge_start_is_the_first_hour_with_pv_above_load():
     load_ = {h * H: 200 for h in range(24, 48)}
     assert bt.charge_start(pv, load_, 24 * H, 48 * H) == 33 * H
     assert bt.charge_start(pv, load_, 24 * H, 30 * H) is None
+
+
+def test_soc_days_weights_by_capacity_and_skips_incomplete_hours():
+    day = lambda t: "a" if t < 10 else "b"
+    days = bt.soc_days([(1000, [(0, 0.2, 0.4), (1, 0.5, 1.0), (10, 0.1, 0.3)]),
+                        (3000, [(0, 0.6, 0.8), (1, 0.7, 0.9)])], day)
+    assert days == [{"date": "a", "min": 0.5, "max": 0.925, "hours": 2}]

@@ -259,6 +259,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a
     7-day mean; the forecast by part (base load and each consumer, stacked per hour), the learned
     profile (workday, weekend, fixed consumers) and the consumers with their timing, sensor and share.
+  - **Battery & surplus** (`noxcast/battery`): the simulation until tomorrow's charge start (state of
+    charge, full and empty times, surplus without room, grid); a what-if on the same forecast until
+    tomorrow midnight with another capacity and an additional consumer (power, duration, start),
+    compared with the plan, including the share of the consumer covered by PV and battery; the last 30
+    days as lowest and highest state of charge per day from the long-term statistics, with the days
+    full and the days at the lower limit. The what-if runs in the browser with the same rules as
+    `battery.simulate`.
   - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run and archive at a glance;
     notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30
     days), learning and archive errors; every sensor Noxcast reads with role, state, state class and

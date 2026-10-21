@@ -134,3 +134,28 @@ def charge_start(pv: dict[float, float], load: dict[float, float], start: float,
         if start <= t < end and pv[t] > load.get(t, math.inf):
             return t
     return None
+
+
+def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_of) -> list[dict]:
+    """Daily lowest and highest state of charge of all batteries as one storage, from hourly statistics.
+
+    series: per battery (capacity_wh, [(hour start, min 0..1, max 0..1)]). Hours missing for one
+    battery are left out, so the weighting stays the same. day_of: hour start -> day key.
+    """
+    cap = sum(c for c, _ in series)
+    if not cap:
+        return []
+    by_hour: dict[float, list[tuple[float, float, float]]] = {}
+    for c, rows in series:
+        for t, lo, hi in rows:
+            by_hour.setdefault(t, []).append((c, lo, hi))
+    days: dict[str, dict] = {}
+    for t in sorted(by_hour):
+        parts = by_hour[t]
+        if len(parts) < len(series):
+            continue
+        lo = sum(c * v for c, v, _ in parts) / cap
+        hi = sum(c * v for c, _, v in parts) / cap
+        d = days.setdefault(day_of(t), {"date": day_of(t), "min": lo, "max": hi, "hours": 0})
+        d["min"], d["max"], d["hours"] = min(d["min"], lo), max(d["max"], hi), d["hours"] + 1
+    return [{**d, "min": round(d["min"], 4), "max": round(d["max"], 4)} for d in days.values()]

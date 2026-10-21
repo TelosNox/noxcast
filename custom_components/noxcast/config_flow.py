@@ -19,7 +19,7 @@ from .const import (
     CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
-    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
+    CONF_HOUSE_LOAD, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
@@ -43,6 +43,9 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")),
         vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Optional(CONF_DAY_TYPE, description={"suggested_value": defaults.get(CONF_DAY_TYPE)}):
+            selector.EntitySelector(selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "input_select", "select", "sensor"])),
     })
 
 

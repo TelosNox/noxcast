@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from statistics import median
 
 H = 3600.0
@@ -33,8 +33,58 @@ ON_W = 30.0                  # hourly mean above which a program or session coun
 MAX_RUN_HOURS = 12           # longest program run that is learned as one run
 
 
+class DayTypeZone(tzinfo):
+    """A time zone that also knows the day type of some dates, from a day-type sensor.
+
+    Every part of the model asks `day_type(ts, tz)`; carrying the known dates in the zone keeps all
+    signatures as they are. Dates without an entry fall back to workday / weekend.
+    """
+
+    def __init__(self, zone: tzinfo, types: dict[date, str]) -> None:
+        self.zone, self.types = zone, types
+
+    def utcoffset(self, dt):
+        return self.zone.utcoffset(dt.replace(tzinfo=self.zone) if dt is not None else None)
+
+    def dst(self, dt):
+        return self.zone.dst(dt.replace(tzinfo=self.zone) if dt is not None else None)
+
+    def tzname(self, dt):
+        return self.zone.tzname(dt.replace(tzinfo=self.zone) if dt is not None else None)
+
+    def fromutc(self, dt):
+        return self.zone.fromutc(dt.replace(tzinfo=self.zone)).replace(tzinfo=self)
+
+
 def day_type(ts: float, tz: tzinfo) -> str:
-    return WEEKEND if datetime.fromtimestamp(ts, tz).weekday() >= 5 else WORKDAY
+    local = datetime.fromtimestamp(ts, tz)
+    types = getattr(tz, "types", None)
+    if types and local.date() in types:
+        return types[local.date()]
+    return WEEKEND if local.weekday() >= 5 else WORKDAY
+
+
+DAY_TYPE_STATES = {"on": WORKDAY, "off": WEEKEND}   # e.g. the Workday integration: a holiday counts as weekend
+
+
+def day_types_from_states(changes: list[tuple[float, str]], tz: tzinfo, start: float, end: float) -> dict[date, str]:
+    """Day type of each local date in [start, end): the sensor's state at local noon.
+
+    changes: (time, state) sorted by time, including the state at `start`. On / off map to workday /
+    weekend; other states (e.g. an input_select "home office") become day types of their own.
+    """
+    out: dict[date, str] = {}
+    day = datetime.fromtimestamp(start, tz).replace(hour=12, minute=0, second=0, microsecond=0)
+    i, state = 0, None
+    while day.timestamp() < end:
+        noon = day.timestamp()
+        while i < len(changes) and changes[i][0] <= noon:
+            state = changes[i][1]
+            i += 1
+        if noon >= start and state not in (None, "unknown", "unavailable", ""):
+            out[day.date()] = DAY_TYPE_STATES.get(state, state)
+        day = (day + timedelta(days=1, hours=2)).replace(hour=12)
+    return out
 
 
 def local_hour(ts: float, tz: tzinfo) -> int:
@@ -91,9 +141,9 @@ def learn_profile(series: dict[float, float], tz: tzinfo, until: float, days: in
     seen = set()
     for t, w in series.items():
         if start <= t < until and w is not None:
-            groups[day_type(t, tz)][local_hour(t, tz)].append(w)
+            groups.setdefault(day_type(t, tz), [[] for _ in range(24)])[local_hour(t, tz)].append(w)
             seen.add(datetime.fromtimestamp(t, tz).date())
-    every = [groups[WORKDAY][h] + groups[WEEKEND][h] for h in range(24)]
+    every = [[w for g in groups.values() for w in g[h]] for h in range(24)]
     return Profile(
         cells={k: [round(median(v), 1) if len(v) >= MIN_SAMPLES else None for v in g] for k, g in groups.items()},
         fallback=[round(median(v), 1) if len(v) >= MIN_SAMPLES else None for v in every],
@@ -139,7 +189,7 @@ def blocks(series: dict[float, float], threshold: float = ON_W) -> list[list[tup
 def _days_by_type(series: dict[float, float], tz: tzinfo) -> dict[str, int]:
     days: dict[str, set] = {WORKDAY: set(), WEEKEND: set()}
     for t in series:
-        days[day_type(t, tz)].add(datetime.fromtimestamp(t, tz).date())
+        days.setdefault(day_type(t, tz), set()).add(datetime.fromtimestamp(t, tz).date())
     return {k: len(v) for k, v in days.items()}
 
 
@@ -172,20 +222,20 @@ def learn_program(series: dict[float, float], tz: tzinfo, until: float, days: in
     if not runs:
         return None
     ndays = _days_by_type(window, tz)
-    counts: dict[str, list[int]] = {WORKDAY: [0] * 24, WEEKEND: [0] * 24}
+    counts: dict[str, list[int]] = {k: [0] * 24 for k in ndays}
     per_day: dict = {}
     for b in runs:
         t0 = b[0][0]
-        counts[day_type(t0, tz)][local_hour(t0, tz)] += 1
-        d = datetime.fromtimestamp(t0, tz).date()
+        k = day_type(t0, tz)
+        counts.setdefault(k, [0] * 24)[local_hour(t0, tz)] += 1
+        d = (datetime.fromtimestamp(t0, tz).date(), k)
         per_day[d] = per_day.get(d, 0) + 1
-    runs_max = {WORKDAY: 0, WEEKEND: 0}
-    for d, n in per_day.items():
-        k = WEEKEND if d.weekday() >= 5 else WORKDAY
+    runs_max = {k: 0 for k in counts}
+    for (_, k), n in per_day.items():
         runs_max[k] = max(runs_max[k], n)
     length = max(len(b) for b in runs)
     shape = [round(sum(b[i][1] for b in runs if i < len(b)) / len(runs), 1) for i in range(length)]
-    starts = {k: [round(c / ndays[k], 4) if ndays[k] else 0.0 for c in counts[k]] for k in counts}
+    starts = {k: [round(c / ndays[k], 4) if ndays.get(k) else 0.0 for c in counts[k]] for k in counts}
     return ProgramModel(starts, runs_max, shape, len(runs))
 
 
@@ -258,7 +308,7 @@ def learn_session(series: dict[float, float], tz: tzinfo, until: float, days: in
         return None
     seen: dict[str, list[list[int]]] = {WORKDAY: [[0, 0] for _ in range(24)], WEEKEND: [[0, 0] for _ in range(24)]}
     for t, w in window.items():
-        cell = seen[day_type(t, tz)][local_hour(t, tz)]
+        cell = seen.setdefault(day_type(t, tz), [[0, 0] for _ in range(24)])[local_hour(t, tz)]
         cell[0] += 1
         cell[1] += w >= ON_W
     rest: list[list[int]] = [[] for _ in range(24)]

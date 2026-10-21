@@ -64,3 +64,18 @@ def test_soc_days_weights_by_capacity_and_skips_incomplete_hours():
     days = bt.soc_days([(1000, [(0, 0.2, 0.4), (1, 0.5, 1.0), (10, 0.1, 0.3)]),
                         (3000, [(0, 0.6, 0.8), (1, 0.7, 0.9)])], day)
     assert days == [{"date": "a", "min": 0.5, "max": 0.925, "hours": 2}]
+
+
+def test_prediction_against_outcome():
+    st = bt.Battery(capacity_wh=10000, soc=0.3, max_soc=1.0, min_soc=0.1)
+    sim = bt.Simulation(points=[(0.0, 0.3), (3600.0, 0.8), (7200.0, 1.0), (90000.0, 0.1)], full_at=7000.0, empty_at=80000.0)
+    pred = bt.prediction(sim, st, made=0.0, day_end=86400.0, until=100000.0)
+    assert pred["full_at"] == 7000.0 and pred["empty_at"] == 80000.0 and pred["max_soc"] == 1.0
+    soc = bt.combined_soc([(5000.0, {t: min(1.0, 0.3 + t / 20000) for t in range(0, 90000, 300)}),
+                           (5000.0, {t: min(1.0, 0.3 + t / 20000) for t in range(0, 90000, 300)})])
+    soc.update({t: 0.1 for t in range(60000, 90000, 300)})
+    out = bt.outcome(soc, pred, day_end=86400.0)
+    assert out["full_at"] == 13800 and out["empty_at"] == 60000 and out["max_soc"] == 1.0
+    assert out["day_complete"] and not out["complete"]                 # night not yet over
+    review = bt.prediction_review({"2026-10-20": pred, "2026-10-21": {**pred, "made": 1e9}}, soc, lambda k: 86400.0)
+    assert [r["date"] for r in review] == ["2026-10-20"]

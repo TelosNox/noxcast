@@ -176,6 +176,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # separate file: larger and written less often than the learned state
         self._archive_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.archive")
         self.forecast_archive: dict = {}
+        self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -188,6 +189,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
             self.band = stored.get("band")
+            self.battery_log = dict(stored.get("battery_log") or {})
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
                 self.load_profile = lf.Profile.from_dict(load["base"])
@@ -274,6 +276,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _store_data(self) -> dict:
         return {
             "band": self.band,
+            "battery_log": self.battery_log,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
@@ -564,6 +567,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                            "full_at": [s.full_at for s in sims]}
         return out
 
+    def _log_battery(self, battery: dict | None, local_now: datetime, now: float, day_end: float) -> None:
+        """Keep the first battery prediction after the morning fix, to compare it with what happens."""
+        key = local_now.date().isoformat()
+        if battery is None or self._morning_fixed is None or key in self.battery_log:
+            return
+        self.battery_log[key] = bt.prediction(battery["sim"], battery["storage"], now, day_end, battery["charge_start"])
+        oldest = (local_now.date() - timedelta(days=bt.PREDICTION_DAYS)).isoformat()
+        self.battery_log = {k: v for k, v in self.battery_log.items() if k >= oldest}
+        self._store.async_delay_save(self._store_data, 60)
+
     def run_profile(self, sid: str) -> pl.RunProfile | None:
         """A flexible consumer's run: configured values first, learned ones otherwise."""
         c, learned = self.consumers[sid], self.run_profiles.get(sid) or {}
@@ -809,6 +822,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(), temps)
         result.band = await self.hass.async_add_executor_job(self._band, result, weather, now, day_end)
         result.battery = self._battery(result, now, day_end)
+        self._log_battery(result.battery, local_now, now, day_end)
         result.plan = self._plan(result, now, day_end)
 
         alt = None

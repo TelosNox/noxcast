@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -392,6 +392,22 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
                          if r.get("min") is not None and r.get("max") is not None])
                   for eid, cap in socs.items()]
         result["days"] = bt.soc_days(series, lambda t: dt_util.as_local(dt_util.utc_from_timestamp(t)).date().isoformat())
+        # the morning predictions against what happened, from the 5-minute statistics (kept about ten days)
+        result["predictions"] = []
+        if coordinator.battery_log and socs:
+            first = min(coordinator.battery_log)
+            try:
+                short = await get_instance(hass).async_add_executor_job(
+                    statistics_during_period, hass, dt_util.start_of_local_day(date.fromisoformat(first)), None,
+                    set(socs), "5minute", None, {"mean"})
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Short-term statistics for the battery predictions unavailable: %s", err)
+                short = {}
+            soc = bt.combined_soc([(cap, {ts(r["start"]): r["mean"] / 100 for r in short.get(eid, []) if r.get("mean") is not None})
+                                   for eid, cap in socs.items()])
+            result["predictions"] = bt.prediction_review(
+                coordinator.battery_log, soc,
+                lambda key: dt_util.start_of_local_day(date.fromisoformat(key) + timedelta(days=1)).timestamp())
         entries.append(result)
     connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
                                        "review_days": REVIEW_DAYS, "entries": entries})

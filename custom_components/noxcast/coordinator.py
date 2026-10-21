@@ -22,7 +22,7 @@ from .const import (
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
-    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
+    CONF_HOUSE_LOAD, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
@@ -144,6 +144,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
+        self.day_type_entity: str | None = entry.data.get(CONF_DAY_TYPE) or None
+        self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
         self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
         self.load_profile: lf.Profile | None = None
@@ -377,6 +379,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             _LOGGER.warning("No long-term statistics for the house load %s; load forecast disabled", self.house_load)
             return
         consumers = {sid: series.get(c.series_id, {}) for sid, c in self.consumers.items()}
+        if self.day_type_entity:
+            self.day_types = await self._async_day_types(now - timedelta(days=days), now)
+            tz = lf.DayTypeZone(tz, self.day_types)
         base = lf.base_series(load, list(consumers.values()))
         profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
         cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
@@ -397,11 +402,36 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.run_profiles = runs
         _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
 
+    async def _async_day_types(self, start: datetime, end: datetime) -> dict:
+        """Day type per local date from the history of the day-type entity; empty if there is none."""
+        from homeassistant.components.recorder import get_instance, history
+
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                history.state_changes_during_period, self.hass, start, end, self.day_type_entity,
+                True, False, None, True)
+        except Exception as err:  # noqa: BLE001 – without history the weekday decides
+            _LOGGER.warning("No history for the day-type entity %s: %s", self.day_type_entity, err)
+            return {}
+        changes = [(s.last_changed.timestamp(), s.state) for s in states.get(self.day_type_entity, [])]
+        return lf.day_types_from_states(changes, dt_util.get_default_time_zone(), start.timestamp(), end.timestamp())
+
+    def _zone(self, now: float):
+        """The local time zone, with the known day types and today's from the entity's current state."""
+        tz = dt_util.get_default_time_zone()
+        if not self.day_type_entity:
+            return tz
+        types = dict(self.day_types)
+        state = self.hass.states.get(self.day_type_entity)
+        if state is not None and state.state not in ("unknown", "unavailable"):
+            types[dt_util.as_local(dt_util.utc_from_timestamp(now)).date()] = lf.DAY_TYPE_STATES.get(state.state, state.state)
+        return lf.DayTypeZone(tz, types)
+
     async def _async_load_forecast(self, now: float, end: float) -> lf.LoadForecast | None:
         """Load forecast with the correction from the last hours and the consumers running now."""
         if not self.house_load or self.load_profile is None:
             return None
-        tz = dt_util.get_default_time_zone()
+        tz = self._zone(now)
         try:
             # from midnight on, so today's program runs can be counted
             start = min(now - (lf.K_HOURS + 2) * 3600, dt_util.start_of_local_day().timestamp())

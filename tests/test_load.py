@@ -165,3 +165,37 @@ def test_kinds_round_trip_and_backtest_runs_with_them():
     assert kinds["cases"] == plain["cases"] > 0
     # the median misses the washer on every third day; the program model gets the energy right on average
     assert plain["bias_kwh"] < -0.5 and abs(kinds["bias_kwh"]) < 0.15
+
+
+def test_day_type_zone_keeps_local_time_across_dst_and_overrides_dates():
+    from zoneinfo import ZoneInfo
+    berlin = ZoneInfo("Europe/Berlin")
+    zone = lf.DayTypeZone(berlin, {datetime(2026, 10, 26).date(): lf.WEEKEND})   # a Monday off
+    for ts in (datetime(2026, 3, 29, 0, 30, tzinfo=UTC).timestamp(), datetime(2026, 10, 25, 0, 30, tzinfo=UTC).timestamp(),
+               datetime(2026, 10, 25, 1, 30, tzinfo=UTC).timestamp(), datetime(2026, 7, 1, 10, tzinfo=UTC).timestamp()):
+        assert datetime.fromtimestamp(ts, zone).replace(tzinfo=None) == datetime.fromtimestamp(ts, berlin).replace(tzinfo=None)
+        assert lf.local_hour(ts, zone) == lf.local_hour(ts, berlin)
+    monday = datetime(2026, 10, 26, 10, tzinfo=berlin).timestamp()
+    assert lf.day_type(monday, berlin) == lf.WORKDAY and lf.day_type(monday, zone) == lf.WEEKEND
+
+
+def test_day_types_from_states_takes_the_state_at_noon():
+    start = MONDAY
+    changes = [(start - 3600, "on"), (start + 86400 + 13 * H, "off"), (start + 2 * 86400 + 11 * H, "home_office"),
+               (start + 3 * 86400 + 8 * H, "unavailable")]
+    out = lf.day_types_from_states(changes, UTC, start, start + 4 * 86400)
+    days = [datetime.fromtimestamp(start + d * 86400, UTC).date() for d in range(4)]
+    assert out == {days[0]: lf.WORKDAY, days[1]: lf.WORKDAY, days[2]: "home_office"}
+
+
+def test_profile_learns_a_cell_per_day_type():
+    series = days(28, lambda d, h: 600.0 if d % 7 == 2 else 200.0)          # every Wednesday at home
+    types = {datetime.fromtimestamp(MONDAY + d * 86400, UTC).date(): "home" for d in range(28) if d % 7 == 2}
+    zone = lf.DayTypeZone(UTC, types)
+    p = lf.learn_profile(series, zone, MONDAY + 28 * 86400)
+    assert p.cells["home"][10] == 600.0 and p.cells[lf.WORKDAY][10] == 200.0
+    wednesday = MONDAY + 30 * 86400 + 10 * H
+    assert p.at(wednesday, lf.DayTypeZone(UTC, {datetime.fromtimestamp(wednesday, UTC).date(): "home"})) == 600.0
+    assert p.at(wednesday, UTC) == 200.0
+    m = lf.learn_program(days(28, lambda d, h: 1000.0 if d % 7 == 2 and h == 9 else 0.0), zone, MONDAY + 28 * 86400)
+    assert m.starts["home"][9] == 1.0 and m.runs_max["home"] == 1 and m.starts[lf.WORKDAY][9] == 0.0

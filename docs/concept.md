@@ -488,10 +488,13 @@ satellite filter with configurable sources and the sky view per array (learned a
 irradiance; whether the forecast source's overcast irradiance matches is checked with the forecast
 archive).
 
-1. **Geometry check** as diagnostic: tilt and azimuth that fit clear unshaded hours best, with a
-   hint on clear deviations. Never applied automatically, since the shading map depends on the
-   geometry. Steep arrays are sensitive to azimuth; flat ones are not, so the hint needs a
-   confidence measure.
+1. **Geometry check** as diagnostic (built): tilt and azimuth that fit clear unshaded hours best,
+   with a hint on clear deviations. Never applied automatically, since the shading map depends on
+   the geometry. The fit minimises the spread (interquartile range over median) of measured to
+   modelled power on a coarse and a fine grid; the confidence comes from how much the spread drops
+   and from the number of hours, so a flat array, where the azimuth barely matters, gets no hint.
+   Shown in the panel together with a clear-sky balance per month (what shade, reflection, the
+   direction factor and heat change on a cloudless mid-month day) and the efficiency per month.
 2. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
    fixed value to be updated by the user), assignment to the arrays it charges. An hour counts
    as possibly curtailed for those arrays when its maximum state of charge reaches the limit

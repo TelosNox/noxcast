@@ -29,6 +29,7 @@ from .const import (
 )
 from . import archive as fc_archive
 from . import battery as bt
+from . import arraycheck as ac
 from . import load as lf
 from . import plan as pl
 from .effects import hourly_effects, significant_periods
@@ -314,6 +315,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             if result.samples and not 0.5 <= result.efficiency <= 1.2:
                 _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                                 arr.name, result.efficiency)
+            if result.samples:
+                await self.hass.async_add_executor_job(
+                    _explain, self.site, arr.geometry, result, samples, air_temp, satellite_ghi, now.year)
             learned[sub_id] = result
             fc_archive.add_actuals(self.forecast_archive, sub_id, summed, now.timestamp(),
                                    {t for t, v in soc.items() if v >= soc_full})
@@ -675,3 +679,13 @@ def _sum_series(series: list[dict[float, float]]) -> dict[float, float]:
     for s in series[1:]:
         common &= set(s)
     return {t: sum(s[t] for s in series) for t in common}
+
+
+def _explain(site, geo, learned: LearnedArray, samples, air_temp, satellite_ghi, year: int) -> None:
+    """Panel explanations of a learned array; a failure never stops the learning."""
+    try:
+        learned.months = ac.month_balance(site, geo, learned, year, air_temp)
+        learned.efficiency_months = ac.efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp)
+        learned.geometry_check = ac.check_geometry(site, geo, learned, samples, satellite_ghi, air_temp)
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Array check failed")

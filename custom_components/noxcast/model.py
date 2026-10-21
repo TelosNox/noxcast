@@ -103,6 +103,10 @@ class LearnedArray:
     agreement: float | None = None                             # correlation satellite vs. installation
     first_sample: float | None = None
     learned_at: float | None = None
+    # explanations for the panel, not used by the forecast (arraycheck.py)
+    months: list[dict] = field(default_factory=list)           # clear-sky balance per month
+    efficiency_months: dict[str, list] = field(default_factory=dict)   # "YYYY-MM" -> [efficiency, hours]
+    geometry_check: dict | None = None                         # best fitting tilt / azimuth
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)

@@ -25,11 +25,12 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER,
 )
 from . import archive as fc_archive
 from . import battery as bt
 from . import load as lf
+from . import plan as pl
 from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
@@ -62,6 +63,8 @@ class ConsumerConfig:
     energy: str | None = None            # energy (kWh); history from its hourly change when there is no power sensor
     remaining: str | None = None         # minutes a running program still needs
     elapsed: str | None = None           # minutes it has run
+    run_power: float | None = None       # flexible: a run's power and duration, None = learned
+    run_minutes: float | None = None
 
     @property
     def series_id(self) -> str:
@@ -71,7 +74,9 @@ class ConsumerConfig:
 def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
     return {sub_id: ConsumerConfig(sub_id, sub.data[CONF_NAME], sub.data.get(CONF_POWER_SENSOR) or None,
                                    sub.data.get(CONF_TIMING, lf.TIMING_FIXED), sub.data.get(CONF_ENERGY_SENSOR) or None,
-                                   sub.data.get(CONF_REMAINING_TIME) or None, sub.data.get(CONF_ELAPSED_TIME) or None)
+                                   sub.data.get(CONF_REMAINING_TIME) or None, sub.data.get(CONF_ELAPSED_TIME) or None,
+                                   float(sub.data[CONF_RUN_POWER]) if sub.data.get(CONF_RUN_POWER) else None,
+                                   float(sub.data[CONF_RUN_MINUTES]) if sub.data.get(CONF_RUN_MINUTES) else None)
             for sub_id, sub in entry.subentries.items()
             if sub.subentry_type == SUBENTRY_CONSUMER and (sub.data.get(CONF_POWER_SENSOR) or sub.data.get(CONF_ENERGY_SENSOR))}
 
@@ -90,6 +95,7 @@ class NoxcastData:
     updated: datetime | None = None
     load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
     battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
+    plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -132,6 +138,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
         self.load_profile: lf.Profile | None = None
         self.consumer_profiles: dict[str, lf.Profile] = {}
+        self.run_profiles: dict[str, dict] = {}      # learned run of flexible consumers: power_w, minutes
         self.load_backtest: dict | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
@@ -166,6 +173,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self.consumer_profiles = {sid: lf.Profile.from_dict(p) for sid, p in load.get("consumers", {}).items()
                                           if sid in self.consumers}
                 self.load_backtest = load.get("backtest")
+                self.run_profiles = {sid: r for sid, r in (load.get("runs") or {}).items() if sid in self.consumers}
             if stored.get("last_learning"):
                 self.last_learning = dt_util.parse_datetime(stored["last_learning"])
             day_start = dt_util.start_of_local_day().timestamp()
@@ -249,7 +257,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
             "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
                      "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
-                     "backtest": self.load_backtest} if self.load_profile else None,
+                     "backtest": self.load_backtest, "runs": self.run_profiles} if self.load_profile else None,
             "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
         }
@@ -353,6 +361,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         backtest = await self.hass.async_add_executor_job(
             lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp())
         self.load_profile, self.consumer_profiles, self.load_backtest = profile, cons, backtest
+        runs = {}
+        for sid, c in self.consumers.items():
+            if c.timing == lf.TIMING_FLEXIBLE and (run := pl.learn_run(c.name, consumers.get(sid, {}))):
+                runs[sid] = {"power_w": run.power_w, "minutes": run.minutes}
+        self.run_profiles = runs
         _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
 
     async def _async_load_forecast(self, now: float, end: float) -> lf.LoadForecast | None:
@@ -411,6 +424,29 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         start = bt.charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
         sim = bt.simulate(storage, pv, load, now, start)
         return {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+
+    def run_profile(self, sid: str) -> pl.RunProfile | None:
+        """A flexible consumer's run: configured values first, learned ones otherwise."""
+        c, learned = self.consumers[sid], self.run_profiles.get(sid) or {}
+        power, minutes = c.run_power or learned.get("power_w"), c.run_minutes or learned.get("minutes")
+        return pl.RunProfile(sid, float(power), float(minutes)) if power and minutes else None
+
+    def _plan(self, result: NoxcastData, now: float, day_end: float) -> dict[str, dict]:
+        """Best windows for flexible consumers in the surplus of today and of tomorrow (in subentry order)."""
+        if result.load is None:
+            return {}
+        runs = [r for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE and (r := self.run_profile(sid))]
+        if not runs:
+            return {}
+        pv = dict(result.forecast.get(None, {}))
+        pv.update(result.expected.get(None, {}))
+        load = result.load.hours
+        surplus = {t: max(pv.get(t, 0.0) - w, 0.0) for t, w in load.items()}
+        lost = {t: h["lost"] for t, h in result.battery["sim"].hours.items()} if result.battery else {}
+        today = pl.plan(runs, {t: v for t, v in surplus.items() if t < day_end}, lost, now, day_end)
+        tomorrow = pl.plan(runs, {t: v for t, v in surplus.items() if day_end <= t}, {}, day_end, day_end + 86400)
+        return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
+                         "tomorrow": tomorrow[r.name]["best"]} for r in runs}
 
     def _value(self, entity_id: str | None, table: dict[str, float]) -> float | None:
         state = self.hass.states.get(entity_id) if entity_id else None
@@ -592,6 +628,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         result.load = await self._async_load_forecast(
             now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp())
         result.battery = self._battery(result, now, day_end)
+        result.plan = self._plan(result, now, day_end)
 
         alt = None
         if alt_forecasts:

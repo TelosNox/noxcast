@@ -28,6 +28,10 @@ shading, and the irradiance forecast of your weather source – every number exp
   entity, reserve, DC/AC coupling, power limits). With the load forecast, Noxcast simulates all
   batteries as one storage from now until tomorrow's charge start: surplus and lost surplus today,
   when the battery is full or empty, its highest level and its level at the next charge start.
+- Flexible consumers get a sensor *PV share now* (how much of a run started now would come from
+  surplus) with the best window today and tomorrow as attributes. The run (power, duration) is
+  learned from the consumer's history or set in its configuration; several flexible consumers are
+  placed one after the other, so they are not offered the same hours.
 
 ## Installation
 

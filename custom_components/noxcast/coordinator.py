@@ -30,6 +30,7 @@ from .const import (
 from . import archive as fc_archive
 from . import band as bd
 from . import events as ev
+from . import flows as fl
 from . import battery as bt
 from . import arraycheck as ac
 from . import load as lf
@@ -382,6 +383,28 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return {sid: {t: max(v, 0.0) * factors.get(sid, 1.0) if sid in energy else v * factors.get(sid, 1.0)
                       for t, v in stats.get(sid, {}).items() if v is not None}
                 for sid in ids + energy}
+
+    async def async_day_flows(self, start: float, end: float, pv: dict[float, float]) -> dict | None:
+        """Where the energy of [start, end) went (see flows.py); None without house load and batteries."""
+        socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
+                for d in self.batteries.values() if d.get(CONF_SOC_SENSOR)}
+        if not self.house_load and not socs:
+            return None
+        a, b = dt_util.utc_from_timestamp(start - 3600), dt_util.utc_from_timestamp(end + 3600)
+        load = battery = None
+        if self.house_load:
+            factor = (await async_power_factors(self.hass, [self.house_load])).get(self.house_load, 1.0)
+            stats = await async_hourly_statistics(self.hass, [self.house_load], a, "mean", end=b)
+            load = {t: v * factor for t, v in stats.get(self.house_load, {}).items() if v is not None}
+        if socs:
+            stats = await async_hourly_statistics(self.hass, list(socs), a, "mean", end=b)
+            parts: dict[float, list[float]] = {}
+            for sid, capacity in socs.items():
+                soc = {t: v for t, v in stats.get(sid, {}).items() if v is not None}
+                for t, wh in fl.battery_energy(soc, capacity).items():
+                    parts.setdefault(t, []).append(wh)
+            battery = {t: sum(v) for t, v in parts.items() if len(v) == len(socs)}   # every battery known
+        return fl.day_flows(pv, load, battery, start, end)
 
     async def _async_learn_load(self, now: datetime, air_temp: dict[float, float] | None = None) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""

@@ -477,5 +477,15 @@ async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection
         view = await hass.async_add_executor_job(day_view, c.site, c.arrays, dict(c.learned),
                                                  c.forecast_archive.get(day.isoformat()), c.data, a, b, now)
         view["archive_days"] = sorted(c.forecast_archive)[:1]
+        view["flows"] = None
+        if a < now:
+            pv: dict[float, float] = {}
+            for arr in view["arrays"]:
+                for t, v in arr.get("actual", []):
+                    pv[t] = pv.get(t, 0.0) + v
+            try:
+                view["flows"] = await c.async_day_flows(a, b, pv)
+            except Exception:  # noqa: BLE001 – the day view works without the energy paths
+                _LOGGER.exception("Energy paths of %s failed", day)
         result["entries"].append(view)
     connection.send_result(msg["id"], result)

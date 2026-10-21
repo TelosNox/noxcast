@@ -149,10 +149,10 @@ class NoxcastCard extends HTMLElement {
 
   _live() {
     const c = this._config;
-    const groups = (c.pv.groups || []).map((g) => ({ name: g.name || g.entity, w: Math.max(0, this._watts(g.entity, g.invert) || 0) }));
+    const groups = (c.pv.groups || []).map((g) => ({ name: g.name || g.entity, id: g.entity, w: Math.max(0, this._watts(g.entity, g.invert) || 0) }));
     let pv = c.pv.entity ? this._watts(c.pv.entity, c.pv.invert) : null;
     if (pv === null) pv = groups.reduce((a, g) => a + g.w, 0);
-    const bats = (c.batteries || []).map((b) => ({ name: b.name || b.entity, w: this._watts(b.entity, b.invert) || 0,
+    const bats = (c.batteries || []).map((b) => ({ name: b.name || b.entity, id: b.soc || b.entity, w: this._watts(b.entity, b.invert) || 0,
       soc: this._soc(b.soc), cap: Number(b.capacity) || 0 }));
     const capSum = bats.reduce((a, b) => a + b.cap, 0);
     const socAll = capSum ? bats.reduce((a, b) => a + (b.soc ?? 0) * b.cap, 0) / capSum
@@ -342,20 +342,21 @@ class NoxcastCard extends HTMLElement {
     const fmtW = (x) => `${num(x)}W`;
     const small = (x) => (Math.abs(x) >= 1000 ? fmtW(x) : `${Math.round(x)}`);   // group and battery rows
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
-    // groups left and right of the PV symbol: first half left, the rest right
-    const gText = v.groups.map((g) => `${this._esc(g.name)} ${small(g.w)}`);
-    // arrows instead of signs, pointing the way the power flows on screen (grid left, battery right)
-    const batArrow = (w) => (w >= ACTIVE_W ? "→ " : w <= -ACTIVE_W ? "← " : "");
+    // groups left and right of the PV symbol: first half left, the rest right; each opens its own entity
+    const gText = v.groups.map((g) => `<tspan data-more="${this._esc(g.id)}">${this._esc(g.name)} ${small(g.w)}</tspan>`);
+    // small triangles instead of signs, pointing the way the power flows on screen (grid left, battery right)
+    const tri = (dir, size) => `<tspan font-size="${fs(size)}">${dir > 0 ? "▶" : "◀"}</tspan> `;
+    const batArrow = (w, size = 9) => (w >= ACTIVE_W ? tri(1, size) : w <= -ACTIVE_W ? tri(-1, size) : "");
     const half = Math.ceil(gText.length / 2);
     const gY = (27 - lift).toFixed(1);
     const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
         <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
-    const gridLabel = v.grid >= ACTIVE_W ? `→ ${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `← ${fmtW(-v.grid)}` : "0 W";
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11)}${fmtW(-v.grid)}` : "0 W";
     const c = this._config, icons = c.icons || {};
     const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
     const pvId = c.pv.entity || ((c.pv.groups || [])[0] || {}).entity;
-    const batId = ((c.batteries || [])[0] || {}).soc || ((c.batteries || [])[0] || {}).entity;
+    const batId = (v.bats[0] || {}).id;
     const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
     const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
     const batName = !icons.battery || icons.battery === "auto" ? this._batteryIcon(v.socAll, v.bat >= ACTIVE_W) : icons.battery;
@@ -376,7 +377,7 @@ class NoxcastCard extends HTMLElement {
         ${batIcon || `<rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
         <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
         <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>`}
-        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
+        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, 11)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
       <g${more(c.home && c.home.entity)}>

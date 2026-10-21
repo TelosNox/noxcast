@@ -440,7 +440,9 @@ def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, 
     if data is not None and data.band:
         band = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items()) if a <= t < b]
     sky = explain.clearness(site, hours)
-    return {"arrays": out, "band": band,
+    history = [[float(k), [[float(t), v] for t, v in sorted(h.items(), key=lambda kv: float(kv[0]))]]
+               for k, h in sorted(((archive_day or {}).get("history") or {}).items(), key=lambda kv: float(kv[0]))]
+    return {"arrays": out, "band": band, "history": history,
             "weather": [[t, round(g, 1), round(c, 1), weather[t].temp] for t, (g, c) in sorted(sky.items())]}
 
 

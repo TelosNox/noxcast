@@ -777,6 +777,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     total[t] = total.get(t, 0.0) + wh
             series[None] = dict(sorted(total.items()))
 
+        if local_now.hour in fc_archive.HISTORY_HOURS and fc_archive.add_history(
+                self.forecast_archive, local_now.date(), local_now.replace(minute=0, second=0, microsecond=0).timestamp(),
+                result.expected[None]):
+            self._archive_store.async_delay_save(self._archive_data, 300)
+
         result.load = await self._async_load_forecast(
             now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(), temps)
         result.band = await self.hass.async_add_executor_job(self._band, result, weather, now, day_end)

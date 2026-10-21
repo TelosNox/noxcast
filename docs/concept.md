@@ -267,7 +267,11 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     For a chosen hour a waterfall shows how its forecast comes about (`explain.py`): clear sky with
     the learned efficiency, then clouds, shade, reflection, direction factor and heat, the steps
     adding up to the forecast, followed by today's correction and the actual value. Past days come
-    from the day-ahead archive.
+    from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
+    whole day (all arrays) is recorded in the archive (`history`); the day view draws these
+    snapshots as a fan of curves from early to late next to the day-ahead forecast, and the day
+    total of each snapshot over time, so it shows when the day became foreseeable and where the
+    forecast jumped.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

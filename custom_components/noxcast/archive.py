@@ -7,7 +7,11 @@ from long-term statistics during the nightly learning run.
 Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
          "forecast": {array_id: Wh}, "actual": {array_id: Wh},
          "alt": {source: {"ghi": W/m², "forecast": {array_id: Wh}}},
-         "sat_ghi": W/m², "measured": {array_id: Wh}}}}}
+         "sat_ghi": W/m², "measured": {array_id: Wh}}},
+         "history": {"<snapshot ts>": {"<ts>": Wh}}}}
+
+"history" holds the expectation for the whole day (actual so far + corrected rest, all arrays) as it
+stood at each full hour of that day, so the panel can show how the forecast developed.
 
 "alt" holds the same day computed from another weather source (e.g. Open-Meteo next to DWD),
 so sources and their mix can be compared against the actual values.
@@ -21,6 +25,7 @@ from collections.abc import Callable
 from datetime import date
 
 MIN_DAY_HOURS = 20
+HISTORY_HOURS = range(5, 22)     # local hours at which the day's expectation is recorded
 
 
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
@@ -39,11 +44,14 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
                     "ghi": round(alt_ghi[ts], 1), "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in alt_fc.items()}}
     if len(hours) < MIN_DAY_HOURS:
         return False
+    history = archive.get(day.isoformat(), {}).get("history")
     old = archive.get(day.isoformat(), {}).get("hours", {})
     for key, hour in hours.items():                 # keep actuals if a day is snapshotted again
         if "actual" in old.get(key, {}):
             hour["actual"] = old[key]["actual"]
     archive[day.isoformat()] = {"issued": issued, "hours": hours}
+    if history:
+        archive[day.isoformat()]["history"] = history
     return True
 
 
@@ -113,6 +121,22 @@ def daily_error(archive: dict, since: date, array_id: str | None = None,
     if not days or actual <= 0:
         return None, len(days)
     return sum(abs(f - a) for f, a in days.values()) / actual, len(days)
+
+
+def add_history(archive: dict, day: date, stamp: float, total: dict[float, float]) -> bool:
+    """Record the day's expectation (Wh per hour, all arrays) as it stands at `stamp`, once per stamp.
+
+    Only for a day that is in the archive (its day-ahead forecast is the start of the history).
+    """
+    entry = archive.get(day.isoformat())
+    if entry is None:
+        return False
+    history = entry.setdefault("history", {})
+    key = str(int(stamp))
+    if key in history:
+        return False
+    history[key] = {str(int(t)): round(v) for t, v in sorted(total.items()) if v >= 0.5}
+    return True
 
 
 def add_measured(archive: dict, array_id: str, satellite_ghi: dict[float, float], air_temp: dict[float, float] | None,

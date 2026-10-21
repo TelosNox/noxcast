@@ -57,6 +57,17 @@ def test_alternative_source_and_mix():
     assert abs(primary - 0.25) < 1e-9 and abs(other - 0.25) < 1e-9 and n == 1 and mix == 0.0
 
 
+def test_history_once_per_stamp_and_kept_on_snapshot():
+    a = {}
+    assert not archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0})      # day not archived
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}})
+    assert archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.4, T0: 0.0})
+    assert not archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 900.0})
+    assert a[DAY.isoformat()]["history"] == {str(int(T0 + 6 * 3600)): {str(int(T0 + 10 * 3600)): 500}}
+    archive.snapshot(a, DAY, "y", _weather(), {"roof": {}})
+    assert str(int(T0 + 6 * 3600)) in a[DAY.isoformat()]["history"]
+
+
 def test_measured_once_per_hour_from_satellite():
     a = {}
     archive.snapshot(a, DAY, "x", _weather(), {"roof": {}})

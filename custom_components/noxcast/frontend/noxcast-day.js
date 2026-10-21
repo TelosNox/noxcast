@@ -22,6 +22,9 @@ const DAY_TEXT = {
       corr: "Die Korrektur aus den gemessenen Stunden von heute (klarer oder trüber als vorhergesagt).",
     },
     noSteps: "Für diese Stunde gibt es keine Herleitung (Sonne unter dem Horizont oder kein Wetter).",
+    history: "Wie sich die Prognose entwickelt hat", snapshots: "Stände", firstLast: "Erster / letzter Stand", jump: "Größte Änderung",
+    final: "Ergebnis", at: "um", early: "früh", late: "spät",
+    historyHelp: "Zu jeder vollen Stunde zwischen 5 und 21 Uhr hält Noxcast die Erwartung für den ganzen Tag fest (gemessene Stunden plus korrigierter Rest). Die Linien zeigen diese Stände von früh (violett) bis spät (gelb), gestrichelt die Prognose vom Vortag. Unten der Tageswert jedes Stands: je schneller er sich dem Ergebnis nähert, desto früher war der Tag absehbar.",
     kwh: "kWh", w: "W",
   },
   en: {
@@ -43,6 +46,9 @@ const DAY_TEXT = {
       corr: "The correction from today's measured hours (clearer or duller than forecast).",
     },
     noSteps: "No derivation for this hour (sun below the horizon or no weather).",
+    history: "How the forecast developed", snapshots: "Snapshots", firstLast: "First / last snapshot", jump: "Largest change",
+    final: "Result", at: "at", early: "early", late: "late",
+    historyHelp: "At every full hour between 5 am and 9 pm Noxcast records the expectation for the whole day (measured hours plus corrected rest). The lines show these snapshots from early (violet) to late (yellow), dashed the day-ahead forecast. Below, the day total of each snapshot: the faster it approaches the result, the earlier the day was foreseeable.",
     kwh: "kWh", w: "W",
   },
 };
@@ -176,7 +182,7 @@ class NoxcastDay extends HTMLElement {
     if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e || !e.arrays.some((a) => this._main(a).size)) body = `${this._nav()}<section class="card pad">${t.noData}</section>`;
-    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>`;
+    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>${this._history(e)}`;
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${body}</div>`;
   }
 
@@ -318,6 +324,89 @@ class NoxcastDay extends HTMLElement {
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.chart}">${svg}</svg><div class="legend">${legend}</div>`;
   }
 
+  // the expectation for the day at each recorded hour: a fan of hourly curves and the day totals converging
+  _history(e) {
+    const t = this._t, d = this._data, snaps = (e.history || []).map(([ts, hs]) => [ts, new Map(hs)]);
+    if (!snaps.length) return "";
+    const dayAhead = new Map();
+    for (const arr of e.arrays) for (const [h, v] of arr.day_ahead || []) dayAhead.set(h, (dayAhead.get(h) || 0) + v);
+    const result = new Map();
+    for (const arr of e.arrays) for (const [h, v] of this._main(arr)) result.set(h, (result.get(h) || 0) + v);
+    const resultSum = this._sum(result), final = this._phase === "past";
+    const totals = snaps.map(([ts, m]) => [ts, this._sum(m)]);
+    const all = [...(dayAhead.size ? [[null, this._sum(dayAhead)]] : []), ...totals];
+    let jump = null;
+    for (let i = 1; i < all.length; i++) {
+      const dv = all[i][1] - all[i - 1][1];
+      if (!jump || Math.abs(dv) > Math.abs(jump[1])) jump = [all[i][0], dv];
+    }
+    const figs = [[t.snapshots, String(snaps.length)],
+      [t.firstLast, `${this._kwh(totals[0][1])} / ${this._kwh(totals[totals.length - 1][1])} ${t.kwh}`],
+      ...(jump ? [[t.jump, `${jump[1] > 0 ? "+" : jump[1] < 0 ? "−" : ""}${this._kwh(Math.abs(jump[1]))} ${t.kwh} <span class="muted small">${jump[0] ? `${t.at} ${this._hm(jump[0])}` : ""}</span>`]] : []),
+      ...(final ? [[t.final, `${this._kwh(resultSum)} ${t.kwh}`]] : [])]
+      .map(([k, v]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span></div>`).join("");
+
+    // fan: one smooth curve per snapshot, coloured from early (violet) to late (sun)
+    const hours = this._hours();
+    const lit = hours.filter((h) => snaps.some(([, m]) => (m.get(h) || 0) > 1) || (dayAhead.get(h) || 0) > 1 || (result.get(h) || 0) > 1);
+    if (!lit.length) return "";
+    const h0 = lit[0] - HOUR, h1 = lit[lit.length - 1] + 2 * HOUR;
+    const W = 960, X0 = 40, X1 = W - 10, H = 200, top = 10, bottom = H - 16;
+    const x = (ts) => X0 + (ts - h0) / (h1 - h0) * (X1 - X0);
+    const max = Math.max(200, ...lit.flatMap((h) => [dayAhead.get(h) || 0, result.get(h) || 0, ...snaps.map(([, m]) => m.get(h) || 0)])) * 1.08;
+    const y = (v) => top + (bottom - top) * (1 - v / max);
+    const step = [100, 200, 250, 500, 1000, 2000, 5000].find((s) => max / s <= 4) || 10000;
+    let svg = `<defs><linearGradient id="nx-hist" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8B5CF6"></stop><stop offset="1" stop-color="#F5A524"></stop></linearGradient></defs>`;
+    for (let v = step; v < max; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v >= 1000 ? this._num(v / 1000, v % 1000 ? 1 : 0) + " k" : v}</text>`;
+    const span = hours.filter((h) => h >= h0 && h < h1);
+    if (final) for (const h of span) {
+      const v = result.get(h) || 0;
+      if (v > 0) svg += `<rect x="${(x(h) + 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(x(h + HOUR) - x(h) - 4).toFixed(1)}" height="${(bottom - y(v)).toFixed(1)}" rx="3" class="hbar"><title>${this._hm(h)} ${t.actual} ${Math.round(v)} Wh</title></rect>`;
+    }
+    const curve = (m) => {
+      const q = span.map((h) => [x(h + HOUR / 2), y(m.get(h) || 0)]);
+      return `M${q[0][0].toFixed(1)},${q[0][1].toFixed(1)}${smooth(q)}`;
+    };
+    if (dayAhead.size) svg += `<path d="${curve(dayAhead)}" class="ref"><title>${t.dayAhead} ${this._kwh(this._sum(dayAhead))} ${t.kwh}</title></path>`;
+    snaps.forEach(([ts, m], i) => {
+      const k = snaps.length > 1 ? i / (snaps.length - 1) : 1;
+      svg += `<path d="${curve(m)}" fill="none" stroke="${this._mix(k)}" stroke-width="${(1.2 + k * 1.2).toFixed(1)}" stroke-opacity="${(0.35 + 0.65 * k).toFixed(2)}" class="hline"><title>${this._hm(ts)}: ${this._kwh(this._sum(m))} ${t.kwh}</title></path>`;
+    });
+    for (const h of span) {
+      const hr = Number(this._hm(h).slice(0, 2));
+      if (hr % 2 === 0) svg += `<text x="${x(h).toFixed(1)}" y="${H - 2}" text-anchor="middle" class="ax">${hr}</text>`;
+    }
+
+    // convergence: the day total of each snapshot over the time it was taken
+    const C = 120, cx0 = X0, cx1 = X1, cTop = 14, cBottom = C - 18;
+    const tFirst = d.start + 4 * HOUR, tLast = d.start + 22 * HOUR;
+    const cx = (ts) => cx0 + (ts - tFirst) / (tLast - tFirst) * (cx1 - cx0);
+    const vals = all.map(([, v]) => v).concat(final ? [resultSum] : []);
+    const lo = Math.min(...vals), hi = Math.max(...vals), padv = Math.max((hi - lo) * 0.15, 200);
+    const cy = (v) => cTop + (cBottom - cTop) * (1 - (v - (lo - padv)) / (hi - lo + 2 * padv));
+    let conv = "";
+    for (let hr = 6; hr <= 21; hr += 3) conv += `<text x="${cx(d.start + hr * HOUR).toFixed(1)}" y="${C - 2}" text-anchor="middle" class="ax">${hr}</text>`;
+    if (final) conv += `<line x1="${cx0}" x2="${cx1}" y1="${cy(resultSum).toFixed(1)}" y2="${cy(resultSum).toFixed(1)}" class="resline"></line><text x="${cx0 + 14}" y="${(cy(resultSum) + 12).toFixed(1)}" class="ax">${t.final} ${this._kwh(resultSum)} ${t.kwh}</text>`;
+    const pts = all.map(([ts, v]) => [ts === null ? tFirst : ts, v]);
+    conv += `<path d="M${pts.map(([ts, v]) => `${cx(ts).toFixed(1)},${cy(v).toFixed(1)}`).join(" L")}" class="convline"></path>`;
+    conv += pts.map(([ts, v], i) => {
+      const k = all[i][0] === null ? 0 : snaps.length > 1 ? (i - (all.length - snaps.length)) / (snaps.length - 1) : 1;
+      const label = all[i][0] === null ? t.dayAhead : this._hm(ts);
+      return `<circle cx="${cx(ts).toFixed(1)}" cy="${cy(v).toFixed(1)}" r="${all[i][0] === null ? 3.5 : 4}" fill="${all[i][0] === null ? "var(--card-background-color)" : this._mix(k)}" stroke="${all[i][0] === null ? "var(--primary-text-color)" : "none"}" stroke-width="1.4"><title>${label}: ${this._kwh(v)} ${t.kwh}</title></circle>`;
+    }).join("");
+
+    return `<section class="card pad"><h3>${t.history}</h3><div class="figs">${figs}</div>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.history}" class="hfan">${svg}</svg>
+      <svg viewBox="0 0 ${W} ${C}" role="img" aria-label="${t.snapshots}">${conv}</svg>
+      <div class="legend"><span><i class="ln dashed"></i>${t.dayAhead}</span><span><i class="sw histsw"></i>${t.snapshots} ${t.early} → ${t.late}</span>${final ? `<span><i class="sw hbarsw"></i>${t.actual}</span>` : ""}</div>
+      <p class="help">${t.historyHelp}</p></section>`;
+  }
+
+  _mix(k) {
+    const a = [139, 92, 246], b = [245, 165, 36];
+    return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * k)).join(",")})`;
+  }
+
   _sky(k) {
     // overcast grey to clear sun, in both themes
     const a = this._dark ? [70, 76, 86] : [196, 202, 210], b = [245, 165, 36];
@@ -457,6 +546,12 @@ class NoxcastDay extends HTMLElement {
       .wc { stroke: var(--secondary-text-color); stroke-dasharray: 2 2; opacity: .6; }
       .notes { margin: 10px 0 0; padding-left: 18px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
       .notes b { color: var(--primary-text-color); font-weight: 500; }
+      .hbar { fill: var(--primary-text-color); fill-opacity: .09; }
+      .hline { transition: stroke-opacity .15s; } .hline:hover { stroke-opacity: 1; stroke-width: 3; }
+      .hfan { margin-top: 12px; }
+      .convline { fill: none; stroke: var(--secondary-text-color); stroke-opacity: .5; stroke-width: 1.2; }
+      .resline { stroke: var(--nx-good); stroke-dasharray: 4 3; stroke-width: 1.4; }
+      .histsw { background: linear-gradient(90deg, #8B5CF6, #F5A524); } .hbarsw { background: var(--primary-text-color); opacity: .12; }
     </style>`;
   }
 }

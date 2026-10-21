@@ -66,3 +66,21 @@ def test_history_once_per_stamp_and_kept_on_snapshot():
     assert a[DAY.isoformat()]["history"] == {str(int(T0 + 6 * 3600)): {str(int(T0 + 10 * 3600)): 500}}
     archive.snapshot(a, DAY, "y", _weather(), {"roof": {}})
     assert str(int(T0 + 6 * 3600)) in a[DAY.isoformat()]["history"]
+
+
+def test_measured_once_per_hour_from_satellite():
+    a = {}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}})
+    sat = {T0 + h * 3600: 200.0 for h in range(24)}
+    calls = []
+
+    def predict(hours):
+        calls.append(hours)
+        return {t: g / 2 for t, g, _ in hours}
+
+    n = archive.add_measured(a, "roof", sat, {T0: 5.0}, predict, before=T0 + 6 * 3600)
+    hours = a[DAY.isoformat()]["hours"]
+    assert n == 6 and hours[str(int(T0))]["measured"] == {"roof": 100.0} and hours[str(int(T0))]["sat_ghi"] == 200.0
+    assert calls[0][0][2] == 5.0 and calls[0][1][2] == 12.0       # measured air temperature, else the archived one
+    assert archive.add_measured(a, "roof", sat, None, predict, before=T0 + 6 * 3600) == 0   # never recomputed
+    assert archive.add_measured(a, "roof", {}, None, predict, before=T0 + 24 * 3600) == 0   # no satellite data yet

@@ -347,6 +347,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             learned[sub_id] = result
             fc_archive.add_actuals(self.forecast_archive, sub_id, summed, now.timestamp(),
                                    {t for t, v in soc.items() if v >= soc_full})
+            if satellite_ghi:
+                predict = functools.partial(_measured_forecast, self.site, arr.geometry, result)
+                await self.hass.async_add_executor_job(
+                    fc_archive.add_measured, self.forecast_archive, sub_id, satellite_ghi, air_temp, predict,
+                    now.timestamp())
             _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
                          "coverage %.0f %%, %d samples, clear filter %s, agreement %s",
                          arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
@@ -828,6 +833,11 @@ def _sum_series(series: list[dict[float, float]]) -> dict[float, float]:
     for s in series[1:]:
         common &= set(s)
     return {t: sum(s[t] for s in series) for t in common}
+
+
+def _measured_forecast(site, geo, learned: LearnedArray, hours: list[tuple[float, float, float | None]]) -> dict[float, float]:
+    """The model on measured weather: what the forecast would have been with a perfect weather forecast."""
+    return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])
 
 
 def _explain(site, geo, learned: LearnedArray, samples, air_temp, satellite_ghi, year: int) -> None:

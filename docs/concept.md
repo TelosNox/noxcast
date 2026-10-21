@@ -276,7 +276,12 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day
     (hours with a full battery hatched), the error by weather class (forecast irradiance relative to
-    clear sky) and the sources compared on the same days.
+    clear sky) and the sources compared on the same days. With the satellite archive enabled, the
+    deviation is split into a weather part and a model part ("Weather or model?"): the learning run
+    computes the model once more for every past hour on the satellite irradiance and the measured air
+    temperature (stored as `measured` per array, once, with the parameters of that night). Weather
+    part = forecast − model on measured weather, model part = model on measured weather − actual;
+    both add up to the daily deviation, and a verdict names the larger source of error.
   - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a
     7-day mean; the forecast by part (base load and each consumer, stacked per hour), the learned
     profile (workday, weekend, fixed consumers) and the consumers with their timing, sensor and share.

@@ -6,7 +6,8 @@ from long-term statistics during the nightly learning run.
 
 Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
          "forecast": {array_id: Wh}, "actual": {array_id: Wh},
-         "alt": {source: {"ghi": W/m², "forecast": {array_id: Wh}}}}},
+         "alt": {source: {"ghi": W/m², "forecast": {array_id: Wh}}},
+         "sat_ghi": W/m², "measured": {array_id: Wh}}},
          "history": {"<snapshot ts>": {"<ts>": Wh}}}}
 
 "history" holds the expectation for the whole day (actual so far + corrected rest, all arrays) as it
@@ -14,9 +15,13 @@ stood at each full hour of that day, so the panel can show how the forecast deve
 
 "alt" holds the same day computed from another weather source (e.g. Open-Meteo next to DWD),
 so sources and their mix can be compared against the actual values.
+
+"measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
+deviation into a weather part (forecast − measured) and a model part (measured − actual).
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
 MIN_DAY_HOURS = 20
@@ -132,3 +137,29 @@ def add_history(archive: dict, day: date, stamp: float, total: dict[float, float
         return False
     history[key] = {str(int(t)): round(v) for t, v in sorted(total.items()) if v >= 0.5}
     return True
+
+
+def add_measured(archive: dict, array_id: str, satellite_ghi: dict[float, float], air_temp: dict[float, float] | None,
+                 predict: Callable[[list[tuple[float, float, float | None]]], dict[float, float]], before: float) -> int:
+    """Model output from the measured weather for ended hours that have satellite irradiance.
+
+    Computed once per hour and array with the parameters learned at that time, so a later relearn
+    does not rewrite history. predict: [(hour start, GHI, air temperature)] -> {hour start: Wh}.
+    Returns the number of hours filled.
+    """
+    todo, slots = [], []
+    for day in archive.values():
+        for key, hour in day["hours"].items():
+            ts = float(key)
+            if ts + 3600 > before or ts not in satellite_ghi or array_id in hour.get("measured", {}):
+                continue
+            temp = (air_temp or {}).get(ts, hour.get("temp"))
+            todo.append((ts, max(0.0, satellite_ghi[ts]), temp))
+            slots.append((ts, hour))
+    if not todo:
+        return 0
+    out = predict(todo)
+    for ts, hour in slots:
+        hour["sat_ghi"] = round(max(0.0, satellite_ghi[ts]), 1)
+        hour.setdefault("measured", {})[array_id] = round(out.get(ts, 0.0), 1)
+    return len(slots)

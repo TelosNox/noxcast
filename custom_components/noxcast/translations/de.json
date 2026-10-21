@@ -9,13 +9,15 @@
           "weather_entity": "Wetter-Entität",
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
-          "house_load": "Hausverbrauch"
+          "house_load": "Hausverbrauch",
+          "day_type_entity": "Tagestyp"
         },
         "data_description": {
           "weather_entity": "Muss stündliche Strahlung liefern (z. B. DWD sun_irradiance).",
           "soc_sensors": "Stunden mit vollem Akku werden beim Lernen ignoriert, weil dann abgeregelt sein kann.",
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
-          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement)."
+          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
+          "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt."
         }
       },
       "reconfigure": {
@@ -25,10 +27,12 @@
           "weather_entity": "Wetter-Entität",
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
-          "house_load": "Hausverbrauch"
+          "house_load": "Hausverbrauch",
+          "day_type_entity": "Tagestyp"
         },
         "data_description": {
-          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement)."
+          "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
+          "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt."
         }
       }
     },

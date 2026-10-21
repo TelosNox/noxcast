@@ -9,13 +9,15 @@
           "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
-          "house_load": "House load"
+          "house_load": "House load",
+          "day_type_entity": "Day type"
         },
         "data_description": {
           "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
           "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
-          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement)."
+          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
+          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state."
         }
       },
       "reconfigure": {
@@ -25,10 +27,12 @@
           "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
-          "house_load": "House load"
+          "house_load": "House load",
+          "day_type_entity": "Day type"
         },
         "data_description": {
-          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement)."
+          "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
+          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state."
         }
       }
     },

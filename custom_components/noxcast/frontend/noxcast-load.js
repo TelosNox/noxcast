@@ -166,7 +166,10 @@ class NoxcastLoad extends HTMLElement {
     const t = this._t, W = 640, H = 200, pad = 34;
     const cells = e.profile.cells || {}, fb = e.profile.fallback || [];
     const val = (arr, h) => (arr && arr[h] != null ? arr[h] : fb[h]);
-    const lines = [[t.workday, (h) => val(cells.workday, h), "var(--nx-base-line)", ""], [t.weekend, (h) => val(cells.weekend, h), "var(--nx-base-line)", "4 3"]];
+    // one line per day type: workday and weekend, plus the states of a day-type entity (e.g. home office)
+    const dashes = ["", "4 3", "1 3", "8 3 2 3", "2 2"];
+    const keys = ["workday", "weekend", ...Object.keys(cells).filter((k) => k !== "workday" && k !== "weekend")];
+    const lines = keys.map((k, i) => [t[k] || k, (h) => val(cells[k], h), "var(--nx-base-line)", dashes[i % dashes.length]]);
     e.consumers.forEach((c, k) => {
       // programs and sessions: what their model expects on a workday; a median would miss rare runs
       if (c.timing === "fixed" && c.model && c.model.expected) lines.push([c.name, (h) => c.model.expected[h], this._color(k), ""]);

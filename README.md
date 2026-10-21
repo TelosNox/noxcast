@@ -18,7 +18,8 @@ shading, and the irradiance forecast of your weather source – every number exp
 - The forecast combines clear-sky geometry, the shading map and the hourly irradiance of a
   weather entity (e.g. DWD `sun_irradiance`) or Open-Meteo, for today, tomorrow and the day after.
 - Optional load forecast: with a house load sensor, Noxcast learns a base-load profile (median per
-  hour, workday / weekend, last 6 weeks) without the consumers you add with their own power
+  hour, workday / weekend or the states of an optional day-type entity such as the Workday sensor,
+  last 6 weeks) without the consumers you add with their own power
   sensor (or an energy sensor in kWh, e.g. the per-program energy of a washer). Fixed consumers
   have a kind: *profile* (their own median per hour), *program* (learned start times, runs per day
   and the power curve of a run, e.g. a dishwasher) or *session* (learned on-probability and how long

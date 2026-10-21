@@ -406,7 +406,11 @@ the session is observed ("on at 14:00, median 9 h left").
   the day's mean forecast temperature and spreads the energy by the consumer's mean hourly shape; a
   running consumer starts at its current power and fades into the model within a few hours.
 - **Day types:** weekday / weekend by default; optionally any sensor as key (presence, holiday
-  switch), profiles are then learned per state. Later: day types from the data itself, with the
+  switch), profiles are then learned per state. Built: the entity's state at local noon is the
+  day type of that date (from the recorder history; today from the current state, later days by
+  weekday). On / off map to workday / weekend, so the Workday binary sensor turns holidays into
+  weekends; other states (an input_select "home office") become day types of their own, for the
+  base profile, profiles, programs and sessions alike. Later: day types from the data itself, with the
   morning load deciding which type today is.
 - Outlier days (guests, outage, holiday without a sensor) are detected and excluded, as for PV.
 
@@ -484,7 +488,7 @@ The model degrades in steps; each step works on its own and every sensor adds pr
 1. Base-load profile with consumer configuration and backtest.
 2. Battery simulation and sensors; the card reads them.
 3. Flexible planning.
-4. Sessions, fixed programs with learned starts (built), day types from a sensor (open).
+4. Sessions, fixed programs with learned starts, day types from a sensor (built).
 5. Temperature (regulated consumers, built).
 6. Event detection without sensors.
 

@@ -344,15 +344,19 @@ class NoxcastCard extends HTMLElement {
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     // groups left and right of the PV symbol: first half left, the rest right; each opens its own entity
     const gText = v.groups.map((g) => `<tspan data-more="${this._esc(g.id)}">${this._esc(g.name)} ${small(g.w)}</tspan>`);
-    // small triangles instead of signs, pointing the way the power flows on screen (grid left, battery right)
-    const tri = (dir, size) => `<tspan font-size="${fs(size)}">${dir > 0 ? "▶" : "◀"}</tspan> `;
-    const batArrow = (w, size = 9) => (w >= ACTIVE_W ? tri(1, size) : w <= -ACTIVE_W ? tri(-1, size) : "");
+    // small triangles instead of signs, pointing the way the power flows on screen (grid left, battery right);
+    // smaller than the number, so raised to its middle and the baseline restored after it (U+FE0E: no emoji)
+    const tri = (dir, size, text) => {
+      const up = (0.36 * (text - size) * sc).toFixed(1);
+      return `<tspan font-size="${fs(size)}" dy="-${up}">${dir > 0 ? "▶" : "◀"}\uFE0E</tspan><tspan dy="${up}"> </tspan>`;
+    };
+    const batArrow = (w, size = 9, text = 11) => (w >= ACTIVE_W ? tri(1, size, text) : w <= -ACTIVE_W ? tri(-1, size, text) : "");
     const half = Math.ceil(gText.length / 2);
     const gY = (27 - lift).toFixed(1);
     const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
         <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
     const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
-    const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11)}${fmtW(-v.grid)}` : "0 W";
+    const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11, 15)}${fmtW(-v.grid)}` : "0 W";
     const c = this._config, icons = c.icons || {};
     const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
     const pvId = c.pv.entity || ((c.pv.groups || [])[0] || {}).entity;
@@ -377,7 +381,7 @@ class NoxcastCard extends HTMLElement {
         ${batIcon || `<rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
         <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
         <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>`}
-        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, 11)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
+        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, 11, 15)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
       <g${more(c.home && c.home.entity)}>

@@ -250,6 +250,12 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   details per cell (values, when the sun is there) and a year grid of month × hour for those who do
   not think in sun angles. Follows the Home Assistant theme (light and dark). Data comes from the
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
+  Further sections are tabs in the panel header, each a module of its own:
+  - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
+    14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
+    forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day
+    (hours with a full battery hatched), the error by weather class (forecast irradiance relative to
+    clear sky) and the sources compared on the same days.
 - Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home; lines
   have one width and the speed of the dots shows the power, so no line covers another; a charging battery takes PV before the grid; the house icon is coloured

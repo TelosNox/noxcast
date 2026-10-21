@@ -1,5 +1,10 @@
-// Noxcast sidebar panel: what the system has learned per array (shade, reflection, direction factor).
+// Noxcast sidebar panel: what the system has learned per array (shade, reflection, direction factor),
+// plus further sections that live in their own modules (e.g. forecast accuracy).
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/learned".
+
+// further sections: [key, custom element, module]; loaded on first use with this module's cache buster
+const SECTIONS = [["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"]];
+const SECTION_TITLES = { de: { learned: "Gelerntes", accuracy: "Prognosegüte" }, en: { learned: "Learned", accuracy: "Forecast accuracy" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
@@ -151,7 +156,8 @@ class NoxcastPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._state = { view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
+    this._state = { section: "learned", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
+    this._sections = {};
     this._data = null;
     this._cache = {};
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
@@ -162,6 +168,7 @@ class NoxcastPanel extends HTMLElement {
     const first = !this._hass;
     const dark = this._hass && this._hass.themes && this._hass.themes.darkMode;
     this._hass = hass;
+    for (const el of Object.values(this._sections)) el.hass = hass;
     if (first) this._load();
     else if ((hass.themes && hass.themes.darkMode) !== dark) this._render();
   }
@@ -260,9 +267,38 @@ class NoxcastPanel extends HTMLElement {
 
   // ------------------------------------------------------------ rendering
 
+  _section(key) {
+    const def = SECTIONS.find(([k]) => k === key);
+    if (!def) return null;
+    const [, tag, module] = def;
+    if (!customElements.get(tag)) {             // load the module, render again once the element exists
+      import(new URL(module + new URL(import.meta.url).search, import.meta.url).href);
+      customElements.whenDefined(tag).then(() => this._render());
+      return null;
+    }
+    if (!this._sections[key]) {
+      this._sections[key] = document.createElement(tag);
+      this._sections[key].hass = this._hass;
+    }
+    return this._sections[key];
+  }
+
   _render() {
     if (!this.shadowRoot) return;
-    const t = this._t;
+    const t = this._t, s = this._state;
+    const titles = SECTION_TITLES[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_TITLES.en;
+    const tabs = ["learned", ...SECTIONS.map(([k]) => k)].map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}">${titles[k]}</button>`).join("");
+    if (s.section !== "learned") {
+      this._stop();
+      this.shadowRoot.innerHTML = `${this._style()}
+        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">Noxcast</div><nav class="navtabs">${tabs}</nav></div>
+        <div class="content" id="section"></div>`;
+      const section = this._section(s.section);
+      if (section) this.shadowRoot.getElementById("section").appendChild(section);
+      const menu = this.shadowRoot.querySelector("ha-menu-button");
+      if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
+      return;
+    }
     let body;
     if (this._error) body = `<div class="card pad">${this._esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
@@ -275,7 +311,8 @@ class NoxcastPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `${this._style()}
       <div class="toolbar">
         <ha-menu-button></ha-menu-button>
-        <div class="brand">Noxcast <span class="muted">· ${t.title}</span></div>
+        <div class="brand">Noxcast</div>
+        <nav class="navtabs">${tabs}</nav>
         <nav class="crumbs">${crumbs}</nav>
       </div>
       <div class="content">${body}</div>`;
@@ -531,7 +568,8 @@ class NoxcastPanel extends HTMLElement {
     const el = ev.composedPath().find((n) => n.dataset && n.dataset.action);
     if (!el) return;
     const s = this._state, a = el.dataset.action;
-    if (a === "overview") { s.view = "overview"; s.sel = null; this._stop(); }
+    if (a === "section") { s.section = el.dataset.section; s.sel = null; }
+    else if (a === "overview") { s.view = "overview"; s.sel = null; this._stop(); }
     else if (a === "open") { s.view = "array"; s.arrayId = el.dataset.id; s.layer = el.dataset.layer || "shade"; s.mode = "map"; s.sel = null; }
     else if (a === "mode") { s.mode = el.dataset.mode; if (s.mode !== "map") this._stop(); }
     else if (a === "layer") s.layer = el.dataset.layer;
@@ -576,6 +614,10 @@ class NoxcastPanel extends HTMLElement {
         background: var(--app-header-background-color, var(--primary-background-color)); color: var(--app-header-text-color, var(--primary-text-color));
         border-bottom: var(--app-header-border-bottom, 1px solid var(--divider-color)); box-sizing: border-box; }
       .brand { font-size: 20px; font-weight: 500; }
+      .navtabs { display: flex; gap: 4px; overflow-x: auto; }
+      .navtab { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 10px; cursor: pointer;
+        font-size: 14px; color: var(--secondary-text-color); white-space: nowrap; }
+      .navtab.on { color: var(--primary-text-color); border-bottom-color: var(--primary-color); }
       .crumbs { margin-left: 8px; display: flex; gap: 4px; align-items: center; font-size: 14px; }
       .content { padding: 16px; max-width: 1400px; margin: 0 auto; box-sizing: border-box; }
       .muted { color: var(--secondary-text-color); }

@@ -20,18 +20,21 @@ URL_BASE = "/noxcast_panel"
 PANEL_PATH = "noxcast"
 WS_LEARNED = f"{DOMAIN}/learned"
 WS_TODAY = f"{DOMAIN}/today"
+WS_ACCURACY = f"{DOMAIN}/accuracy"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
     """Register the websocket commands and, where the frontend is loaded, the panel and the day card."""
     websocket_api.async_register_command(hass, ws_learned)
     websocket_api.async_register_command(hass, ws_today)
+    websocket_api.async_register_command(hass, ws_accuracy)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
     from homeassistant.components.http import StaticPathConfig
 
-    version = await hass.async_add_executor_job(_version, "noxcast-panel.js")
+    # the panel loads further section modules with its own cache buster, so it covers all of them
+    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
@@ -67,9 +70,9 @@ async def _async_register_card(hass: HomeAssistant, url: str) -> None:
     await resources.async_create_item({"res_type": "module", "url": url})
 
 
-def _version(name: str) -> str:
-    """Cache buster: modification time of a frontend script."""
-    return str(int((Path(__file__).parent / "frontend" / name).stat().st_mtime))
+def _version(*names: str) -> str:
+    """Cache buster: latest modification time of the given frontend scripts."""
+    return str(int(max((Path(__file__).parent / "frontend" / n).stat().st_mtime for n in names)))
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LEARNED})
@@ -127,3 +130,36 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
             })
     connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
                                        "arrays": arrays})
+
+
+def accuracy_days(archive: dict, site) -> list[dict]:
+    """Archived day-ahead forecasts with actuals, hour by hour, plus clear-sky irradiance for the weather class."""
+    from .model import clearsky_weather
+
+    days = []
+    for key in sorted(archive):
+        day = archive[key]
+        hours = []
+        for ts_key, h in sorted(day.get("hours", {}).items(), key=lambda kv: float(kv[0])):
+            ts = float(ts_key)
+            hours.append({
+                "t": ts, "ghi": h.get("ghi"), "clear": round(clearsky_weather(site, ts).ghi, 1),
+                "forecast": h.get("forecast", {}), "actual": h.get("actual"),
+                "alt": {name: a.get("forecast", {}) for name, a in h.get("alt", {}).items()},
+                "curtailed": bool(h.get("curtailed")),
+            })
+        days.append({"date": key, "issued": day.get("issued"), "hours": hours})
+    return days
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_ACCURACY})
+@websocket_api.async_response
+async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Day-ahead forecast archive for the accuracy view of the panel."""
+    entries = []
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator = entry.runtime_data
+        days = await hass.async_add_executor_job(accuracy_days, coordinator.forecast_archive, coordinator.site)
+        entries.append({"arrays": [{"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w}
+                                   for sid, arr in coordinator.arrays.items()], "days": days})
+    connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "entries": entries})

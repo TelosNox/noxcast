@@ -45,6 +45,19 @@ const TEXT = {
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
     },
     clickHint: "Feld anklicken für Details",
+    checks: {
+      balance: "Klarer Tag je Monat", clearDay: "Klarer Tag", shade: "Schatten", refl: "Reflexion", dir: "Richtung", temp: "Wärme",
+      balanceHelp: "Ein wolkenloser Tag in der Monatsmitte mit allem Gelernten. Die Zeilen zeigen, wie viel jeder Effekt an diesem Tag ändert, in Prozent. Wärme nutzt die mittlere Lufttemperatur des Monats aus dem Verlauf; ohne Verlauf bleibt sie leer.",
+      effTitle: "Wirkungsgrad je Monat", effHelp: "Aus klaren, unverschatteten Stunden des jeweiligen Monats. Langsamer Rückgang deutet auf Alterung, ein Einbruch auf Verschmutzung oder Schnee; ein Jahresgang eher auf Modellfehler bei tiefer Sonne.",
+      effLearned: "gelernt", hours: "Std.", noEff: "Noch zu wenige klare Stunden je Monat.",
+      geoTitle: "Geometrie-Check", configured: "Eingetragen", bestFit: "Passt am besten", spread: "Streuung",
+      confidence: { high: "hoch", medium: "mittel", low: "gering" }, trust: "Vertrauen",
+      geoOk: "Neigung und Ausrichtung passen zu den Messwerten.",
+      geoHint: "Die Messwerte passen besser zu einer anderen Geometrie. Bitte Neigung und Ausrichtung prüfen; übernommen wird nichts automatisch, weil die Schattenkarte mit der eingetragenen Geometrie gelernt wurde.",
+      geoNone: "Braucht den Satellitenfilter und mindestens 60 klare, unverschattete Stunden.",
+      geoHelp: "Bei der richtigen Geometrie ist das Verhältnis von Messung zu Modell über Tag und Jahr gleich. Eine falsche Ausrichtung zeigt sich als zu hohe Vormittage und zu niedrige Nachmittage (oder umgekehrt).",
+      badge: "Geometrie prüfen",
+    },
   },
   en: {
     title: "Learned", overview: "Overview", map: "Map", grid: "Year grid",
@@ -64,6 +77,19 @@ const TEXT = {
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
     },
     clickHint: "Click a cell for details",
+    checks: {
+      balance: "Clear day per month", clearDay: "Clear day", shade: "Shade", refl: "Reflection", dir: "Direction", temp: "Heat",
+      balanceHelp: "A cloudless day in the middle of the month with everything learned. The rows show how much each effect changes that day, in percent. Heat uses the mean air temperature of that month from the history; without history it stays empty.",
+      effTitle: "Efficiency per month", effHelp: "From clear unshaded hours of each month. A slow decline points at ageing, a dip at soiling or snow; a yearly swing rather at model errors at low sun.",
+      effLearned: "learned", hours: "h", noEff: "Not enough clear hours per month yet.",
+      geoTitle: "Geometry check", configured: "Configured", bestFit: "Fits best", spread: "Spread",
+      confidence: { high: "high", medium: "medium", low: "low" }, trust: "Confidence",
+      geoOk: "Tilt and azimuth fit the measurements.",
+      geoHint: "The measurements fit another geometry better. Please check tilt and azimuth; nothing is applied automatically, since the shading map was learned with the configured geometry.",
+      geoNone: "Needs the satellite filter and at least 60 clear unshaded hours.",
+      geoHelp: "With the right geometry the ratio of measurement to model is the same over the day and the year. A wrong azimuth shows as mornings too high and afternoons too low (or the other way round).",
+      badge: "Check geometry",
+    },
   },
 };
 
@@ -373,8 +399,10 @@ class NoxcastPanel extends HTMLElement {
           ${this._mapSvg(arr, layer, { mini: true })}
           <span class="muted small">${t[layer]}</span>
         </button>`).join("");
+      const gc = arr.learned && arr.learned.geometry_check;
+      const badge = gc && gc.deviates ? `<span class="badge">${t.checks.badge}</span>` : "";
       return `<section class="card row">
-        <div class="figs"><h2>${this._esc(arr.name)}</h2>${figs}
+        <div class="figs"><h2>${this._esc(arr.name)}${badge}</h2>${figs}
           <button class="btn" data-action="open" data-id="${arr.id}" data-layer="shade">${t.open}</button></div>
         <div class="minis">${maps}</div>
       </section>`;
@@ -397,6 +425,7 @@ class NoxcastPanel extends HTMLElement {
           <div class="chips">${layerTabs}${s.mode === "map" ? `<span class="muted small hint">${t.clickHint}</span>` : ""}</div>
           ${main}
           ${this._legend(s.layer)}
+          ${this._checks(arr)}
         </div>
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
@@ -570,6 +599,78 @@ class NoxcastPanel extends HTMLElement {
     return `${ms} · ${hm(Math.min(...mins))}–${hm(Math.max(...mins) + 10)}`;
   }
 
+  // ------------------------------------------------------------ checks: month balance, efficiency, geometry
+
+  _checks(arr) {
+    const la = arr.learned;
+    if (!la) return "";
+    return `${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._geometry(arr, la)}</div>`;
+  }
+
+  _balance(la) {
+    const t = this._t, c = t.checks, months = la.months || [];
+    if (!months.length) return "";
+    const pct = (v) => { if (v == null) return ""; const r = Math.round(v * 100); return `${r > 0 ? "+" : ""}${r}`; };
+    const tone = (v) => {
+      if (v == null || Math.abs(v) < 0.005) return "transparent";
+      const a = Math.min(Math.abs(v) / 0.4, 1) * 0.75 + 0.1;
+      return v < 0 ? `rgba(232, 84, 60, ${a.toFixed(2)})` : `rgba(46, 170, 110, ${a.toFixed(2)})`;
+    };
+    const max = Math.max(...months.map((m) => m.clear_wh), 1);
+    const head = months.map((m) => `<div class="mh">${t.months[m.month - 1]}</div>`).join("");
+    const bars = months.map((m) => `<div class="mb" title="${(m.clear_wh / 1000).toLocaleString(this._lang, { maximumFractionDigits: 1 })} kWh">
+      <i style="height:${(m.clear_wh / max * 100).toFixed(1)}%"></i><span>${(m.clear_wh / 1000).toLocaleString(this._lang, { maximumFractionDigits: 1 })}</span></div>`).join("");
+    const row = (key, label) => `<div class="ml">${label}</div>${months.map((m) => `<div class="mc" style="background:${tone(m[key])}"
+      title="${label} ${t.months[m.month - 1]}: ${pct(m[key]) || "–"} %${key === "temperature" && m.air_temp != null ? ` (${m.air_temp} °C)` : ""}">${pct(m[key])}</div>`).join("")}`;
+    return `<section class="card pad"><h3>${c.balance}</h3>
+      <div class="mgrid"><div></div>${head}<div class="ml col">${c.clearDay}<span class="small">kWh</span></div>${bars}
+        ${row("shade", c.shade)}${row("reflection", c.refl)}${row("direction", c.dir)}${row("temperature", c.temp)}</div>
+      <p class="help">${c.balanceHelp}</p></section>`;
+  }
+
+  _effMonths(la) {
+    const c = this._t.checks, entries = Object.entries(la.efficiency_months || {});
+    if (!entries.length) return `<section class="card pad"><h3>${c.effTitle}</h3><p class="muted">${c.noEff}</p></section>`;
+    const W = 420, H = 150, pad = 36, vals = entries.map(([, [v]]) => v).concat([la.efficiency]);
+    const lo = Math.min(...vals) - 0.02, hi = Math.max(...vals) + 0.02;
+    const x = (i) => pad + (entries.length === 1 ? (W - pad) / 2 : i / (entries.length - 1) * (W - pad - 10));
+    const y = (v) => H - 20 - (v - lo) / (hi - lo) * (H - 34);
+    const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
+    let svg = `<defs><linearGradient id="nx-eff" x1="0" x2="1"><stop offset="0" stop-color="#F5A524"></stop><stop offset=".5" stop-color="#FF6A3D"></stop><stop offset="1" stop-color="#8B5CF6"></stop></linearGradient></defs>`;
+    for (const v of [lo + 0.02, (lo + hi) / 2, hi - 0.02]) svg += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"></line><text x="${pad - 4}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="ax">${Math.round(v * 100)}</text>`;
+    svg += `<line x1="${pad}" x2="${W}" y1="${y(la.efficiency).toFixed(1)}" y2="${y(la.efficiency).toFixed(1)}" class="sp" stroke-dasharray="5 4"></line>`;
+    svg += `<polyline points="${entries.map(([, [v]], i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="url(#nx-eff)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+    entries.forEach(([m, [v, n]], i) => {
+      const [yy, mm] = m.split("-").map(Number);
+      svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4.5" fill="var(--card-background-color)" stroke="#FF6A3D" stroke-width="2.5"><title>${this._t.months[mm - 1]} ${yy}: ${pct(v)} (${n} ${c.hours})</title></circle>`;
+      if (entries.length <= 14 || i % 2 === 0) svg += `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${this._t.months[mm - 1]}</text>`;
+    });
+    return `<section class="card pad"><h3>${c.effTitle}</h3><svg viewBox="0 0 ${W} ${H}" class="mapsvg">${svg}</svg>
+      <div class="legend"><span class="lg"><i class="sw" style="background:linear-gradient(90deg,#F5A524,#8B5CF6);border:0"></i>${c.effTitle}</span>
+        <span class="lg"><i class="sw" style="border:0;border-top:2px dashed currentColor;border-radius:0;height:0"></i>${c.effLearned} ${pct(la.efficiency)}</span></div>
+      <p class="help">${c.effHelp}</p></section>`;
+  }
+
+  _geometry(arr, la) {
+    const c = this._t.checks, g = la.geometry_check;
+    if (!g) return `<section class="card pad"><h3>${c.geoTitle}</h3><p class="muted">${c.geoNone}</p><p class="help">${c.geoHelp}</p></section>`;
+    const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
+    const deg = (tilt, az) => `${Math.round(tilt)}° / ${Math.round(az)}°`;
+    // compass: configured direction thin, best fit in the brand gradient
+    const arrow = (az, cls) => { const r = (az - 90) * Math.PI / 180; return `<line x1="50" y1="50" x2="${(50 + 38 * Math.cos(r)).toFixed(1)}" y2="${(50 + 38 * Math.sin(r)).toFixed(1)}" class="${cls}"></line>`; };
+    const compass = `<svg viewBox="0 0 100 100" class="compass"><defs><linearGradient id="nx-geo" x1="0" x2="1"><stop offset="0" stop-color="#F5A524"></stop><stop offset="1" stop-color="#8B5CF6"></stop></linearGradient></defs>
+      <circle cx="50" cy="50" r="44" class="ring"></circle>${["N", "O", "S", "W"].map((n, i) => `<text x="${50 + 34 * Math.sin(i * Math.PI / 2)}" y="${54 - 34 * Math.cos(i * Math.PI / 2)}" text-anchor="middle" class="ax">${this._lang.startsWith("en") && n === "O" ? "E" : n}</text>`).join("")}
+      ${arrow(arr.azimuth, "cfg")}${arrow(g.azimuth, "fit")}<circle cx="50" cy="50" r="3" fill="currentColor"></circle></svg>`;
+    return `<section class="card pad"><h3>${c.geoTitle}</h3>
+      <div class="geo">${compass}<div class="tiles2">
+        <div class="tile"><span class="muted small">${c.configured}</span><b>${deg(arr.tilt, arr.azimuth)}</b></div>
+        <div class="tile ${g.deviates ? "warn" : "ok"}"><span class="muted small">${c.bestFit}</span><b>${deg(g.tilt, g.azimuth)}</b></div>
+        <div class="tile"><span class="muted small">${c.spread}</span><b>${pct(g.spread)}</b><span class="muted small">${pct(g.spread_configured)}</span></div>
+        <div class="tile"><span class="muted small">${c.trust}</span><b>${c.confidence[g.confidence] || g.confidence}</b><span class="muted small">${g.hours} ${c.hours}</span></div>
+      </div></div>
+      <p class="${g.deviates ? "note warn" : "note"}">${g.deviates ? c.geoHint : c.geoOk}</p><p class="help">${c.geoHelp}</p></section>`;
+  }
+
   _legend(layer) {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
@@ -704,6 +805,27 @@ class NoxcastPanel extends HTMLElement {
       .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
       .tile { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 10px; }
       .tile b { font-size: 18px; font-weight: 500; }
+      .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+      .mgrid { display: grid; grid-template-columns: minmax(84px, auto) repeat(12, minmax(0, 1fr)); gap: 3px; align-items: stretch; font-size: 12px; }
+      .ml.col { flex-direction: column; align-items: flex-start; justify-content: center; }
+      .mh { text-align: center; color: var(--secondary-text-color); font-size: 11px; }
+      .ml { color: var(--secondary-text-color); display: flex; align-items: center; padding-right: 6px; white-space: nowrap; }
+      .mc { border-radius: 6px; min-height: 26px; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums;
+        border: 1px solid var(--divider-color); }
+      .mb { position: relative; height: 64px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+      .mb i { display: block; width: 70%; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, #F5A524, #FF6A3D 60%, #8B5CF6); opacity: .85; }
+      .mb span { position: absolute; top: 0; font-size: 10px; color: var(--secondary-text-color); }
+      .geo { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      .compass { width: 120px; height: 120px; flex: none; }
+      .compass .ring { fill: none; stroke: var(--divider-color); }
+      .compass .cfg { stroke: var(--secondary-text-color); stroke-width: 2; stroke-dasharray: 3 3; }
+      .compass .fit { stroke: url(#nx-geo); stroke-width: 4; stroke-linecap: round; }
+      .tiles2 { flex: 1 1 200px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .tile.warn { border-color: #FF6A3D; } .tile.ok { border-color: rgba(46, 170, 110, .6); }
+      .mgrid + .help, svg + .legend, .legend + .help, .note + .help { margin-top: 10px; }
+      .note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; } .note.warn { color: #E8543C; }
+      .badge { margin-left: 8px; font-size: 11px; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
+        color: #fff; background: linear-gradient(115deg, #FF6A3D, #8B5CF6); }
     </style>`;
   }
 }

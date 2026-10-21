@@ -24,6 +24,10 @@ shading, and the irradiance forecast of your weather source – every number exp
   run. With a remaining-time sensor a running program counts until it ends (its power from the power
   sensor, or energy / elapsed time). A short-term correction follows today's level for the next
   hours.
+- Optional battery simulation: add a **Battery** (state of charge, capacity, limits as number or
+  entity, reserve, DC/AC coupling, power limits). With the load forecast, Noxcast simulates all
+  batteries as one storage from now until tomorrow's charge start: surplus and lost surplus today,
+  when the battery is full or empty, its highest level and its level at the next charge start.
 
 ## Installation
 

@@ -157,6 +157,74 @@
       "abort": {
         "reconfigure_successful": "PV array saved."
       }
+    },
+    "battery": {
+      "entry_type": "Battery",
+      "initiate_flow": {
+        "user": "Add battery"
+      },
+      "step": {
+        "user": {
+          "title": "Battery",
+          "description": "Battery for the surplus simulation (needs the house load). Several batteries are simulated as one storage.",
+          "data": {
+            "name": "Name",
+            "soc_sensor": "State of charge",
+            "capacity": "Capacity",
+            "max_soc": "Upper limit",
+            "max_soc_entity": "Upper limit as entity",
+            "min_soc": "Lower limit",
+            "min_soc_entity": "Lower limit as entity",
+            "reserve": "Reserve above the lower limit",
+            "coupling": "Coupling",
+            "efficiency": "Round-trip efficiency",
+            "max_charge_w": "Max. charge power",
+            "max_discharge_w": "Max. discharge power"
+          },
+          "data_description": {
+            "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
+            "min_soc_entity": "Optional: the current discharge limit from the device.",
+            "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
+            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
+            "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+          }
+        },
+        "reconfigure": {
+          "title": "Battery",
+          "description": "Battery for the surplus simulation (needs the house load). Several batteries are simulated as one storage.",
+          "data": {
+            "name": "Name",
+            "soc_sensor": "State of charge",
+            "capacity": "Capacity",
+            "max_soc": "Upper limit",
+            "max_soc_entity": "Upper limit as entity",
+            "min_soc": "Lower limit",
+            "min_soc_entity": "Lower limit as entity",
+            "reserve": "Reserve above the lower limit",
+            "coupling": "Coupling",
+            "efficiency": "Round-trip efficiency",
+            "max_charge_w": "Max. charge power",
+            "max_discharge_w": "Max. discharge power"
+          },
+          "data_description": {
+            "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
+            "min_soc_entity": "Optional: the current discharge limit from the device.",
+            "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
+            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
+            "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+          }
+        }
+      },
+      "error": {
+        "limits_order": "Lower limit plus reserve must be below the upper limit.",
+        "soc_unit": "The state of charge must be in %.",
+        "sensor_missing": "The selected sensor does not exist."
+      },
+      "abort": {
+        "reconfigure_successful": "PV array saved."
+      }
     }
   },
   "selector": {
@@ -170,6 +238,12 @@
       "options": {
         "fixed": "Fixed",
         "flexible": "Flexible"
+      }
+    },
+    "coupling": {
+      "options": {
+        "dc": "DC (behind the PV inverter)",
+        "ac": "AC (own inverter)"
       }
     }
   },
@@ -216,6 +290,24 @@
       },
       "load_tomorrow": {
         "name": "Load tomorrow"
+      },
+      "surplus_today": {
+        "name": "Surplus rest of today"
+      },
+      "surplus_lost_today": {
+        "name": "Surplus lost today"
+      },
+      "battery_full_at": {
+        "name": "Battery full at"
+      },
+      "battery_max_soc": {
+        "name": "Battery highest level"
+      },
+      "battery_empty_at": {
+        "name": "Battery empty at"
+      },
+      "battery_soc_at_charge_start": {
+        "name": "Battery at next charge start"
       }
     },
     "image": {

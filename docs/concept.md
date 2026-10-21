@@ -311,7 +311,8 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 
 Status: step 1 built (base-load profile, consumers with fixed / flexible timing and a power or energy
 sensor, running programs until their remaining time ends, correction k,
-load sensors for the rest of today and tomorrow, backtest); the rest is concept. Today the day card computes a simple version in the browser
+load sensors for the rest of today and tomorrow, backtest) and step 2 (battery subentries, simulation
+until tomorrow's charge start, surplus and battery sensors); the rest is concept. Today the day card computes a simple version in the browser
 (7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
 dashboard is open, so automations cannot use it. The model below moves into the integration and
 the card only reads its sensors.

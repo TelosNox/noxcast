@@ -167,6 +167,39 @@ def test_kinds_round_trip_and_backtest_runs_with_them():
     assert plain["bias_kwh"] < -0.5 and abs(kinds["bias_kwh"]) < 0.15
 
 
+def seasons(n):
+    # daily mean temperature from -2 °C in winter to 26 °C in summer; constant over the day
+    import math as m
+    return {MONDAY + d * 86400 + h * H: 12 - 14 * m.cos(2 * m.pi * d / 365) for d in range(n) for h in range(24)}
+
+
+def test_regulated_learns_a_heating_hinge_and_forecasts_with_the_temperature():
+    temp = seasons(365)
+    # heat pump: 300 W below 15 °C per K, nothing above; runs evenly over the day
+    hp = {t: max(0.0, 15 - v) * 300 / 24 + 20 for t, v in temp.items()}
+    until = MONDAY + 365 * 86400
+    m = lf.learn_regulated(hp, temp, UTC, until)
+    assert m.mode == "heat" and abs(m.threshold - 15) <= 1 and abs(m.slope_wh - 300) < 30 and m.r2 > 0.95
+    assert abs(sum(m.shape) - 1) < 0.01
+    day = datetime.fromtimestamp(until, UTC).date()
+    out = lf.regulated_expected(m, UTC, until, until + 86400, {day: 5.0})
+    assert abs(sum(out.values()) - (480 + 3000)) < 150          # base 20 W × 24 h + 10 K × 300 Wh
+    hot = lf.regulated_expected(m, UTC, until, until + 86400, {day: 25.0})
+    assert sum(hot.values()) < 600
+
+
+def test_regulated_without_a_relation_is_dropped_and_a_run_fades_into_the_model():
+    temp = seasons(120)
+    flat = {t: 100.0 + (t // 86400 % 3) * 50 for t in temp}     # varies, but not with the temperature
+    assert lf.learn_regulated(flat, temp, UTC, MONDAY + 120 * 86400) is None
+    m = lf.RegulatedModel("cool", 22.0, 0.0, 500.0, [1 / 24] * 24, 0.9, 100)
+    day = datetime.fromtimestamp(MONDAY, UTC).date()
+    out = lf.regulated_expected(m, UTC, MONDAY, MONDAY + 6 * H, {day: 28.0}, run_power=1200.0)
+    model = 500 * 6 / 24
+    assert out[MONDAY] == 1200.0 and model < out[MONDAY + 5 * H] < out[MONDAY + H] < 1200
+    assert lf.RegulatedModel.from_dict(m.as_dict()) == m
+
+
 def test_day_type_zone_keeps_local_time_across_dst_and_overrides_dates():
     from zoneinfo import ZoneInfo
     berlin = ZoneInfo("Europe/Berlin")

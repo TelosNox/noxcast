@@ -10,7 +10,9 @@ const LOAD_TEXT = {
     forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde, Programme und Sitzungen erwartet)",
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
     perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", bias: "Bias",
-    kinds: { profile: "Profil", program: "Programm", session: "Sitzung" },
+    kinds: { profile: "Profil", program: "Programm", session: "Sitzung", regulated: "geregelt" },
+    regulatedInfo: (mode, th, slope, r2, days) => `${mode === "heat" ? "Heizen unter" : "Kühlen über"} ${th} °C: ${slope} kWh je K und Tag · R² ${r2} aus ${days} Tagen`,
+    noRelation: "Noch kein Zusammenhang mit der Temperatur erkennbar; zählt mit seinem Profil.",
     events: "Erkannte Geräte (Vorschläge)", evPower: "Leistung", evDuration: "Dauer", evEnergy: "Energie je Lauf",
     evCount: "Läufe", evHours: "Meist um", evNone: "Keine wiederkehrenden Geräteläufe in der Hauslast gefunden.",
     evHelp: (days) => `Aus den 5-Minuten-Werten der letzten ${days} Tage: Stufen von mindestens 500 W über der gleitenden Grundlinie, die mindestens 15 Minuten halten und wiederkehren. Bereits angelegte Verbraucher sind abgezogen. Geräte gleicher Leistung lassen sich nicht unterscheiden; ein Vorschlag lässt sich als Verbraucher mit eigenem Sensor anlegen oder als flexibler Verbraucher mit Leistung und Dauer eintragen. Die Prognose ändert sich dadurch nicht.`,
@@ -28,7 +30,9 @@ const LOAD_TEXT = {
     forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour, programs and sessions expected)",
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
     perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", bias: "Bias",
-    kinds: { profile: "profile", program: "program", session: "session" },
+    kinds: { profile: "profile", program: "program", session: "session", regulated: "regulated" },
+    regulatedInfo: (mode, th, slope, r2, days) => `${mode === "heat" ? "heating below" : "cooling above"} ${th} °C: ${slope} kWh per K and day · R² ${r2} from ${days} days`,
+    noRelation: "No relation to the temperature visible yet; counts with its profile.",
     events: "Detected devices (suggestions)", evPower: "Power", evDuration: "Duration", evEnergy: "Energy per run",
     evCount: "Runs", evHours: "Mostly at", evNone: "No recurring device runs found in the house load.",
     evHelp: (days) => `From the 5-minute values of the last ${days} days: steps of at least 500 W above the moving baseline that hold for at least 15 minutes and recur. Configured consumers are subtracted. Devices of equal power cannot be told apart; a suggestion can be added as a consumer with its own sensor or as a flexible consumer with power and duration. The forecast does not change.`,
@@ -222,6 +226,9 @@ class NoxcastLoad extends HTMLElement {
 
   _modelInfo(c) {
     const t = this._t, m = c.model;
+    if (c.timing === "fixed" && c.kind === "regulated") {
+      return `<div class="muted small">${m ? t.regulatedInfo(m.mode, this._num(m.threshold, 1), this._num(m.slope_wh / 1000, 2), this._num(m.r2, 2), m.days) : t.noRelation}</div>`;
+    }
     if (c.timing !== "fixed" || !m) return "";
     if (c.kind === "program") {
       const perDay = ((m.per_day.workday || 0) * 5 + (m.per_day.weekend || 0) * 2) / 7;

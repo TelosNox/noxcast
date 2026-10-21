@@ -340,7 +340,8 @@ until tomorrow's charge start, surplus and battery sensors) and step 3 (flexible
 learned from history or configured, best window today and tomorrow, PV share if started now) and
 the kinds of step 4 (fixed consumers as profile, program with learned start rates, runs per day and
 run curve, or session with on-probability and remaining hours by time of day; the backtest reports
-the bias next to the absolute error); day types from a sensor and the rest are concept. Today the day card computes a simple version in the browser
+the bias next to the absolute error) and step 5 (regulated consumers against the outside
+temperature), day types from an entity and step 6 as suggestions of recurring device runs. Today the day card computes a simple version in the browser
 (7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
 dashboard is open, so automations cannot use it. The model below moves into the integration and
 the card only reads its sensors.
@@ -398,8 +399,12 @@ the session is observed ("on at 14:00, median 9 h left").
 - **Session:** on-probability per hour, typical power, remaining duration by time of day. While on,
   the current power counts for the median remaining hours seen at that time of day; afterwards and
   while off, on-probability times typical power.
-- **Regulated:** power against temperature as a hinge (threshold plus slope), per hour; dropped
-  when no relation is visible.
+- **Regulated:** power against temperature as a hinge (threshold plus slope); dropped when no
+  relation is visible. Built on daily values: daily energy against the daily mean air temperature
+  from the temperature archive over a year (the relation needs the seasons), heating below or
+  cooling above a threshold, whichever fits better (R² at least 0.3, 14 days). The forecast takes
+  the day's mean forecast temperature and spreads the energy by the consumer's mean hourly shape; a
+  running consumer starts at its current power and fades into the model within a few hours.
 - **Day types:** weekday / weekend by default; optionally any sensor as key (presence, holiday
   switch), profiles are then learned per state. Built: the entity's state at local noon is the
   day type of that date (from the recorder history; today from the current state, later days by
@@ -489,7 +494,7 @@ The model degrades in steps; each step works on its own and every sensor adds pr
 2. Battery simulation and sensors; the card reads them.
 3. Flexible planning.
 4. Sessions, fixed programs with learned starts, day types from a sensor (built).
-5. Temperature (regulated consumers).
+5. Temperature (regulated consumers, built).
 6. Event detection without sensors (built as suggestions: `events.py`, shown in the load panel).
 
 The generation part must provide uncertainty bands, 15-minute values and intraday updates for

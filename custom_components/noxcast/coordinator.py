@@ -88,7 +88,8 @@ def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
 
 def _models_from_dict(d: dict) -> dict:
     return {"program": lf.ProgramModel.from_dict(d["program"]) if d.get("program") else None,
-            "session": lf.SessionModel.from_dict(d["session"]) if d.get("session") else None}
+            "session": lf.SessionModel.from_dict(d["session"]) if d.get("session") else None,
+            "regulated": lf.RegulatedModel.from_dict(d["regulated"]) if d.get("regulated") else None}
 
 
 @dataclass
@@ -352,7 +353,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.band = await self.hass.async_add_executor_job(
             bd.learn_band, self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi)
         if self.house_load:
-            await self._async_learn_load(now)
+            await self._async_learn_load(now, air_temp)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
 
@@ -372,7 +373,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                       for t, v in stats.get(sid, {}).items() if v is not None}
                 for sid in ids + energy}
 
-    async def _async_learn_load(self, now: datetime) -> None:
+    async def _async_learn_load(self, now: datetime, air_temp: dict[float, float] | None = None) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""
         days = lf.PROFILE_DAYS + lf.BACKTEST_DAYS + 1
         series = await self._async_load_series(now - timedelta(days=days))
@@ -394,9 +395,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for sid, s in consumers.items():
             models[sid] = {"program": await self.hass.async_add_executor_job(lf.learn_program, s, tz, until),
                            "session": await self.hass.async_add_executor_job(lf.learn_session, s, tz, until)}
+        # regulated consumers: a year of history, so the relation to the temperature spans the seasons
+        regulated = [sid for sid, c in self.consumers.items() if c.kind == lf.KIND_REGULATED and c.timing == lf.TIMING_FIXED]
+        if regulated and air_temp:
+            year = await self._async_load_series(now - timedelta(days=lf.REGULATED_DAYS))
+            for sid in regulated:
+                models[sid]["regulated"] = await self.hass.async_add_executor_job(
+                    lf.learn_regulated, year.get(self.consumers[sid].series_id, {}), air_temp, tz, until)
         backtest = await self.hass.async_add_executor_job(
             lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp(),
-            lf.BACKTEST_DAYS, {sid: c.kind for sid, c in self.consumers.items()})
+            lf.BACKTEST_DAYS, {sid: c.kind for sid, c in self.consumers.items()}, air_temp)
         self.consumer_models = models
         self.load_profile, self.consumer_profiles, self.load_backtest = profile, cons, backtest
         runs = {}
@@ -446,7 +454,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             types[dt_util.as_local(dt_util.utc_from_timestamp(now)).date()] = lf.DAY_TYPE_STATES.get(state.state, state.state)
         return lf.DayTypeZone(tz, types)
 
-    async def _async_load_forecast(self, now: float, end: float) -> lf.LoadForecast | None:
+    async def _async_load_forecast(self, now: float, end: float,
+                                   temps: dict[float, float] | None = None) -> lf.LoadForecast | None:
         """Load forecast with the correction from the last hours and the consumers running now."""
         if not self.house_load or self.load_profile is None:
             return None
@@ -463,12 +472,19 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         k = lf.correction(base, self.load_profile, tz, now)
         running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
         day_start = dt_util.start_of_local_day().timestamp()
+        # mean forecast temperature per local day, for regulated consumers (partial days count with what they have)
+        by_day: dict = {}
+        for t, v in (temps or {}).items():
+            if v is not None:
+                by_day.setdefault(dt_util.as_local(dt_util.utc_from_timestamp(t)).date(), []).append(v)
+        day_temp = {d: sum(v) / len(v) for d, v in by_day.items()}
         consumers = []
         for sid, c in self.consumers.items():
             m = self.consumer_models.get(sid, {})
             consumers.append(lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()), c.kind,
                                          m.get("program"), m.get("session"),
-                                         lf.runs_since(series.get(c.series_id, {}), day_start, now, sid in running)))
+                                         lf.runs_since(series.get(c.series_id, {}), day_start, now, sid in running),
+                                         m.get("regulated"), day_temp))
         return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
 
     def _limit(self, number, entity: str | None, default: float) -> float:
@@ -754,7 +770,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             series[None] = dict(sorted(total.items()))
 
         result.load = await self._async_load_forecast(
-            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp())
+            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(), temps)
         result.band = await self.hass.async_add_executor_job(self._band, result, weather, now, day_end)
         result.battery = self._battery(result, now, day_end)
         result.plan = self._plan(result, now, day_end)

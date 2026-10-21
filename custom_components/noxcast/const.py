@@ -23,7 +23,7 @@ CONF_ELAPSED_TIME = "elapsed_time"       # optional: minutes it has run; with th
 CONF_TIMING = "timing"                   # fixed: part of the load forecast; flexible: the forecast picks its moment
 TIMING_OPTIONS = ("fixed", "flexible")
 CONF_KIND = "kind"                        # fixed consumers: profile, program (runs with an end) or session (on until ...)
-KIND_OPTIONS = ("profile", "program", "session")
+KIND_OPTIONS = ("profile", "program", "session", "regulated")
 CONF_RUN_POWER = "run_power"              # flexible consumers: power of a run (W), empty = learned
 CONF_RUN_MINUTES = "run_minutes"          # duration of a run (min), empty = learned
 

@@ -24,6 +24,7 @@ WS_ACCURACY = f"{DOMAIN}/accuracy"
 WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
+WS_DAY = f"{DOMAIN}/day"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -34,6 +35,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_load)
     websocket_api.async_register_command(hass, ws_diagnostics)
     websocket_api.async_register_command(hass, ws_battery)
+    websocket_api.async_register_command(hass, ws_day)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
@@ -42,7 +44,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
                                          "noxcast-diagnostics.js", "noxcast-battery.js",
-                                         "noxcast-theme.js")
+                                         "noxcast-theme.js", "noxcast-day.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
@@ -392,3 +394,69 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         entries.append(result)
     connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
                                        "review_days": REVIEW_DAYS, "entries": entries})
+
+
+def _series(hours: dict[float, float], a: float, b: float) -> list[list[float]]:
+    return [[t, round(v, 1)] for t, v in sorted(hours.items()) if a <= t < b]
+
+
+def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, a: float, b: float, now: float) -> dict:
+    """One day for the panel: per array the forecasts, actual, steps of each hour; weather; band.
+
+    Past days come from the day-ahead archive (forecast, actual, weather of the forecast). Today and
+    the coming days come from the current data; today's past hours fall back to the archived weather,
+    since a weather source may no longer report them. Runs in the executor.
+    """
+    from . import explain
+    from .model import LearnedArray, WeatherHour
+
+    weather: dict[float, WeatherHour] = {}
+    for key, h in ((archive_day or {}).get("hours") or {}).items():
+        weather[float(key)] = WeatherHour(float(key), h.get("ghi") or 0.0, None, None, h.get("temp"))
+    if data is not None and b > now:                     # today and the coming days
+        weather.update({w.start: w for w in data.weather if a <= w.start < b})
+    hours = [weather[t] for t in sorted(weather) if a <= t < b]
+    out = []
+    for sid, arr in arrays.items():
+        la = learned.get(sid) or LearnedArray()
+        entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
+                 "steps": {str(int(t)): s for t, s in explain.hour_steps(site, arr.geometry, la, hours).items()},
+                 "efficiency": la.efficiency}
+        arch = {float(k): h for k, h in ((archive_day or {}).get("hours") or {}).items()}
+        entry["day_ahead"] = [[t, h["forecast"][sid]] for t, h in sorted(arch.items()) if sid in h.get("forecast", {})]
+        entry["actual"] = [[t, h["actual"][sid]] for t, h in sorted(arch.items()) if sid in h.get("actual", {})]
+        if data is not None and b > now:
+            entry["forecast"] = _series(data.forecast.get(sid, {}), a, b)
+            if a <= now < b:
+                entry["morning"] = _series(data.morning.get(sid, {}), a, b)
+                entry["held"] = _series(data.held.get(sid, {}), a, b)
+                entry["expected"] = _series(data.expected.get(sid, {}), a, b)
+                entry["actual"] = _series(data.actual.get(sid, {}), a, b)
+                entry["correction"] = data.correction.get(sid)
+                entry["periods"] = (data.effects.get(sid) or {}).get("periods", [])
+        out.append(entry)
+    band = []
+    if data is not None and data.band:
+        band = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items()) if a <= t < b]
+    sky = explain.clearness(site, hours)
+    return {"arrays": out, "band": band,
+            "weather": [[t, round(g, 1), round(c, 1), weather[t].temp] for t, (g, c) in sorted(sky.items())]}
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_DAY, vol.Optional("offset", default=0): vol.All(int, vol.Range(-120, 2))})
+@websocket_api.async_response
+async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """A day in detail: offset 0 = today, negative = past days from the archive, up to 2 days ahead."""
+    day = dt_util.now().date() + timedelta(days=msg["offset"])
+    a = dt_util.start_of_local_day(day).timestamp()
+    b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
+    now = dt_util.utcnow().timestamp()
+    result: dict[str, Any] = {"now": now, "time_zone": hass.config.time_zone, "date": day.isoformat(),
+                              "offset": msg["offset"], "start": a, "end": b, "entries": []}
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        c = entry.runtime_data
+        view = await hass.async_add_executor_job(day_view, c.site, c.arrays, dict(c.learned),
+                                                 c.forecast_archive.get(day.isoformat()), c.data, a, b, now)
+        view["archive_days"] = sorted(c.forecast_archive)[:1]
+        result["entries"].append(view)
+    connection.send_result(msg["id"], result)

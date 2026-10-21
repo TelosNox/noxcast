@@ -259,6 +259,15 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   Further sections are tabs in the panel header, each a module of its own. One shared stylesheet
   (`noxcast-theme.js`, adopted into the panel and every section) gives all pages the same look:
   a page header with title and lead, frosted cards with a gradient edge, key figures as tiles.
+  - **Day** (`noxcast/day`, offset −120 … +2 days): one day in detail. The groups stacked (actual
+    where measured, the expectation or forecast for the rest), the reference as a dashed line (the
+    6 o'clock forecast today, the day-ahead forecast for past days), the running forecast and the
+    P10–P90 band; a weather strip (clearness of each hour, temperature) and today's shade and
+    reflection periods per group. A table per group with its deviation, correction and share.
+    For a chosen hour a waterfall shows how its forecast comes about (`explain.py`): clear sky with
+    the learned efficiency, then clouds, shade, reflection, direction factor and heat, the steps
+    adding up to the forecast, followed by today's correction and the actual value. Past days come
+    from the day-ahead archive.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

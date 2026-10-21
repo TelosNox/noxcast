@@ -108,6 +108,8 @@ class NoxcastData:
     battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
     plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see _band)
+    actual: dict[str, dict[float, float]] = field(default_factory=dict)   # today's measured hours per array
+    weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -735,6 +737,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         now = dt_util.utcnow().timestamp()
         actual, running = await self._async_today_actual(day_start, now)
+        result.actual, result.weather = actual, weather
         temps = {w.start: w.temp for w in weather}
         clear_weather = [clearsky_weather(self.site, t, temps.get(t))
                          for t in sorted(result.forecast.get(next(iter(self.arrays), None), {})) if t < day_end]

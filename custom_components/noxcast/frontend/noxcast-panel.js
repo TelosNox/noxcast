@@ -3,25 +3,27 @@
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/learned".
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
-const SECTIONS = [["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
+const SECTIONS = [["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
   ["battery", "noxcast-battery", "./noxcast-battery.js"], ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
 // shared look of the panel and its sections, loaded with this module's cache buster
 const { adoptTheme, LOGO, ORBIT } = await import(new URL("./noxcast-theme.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const SECTION_LEADS = {
-  de: { learned: "Was Noxcast über jede Modulfläche gelernt hat: Schatten, Reflexion und Richtung, Sonnenposition für Sonnenposition.",
+  de: { day: "Ein Tag im Detail: die Gruppen übereinander, Prognose gegen Erwartung und Ist, das Wetter jeder Stunde und wie eine Stunde zustande kommt.",
+    learned: "Was Noxcast über jede Modulfläche gelernt hat: Schatten, Reflexion und Richtung, Sonnenposition für Sonnenposition.",
     accuracy: "Wie gut die Prognose vom Vortag eingetroffen ist, nach Tag, Wetterlage und Wetterquelle.",
     load: "Wann im Haus wie viel verbraucht wird, aus welchen Teilen sich das zusammensetzt und wie verlässlich die Prognose ist.",
     battery: "Wohin der Überschuss heute und morgen geht und was sich mit mehr Kapazität oder einem weiteren Verbraucher ändert.",
     diagnostics: "Welche Daten Noxcast liest, wie vollständig sie sind und wo etwas fehlt." },
-  en: { learned: "What Noxcast has learned about each array: shade, reflection and direction, sun position by sun position.",
+  en: { day: "One day in detail: the groups stacked, forecast against expectation and actual, the weather of each hour and how an hour comes about.",
+    learned: "What Noxcast has learned about each array: shade, reflection and direction, sun position by sun position.",
     accuracy: "How well the day-ahead forecast came true, by day, weather and weather source.",
     load: "When the house uses how much, which parts it is made of and how reliable the forecast is.",
     battery: "Where today's and tomorrow's surplus goes and what changes with more capacity or another consumer.",
     diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
 };
-const SECTION_TITLES = { de: { learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
-  en: { learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
+const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
+  en: { day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;

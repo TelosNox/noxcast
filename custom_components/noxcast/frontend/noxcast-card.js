@@ -16,6 +16,9 @@
 // export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
+// icons: { pv: mdi:solar-power-variant, grid: mdi:transmission-tower, battery: auto, home: auto }
+//   # Home Assistant icons; "auto" = battery icon by state of charge, house coloured by its sources
+// Tapping PV, grid, home or battery opens the entity's more-info dialog.
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -235,6 +238,27 @@ class NoxcastCard extends HTMLElement {
     this._renderBand();
   }
 
+  // a Home Assistant icon centred at (cx, cy); null when ha-icon is not available (the built-in symbol is used)
+  _icon(name, cx, cy, size, color) {
+    if (!name || !customElements.get("ha-icon")) return null;
+    return `<foreignObject x="${cx - size / 2}" y="${(cy - size / 2).toFixed(1)}" width="${size}" height="${size}">
+      <ha-icon icon="${this._esc(name)}" style="--mdc-icon-size:${size}px;color:${color};display:block;line-height:0"></ha-icon></foreignObject>`;
+  }
+
+  _batteryIcon(soc, charging) {
+    if (soc === null) return "mdi:battery-unknown";
+    const step = Math.round(Math.min(100, Math.max(0, soc)) / 10) * 10;
+    if (charging) return step >= 100 ? "mdi:battery-charging-100" : step <= 0 ? "mdi:battery-charging-outline" : `mdi:battery-charging-${step}`;
+    return step >= 100 ? "mdi:battery" : step <= 0 ? "mdi:battery-outline" : `mdi:battery-${step}`;
+  }
+
+  // more-info of the entity behind a tapped flow element
+  _moreInfo(ev) {
+    const g = ev.target.closest && ev.target.closest("[data-more]");
+    if (!g || !g.dataset.more) return;
+    this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: g.dataset.more }, bubbles: true, composed: true }));
+  }
+
   // The flow is built once; later updates only change colours, texts and speeds, so the dots never jump.
   _renderFlow() {
     const el = this.shadowRoot && this.shadowRoot.getElementById("flow");
@@ -268,6 +292,7 @@ class NoxcastCard extends HTMLElement {
         ${Object.keys(FLOW_PATHS).map((k) => `<circle data-dot="${k}" r="4.5" stroke-width="2" visibility="hidden"></circle>`).join("")}
         <g data-labels></g></svg>`;
       const svg = el.querySelector("svg");
+      svg.addEventListener("click", (ev) => this._moreInfo(ev));
       const lines = {}, dots = {};
       for (const k of Object.keys(FLOW_PATHS)) {
         const path = svg.querySelector(`[data-k="${k}"]`);
@@ -310,32 +335,45 @@ class NoxcastCard extends HTMLElement {
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
     // groups left and right of the PV symbol: first half left, the rest right
     const gText = v.groups.map((g) => `${this._esc(g.name)} ${small(g.w)}`);
+    // arrows instead of signs, pointing the way the power flows on screen (grid left, battery right)
+    const batArrow = (w) => (w >= ACTIVE_W ? "→ " : w <= -ACTIVE_W ? "← " : "");
     const half = Math.ceil(gText.length / 2);
     const gY = (27 - lift).toFixed(1);
     const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
         <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${b.w > 0 ? "+" : ""}${small(b.w)} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
-    const gridLabel = v.grid > 0 ? `${fmtW(v.grid)} ↓` : v.grid < 0 ? `${fmtW(-v.grid)} ↑` : "0 W";
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const gridLabel = v.grid >= ACTIVE_W ? `→ ${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `← ${fmtW(-v.grid)}` : "0 W";
+    const c = this._config, icons = c.icons || {};
+    const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
+    const pvId = c.pv.entity || ((c.pv.groups || [])[0] || {}).entity;
+    const batId = ((c.batteries || [])[0] || {}).soc || ((c.batteries || [])[0] || {}).entity;
+    const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
+    const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
+    const batName = !icons.battery || icons.battery === "auto" ? this._batteryIcon(v.socAll, v.bat >= ACTIVE_W) : icons.battery;
+    const batIcon = this._icon(batName, 374, 85, 30, P.bat);
+    const homeIcon = icons.home && icons.home !== "auto"
+      ? this._icon(icons.home, 204, 161, 28, srcs.length ? srcs.reduce((a, b) => (b[0] > a[0] ? b : a))[1] : P.home) : null;
     f.labels.innerHTML = `
-      <g opacity="${op(v.pv)}">
-        <path transform="translate(0 ${(-lift).toFixed(1)})" d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>
+      <g opacity="${op(v.pv)}"${more(pvId)}>
+        ${pvIcon || `<path transform="translate(0 ${(-lift).toFixed(1)})" d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>`}
         <text x="204" y="54" text-anchor="middle" font-size="${fs(17)}" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
         ${groups}
       </g>
-      <g opacity="${op(v.grid)}">
-        <path d="M22 96l6-22l6 22M25 86h6M20 96h16" fill="none" stroke="${P.grid}" stroke-width="2" stroke-linecap="round"></path>
+      <g opacity="${op(v.grid)}"${more(c.grid && c.grid.entity)}>
+        ${gridIcon || `<path d="M22 96l6-22l6 22M25 86h6M20 96h16" fill="none" stroke="${P.grid}" stroke-width="2" stroke-linecap="round"></path>`}
         <text x="6" y="122" font-size="${fs(15)}" font-weight="500" fill="${P.grid}">${gridLabel}</text>
       </g>
-      <g opacity="${op(v.bat)}">
-        <rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
+      <g opacity="${op(v.bat)}"${more(batId)}>
+        ${batIcon || `<rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
         <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
-        <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>
-        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${v.bat > 0 ? "+" : ""}${fmtW(v.bat)}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
+        <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>`}
+        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
-      ${homeGrad}
-      <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${homeStroke}" stroke-width="2.5" stroke-linejoin="round"></path>
-      <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text>`;
+      <g${more(c.home && c.home.entity)}>
+      ${homeIcon || `${homeGrad}
+      <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${homeStroke}" stroke-width="2.5" stroke-linejoin="round"></path>`}
+      <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text></g>`;
     this._animate();
   }
 
@@ -712,6 +750,9 @@ class NoxcastCardEditor extends HTMLElement {
       pv_entity: de ? "PV gesamt (optional, sonst Summe der Gruppen)" : "PV total (optional, otherwise the sum of the groups)",
       grid_entity: de ? "Netz (positiv = Bezug)" : "Grid (positive = import)", grid_invert: de ? "Netz-Vorzeichen umkehren" : "Invert grid sign",
       home_entity: de ? "Hausverbrauch" : "House load",
+      icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
+      icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
+      icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
       entity: de ? "Leistung" : "Power", name: "Name", invert: de ? "Vorzeichen umkehren" : "Invert sign",
       array: de ? "Noxcast-Fläche (optional, sonst der Name)" : "Noxcast array (optional, otherwise the name)",
       soc: de ? "Ladestand" : "State of charge", capacity: de ? "Kapazität (kWh)" : "Capacity (kWh)",
@@ -761,16 +802,21 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "grid_invert", selector: { boolean: {} } },
       { name: "home_entity", selector: sensor },
       { name: "export", selector: { boolean: {} } },
+      { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
+      { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, export: !!c.export,
       pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
       grid_invert: !!(c.grid && c.grid.invert), home_entity: (c.home && c.home.entity) || "",
+      ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
       const n = { ...this._config };
       for (const k of ["font_scale", "legend", "export"]) n[k] = v[k];
       n.pv = { ...(n.pv || {}), entity: v.pv_entity || undefined };
       n.grid = { ...(n.grid || {}), entity: v.grid_entity || undefined, invert: v.grid_invert || undefined };
       n.home = { ...(n.home || {}), entity: v.home_entity || undefined };
+      const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
+      if (Object.keys(icons).length) n.icons = icons; else delete n.icons;
       if (n.legend !== false) delete n.legend;
       if (!n.export) delete n.export;
       if (n.font_scale === 1) delete n.font_scale;

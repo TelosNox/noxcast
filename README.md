@@ -49,7 +49,9 @@ entry and add a **Consumer** for each device with its own power sensor.
 ## Entities
 
 Per array and in total: forecast today, tomorrow, day after tomorrow (kWh, attribute `hourly`
-with ISO timestamps → kWh, `schema_version` 1) and remaining today. Diagnostics: system
+with ISO timestamps → kWh, `schema_version` 1) and remaining today. The total sensors for the
+expected day, remaining today, tomorrow and the day after carry `p10` / `p90` (kWh), learned from
+how far past forecasts of similar weather were off. Diagnostics: system
 efficiency, shading map coverage, last learning run. The total is available as solar forecast
 in the energy dashboard. With a house load sensor: load rest of today and tomorrow (kWh,
 attributes `hourly`, `base`, `consumers`, `correction`, `profile_days` and `backtest` with the

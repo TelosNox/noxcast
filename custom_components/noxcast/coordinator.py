@@ -28,6 +28,7 @@ from .const import (
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
 )
 from . import archive as fc_archive
+from . import band as bd
 from . import battery as bt
 from . import arraycheck as ac
 from . import load as lf
@@ -105,6 +106,7 @@ class NoxcastData:
     load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
     battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
     plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
+    band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see _band)
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -149,6 +151,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.consumer_profiles: dict[str, lf.Profile] = {}
         self.run_profiles: dict[str, dict] = {}      # learned run of flexible consumers: power_w, minutes
         self.consumer_models: dict[str, dict] = {}   # learned program and session model per consumer
+        self.band: dict | None = None                # learned forecast uncertainty (band.learn_band)
         self.load_backtest: dict | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
@@ -177,6 +180,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             for sub_id, data in stored.get("arrays", {}).items():
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
+            self.band = stored.get("band")
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
                 self.load_profile = lf.Profile.from_dict(load["base"])
@@ -261,6 +265,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _store_data(self) -> dict:
         return {
+            "band": self.band,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
@@ -339,6 +344,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                          arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
                          result.coverage * 100, result.samples, result.clear_filter, result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
+        self.band = await self.hass.async_add_executor_job(
+            bd.learn_band, self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi)
         if self.house_load:
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
@@ -468,7 +475,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         tomorrow_end = day_end + 86400
         start = bt.charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
         sim = bt.simulate(storage, pv, load, now, start)
-        return {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+        out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+        hours = (result.band or {}).get("hours")
+        if hours:
+            # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
+            sims = [bt.simulate(storage, {**pv, **{t: lh[i] for t, lh in hours.items()}}, load, now, start) for i in (0, 1)]
+            out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
+                                          for s in sims],
+                           "full_at": [s.full_at for s in sims]}
+        return out
 
     def run_profile(self, sid: str) -> pl.RunProfile | None:
         """A flexible consumer's run: configured values first, learned ones otherwise."""
@@ -492,6 +507,41 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         tomorrow = pl.plan(runs, {t: v for t, v in surplus.items() if day_end <= t}, {}, day_end, day_end + 86400)
         return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
                          "tomorrow": tomorrow[r.name]["best"]} for r in runs}
+
+    def _band(self, result: NoxcastData, weather: list[WeatherHour], now: float, day_end: float) -> dict | None:
+        """P10 / P90 of the total forecast: per hour from now on, per day, and for the rest of today.
+
+        Today's measured part is certain; only the rest gets a band. Runs in the executor.
+        """
+        if not self.band:
+            return None
+        clear = {w.start: clearsky_weather(self.site, w.start).ghi for w in weather}
+        kt = {w.start: w.ghi / clear[w.start] for w in weather if clear[w.start] > 0}
+        total = dict(result.forecast.get(None, {}))
+        total.update(result.expected.get(None, {}))
+        hour = now - now % 3600
+        hours = bd.hour_band(self.band, {t: v for t, v in total.items() if t >= hour}, kt)
+
+        def clearness(ts: list[float]) -> float:
+            c = sum(clear.get(t, 0.0) for t in ts)
+            return sum(kt.get(t, 0.0) * clear.get(t, 0.0) for t in ts) / c if c > 0 else 0.0
+
+        days = {}
+        for offset in (1, 2):
+            a, b = day_end + (offset - 1) * 86400, day_end + offset * 86400
+            ts = [t for t in total if a <= t < b]
+            if len(ts) >= 20 and (r := bd.day_band(self.band, sum(total[t] for t in ts), clearness(ts))):
+                days[offset] = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)]
+        today = result.expected.get(None, {})
+        rest_ts = [t for t in today if t + 3600 > now and t < day_end]
+        rest = sum(today[t] * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
+        done = sum(today[t] for t in today if t < day_end) - sum(today[t] for t in rest_ts) + \
+            sum(today[t] * (1 - min(1.0, (t + 3600 - now) / 3600)) for t in rest_ts)
+        r = bd.day_band(self.band, rest, clearness(rest_ts)) if rest > 0 else (0.0, 0.0)
+        rest_band = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)] if r else None
+        if rest_band:
+            days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]
+        return {"hours": hours, "days": days, "rest": rest_band}
 
     def _value(self, entity_id: str | None, table: dict[str, float]) -> float | None:
         state = self.hass.states.get(entity_id) if entity_id else None
@@ -672,6 +722,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         result.load = await self._async_load_forecast(
             now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(), temps)
+        result.band = await self.hass.async_add_executor_job(self._band, result, weather, now, day_end)
         result.battery = self._battery(result, now, day_end)
         result.plan = self._plan(result, now, day_end)
 

@@ -26,7 +26,7 @@ const TEXT = {
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
     lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um",
-    lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV",
+    lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
   en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
@@ -34,7 +34,7 @@ const TEXT = {
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
     lasts: "battery lasts until tomorrow", emptyAt: "battery empty at",
-    lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV",
+    lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV", band: "range P10–P90",
       loss: "lost to shade", shade: "shade", refl: "reflection", bat: "battery", lost: "full, surplus lost",
       near: "almost full" } },
 };
@@ -466,6 +466,14 @@ class NoxcastCard extends HTMLElement {
     // lines get a halo in the card colour, so they stay visible on the PV area in both themes
     const halo = (d) => `<path d="${d}" fill="none" stroke="var(--card-background-color, #fff)" stroke-width="4" stroke-opacity=".75" stroke-linejoin="round"></path>`;
     const loadLine = hasLoad ? line(dayH.map((h) => [x(h + H / 2), y(lv(h))])) : "";
+    // P10–P90 of the coming hours, learned by Noxcast from its forecast archive
+    const bandM = new Map(((this._data.today && this._data.today.band) || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
+    const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
+    let bandPath = "";
+    if (bandH.length > 1) {
+      const hi = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[1])]), lo = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[0])]).reverse();
+      bandPath = `${line(hi)} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${curve(lo)} Z`;
+    }
     let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>
         <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}</text>`).join("")}
       <text x="${X1 + 3}" y="${(y(ymax) - 9).toFixed(1)}" class="ax">kW</text>
@@ -473,6 +481,7 @@ class NoxcastCard extends HTMLElement {
         <path d="${line(pts(potential))}" fill="none" stroke="${P.shade}" stroke-width="1" stroke-opacity=".6"></path>` : ""}
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
       <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
+      ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
       ${hasLoad ? `<path d="${between((h) => Math.max(lv(h), exp(h)), exp)}" fill="${P.grid}" fill-opacity=".3"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
       ${hasLoad ? `${halo(loadLine)}<path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
@@ -597,7 +606,7 @@ class NoxcastCard extends HTMLElement {
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
-        actual: now > t0, loss: lossTotal > 1, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
+        actual: now > t0, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
         shade: arrays.some((a) => a.periods.some((p) => p.type === "shade")),
         refl: arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
@@ -640,7 +649,7 @@ class NoxcastCard extends HTMLElement {
     const box = (fill, op = 1) => sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="${fill}" fill-opacity="${op}"></rect>`);
     const dash = (stroke, d) => sw(`<line x1="0" y1="5" x2="16" y2="5" stroke="${stroke}" stroke-width="1.8"${d ? ` stroke-dasharray="3 2"` : ""}></line>`);
     const items = [
-      [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast],
+      [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast], [on.band, box(P.pv, 0.2), l.band],
       [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
       [on.load, dash(P.home, false), l.load], [on.deficit, box(P.grid, 0.3), l.deficit],
       [on.shade, box(P.shade), l.shade], [on.refl, box(P.refl), l.refl],

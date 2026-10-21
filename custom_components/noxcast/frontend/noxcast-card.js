@@ -386,14 +386,15 @@ class NoxcastCard extends HTMLElement {
 
     const m = this._model(now);
     const load = m.load;
-    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 116;
+    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 104;
     const x = (ts) => X0 + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (X1 - X0);
-    // fixed scale: installed peak power + 10 %, so a weak day shows as a low curve
+    // fixed scale: installed peak power, so a weak day shows as a low curve; the top 14 px stay free
+    // for the value of a load cut off by the scale
     const peakW = arrays.reduce((a, arr) => a + (arr.peak_w || 0), 0);
-    const top = peakW > 0 ? peakW * 1.1 : Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
+    const top = peakW > 0 ? peakW : Math.max(...dayH.map((h) => Math.max(fc(h) + loss(h), exp(h))), 200) * 1.08;
     const step = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find((s) => top / s <= 4) || 20000;
     const ymax = peakW > 0 ? top : Math.ceil(top / step) * step;
-    const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 12);
+    const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 16);
     const pts = (f) => [[x(t0), y(0)], ...dayH.map((h) => [x(h + H / 2), y(f(h))]), [x(t1), y(0)]];
     const fill = (p) => `${line(p)} L${p[p.length - 1][0].toFixed(1)},${(Hp - 2).toFixed(1)} L${p[0][0].toFixed(1)},${(Hp - 2).toFixed(1)} Z`;
     const between = (hi, lo) => { const a = pts(hi), b = pts(lo).reverse(); return `${line(a)} L${b[0][0].toFixed(1)},${b[0][1].toFixed(1)}${curve(b)} Z`; };
@@ -493,7 +494,7 @@ class NoxcastCard extends HTMLElement {
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
       ${svgPv}${lanes}${batSvg}
-      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1.2"></line>
+      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
         <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${this._hm(h).slice(0, 2)}</text>`).join("")}
     </svg>`;

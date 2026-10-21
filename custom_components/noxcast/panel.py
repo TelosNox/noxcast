@@ -21,6 +21,7 @@ PANEL_PATH = "noxcast"
 WS_LEARNED = f"{DOMAIN}/learned"
 WS_TODAY = f"{DOMAIN}/today"
 WS_ACCURACY = f"{DOMAIN}/accuracy"
+WS_LOAD = f"{DOMAIN}/load"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -28,13 +29,14 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_learned)
     websocket_api.async_register_command(hass, ws_today)
     websocket_api.async_register_command(hass, ws_accuracy)
+    websocket_api.async_register_command(hass, ws_load)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
     from homeassistant.components.http import StaticPathConfig
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
-    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js")
+    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
@@ -163,3 +165,34 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
         entries.append({"arrays": [{"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w}
                                    for sid, arr in coordinator.arrays.items()], "days": days})
     connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "entries": entries})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_LOAD})
+@callback
+def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Load forecast for the panel: profiles, consumers, the forecast by part and the backtest."""
+    entries = []
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator = entry.runtime_data
+        if not coordinator.house_load:
+            continue
+        data = coordinator.data
+        fc = data.load if data is not None else None
+        profile = coordinator.load_profile
+        entries.append({
+            "house_load": coordinator.house_load,
+            "profile": profile.as_dict() if profile else None,
+            "consumers": [{"id": sid, "name": c.name, "timing": c.timing, "sensor": c.sensor or getattr(c, "energy", None),
+                           "profile": coordinator.consumer_profiles[sid].as_dict()
+                           if sid in coordinator.consumer_profiles else None}
+                          for sid, c in coordinator.consumers.items()],
+            "forecast": None if fc is None else {
+                "k": fc.k,
+                "base": [[t, v] for t, v in sorted(fc.base.items())],
+                "consumers": {sid: [[t, v] for t, v in sorted(series.items())] for sid, series in fc.consumers.items()},
+            },
+            "backtest": coordinator.load_backtest,
+            "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
+        })
+    connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
+                                       "entries": entries})

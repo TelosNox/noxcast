@@ -256,6 +256,9 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day
     (hours with a full battery hatched), the error by weather class (forecast irradiance relative to
     clear sky) and the sources compared on the same days.
+  - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a
+    7-day mean; the forecast by part (base load and each consumer, stacked per hour), the learned
+    profile (workday, weekend, fixed consumers) and the consumers with their timing, sensor and share.
 - Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home; lines
   have one width and the speed of the dots shows the power, so no line covers another; a charging battery takes PV before the grid; the house icon is coloured

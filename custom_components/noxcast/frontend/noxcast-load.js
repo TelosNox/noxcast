@@ -11,6 +11,9 @@ const LOAD_TEXT = {
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
     perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", bias: "Bias",
     kinds: { profile: "Profil", program: "Programm", session: "Sitzung" },
+    events: "Erkannte Geräte (Vorschläge)", evPower: "Leistung", evDuration: "Dauer", evEnergy: "Energie je Lauf",
+    evCount: "Läufe", evHours: "Meist um", evNone: "Keine wiederkehrenden Geräteläufe in der Hauslast gefunden.",
+    evHelp: (days) => `Aus den 5-Minuten-Werten der letzten ${days} Tage: Stufen von mindestens 500 W über der gleitenden Grundlinie, die mindestens 15 Minuten halten und wiederkehren. Bereits angelegte Verbraucher sind abgezogen. Geräte gleicher Leistung lassen sich nicht unterscheiden; ein Vorschlag lässt sich als Verbraucher mit eigenem Sensor anlegen oder als flexibler Verbraucher mit Leistung und Dauer eintragen. Die Prognose ändert sich dadurch nicht.`,
     programInfo: (perDay, max, kwh, h) => `Ø ${perDay} Läufe/Tag, höchstens ${max} · ${kwh} kWh in ${h} h je Lauf`,
     sessionInfo: (w, span) => `${w} W wenn an${span ? ` · meist an ${span}` : ""}`, noConsumers: "Keine Verbraucher angelegt. Alles zählt als Grundlast.",
     flexNote: "Flexible Verbraucher zählen nur, solange sie laufen; im Profil sind sie deshalb nicht enthalten.",
@@ -26,6 +29,9 @@ const LOAD_TEXT = {
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
     perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", bias: "Bias",
     kinds: { profile: "profile", program: "program", session: "session" },
+    events: "Detected devices (suggestions)", evPower: "Power", evDuration: "Duration", evEnergy: "Energy per run",
+    evCount: "Runs", evHours: "Mostly at", evNone: "No recurring device runs found in the house load.",
+    evHelp: (days) => `From the 5-minute values of the last ${days} days: steps of at least 500 W above the moving baseline that hold for at least 15 minutes and recur. Configured consumers are subtracted. Devices of equal power cannot be told apart; a suggestion can be added as a consumer with its own sensor or as a flexible consumer with power and duration. The forecast does not change.`,
     programInfo: (perDay, max, kwh, h) => `avg ${perDay} runs/day, at most ${max} · ${kwh} kWh in ${h} h per run`,
     sessionInfo: (w, span) => `${w} W when on${span ? ` · mostly on ${span}` : ""}`, noConsumers: "No consumers added. Everything counts as base load.",
     flexNote: "Flexible consumers only count while they run, so they are not part of the profile.",
@@ -130,7 +136,8 @@ class NoxcastLoad extends HTMLElement {
       <div class="split">
         <section class="card pad grow"><h3>${t.profile}</h3>${this._profile(e)}</section>
         <section class="card pad grow"><h3>${t.consumers}</h3>${this._consumers(e)}</section>
-      </div>`;
+      </div>
+      ${e.events ? `<section class="card pad"><h3>${t.events}</h3>${this._events(e.events)}</section>` : ""}`;
   }
 
   _color(i) { return (this._dark ? LOAD_COLORS.dark : LOAD_COLORS.light)[i % 6]; }
@@ -222,6 +229,20 @@ class NoxcastLoad extends HTMLElement {
     return `<div class="muted small">${t.sessionInfo(Math.round(m.power), span)}</div>`;
   }
 
+  _events(evs) {
+    const t = this._t;
+    if (!evs.groups.length) return `<p class="muted">${t.evNone}</p><p class="help">${t.evHelp(Math.round(evs.days))}</p>`;
+    const max = Math.max(...evs.groups.map((g) => g.power_w));
+    const rows = evs.groups.map((g) => `<tr>
+      <td class="num"><span class="evbar"><i style="width:${(g.power_w / max * 100).toFixed(0)}%"></i></span>${this._num(g.power_w / 1000, 1)} kW</td>
+      <td class="num">${g.minutes < 90 ? `${g.minutes} min` : `${this._num(g.minutes / 60, 1)} h`}</td>
+      <td class="num">${this._kwh(g.energy_wh)} ${t.kwh}</td><td class="num">${g.count}×</td>
+      <td class="num">${g.hours[0] === g.hours[1] ? `${g.hours[0]} h` : `${g.hours[0]}–${g.hours[1] + 1} h`}</td></tr>`).join("");
+    return `<table><thead><tr><th class="num">${t.evPower}</th><th class="num">${t.evDuration}</th><th class="num">${t.evEnergy}</th>
+      <th class="num">${t.evCount}</th><th class="num">${t.evHours}</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="help">${t.evHelp(Math.round(evs.days))}</p>`;
+  }
+
   // ------------------------------------------------------------ formatting
 
   _num(v, d) { return Number(v).toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d }); }
@@ -257,6 +278,9 @@ class NoxcastLoad extends HTMLElement {
       th { text-align: left; font-weight: 500; color: var(--secondary-text-color); font-size: 12px; padding: 4px 6px; }
       td { padding: 6px; border-top: 1px solid var(--divider-color); vertical-align: top; }
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .evbar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; margin-right: 8px; vertical-align: middle;
+        background: var(--nx-rail); overflow: hidden; }
+      .evbar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #F5A524, #FF6A3D, #8B5CF6); }
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
     </style>`;
   }

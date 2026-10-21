@@ -341,7 +341,7 @@ learned from history or configured, best window today and tomorrow, PV share if 
 the kinds of step 4 (fixed consumers as profile, program with learned start rates, runs per day and
 run curve, or session with on-probability and remaining hours by time of day; the backtest reports
 the bias next to the absolute error) and step 5 (regulated consumers against the outside
-temperature); day types from a sensor and event detection are concept. Today the day card computes a simple version in the browser
+temperature) and day types from an entity; event detection is concept. Today the day card computes a simple version in the browser
 (7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
 dashboard is open, so automations cannot use it. The model below moves into the integration and
 the card only reads its sensors.

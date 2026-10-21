@@ -51,12 +51,13 @@ def _irradiance(value) -> float | None:
 
 
 async def async_hourly_statistics(hass: HomeAssistant, statistic_ids: list[str], start: datetime,
-                                  kind: str, period: str = "hour") -> dict[str, dict[float, float | None]]:
+                                  kind: str, period: str = "hour",
+                                  end: datetime | None = None) -> dict[str, dict[float, float | None]]:
     """Long-term statistics per statistic id: {period_start_ts: value} (period "hour" or "5minute")."""
     if not statistic_ids:
         return {}
     result = await get_instance(hass).async_add_executor_job(
-        statistics_during_period, hass, start, None, set(statistic_ids), period, None, {kind})
+        statistics_during_period, hass, start, end, set(statistic_ids), period, None, {kind})
     return {sid: {_start_ts(row["start"]): row.get(kind) for row in rows} for sid, rows in result.items()}
 
 

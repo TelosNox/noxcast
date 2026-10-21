@@ -117,6 +117,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         assert msg["success"]
         day = msg["result"]["entries"][0]
         assert day["arrays"][0]["name"] == "Roof" and isinstance(day["history"], list)
+        assert day["flows"] is None                           # neither house load nor batteries configured
         if offset >= 0:
             steps = day["arrays"][0]["steps"]
             assert steps and all(abs(s["clear"] + s["clouds"] + s["shade"] + s["reflection"] + s["direction"]

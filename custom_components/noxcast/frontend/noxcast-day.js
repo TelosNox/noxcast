@@ -22,6 +22,10 @@ const DAY_TEXT = {
       corr: "Die Korrektur aus den gemessenen Stunden von heute (klarer oder trüber als vorhergesagt).",
     },
     noSteps: "Für diese Stunde gibt es keine Herleitung (Sonne unter dem Horizont oder kein Wetter).",
+    energy: "Der Tag in Energie", lossSide: "Vom klaren Himmel zum Ertrag", useSide: "Wohin die Energie ging",
+    pv: "PV", house: "Haus", battery: "Akku", grid: "Netz", houseGrid: "Haus / Netz", selfUse: "Eigenverbrauch", autarky: "Autarkie",
+    devActual: "Abweichung Ist", devExpected: "Abweichung Erwartung",
+    energyHelp: "Links: die Schritte der Prognose über alle Stunden des Tages summiert, Verluste zweigen nach unten ab, Gewinne kommen von oben dazu; am Ende die Abweichung zum Ist. Rechts: geschätzt aus stündlichen Statistiken von PV, Hauslast und Akku-Ladestand (Änderung × Kapazität). Innerhalb einer Stunde versorgt PV zuerst das Haus, dann den Akku; was fehlt, kommt aus dem Akku und danach aus dem Netz.",
     history: "Wie sich die Prognose entwickelt hat", snapshots: "Stände", firstLast: "Erster / letzter Stand", jump: "Größte Änderung",
     final: "Ergebnis", at: "um", early: "früh", late: "spät",
     historyHelp: "Zu jeder vollen Stunde zwischen 5 und 21 Uhr hält Noxcast die Erwartung für den ganzen Tag fest (gemessene Stunden plus korrigierter Rest). Die Linien zeigen diese Stände von früh (violett) bis spät (gelb), gestrichelt die Prognose vom Vortag. Unten der Tageswert jedes Stands: je schneller er sich dem Ergebnis nähert, desto früher war der Tag absehbar.",
@@ -46,6 +50,10 @@ const DAY_TEXT = {
       corr: "The correction from today's measured hours (clearer or duller than forecast).",
     },
     noSteps: "No derivation for this hour (sun below the horizon or no weather).",
+    energy: "The day in energy", lossSide: "From clear sky to yield", useSide: "Where the energy went",
+    pv: "PV", house: "House", battery: "Battery", grid: "Grid", houseGrid: "House / grid", selfUse: "Self-consumption", autarky: "Self-sufficiency",
+    devActual: "Deviation actual", devExpected: "Deviation expected",
+    energyHelp: "Left: the steps of the forecast summed over all hours of the day; losses branch off downwards, gains join from above; at the end the deviation to the actual value. Right: estimated from hourly statistics of PV, house load and battery state of charge (change × capacity). Within an hour PV supplies the house first, then the battery; what is missing comes from the battery and then from the grid.",
     history: "How the forecast developed", snapshots: "Snapshots", firstLast: "First / last snapshot", jump: "Largest change",
     final: "Result", at: "at", early: "early", late: "late",
     historyHelp: "At every full hour between 5 am and 9 pm Noxcast records the expectation for the whole day (measured hours plus corrected rest). The lines show these snapshots from early (violet) to late (yellow), dashed the day-ahead forecast. Below, the day total of each snapshot: the faster it approaches the result, the earlier the day was foreseeable.",
@@ -182,7 +190,7 @@ class NoxcastDay extends HTMLElement {
     if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e || !e.arrays.some((a) => this._main(a).size)) body = `${this._nav()}<section class="card pad">${t.noData}</section>`;
-    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>${this._history(e)}`;
+    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>${this._energy(e)}${this._history(e)}`;
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${body}</div>`;
   }
 
@@ -322,6 +330,104 @@ class NoxcastDay extends HTMLElement {
       band.size ? `<span><i class="sw bandsw"></i>${t.band}</span>` : "",
       `<span><i class="sw skysw"></i>${t.weather}</span>`].join("");
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.chart}">${svg}</svg><div class="legend">${legend}</div>`;
+  }
+
+  // the day as energy: the forecast steps from clear sky to the yield, and where the energy went
+  _energy(e) {
+    const t = this._t, loss = this._lossSankey(e), use = this._useSankey(e.flows);
+    if (!loss && !use) return "";
+    return `<section class="card pad"><h3>${t.energy}</h3><div class="sankeys">
+      ${loss ? `<div class="sk"><div class="muted small sub">${t.lossSide}</div>${loss}</div>` : ""}
+      ${use ? `<div class="sk"><div class="muted small sub">${t.useSide}</div>${use}</div>` : ""}</div>
+      <p class="help">${t.energyHelp}</p></section>`;
+  }
+
+  _lossSankey(e) {
+    const t = this._t, phase = this._phase, sum = { clear: 0, clouds: 0, shade: 0, reflection: 0, direction: 0, heat: 0, result: 0 };
+    for (const arr of e.arrays) for (const st of Object.values(arr.steps || {})) for (const k in sum) sum[k] += st[k] || 0;
+    if (sum.clear < 100) return "";
+    const end = phase === "future" ? null : e.arrays.reduce((a, arr) => a + this._sum(this._main(arr)), 0);
+    const colors = { clouds: "#94A3B8", shade: "#E8543C", reflection: "#22C7E8", direction: "#8B5CF6", heat: "#FF6A3D", dev: "#2EAA6E" };
+    const steps = ["clouds", "shade", "reflection", "direction", "heat"].filter((k) => Math.abs(sum[k]) >= sum.clear * 0.005)
+      .map((k) => [k, sum[k], t.steps[k], colors[k]]);
+    if (end !== null && Math.abs(end - sum.result) >= sum.clear * 0.005) {
+      steps.push(["dev", end - sum.result, phase === "past" ? t.devActual : t.devExpected, end >= sum.result ? colors.dev : colors.shade]);
+    }
+    const W = 560, X0 = 8, X1 = W - 8, band = 92;
+    let cum = sum.clear, peak = cum, gains = 0;
+    for (const [, v] of steps) { cum += v; peak = Math.max(peak, cum); if (v > 0) gains += v; }
+    const k = band / peak, top0 = 34 + gains * k;
+    const xs = steps.map((_, i) => X0 + 70 + i * ((X1 - X0 - 150) / Math.max(1, steps.length - 1)));
+    let top = top0, bot = top0 + sum.clear * k, x = X0, svg = "", labels = "";
+    const sinkY = top0 + band + 46;
+    const seg = (x1) => `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${(x1 - x + 0.5).toFixed(1)}" height="${Math.max(0.5, bot - top).toFixed(1)}" fill="url(#sk-main)"></rect>`;
+    labels += `<text x="${X0}" y="${(top - 6).toFixed(1)}" class="skl">${t.steps.clear}</text><text x="${X0}" y="${(top - 6 - 13).toFixed(1)}" class="skv">${this._kwh(sum.clear)} ${t.kwh}</text>`;
+    steps.forEach(([key, v, name, color], i) => {
+      const xi = xs[i], d = Math.abs(v) * k;
+      svg += seg(xi);
+      x = xi;
+      const val = `${v > 0 ? "+" : "−"}${this._kwh(Math.abs(v))}`;
+      if (v < 0) {
+        const y0 = bot - d / 2, xe = xi + 34;
+        svg += `<path d="M${xi.toFixed(1)},${y0.toFixed(1)} C${(xi + 26).toFixed(1)},${y0.toFixed(1)} ${xe.toFixed(1)},${(y0 + 14).toFixed(1)} ${xe.toFixed(1)},${(sinkY - 6).toFixed(1)}" stroke="${color}" stroke-width="${Math.max(1, d).toFixed(1)}" fill="none" class="skr"><title>${name} ${val} ${t.kwh}</title></path>`;
+        const [lx, anchor] = xe > W - 70 ? [X1, "end"] : [xe, "middle"];      // near the edge: right-aligned
+        labels += `<text x="${lx.toFixed(1)}" y="${(sinkY + 8).toFixed(1)}" text-anchor="${anchor}" class="skl">${name}</text><text x="${lx.toFixed(1)}" y="${(sinkY + 21).toFixed(1)}" text-anchor="${anchor}" class="skv">${val}</text>`;
+        bot -= d;
+      } else {
+        const y0 = top - d / 2, xs0 = xi - 34;
+        svg += `<path d="M${xs0.toFixed(1)},${(top0 - gains * k - 10).toFixed(1)} C${xs0.toFixed(1)},${(y0 - 14).toFixed(1)} ${(xi - 26).toFixed(1)},${y0.toFixed(1)} ${xi.toFixed(1)},${y0.toFixed(1)}" stroke="${color}" stroke-width="${Math.max(1, d).toFixed(1)}" fill="none" class="skr"><title>${name} ${val} ${t.kwh}</title></path>`;
+        labels += `<text x="${xs0.toFixed(1)}" y="${(top0 - gains * k - 26).toFixed(1)}" text-anchor="middle" class="skl">${name}</text><text x="${xs0.toFixed(1)}" y="${(top0 - gains * k - 13).toFixed(1)}" text-anchor="middle" class="skv">${val}</text>`;
+        top -= d;
+      }
+      if (key === "heat" || (i === steps.length - 1 && key !== "dev") || (steps[i + 1] && steps[i + 1][0] === "dev")) {
+        labels += `<line x1="${(xi + 4).toFixed(1)}" x2="${(xi + 4).toFixed(1)}" y1="${(top - 4).toFixed(1)}" y2="${(bot + 4).toFixed(1)}" class="skm"></line>`;
+        if (end !== null) labels += `<text x="${(xi + 8).toFixed(1)}" y="${(top - 6).toFixed(1)}" class="skv">${t.forecast} ${this._kwh(sum.result)}</text>`;
+      }
+    });
+    svg += seg(X1);
+    const endName = end === null ? t.forecast : phase === "past" ? t.actual : t.expected;
+    labels += `<text x="${X1}" y="${(top - 6).toFixed(1)}" text-anchor="end" class="skl">${endName}</text><text x="${X1}" y="${(top - 19).toFixed(1)}" text-anchor="end" class="skv strong">${this._kwh(end === null ? sum.result : end)} ${t.kwh}</text>`;
+    const H = sinkY + 26;
+    return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" role="img" aria-label="${t.lossSide}"><defs><linearGradient id="sk-main" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F5A524"></stop><stop offset="1" stop-color="#FF6A3D"></stop></linearGradient></defs>${svg}${labels}</svg>`;
+  }
+
+  _useSankey(f) {
+    if (!f) return "";
+    const t = this._t, C = { pv: "#F5A524", battery: "#2EAA6E", grid: "#22C7E8", house: "#FF6A3D", rest: "#8B5CF6" };
+    const links = f.load
+      ? [["pv", "house", f.pv_home], ["pv", "battery", f.pv_battery], ["pv", "grid", f.pv_grid], ["battery", "house", f.battery_home],
+        ["battery", "grid", f.battery_grid], ["grid", "house", f.grid_home], ["grid", "battery", f.grid_battery]]
+      : [["pv", "battery", f.pv_battery], ["pv", "rest", f.pv_rest]];
+    const live = links.filter(([, , v]) => v >= 10);
+    const total = live.reduce((a, [, , v]) => a + v, 0);
+    if (total < 50) return "";
+    const order = ["pv", "battery", "grid"], sinks = ["house", "battery", "grid", "rest"];
+    const names = { pv: t.pv, battery: t.battery, grid: t.grid, house: t.house, rest: t.houseGrid };
+    const W = 400, X0 = 92, X1 = W - 92, nw = 12, gap = 12, Hn = 150, top = 8;
+    const left = order.map((n) => [n, live.filter(([a]) => a === n).reduce((s, [, , v]) => s + v, 0)]).filter(([, v]) => v > 0);
+    const right = sinks.map((n) => [n, live.filter(([, b]) => b === n).reduce((s, [, , v]) => s + v, 0)]).filter(([, v]) => v > 0);
+    const k = (Hn - gap * (Math.max(left.length, right.length) - 1)) / total;
+    const place = (nodes) => { let y = top; return new Map(nodes.map(([n, v]) => { const p = [y, v]; y += v * k + gap; return [n, p]; })); };
+    const L = place(left), R = place(right), lOff = new Map(), rOff = new Map();
+    let svg = "", defs = "";
+    live.sort((a, b) => sinks.indexOf(a[1]) - sinks.indexOf(b[1]) || order.indexOf(a[0]) - order.indexOf(b[0]));
+    live.forEach(([a, b, v], i) => {
+      const h = v * k, ya = L.get(a)[0] + (lOff.get(a) || 0), yb = R.get(b)[0] + (rOff.get(b) || 0);
+      lOff.set(a, (lOff.get(a) || 0) + h); rOff.set(b, (rOff.get(b) || 0) + h);
+      const xa = X0 + nw, xb = X1, mx = (xa + xb) / 2;
+      defs += `<linearGradient id="sk-l${i}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${C[a]}"></stop><stop offset="1" stop-color="${C[b]}"></stop></linearGradient>`;
+      svg += `<path d="M${xa},${ya.toFixed(1)} C${mx},${ya.toFixed(1)} ${mx},${yb.toFixed(1)} ${xb},${yb.toFixed(1)} L${xb},${(yb + h).toFixed(1)} C${mx},${(yb + h).toFixed(1)} ${mx},${(ya + h).toFixed(1)} ${xa},${(ya + h).toFixed(1)} Z" fill="url(#sk-l${i})" class="skl-link"><title>${names[a]} → ${names[b]}: ${this._kwh(v)} ${t.kwh}</title></path>`;
+    });
+    const node = (map, x, anchor, tx) => [...map].map(([n, [y, v]]) => `<rect x="${x}" y="${y.toFixed(1)}" width="${nw}" height="${Math.max(1, v * k).toFixed(1)}" rx="3" fill="${C[n]}"></rect>
+      <text x="${tx}" y="${(y + v * k / 2 - 1).toFixed(1)}" text-anchor="${anchor}" class="skl">${names[n]}</text><text x="${tx}" y="${(y + v * k / 2 + 12).toFixed(1)}" text-anchor="${anchor}" class="skv">${this._kwh(v)} ${t.kwh}</text>`).join("");
+    svg += node(L, X0, "end", X0 - 8) + node(R, X1, "start", X1 + nw + 8);
+    const pv = left.find(([n]) => n === "pv"), house = right.find(([n]) => n === "house");
+    const figs = [];
+    if (pv && pv[1] > 0 && f.load) figs.push([t.selfUse, Math.round((f.pv_home + f.pv_battery) / pv[1] * 100)]);
+    if (house && house[1] > 0) figs.push([t.autarky, Math.round((f.pv_home + f.battery_home) / house[1] * 100)]);
+    const H = Math.max(...[...L.values(), ...R.values()].map(([y, v]) => y + v * k)) + 18;
+    return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" role="img" aria-label="${t.useSide}"><defs>${defs}</defs>${svg}</svg>
+      ${figs.length ? `<div class="skfigs">${figs.map(([n, v]) => `<div class="fig"><span class="muted small">${n}</span><span class="big">${v} %</span></div>`).join("")}</div>` : ""}`;
   }
 
   // the expectation for the day at each recorded hour: a fan of hourly curves and the day totals converging
@@ -547,6 +653,15 @@ class NoxcastDay extends HTMLElement {
       .notes { margin: 10px 0 0; padding-left: 18px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
       .notes b { color: var(--primary-text-color); font-weight: 500; }
       .hbar { fill: var(--primary-text-color); fill-opacity: .09; }
+      .sankeys { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-start; }
+      .sk { flex: 1 1 340px; min-width: 0; } .sk:first-child { flex-basis: 480px; } .sk svg { max-width: 640px; }
+      .sub { margin: 4px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+      .skl { font-size: 11px; fill: var(--primary-text-color); } .skv { font-size: 11px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+      .skv.strong { fill: var(--primary-text-color); font-weight: 600; }
+      .skr { stroke-opacity: .7; transition: stroke-opacity .15s; } .skr:hover { stroke-opacity: 1; }
+      .skm { stroke: var(--primary-text-color); stroke-opacity: .5; stroke-dasharray: 2 2; }
+      .skl-link { opacity: .55; transition: opacity .15s; } .skl-link:hover { opacity: .9; }
+      .skfigs { display: flex; gap: 12px 32px; margin-top: 6px; }
       .hline { transition: stroke-opacity .15s; } .hline:hover { stroke-opacity: 1; stroke-width: 3; }
       .hfan { margin-top: 12px; }
       .convline { fill: none; stroke: var(--secondary-text-color); stroke-opacity: .5; stroke-width: 1.2; }

@@ -128,7 +128,7 @@
             "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
             "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
             "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt."
+            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt. Geregelt: folgt der Außentemperatur (Klima, Wärmepumpe); gelernt aus einem Jahr Verlauf und dem Temperaturarchiv."
           }
         },
         "reconfigure": {
@@ -153,7 +153,7 @@
             "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
             "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
             "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt."
+            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt. Geregelt: folgt der Außentemperatur (Klima, Wärmepumpe); gelernt aus einem Jahr Verlauf und dem Temperaturarchiv."
           }
         }
       },
@@ -262,7 +262,8 @@
       "options": {
         "profile": "Profil",
         "program": "Programm",
-        "session": "Sitzung"
+        "session": "Sitzung",
+        "regulated": "Geregelt"
       }
     }
   },

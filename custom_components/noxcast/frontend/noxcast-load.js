@@ -10,7 +10,9 @@ const LOAD_TEXT = {
     forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde, Programme und Sitzungen erwartet)",
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
     perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", bias: "Bias",
-    kinds: { profile: "Profil", program: "Programm", session: "Sitzung" },
+    kinds: { profile: "Profil", program: "Programm", session: "Sitzung", regulated: "geregelt" },
+    regulatedInfo: (mode, th, slope, r2, days) => `${mode === "heat" ? "Heizen unter" : "Kühlen über"} ${th} °C: ${slope} kWh je K und Tag · R² ${r2} aus ${days} Tagen`,
+    noRelation: "Noch kein Zusammenhang mit der Temperatur erkennbar; zählt mit seinem Profil.",
     programInfo: (perDay, max, kwh, h) => `Ø ${perDay} Läufe/Tag, höchstens ${max} · ${kwh} kWh in ${h} h je Lauf`,
     sessionInfo: (w, span) => `${w} W wenn an${span ? ` · meist an ${span}` : ""}`, noConsumers: "Keine Verbraucher angelegt. Alles zählt als Grundlast.",
     flexNote: "Flexible Verbraucher zählen nur, solange sie laufen; im Profil sind sie deshalb nicht enthalten.",
@@ -25,7 +27,9 @@ const LOAD_TEXT = {
     forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour, programs and sessions expected)",
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
     perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", bias: "Bias",
-    kinds: { profile: "profile", program: "program", session: "session" },
+    kinds: { profile: "profile", program: "program", session: "session", regulated: "regulated" },
+    regulatedInfo: (mode, th, slope, r2, days) => `${mode === "heat" ? "heating below" : "cooling above"} ${th} °C: ${slope} kWh per K and day · R² ${r2} from ${days} days`,
+    noRelation: "No relation to the temperature visible yet; counts with its profile.",
     programInfo: (perDay, max, kwh, h) => `avg ${perDay} runs/day, at most ${max} · ${kwh} kWh in ${h} h per run`,
     sessionInfo: (w, span) => `${w} W when on${span ? ` · mostly on ${span}` : ""}`, noConsumers: "No consumers added. Everything counts as base load.",
     flexNote: "Flexible consumers only count while they run, so they are not part of the profile.",
@@ -212,6 +216,9 @@ class NoxcastLoad extends HTMLElement {
 
   _modelInfo(c) {
     const t = this._t, m = c.model;
+    if (c.timing === "fixed" && c.kind === "regulated") {
+      return `<div class="muted small">${m ? t.regulatedInfo(m.mode, this._num(m.threshold, 1), this._num(m.slope_wh / 1000, 2), this._num(m.r2, 2), m.days) : t.noRelation}</div>`;
+    }
     if (c.timing !== "fixed" || !m) return "";
     if (c.kind === "program") {
       const perDay = ((m.per_day.workday || 0) * 5 + (m.per_day.weekend || 0) * 2) / 7;

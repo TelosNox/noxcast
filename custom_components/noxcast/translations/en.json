@@ -128,7 +128,7 @@
             "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
             "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
             "run_minutes": "Duration of a typical run. Empty = learned from its history.",
-            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on."
+            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on. Regulated: follows the outside temperature (air conditioning, heat pump); learned from a year of history and the temperature archive."
           }
         },
         "reconfigure": {
@@ -153,7 +153,7 @@
             "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
             "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
             "run_minutes": "Duration of a typical run. Empty = learned from its history.",
-            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on."
+            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on. Regulated: follows the outside temperature (air conditioning, heat pump); learned from a year of history and the temperature archive."
           }
         }
       },
@@ -262,7 +262,8 @@
       "options": {
         "profile": "Profile",
         "program": "Program",
-        "session": "Session"
+        "session": "Session",
+        "regulated": "Regulated"
       }
     }
   },

@@ -7,7 +7,9 @@ Base load = house load minus every configured consumer. It is learned as the med
 day and day type, so rare runs and spikes do not bend the profile. Fixed consumers are forecast by
 their kind: "profile" uses their own median profile, "program" learned start rates and the power
 curve of a run (a washer that runs one evening in three is not a median of zero), "session" the
-on-probability per hour and, while on, the learned remaining duration for that time of day.
+on-probability per hour and, while on, the learned remaining duration for that time of day,
+"regulated" (air conditioning, heat pump) a hinge of daily energy against the daily mean outside
+temperature, spread over the day by its mean hourly shape.
 Flexible consumers only count while they run, since the forecast is meant to choose their moment.
 """
 from __future__ import annotations
@@ -28,7 +30,11 @@ BACKTEST_ISSUE_HOURS = (6, 12, 18)
 WORKDAY, WEEKEND = "workday", "weekend"
 
 TIMING_FIXED, TIMING_FLEXIBLE = "fixed", "flexible"
-KIND_PROFILE, KIND_PROGRAM, KIND_SESSION = "profile", "program", "session"
+KIND_PROFILE, KIND_PROGRAM, KIND_SESSION, KIND_REGULATED = "profile", "program", "session", "regulated"
+REGULATED_DAYS = 365         # learning window of regulated consumers: the relation needs the seasons
+REGULATED_MIN_DAYS = 14
+REGULATED_MIN_R2 = 0.3       # weaker relations are dropped; the consumer falls back to its profile
+RUN_DAMPING_H = 2.0          # a running regulated consumer: its current power fades into the model
 ON_W = 30.0                  # hourly mean above which a program or session counts as on
 MAX_RUN_HOURS = 12           # longest program run that is learned as one run
 
@@ -293,6 +299,103 @@ def session_expected(model: SessionModel, tz: tzinfo, now: float, end: float, on
 
 
 @dataclass
+class RegulatedModel:
+    """Daily energy = base + slope × degrees beyond the threshold (below it for heating, above for cooling)."""
+
+    mode: str                          # "heat" or "cool"
+    threshold: float                   # °C
+    base_wh: float                     # Wh per day at and beyond the comfortable side
+    slope_wh: float                    # Wh per day and K
+    shape: list[float]                 # share of the daily energy per local hour, sums to 1
+    r2: float
+    days: int
+
+    def day_wh(self, temp: float) -> float:
+        k = max(0.0, self.threshold - temp) if self.mode == "heat" else max(0.0, temp - self.threshold)
+        return self.base_wh + self.slope_wh * k
+
+    def as_dict(self) -> dict:
+        return dict(self.__dict__)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> RegulatedModel:
+        return cls(**{k: d[k] for k in cls.__dataclass_fields__})
+
+
+def daily_means(series: dict[float, float], tz: tzinfo) -> dict:
+    """Mean per local date, from days with at least 20 hours."""
+    days: dict = {}
+    for t, v in series.items():
+        if v is not None:
+            days.setdefault(datetime.fromtimestamp(t, tz).date(), []).append(v)
+    return {d: sum(v) / len(v) for d, v in days.items() if len(v) >= 20}
+
+
+def learn_regulated(series: dict[float, float], air_temp: dict[float, float], tz: tzinfo, until: float,
+                    days: int = REGULATED_DAYS) -> RegulatedModel | None:
+    """Hinge fit of daily energy against daily mean temperature, heating or cooling, whichever fits better."""
+    start = until - days * 86400
+    window = {t: w for t, w in series.items() if start <= t < until}
+    energy = {d: w * 24 for d, w in daily_means(window, tz).items()}
+    temps = daily_means({t: v for t, v in air_temp.items() if start <= t < until}, tz)
+    pairs = [(temps[d], e) for d, e in energy.items() if d in temps]
+    if len(pairs) < REGULATED_MIN_DAYS:
+        return None
+    ys = [e for _, e in pairs]
+    my = sum(ys) / len(ys)
+    total = sum((y - my) ** 2 for y in ys)
+    if total <= 0:
+        return None
+    best = None
+    for mode in ("heat", "cool"):
+        for threshold in [x / 2 for x in range(0, 61)]:          # 0 .. 30 °C in 0.5 K steps
+            xs = [max(0.0, threshold - t) if mode == "heat" else max(0.0, t - threshold) for t, _ in pairs]
+            mx = sum(xs) / len(xs)
+            sxx = sum((x - mx) ** 2 for x in xs)
+            if sxx <= 0 or sum(1 for x in xs if x > 0) < 5:
+                continue
+            slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+            if slope <= 0:
+                continue
+            intercept = my - slope * mx
+            r2 = 1 - sum((y - intercept - slope * x) ** 2 for x, y in zip(xs, ys)) / total
+            if best is None or r2 > best[0]:
+                best = (r2, mode, threshold, max(intercept, 0.0), slope)
+    if best is None or best[0] < REGULATED_MIN_R2:
+        return None
+    hours = [0.0] * 24
+    for t, w in window.items():
+        hours[local_hour(t, tz)] += max(w, 0.0)
+    s = sum(hours)
+    shape = [round(h / s, 4) for h in hours] if s > 0 else [round(1 / 24, 4)] * 24
+    r2, mode, threshold, intercept, slope = best
+    return RegulatedModel(mode, threshold, round(intercept, 1), round(slope, 1), shape, round(r2, 3), len(pairs))
+
+
+def regulated_expected(model: RegulatedModel, tz: tzinfo, now: float, end: float, day_temp: dict,
+                       run_power: float | None = None) -> dict[float, float]:
+    """Mean W per hour: the day's energy from its mean forecast temperature, spread by the hourly shape.
+
+    A running consumer starts at its current power, fading into the model over a few hours.
+    Days without a temperature use the latest known one.
+    """
+    out: dict[float, float] = {}
+    hour = now - now % H
+    known = [day_temp[d] for d in sorted(day_temp)]
+    t = hour
+    while t < end:
+        d = datetime.fromtimestamp(t, tz).date()
+        temp = day_temp.get(d, known[-1] if known else None)
+        v = model.day_wh(temp) * model.shape[local_hour(t, tz)] if temp is not None else 0.0
+        if run_power is not None:
+            w = math.exp(-(t - hour) / H / RUN_DAMPING_H)
+            v = w * run_power + (1 - w) * v
+        out[t] = v
+        t += H
+    return out
+
+
+@dataclass
 class Consumer:
     name: str
     timing: str
@@ -301,6 +404,8 @@ class Consumer:
     program: ProgramModel | None = None
     session: SessionModel | None = None
     runs_today: int = 0
+    regulated: RegulatedModel | None = None
+    day_temp: dict = field(default_factory=dict)        # local date -> mean air temperature (forecast)
 
 
 @dataclass
@@ -357,6 +462,8 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
             expected[c.name] = program_expected(c.program, tz, now, end, c.runs_today, run is not None)
         elif c.kind == KIND_SESSION and c.session:
             expected[c.name] = session_expected(c.session, tz, now, end, run.power if run else None)
+        elif c.kind == KIND_REGULATED and c.regulated:
+            expected[c.name] = regulated_expected(c.regulated, tz, now, end, c.day_temp, run.power if run else None)
     t = now - now % H
     while t < end:
         b = base_profile.at(t, tz)
@@ -366,7 +473,7 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
             run = running.get(c.name)
             v = run_value(run, now, t) if run else None
             if c.name in expected:                 # a session's run is part of its expectation
-                v = expected[c.name].get(t, 0.0) + (0.0 if c.kind == KIND_SESSION else v or 0.0)
+                v = expected[c.name].get(t, 0.0) + (0.0 if c.kind in (KIND_SESSION, KIND_REGULATED) else v or 0.0)
             elif v is not None:
                 pass
             elif c.timing == TIMING_FIXED:
@@ -391,9 +498,11 @@ def remaining(hours: dict[float, float], now: float, end: float) -> float:
 
 
 def backtest(load: dict[float, float], consumer_series: dict[str, dict[float, float]], timing: dict[str, str],
-             tz: tzinfo, now: float, days: int = BACKTEST_DAYS, kinds: dict[str, str] | None = None) -> dict:
+             tz: tzinfo, now: float, days: int = BACKTEST_DAYS, kinds: dict[str, str] | None = None,
+             air_temp: dict[float, float] | None = None) -> dict:
     """Replay past days: forecast the rest of the day at fixed hours with the knowledge of that moment.
 
+    Regulated consumers get the measured temperature of the day, i.e. a perfect temperature forecast.
     Compares the model with a naive mean of the last 7 days per hour (what the day card did) and
     returns mean absolute errors of the remaining energy in kWh, plus the model's mean signed error.
     """
@@ -408,7 +517,10 @@ def backtest(load: dict[float, float], consumer_series: dict[str, dict[float, fl
         day_end = (day + timedelta(days=1)).timestamp()
         bp = learn_profile(base, tz, day_start)
         cons = [learned_consumer(n, timing.get(n, TIMING_FIXED), (kinds or {}).get(n, KIND_PROFILE),
-                                 consumer_series[n], tz, day_start) for n in names]
+                                 consumer_series[n], tz, day_start, air_temp) for n in names]
+        day_temp = daily_means({t: v for t, v in (air_temp or {}).items() if day_start <= t < day_end}, tz)
+        for c in cons:
+            c.day_temp = day_temp
         naive = _naive_profile(total, tz, day_start)
         for issue_hour in BACKTEST_ISSUE_HOURS:
             issue = day.replace(hour=issue_hour).timestamp()
@@ -436,13 +548,16 @@ def backtest(load: dict[float, float], consumer_series: dict[str, dict[float, fl
             "issue_hours": list(BACKTEST_ISSUE_HOURS)}
 
 
-def learned_consumer(name: str, timing: str, kind: str, series: dict[float, float], tz: tzinfo, until: float) -> Consumer:
-    """A consumer with its profile and, for fixed programs and sessions, the model of its kind."""
+def learned_consumer(name: str, timing: str, kind: str, series: dict[float, float], tz: tzinfo, until: float,
+                     air_temp: dict[float, float] | None = None) -> Consumer:
+    """A consumer with its profile and, for fixed programs, sessions and regulated ones, the model of its kind."""
     c = Consumer(name, timing, learn_profile(series, tz, until), kind)
     if timing == TIMING_FIXED and kind == KIND_PROGRAM:
         c.program = learn_program(series, tz, until)
     elif timing == TIMING_FIXED and kind == KIND_SESSION:
         c.session = learn_session(series, tz, until)
+    elif timing == TIMING_FIXED and kind == KIND_REGULATED and air_temp:
+        c.regulated = learn_regulated(series, air_temp, tz, until)
     return c
 
 

@@ -238,6 +238,9 @@ def _model_summary(coordinator, sid: str, kind: str) -> dict | None:
         expected = [round(sum(m.starts["workday"][(h - i) % 24] * w for i, w in enumerate(m.shape)), 1) for h in range(24)]
         return {"runs": m.runs, "per_day": per_day, "runs_max": m.runs_max, "energy_wh": round(sum(m.shape)),
                 "hours": len(m.shape), "expected": expected}
+    if kind == "regulated":
+        return {"mode": m.mode, "threshold": m.threshold, "base_wh": m.base_wh, "slope_wh": m.slope_wh,
+                "r2": m.r2, "days": m.days}
     return {"power": m.power, "p_on": m.p_on, "remaining": m.remaining,
             "expected": [round((p or 0) * m.power, 1) for p in m.p_on["workday"]]}
 

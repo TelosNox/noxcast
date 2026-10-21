@@ -22,7 +22,8 @@ shading, and the irradiance forecast of your weather source – every number exp
   sensor (or an energy sensor in kWh, e.g. the per-program energy of a washer). Fixed consumers
   have a kind: *profile* (their own median per hour), *program* (learned start times, runs per day
   and the power curve of a run, e.g. a dishwasher) or *session* (learned on-probability and how long
-  it stays on at that time of day, e.g. PCs); flexible ones (e.g. a washer you start on surplus) only count while they
+  it stays on at that time of day, e.g. PCs) or *regulated* (daily energy against the outside
+  temperature, e.g. air conditioning or a heat pump); flexible ones (e.g. a washer you start on surplus) only count while they
   run. With a remaining-time sensor a running program counts until it ends (its power from the power
   sensor, or energy / elapsed time). A short-term correction follows today's level for the next
   hours.

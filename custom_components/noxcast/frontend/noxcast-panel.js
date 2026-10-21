@@ -4,9 +4,9 @@
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
-  ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
-const SECTION_TITLES = { de: { learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", diagnostics: "Diagnose" },
-  en: { learned: "Learned", accuracy: "Forecast accuracy", load: "Load", diagnostics: "Diagnostics" } };
+  ["battery", "noxcast-battery", "./noxcast-battery.js"], ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
+const SECTION_TITLES = { de: { learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
+  en: { learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;

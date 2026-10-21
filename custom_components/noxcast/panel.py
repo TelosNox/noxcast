@@ -223,6 +223,7 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
                 "consumers": {sid: [[t, v] for t, v in sorted(series.items())] for sid, series in fc.consumers.items()},
             },
             "backtest": coordinator.load_backtest,
+            "events": getattr(coordinator, "load_events", None),
             "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
         })
     connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,

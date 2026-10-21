@@ -341,7 +341,7 @@ learned from history or configured, best window today and tomorrow, PV share if 
 the kinds of step 4 (fixed consumers as profile, program with learned start rates, runs per day and
 run curve, or session with on-probability and remaining hours by time of day; the backtest reports
 the bias next to the absolute error) and step 5 (regulated consumers against the outside
-temperature) and day types from an entity; event detection is concept. Today the day card computes a simple version in the browser
+temperature), day types from an entity and step 6 as suggestions of recurring device runs. Today the day card computes a simple version in the browser
 (7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
 dashboard is open, so automations cannot use it. The model below moves into the integration and
 the card only reads its sensors.
@@ -460,7 +460,12 @@ The model degrades in steps; each step works on its own and every sensor adds pr
    and fall again are clustered by power, duration and energy. They are removed from the base
    profile, offered as suggestions ("device ~2.1 kW, ~1.5 h") to become a run profile, and a live
    step that matches a cluster counts as a weak "running". Equally strong devices cannot be told
-   apart; sessions are too small and noisy and stay in the base load.
+   apart; sessions are too small and noisy and stay in the base load. Built so far as
+   suggestions only: from the 5-minute house load of the last ten days (minus configured
+   consumers), steps of at least 500 W above a moving baseline (a low quantile of the surrounding
+   six hours) that hold for 15 minutes, allowing 5-minute pauses, are grouped by power (±25 %) and
+   duration (±50 %); groups with three runs or more are listed with power, duration, energy and
+   usual start time. Removing them from the base profile and live matching are not done yet.
 2. **Individual sensors:** each configured consumer leaves the base load and brings its own
    behaviour; a day-type sensor splits the profiles.
 
@@ -490,7 +495,7 @@ The model degrades in steps; each step works on its own and every sensor adds pr
 3. Flexible planning.
 4. Sessions, fixed programs with learned starts, day types from a sensor (built).
 5. Temperature (regulated consumers, built).
-6. Event detection without sensors.
+6. Event detection without sensors (built as suggestions: `events.py`, shown in the load panel).
 
 The generation part must provide uncertainty bands, 15-minute values and intraday updates for
 this.

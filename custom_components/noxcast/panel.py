@@ -144,6 +144,8 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
             continue
         if data.load is not None:
             result["load"] = series(data.load.hours)
+        if data.band:
+            result["band"] = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items())]
         b = data.battery
         if b:
             sim, storage = b["sim"], b["storage"]

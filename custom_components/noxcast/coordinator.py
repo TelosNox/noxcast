@@ -23,6 +23,7 @@ from .const import (
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
+    CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
 )
 from . import archive as fc_archive
 from . import load as lf
@@ -53,14 +54,23 @@ class ArrayConfig:
 class ConsumerConfig:
     subentry_id: str
     name: str
-    sensor: str
+    sensor: str | None                   # power (W)
     timing: str
+    energy: str | None = None            # energy (kWh); history from its hourly change when there is no power sensor
+    remaining: str | None = None         # minutes a running program still needs
+    elapsed: str | None = None           # minutes it has run
+
+    @property
+    def series_id(self) -> str:
+        return self.sensor or self.energy
 
 
 def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
-    return {sub_id: ConsumerConfig(sub_id, sub.data[CONF_NAME], sub.data[CONF_POWER_SENSOR],
-                                   sub.data.get(CONF_TIMING, lf.TIMING_FIXED))
-            for sub_id, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_CONSUMER}
+    return {sub_id: ConsumerConfig(sub_id, sub.data[CONF_NAME], sub.data.get(CONF_POWER_SENSOR) or None,
+                                   sub.data.get(CONF_TIMING, lf.TIMING_FIXED), sub.data.get(CONF_ENERGY_SENSOR) or None,
+                                   sub.data.get(CONF_REMAINING_TIME) or None, sub.data.get(CONF_ELAPSED_TIME) or None)
+            for sub_id, sub in entry.subentries.items()
+            if sub.subentry_type == SUBENTRY_CONSUMER and (sub.data.get(CONF_POWER_SENSOR) or sub.data.get(CONF_ENERGY_SENSOR))}
 
 
 @dataclass
@@ -197,7 +207,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False))]
 
     def _load_key(self) -> list:
-        return [self.house_load, sorted([c.subentry_id, c.sensor] for c in self.consumers.values())]
+        return [self.house_load, sorted([c.subentry_id, c.series_id] for c in self.consumers.values())]
 
     def _option(self, key: str, default=None):
         return self.config_entry.options.get(key, default)
@@ -305,12 +315,20 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._archive_store.async_delay_save(self._archive_data, 5)
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, dict[float, float]]:
-        """House load and consumer power in W: {sensor: {hour start: mean W}}."""
-        ids = [self.house_load] + [c.sensor for c in self.consumers.values()]
+        """House load and consumer power in W: {sensor: {hour start: mean W}}.
+
+        Consumers without a power sensor use their energy sensor: the hourly change in Wh is the mean W.
+        """
+        ids = [self.house_load] + [c.sensor for c in self.consumers.values() if c.sensor]
+        energy = [c.energy for c in self.consumers.values() if not c.sensor]
         factors = await async_power_factors(self.hass, ids)
         stats = await async_hourly_statistics(self.hass, ids, start, "mean", period)
-        return {sid: {t: v * factors.get(sid, 1.0) for t, v in stats.get(sid, {}).items() if v is not None}
-                for sid in ids}
+        if energy:
+            factors.update(await async_power_factors(self.hass, energy, ENERGY_UNIT_FACTORS))
+            stats.update(await async_hourly_statistics(self.hass, energy, start, "change", period))
+        return {sid: {t: max(v, 0.0) * factors.get(sid, 1.0) if sid in energy else v * factors.get(sid, 1.0)
+                      for t, v in stats.get(sid, {}).items() if v is not None}
+                for sid in ids + energy}
 
     async def _async_learn_load(self, now: datetime) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""
@@ -322,7 +340,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if not load:
             _LOGGER.warning("No long-term statistics for the house load %s; load forecast disabled", self.house_load)
             return
-        consumers = {sid: series.get(c.sensor, {}) for sid, c in self.consumers.items()}
+        consumers = {sid: series.get(c.series_id, {}) for sid, c in self.consumers.items()}
         base = lf.base_series(load, list(consumers.values()))
         profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
         cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
@@ -343,20 +361,32 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             _LOGGER.debug("Recent load statistics unavailable: %s", err)
             series = {}
         base = lf.base_series(series.get(self.house_load, {}),
-                              [series.get(c.sensor, {}) for c in self.consumers.values()])
+                              [series.get(c.series_id, {}) for c in self.consumers.values()])
         k = lf.correction(base, self.load_profile, tz, now)
-        running = {}
-        for sid, c in self.consumers.items():
-            state = self.hass.states.get(c.sensor)
-            try:
-                w = float(state.state) * POWER_UNIT_FACTORS.get(state.attributes.get("unit_of_measurement"), 1.0)
-            except (AttributeError, TypeError, ValueError):
-                continue
-            if w >= RUNNING_W:
-                running[sid] = w
+        running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
         consumers = [lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()))
                      for sid, c in self.consumers.items()]
         return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
+
+    def _value(self, entity_id: str | None, table: dict[str, float]) -> float | None:
+        state = self.hass.states.get(entity_id) if entity_id else None
+        try:
+            return float(state.state) * table.get(state.attributes.get("unit_of_measurement"), 1.0)
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def _run(self, c: ConsumerConfig) -> lf.Run | None:
+        """The consumer's run now: power from its sensor or energy / elapsed time, minutes still to go."""
+        power = self._value(c.sensor, POWER_UNIT_FACTORS)
+        minutes = self._value(c.remaining, MINUTE_FACTORS)
+        minutes = minutes if minutes and minutes > 0 else None
+        if power is None and c.energy and c.elapsed:
+            energy, elapsed = self._value(c.energy, ENERGY_UNIT_FACTORS), self._value(c.elapsed, MINUTE_FACTORS)
+            if energy is not None and elapsed and elapsed > 0:
+                power = energy / (elapsed / 60)            # mean power of the program so far
+        if power is None or (power < RUNNING_W and minutes is None):
+            return None
+        return lf.Run(power, minutes)
 
     def _archive_data(self) -> dict:
         return {"days": self.forecast_archive}

@@ -126,6 +126,31 @@ class Consumer:
 
 
 @dataclass
+class Run:
+    """A consumer running now: its power and, for a program, the minutes it still runs."""
+
+    power: float
+    minutes: float | None = None
+
+
+def run_value(run: Run, now: float, t: float) -> float | None:
+    """Mean W of hour t (for the part from now on) caused by a run; None after the run.
+
+    Without a known remaining time the run only counts for the running hour.
+    """
+    start = max(t, now)
+    if t + H <= now:
+        return None
+    if run.minutes is None:
+        return run.power if t <= now < t + H else None
+    stop = now + run.minutes * 60
+    if stop <= t and not t <= now < t + H:
+        return None
+    overlap = max(0.0, min(t + H, stop) - start)
+    return run.power * overlap / (t + H - start)
+
+
+@dataclass
 class LoadForecast:
     hours: dict[float, float]              # Wh per hour start, from the running hour on
     base: dict[float, float]
@@ -134,11 +159,12 @@ class LoadForecast:
 
 
 def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: float, end: float, k: float,
-             running: dict[str, float] | None = None) -> LoadForecast:
-    """Hourly load from the running hour until `end`.
+             running: dict[str, Run] | None = None) -> LoadForecast:
+    """Hourly load from the running hour until `end`; values are mean W of the part from now on.
 
-    running: current power (W) per consumer name. A running consumer keeps it for the rest of the
-    running hour; fixed consumers otherwise follow their profile, flexible ones count zero.
+    running: consumers running now. A program with a known remaining time counts with its power
+    until it ends; otherwise a run counts for the running hour only. Outside a run, fixed consumers
+    follow their profile and flexible ones count zero.
     """
     running = running or {}
     hours: dict[float, float] = {}
@@ -150,8 +176,10 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
         if b is not None:
             base[t] = round(b * k_at(k, now, t), 1)
         for c in consumers:
-            if t <= now < t + H and c.name in running:
-                v = running[c.name]
+            run = running.get(c.name)
+            v = run_value(run, now, t) if run else None
+            if v is not None:
+                pass
             elif c.timing == TIMING_FIXED:
                 v = c.profile.at(t, tz) or 0.0
             else:

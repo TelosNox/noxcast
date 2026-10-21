@@ -502,7 +502,18 @@ class NoxcastCard extends HTMLElement {
       chargeToday = dayH.find((h) => load(h) !== null && pv(h) > lv(h)) ?? t0;
       const tomH = [...tomM.keys()].sort((a, b) => a - b);
       chargeTom = tomH.find((h) => pv(h) > (load(h) ?? 0)) ?? (tomH.length ? tomH[0] : t1 + 12 * H);
-      sim = this._simulate(bat, now, chargeTom, pv, load);
+      const srv = this._data.today && this._data.today.battery;
+      if (srv) {                                   // Noxcast's simulation (batteries configured in the integration)
+        chargeTom = srv.charge_start;
+        bat.max = srv.max; bat.min = srv.min;
+        const pts = srv.points;
+        sim = { points: pts, full: srv.full, empty: srv.empty, unused: srv.lost_today, at: (ts) => {
+          if (!pts.length) return null;
+          if (ts <= pts[0][0]) return pts[0][1];
+          for (let i = 1; i < pts.length; i++) if (pts[i][0] >= ts) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (ts - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0] || 1);
+          return pts[pts.length - 1][1];
+        } };
+      } else sim = this._simulate(bat, now, chargeTom, pv, load);
       const zone = (h) => {                       // red: at the limit with surplus (lost), orange: within 5 % of it
         const f = h + H <= now ? m.socAt(h + H / 2) : sim.at(h + H / 2);
         if (f === null) return null;
@@ -571,6 +582,10 @@ class NoxcastCard extends HTMLElement {
       plan.push(free.length ? `${t.freeUntil} ${this._hm(free[free.length - 1] + H)}` : t.noSurplus);
     }
     if (sim && !after && sim.full !== null && sim.full < t1) plan.push(`${t.fullAt} ${this._hm(sim.full)}`);
+    // best windows of flexible consumers, planned by Noxcast
+    for (const p of (!after && this._data.today && this._data.today.plan) || []) {
+      if (p.start !== null && p.pv >= 0.5 && p.end > now) plan.push(`${this._esc(p.name)} ${this._hm(Math.max(p.start, now))}–${this._hm(p.end)} (${Math.round(p.pv * 100)} %)`);
+    }
     if (sim && !after && !this._config.export && sim.unused >= 50) plan.push(`<span class="warn" style="color:${P.warnText};background:${P.warnBg}">${this._kwh(sim.unused)} ${t.kwh} ${t.unused}</span>`);
     if (sim && after) plan.push(sim.empty !== null && sim.empty < chargeTom ? `${t.emptyAt} ${this._hm(sim.empty)}` : `${t.lasts} ${this._hm(chargeTom)}`);
     const dev = morning > 0 ? Math.round((ist / morning - 1) * 100) : null;
@@ -669,9 +684,11 @@ class NoxcastCard extends HTMLElement {
       if (ts < today) { const l = byHour.get(k) || []; l.push(r.mean * scale); byHour.set(k, l); }
     }
     const liveHome = this._live().home;
+    const srvLoad = new Map((this._data.today && this._data.today.load) || []);     // Noxcast load forecast
     const load = (h) => {
       if (h + H <= now && measured.has(h)) return measured.get(h);
       if (h <= now && h + H > now && homeId) return liveHome;
+      if (srvLoad.has(h)) return srvLoad.get(h);
       const l = byHour.get((((h - today) % 86400) + 86400) % 86400);
       return l && l.length ? l.reduce((a, b) => a + b, 0) / l.length : null;
     };

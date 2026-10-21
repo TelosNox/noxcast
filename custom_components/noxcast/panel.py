@@ -133,8 +133,29 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                                          if tomorrow_start <= t < tomorrow_end)),
                 "updated": data.updated.isoformat() if data.updated else None,
             })
-    connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
-                                       "arrays": arrays})
+    result = {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone, "arrays": arrays}
+    # with a load forecast and batteries the card shows what Noxcast computed instead of its own estimate
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        data = entry.runtime_data.data
+        if data is None:
+            continue
+        if data.load is not None:
+            result["load"] = series(data.load.hours)
+        b = data.battery
+        if b:
+            sim, storage = b["sim"], b["storage"]
+            result["battery"] = {
+                "points": [[t, round(f, 4)] for t, f in sim.points], "full": sim.full_at, "empty": sim.empty_at,
+                "lost_today": round(sum(h["lost"] for t, h in sim.hours.items() if t < b["day_end"]), 1),
+                "charge_start": b["charge_start"], "max": storage.max_soc, "min": storage.min_soc,
+            }
+        names = {sid: c.name for sid, c in entry.runtime_data.consumers.items()}
+        result["plan"] = [{"name": names.get(sid, sid), "now": round(p["now"].pv_share, 3),
+                           "start": p["today"].start if p["today"] else None, "end": p["today"].end if p["today"] else None,
+                           "pv": round(p["today"].pv_share, 3) if p["today"] else None}
+                          for sid, p in (getattr(data, "plan", None) or {}).items()]
+        break
+    connection.send_result(msg["id"], result)
 
 
 def accuracy_days(archive: dict, site) -> list[dict]:

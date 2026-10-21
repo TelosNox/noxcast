@@ -55,3 +55,21 @@ def test_alternative_source_and_mix():
     other, _ = archive.daily_error(a, date(2026, 10, 1), source="open_meteo")
     mix, n = archive.daily_error(a, date(2026, 10, 1), source=archive.MIX)
     assert abs(primary - 0.25) < 1e-9 and abs(other - 0.25) < 1e-9 and n == 1 and mix == 0.0
+
+
+def test_measured_once_per_hour_from_satellite():
+    a = {}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}})
+    sat = {T0 + h * 3600: 200.0 for h in range(24)}
+    calls = []
+
+    def predict(hours):
+        calls.append(hours)
+        return {t: g / 2 for t, g, _ in hours}
+
+    n = archive.add_measured(a, "roof", sat, {T0: 5.0}, predict, before=T0 + 6 * 3600)
+    hours = a[DAY.isoformat()]["hours"]
+    assert n == 6 and hours[str(int(T0))]["measured"] == {"roof": 100.0} and hours[str(int(T0))]["sat_ghi"] == 200.0
+    assert calls[0][0][2] == 5.0 and calls[0][1][2] == 12.0       # measured air temperature, else the archived one
+    assert archive.add_measured(a, "roof", sat, None, predict, before=T0 + 6 * 3600) == 0   # never recomputed
+    assert archive.add_measured(a, "roof", {}, None, predict, before=T0 + 24 * 3600) == 0   # no satellite data yet

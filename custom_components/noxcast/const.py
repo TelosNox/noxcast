@@ -22,6 +22,21 @@ CONF_ELAPSED_TIME = "elapsed_time"       # optional: minutes it has run; with th
 CONF_TIMING = "timing"                   # fixed: part of the load forecast; flexible: the forecast picks its moment
 TIMING_OPTIONS = ("fixed", "flexible")
 
+# battery subentry: simulated against PV and the load forecast
+SUBENTRY_BATTERY = "battery"
+CONF_SOC_SENSOR = "soc_sensor"
+CONF_CAPACITY = "capacity"                # kWh
+CONF_MAX_SOC = "max_soc"                  # % or an entity with the current limit
+CONF_MAX_SOC_ENTITY = "max_soc_entity"
+CONF_MIN_SOC = "min_soc"
+CONF_MIN_SOC_ENTITY = "min_soc_entity"
+CONF_RESERVE = "reserve"                  # percent points above min_soc where discharging stops in practice
+CONF_COUPLING = "coupling"                # dc / ac
+COUPLING_OPTIONS = ("dc", "ac")
+CONF_EFFICIENCY = "efficiency"            # round trip %, empty = default of the coupling
+CONF_MAX_CHARGE = "max_charge_w"
+CONF_MAX_DISCHARGE = "max_discharge_w"
+
 # array subentry
 SUBENTRY_ARRAY = "array"
 CONF_NAME = "name"

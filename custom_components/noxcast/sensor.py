@@ -80,6 +80,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                        + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
     if coordinator.house_load:
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
+        if coordinator.batteries:
+            async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
 
     for sub_id, arr in coordinator.arrays.items():
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
@@ -346,3 +348,77 @@ class LoadSensor(NoxcastEntity, SensorEntity):
             "profile_days": profile.days if profile else 0,
             "backtest": self.coordinator.load_backtest,
         }
+
+
+
+def _iso(ts: float | None) -> str | None:
+    return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat() if ts is not None else None
+
+
+def _today(b: dict, key: str) -> float:
+    """Sum of an hourly simulation value over the rest of today, in kWh."""
+    return round(sum(h[key] for t, h in b["sim"].hours.items() if t < b["day_end"] and h[key] > 0) / 1000, 3)
+
+
+@dataclass(frozen=True, kw_only=True)
+class BatteryDescription(SensorEntityDescription):
+    value: Callable[[dict], Any]
+    attrs: Callable[[dict], dict] = lambda b: {}
+
+
+BATTERY_SENSORS = (
+    BatteryDescription(key="surplus_today", translation_key="surplus_today", device_class=SensorDeviceClass.ENERGY,
+                       native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR, icon="mdi:solar-power",
+                       value=lambda b: _today(b, "surplus"),
+                       attrs=lambda b: {"to_battery": _today(b, "battery"), "lost": _today(b, "lost")}),
+    BatteryDescription(key="surplus_lost_today", translation_key="surplus_lost_today", device_class=SensorDeviceClass.ENERGY,
+                       native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR, icon="mdi:transmission-tower-import",
+                       value=lambda b: _today(b, "lost"),
+                       attrs=lambda b: {"from": _iso(b["sim"].lost_from) if b["sim"].lost_from and b["sim"].lost_from < b["day_end"] else None}),
+    BatteryDescription(key="battery_full_at", translation_key="battery_full_at", device_class=SensorDeviceClass.TIMESTAMP,
+                       icon="mdi:battery-charging-100",
+                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].full_at) if b["sim"].full_at else None),
+    BatteryDescription(key="battery_max_soc", translation_key="battery_max_soc", native_unit_of_measurement=PERCENTAGE,
+                       icon="mdi:battery-arrow-up",
+                       value=lambda b: round(b["sim"].max_soc * 100),
+                       attrs=lambda b: {"at": _iso(b["sim"].max_soc_at)}),
+    BatteryDescription(key="battery_empty_at", translation_key="battery_empty_at", device_class=SensorDeviceClass.TIMESTAMP,
+                       icon="mdi:battery-alert-variant-outline",
+                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].empty_at) if b["sim"].empty_at else None),
+    BatteryDescription(key="battery_soc_at_charge_start", translation_key="battery_soc_at_charge_start",
+                       native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock",
+                       value=lambda b: round((b["sim"].soc_at(b["charge_start"]) or 0) * 100),
+                       attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "grid": round(b["sim"].grid_wh / 1000, 3)}),
+)
+
+
+class BatterySensor(NoxcastEntity, SensorEntity):
+    """Battery simulation until tomorrow's charge start: surplus, loss, full and empty times."""
+
+    entity_description: BatteryDescription
+
+    def __init__(self, coordinator, device: DeviceInfo, description: BatteryDescription) -> None:
+        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_{description.key}", device)
+        self.entity_description = description
+
+    def _b(self) -> dict | None:
+        data = self.coordinator.data
+        return data.battery if data is not None else None
+
+    @property
+    def available(self) -> bool:
+        return self._b() is not None
+
+    @property
+    def native_value(self):
+        b = self._b()
+        return self.entity_description.value(b) if b else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        b = self._b()
+        if not b:
+            return None
+        s = b["storage"]
+        return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b),
+                "capacity": round(s.capacity_wh / 1000, 2), "limits": [round(s.min_soc * 100, 1), round(s.max_soc * 100, 1)]}

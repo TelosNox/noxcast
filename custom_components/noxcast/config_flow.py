@@ -21,6 +21,8 @@ from .const import (
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
+    CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
 )
 from .sources import (
     NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
@@ -142,7 +144,8 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_ARRAY: ArraySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow}
+        return {SUBENTRY_ARRAY: ArraySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow,
+                SUBENTRY_BATTERY: BatterySubentryFlow}
 
 
 class ConsumerSubentryFlow(ConfigSubentryFlow):
@@ -270,3 +273,61 @@ class NoxcastOptionsFlow(OptionsFlow):
             except Exception:  # noqa: BLE001
                 return {CONF_SATELLITE_URL: "archive_failed"}
         return {}
+
+
+def _battery_schema(d: dict[str, Any]) -> vol.Schema:
+    box = selector.NumberSelectorMode.BOX
+    pct = selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=box)
+
+    def opt(key, sel):
+        return vol.Optional(key, description={"suggested_value": d.get(key)}), sel
+
+    fields = [
+        (vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")), selector.TextSelector()),
+        (vol.Required(CONF_SOC_SENSOR, default=d.get(CONF_SOC_SENSOR)),
+         selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
+        (vol.Required(CONF_CAPACITY, default=d.get(CONF_CAPACITY, 5)),
+         selector.NumberSelector(selector.NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWh", mode=box))),
+        (vol.Required(CONF_MAX_SOC, default=d.get(CONF_MAX_SOC, 100)), selector.NumberSelector(pct)),
+        opt(CONF_MAX_SOC_ENTITY, selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"]))),
+        (vol.Required(CONF_MIN_SOC, default=d.get(CONF_MIN_SOC, 0)), selector.NumberSelector(pct)),
+        opt(CONF_MIN_SOC_ENTITY, selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"]))),
+        (vol.Required(CONF_RESERVE, default=d.get(CONF_RESERVE, 0)),
+         selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%", mode=box))),
+        (vol.Required(CONF_COUPLING, default=d.get(CONF_COUPLING, COUPLING_OPTIONS[0])),
+         selector.SelectSelector(selector.SelectSelectorConfig(options=list(COUPLING_OPTIONS), translation_key=CONF_COUPLING))),
+        opt(CONF_EFFICIENCY, selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%", mode=box))),
+        opt(CONF_MAX_CHARGE, selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="W", mode=box))),
+        opt(CONF_MAX_DISCHARGE, selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="W", mode=box))),
+    ]
+    return vol.Schema(dict(fields))
+
+
+class BatterySubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a battery for the surplus simulation."""
+
+    def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
+        if user_input is None:
+            return {}
+        state = self.hass.states.get(user_input.get(CONF_SOC_SENSOR) or "")
+        if state is None:
+            return {CONF_SOC_SENSOR: "sensor_missing"}
+        if state.attributes.get("unit_of_measurement") != "%":
+            return {CONF_SOC_SENSOR: "soc_unit"}
+        if float(user_input.get(CONF_MIN_SOC, 0)) + float(user_input.get(CONF_RESERVE, 0)) >= float(user_input.get(CONF_MAX_SOC, 100)):
+            return {CONF_MIN_SOC: "limits_order"}
+        return {}
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors = self._errors(user_input)
+        if user_input is not None and not errors:
+            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
+        return self.async_show_form(step_id="user", data_schema=_battery_schema(user_input or {}), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        errors = self._errors(user_input)
+        if user_input is not None and not errors:
+            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME], data=user_input)
+        return self.async_show_form(step_id="reconfigure", data_schema=_battery_schema(user_input or dict(subentry.data)),
+                                    errors=errors)

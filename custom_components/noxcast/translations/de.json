@@ -157,6 +157,74 @@
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."
       }
+    },
+    "battery": {
+      "entry_type": "Akku",
+      "initiate_flow": {
+        "user": "Akku hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Akku",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Mehrere Akkus werden als ein Speicher simuliert.",
+          "data": {
+            "name": "Name",
+            "soc_sensor": "Ladestand",
+            "capacity": "Kapazität",
+            "max_soc": "Ladegrenze oben",
+            "max_soc_entity": "Ladegrenze als Entität",
+            "min_soc": "Entladegrenze unten",
+            "min_soc_entity": "Entladegrenze als Entität",
+            "reserve": "Reserve über der Entladegrenze",
+            "coupling": "Kopplung",
+            "efficiency": "Wirkungsgrad (Zyklus)",
+            "max_charge_w": "Max. Ladeleistung",
+            "max_discharge_w": "Max. Entladeleistung"
+          },
+          "data_description": {
+            "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+            "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
+            "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
+            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
+            "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+          }
+        },
+        "reconfigure": {
+          "title": "Akku",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Mehrere Akkus werden als ein Speicher simuliert.",
+          "data": {
+            "name": "Name",
+            "soc_sensor": "Ladestand",
+            "capacity": "Kapazität",
+            "max_soc": "Ladegrenze oben",
+            "max_soc_entity": "Ladegrenze als Entität",
+            "min_soc": "Entladegrenze unten",
+            "min_soc_entity": "Entladegrenze als Entität",
+            "reserve": "Reserve über der Entladegrenze",
+            "coupling": "Kopplung",
+            "efficiency": "Wirkungsgrad (Zyklus)",
+            "max_charge_w": "Max. Ladeleistung",
+            "max_discharge_w": "Max. Entladeleistung"
+          },
+          "data_description": {
+            "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+            "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
+            "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
+            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
+            "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+          }
+        }
+      },
+      "error": {
+        "limits_order": "Entladegrenze plus Reserve muss unter der Ladegrenze liegen.",
+        "soc_unit": "Der Ladestand muss in % angegeben sein.",
+        "sensor_missing": "Der gewählte Sensor existiert nicht."
+      },
+      "abort": {
+        "reconfigure_successful": "PV-Gruppe gespeichert."
+      }
     }
   },
   "selector": {
@@ -170,6 +238,12 @@
       "options": {
         "fixed": "Fest",
         "flexible": "Flexibel"
+      }
+    },
+    "coupling": {
+      "options": {
+        "dc": "DC (am PV-Wechselrichter)",
+        "ac": "AC (eigener Wechselrichter)"
       }
     }
   },
@@ -216,6 +290,24 @@
       },
       "load_tomorrow": {
         "name": "Last morgen"
+      },
+      "surplus_today": {
+        "name": "Überschuss Rest heute"
+      },
+      "surplus_lost_today": {
+        "name": "Überschuss verloren heute"
+      },
+      "battery_full_at": {
+        "name": "Akku voll um"
+      },
+      "battery_max_soc": {
+        "name": "Akku höchster Stand"
+      },
+      "battery_empty_at": {
+        "name": "Akku leer um"
+      },
+      "battery_soc_at_charge_start": {
+        "name": "Akku bei nächstem Ladebeginn"
       }
     },
     "image": {

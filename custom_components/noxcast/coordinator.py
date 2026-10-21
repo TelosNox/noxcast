@@ -24,8 +24,11 @@ from .const import (
     WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
+    CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY,
 )
 from . import archive as fc_archive
+from . import battery as bt
 from . import load as lf
 from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
@@ -86,6 +89,7 @@ class NoxcastData:
     morning_fixed: datetime | None = None
     updated: datetime | None = None
     load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
+    battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -125,6 +129,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.arrays = array_configs(entry)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
         self.consumers = consumer_configs(entry)
+        self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
         self.load_profile: lf.Profile | None = None
         self.consumer_profiles: dict[str, lf.Profile] = {}
         self.load_backtest: dict | None = None
@@ -368,6 +373,45 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      for sid, c in self.consumers.items()]
         return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
 
+    def _limit(self, number, entity: str | None, default: float) -> float:
+        """A limit in percent: the entity's current value if set and readable, else the number."""
+        state = self.hass.states.get(entity) if entity else None
+        try:
+            return float(state.state)
+        except (AttributeError, TypeError, ValueError):
+            return float(number) if number is not None else default
+
+    def _battery(self, result: NoxcastData, now: float, day_end: float) -> dict | None:
+        """All batteries as one storage, simulated with expected PV against the load forecast."""
+        if not self.batteries or result.load is None:
+            return None
+        units = []
+        for d in self.batteries.values():
+            state = self.hass.states.get(d.get(CONF_SOC_SENSOR) or "")
+            try:
+                soc = float(state.state) / 100
+            except (AttributeError, TypeError, ValueError):
+                soc = None
+            coupling = d.get(CONF_COUPLING, bt.COUPLING_DC)
+            eff = d.get(CONF_EFFICIENCY)
+            units.append(bt.Battery(
+                capacity_wh=float(d.get(CONF_CAPACITY, 0)) * 1000, soc=soc,
+                max_soc=self._limit(d.get(CONF_MAX_SOC), d.get(CONF_MAX_SOC_ENTITY), 100) / 100,
+                min_soc=min(100.0, self._limit(d.get(CONF_MIN_SOC), d.get(CONF_MIN_SOC_ENTITY), 0) + float(d.get(CONF_RESERVE) or 0)) / 100,
+                efficiency=float(eff) / 100 if eff else bt.DEFAULT_EFFICIENCY.get(coupling, 0.95),
+                max_charge_w=float(d[CONF_MAX_CHARGE]) if d.get(CONF_MAX_CHARGE) else None,
+                max_discharge_w=float(d[CONF_MAX_DISCHARGE]) if d.get(CONF_MAX_DISCHARGE) else None))
+        storage = bt.combine(units)
+        if storage is None:
+            return None
+        pv = dict(result.forecast.get(None, {}))
+        pv.update(result.expected.get(None, {}))          # today: actual so far and the corrected rest
+        load = result.load.hours
+        tomorrow_end = day_end + 86400
+        start = bt.charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
+        sim = bt.simulate(storage, pv, load, now, start)
+        return {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+
     def _value(self, entity_id: str | None, table: dict[str, float]) -> float | None:
         state = self.hass.states.get(entity_id) if entity_id else None
         try:
@@ -547,6 +591,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         result.load = await self._async_load_forecast(
             now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp())
+        result.battery = self._battery(result, now, day_end)
 
         alt = None
         if alt_forecasts:

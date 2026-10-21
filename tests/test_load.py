@@ -100,3 +100,68 @@ def test_program_counts_its_remaining_run():
     assert parts[end_learn + 13 * H] == 0.0
     energy = lf.remaining({t: v for t, v in parts.items()}, now, end_learn + 24 * H)
     assert abs(energy - 2000.0 * 2) < 1e-6
+
+
+def washer_series(n):
+    # a 2-hour run (2000 W, then 800 W) at 19:00 on every third day, otherwise off
+    return days(n, lambda d, h: (2000.0 if h == 19 else 800.0 if h == 20 else 0.0) if d % 3 == 0 else 0.0)
+
+
+def test_program_learns_start_rate_and_run_curve():
+    until = MONDAY + 42 * 86400
+    m = lf.learn_program(washer_series(42), UTC, until)
+    assert m.shape == [2000.0, 800.0] and m.runs == 14
+    assert m.runs_max == {lf.WORKDAY: 1, lf.WEEKEND: 1}
+    assert 0.3 < m.starts[lf.WORKDAY][19] < 0.37 and m.starts[lf.WORKDAY][10] == 0.0
+    assert lf.learn_profile(washer_series(42), UTC, until).at(until + 19 * H, UTC) == 0.0   # the median misses it
+
+
+def test_program_forecast_expects_a_share_of_a_run_and_stops_after_the_daily_maximum():
+    until = MONDAY + 42 * 86400                          # a Monday
+    c = lf.learned_consumer("washer", lf.TIMING_FIXED, lf.KIND_PROGRAM, washer_series(42), UTC, until)
+    now = until + 17 * H
+    fc = lf.forecast(lf.Profile(fallback=[100.0] * 24), [c], UTC, now, until + 86400, 1.0)
+    rate = c.program.starts[lf.WORKDAY][19]
+    assert abs(fc.consumers["washer"][until + 19 * H] - round(rate * 2000, 1)) < 0.2
+    assert abs(fc.consumers["washer"][until + 20 * H] - round(rate * 800, 1)) < 0.2
+    c.runs_today = 1                                     # today's run is done: no further start expected
+    fc = lf.forecast(lf.Profile(fallback=[100.0] * 24), [c], UTC, now, until + 86400, 1.0)
+    assert fc.consumers["washer"][until + 19 * H] == 0.0
+
+
+def test_runs_since_counts_blocks_that_started_today():
+    s = {0.0: 500.0, H: 500.0, 3 * H: 400.0, 5 * H: 10.0}
+    assert lf.runs_since(s, 0.0) == 2 and lf.runs_since(s, 2 * H) == 1
+    assert lf.runs_since(s, 0.0, 4 * H + 60, running=True) == 1      # the run in the last hour is still going
+
+
+def pc_series(n):
+    # on from 18 to 23 on workdays at 150 W, off at weekends
+    return days(n, lambda d, h: 150.0 if d % 7 < 5 and 18 <= h < 23 else 5.0)
+
+
+def test_session_runs_until_the_learned_end_when_on():
+    until = MONDAY + 42 * 86400
+    m = lf.learn_session(pc_series(42), UTC, until)
+    assert m.power == 150.0 and m.remaining[20] == 3.0 and m.p_on[lf.WORKDAY][20] == 1.0 and m.p_on[lf.WEEKEND][20] == 0.0
+    now = until + 20 * H + 600
+    on = lf.session_expected(m, UTC, now, until + 86400, 200.0)
+    assert on[until + 20 * H] == 200.0 and on[until + 22 * H] == 200.0 and on[until + 23 * H] == 0.0
+    off = lf.session_expected(m, UTC, now, until + 86400, None)
+    assert off[until + 21 * H] == 150.0
+
+
+def test_kinds_round_trip_and_backtest_runs_with_them():
+    until = MONDAY + 42 * 86400
+    p = lf.learn_program(washer_series(42), UTC, until)
+    assert lf.ProgramModel.from_dict(p.as_dict()) == p
+    s = lf.learn_session(pc_series(42), UTC, until)
+    assert lf.SessionModel.from_dict(s.as_dict()) == s
+    washer, pc = washer_series(60), pc_series(60)
+    house = {t: 300.0 + washer[t] + pc[t] for t in washer}
+    now = MONDAY + 60 * 86400
+    plain = lf.backtest(house, {"washer": washer, "pc": pc}, {}, UTC, now)
+    kinds = lf.backtest(house, {"washer": washer, "pc": pc}, {}, UTC, now, kinds={"washer": lf.KIND_PROGRAM, "pc": lf.KIND_SESSION})
+    assert kinds["cases"] == plain["cases"] > 0
+    # the median misses the washer on every third day; the program model gets the energy right on average
+    assert plain["bias_kwh"] < -0.5 and abs(kinds["bias_kwh"]) < 0.15

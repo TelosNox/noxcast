@@ -20,7 +20,9 @@ shading, and the irradiance forecast of your weather source – every number exp
 - Optional load forecast: with a house load sensor, Noxcast learns a base-load profile (median per
   hour, workday / weekend, last 6 weeks) without the consumers you add with their own power
   sensor (or an energy sensor in kWh, e.g. the per-program energy of a washer). Fixed consumers
-  follow their own profile; flexible ones (e.g. a washer you start on surplus) only count while they
+  have a kind: *profile* (their own median per hour), *program* (learned start times, runs per day
+  and the power curve of a run, e.g. a dishwasher) or *session* (learned on-probability and how long
+  it stays on at that time of day, e.g. PCs); flexible ones (e.g. a washer you start on surplus) only count while they
   run. With a remaining-time sensor a running program counts until it ends (its power from the power
   sensor, or energy / elapsed time). A short-term correction follows today's level for the next
   hours.

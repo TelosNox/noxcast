@@ -7,11 +7,14 @@ const LOAD_TEXT = {
     notLearned: "Das Lastprofil wird beim nächsten Lernlauf erstellt.",
     restToday: "Last Rest heute", tomorrow: "Last morgen", correction: "Korrektur jetzt", days: "Tage Daten",
     backtest: "Rückrechnung", model: "Modell", naive: "7-Tage-Mittel", better: "besser", worse: "schlechter", cases: "Fälle",
-    forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde)",
+    forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde, Programme und Sitzungen erwartet)",
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
-    perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", noConsumers: "Keine Verbraucher angelegt. Alles zählt als Grundlast.",
+    perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", bias: "Bias",
+    kinds: { profile: "Profil", program: "Programm", session: "Sitzung" },
+    programInfo: (perDay, max, kwh, h) => `Ø ${perDay} Läufe/Tag, höchstens ${max} · ${kwh} kWh in ${h} h je Lauf`,
+    sessionInfo: (w, span) => `${w} W wenn an${span ? ` · meist an ${span}` : ""}`, noConsumers: "Keine Verbraucher angelegt. Alles zählt als Grundlast.",
     flexNote: "Flexible Verbraucher zählen nur, solange sie laufen; im Profil sind sie deshalb nicht enthalten.",
-    help: "Grundlast = Hausverbrauch minus aller Verbraucher. Die Korrektur vergleicht die letzten Stunden mit dem Profil und klingt über die nächsten Stunden auf 1 ab. Die Rückrechnung prognostiziert die letzten 14 Tage um 6, 12 und 18 Uhr mit dem damaligen Wissen und vergleicht den Fehler der Restlast mit einem einfachen 7-Tage-Mittel.",
+    help: "Grundlast = Hausverbrauch minus aller Verbraucher. Die Korrektur vergleicht die letzten Stunden mit dem Profil und klingt über die nächsten Stunden auf 1 ab. Die Rückrechnung prognostiziert die letzten 14 Tage um 6, 12 und 18 Uhr mit dem damaligen Wissen und vergleicht den Fehler der Restlast mit einem einfachen 7-Tage-Mittel. Der Bias zeigt, ob die Energie im Mittel stimmt: Ein Programm, das nur an manchen Tagen läuft, verfehlt der Median ganz; als Programm erfasst, geht es mit seiner Häufigkeit ein.",
     kwh: "kWh", now: "jetzt", today: "heute",
   },
   en: {
@@ -19,11 +22,14 @@ const LOAD_TEXT = {
     notLearned: "The load profile is created by the next learning run.",
     restToday: "Load rest of today", tomorrow: "Load tomorrow", correction: "Correction now", days: "days of data",
     backtest: "Backtest", model: "Model", naive: "7-day mean", better: "better", worse: "worse", cases: "cases",
-    forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour)",
+    forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour, programs and sessions expected)",
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
-    perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", noConsumers: "No consumers added. Everything counts as base load.",
+    perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", bias: "Bias",
+    kinds: { profile: "profile", program: "program", session: "session" },
+    programInfo: (perDay, max, kwh, h) => `avg ${perDay} runs/day, at most ${max} · ${kwh} kWh in ${h} h per run`,
+    sessionInfo: (w, span) => `${w} W when on${span ? ` · mostly on ${span}` : ""}`, noConsumers: "No consumers added. Everything counts as base load.",
     flexNote: "Flexible consumers only count while they run, so they are not part of the profile.",
-    help: "Base load = house load minus all consumers. The correction compares the last hours with the profile and decays to 1 over the next hours. The backtest forecasts the last 14 days at 6, 12 and 18 o'clock with the knowledge of that moment and compares the error of the remaining load with a simple 7-day mean.",
+    help: "Base load = house load minus all consumers. The correction compares the last hours with the profile and decays to 1 over the next hours. The backtest forecasts the last 14 days at 6, 12 and 18 o'clock with the knowledge of that moment and compares the error of the remaining load with a simple 7-day mean. The bias shows whether the energy is right on average: the median misses a program that only runs on some days entirely; set up as a program it counts with its frequency.",
     kwh: "kWh", now: "now", today: "today",
   },
 };
@@ -117,7 +123,7 @@ class NoxcastLoad extends HTMLElement {
     ].map(([k, v]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span></div>`).join("");
     const btFig = bt.mae_kwh == null ? "" : `<div class="fig"><span class="muted small">${t.backtest} (${bt.cases} ${t.cases})</span>
       <span class="big">${this._num(bt.mae_kwh, 2)} <span class="muted small">${t.kwh} ${t.model}</span></span>
-      <span class="small muted">${t.naive} ${this._num(bt.naive_mae_kwh, 2)} ${t.kwh}${gain === null ? "" : ` · <b class="${gain >= 0 ? "good" : "bad"}">${Math.abs(Math.round(gain * 100))} % ${gain >= 0 ? t.better : t.worse}</b>`}</span></div>`;
+      <span class="small muted">${bt.bias_kwh == null ? "" : `${t.bias} ${bt.bias_kwh > 0 ? "+" : ""}${this._num(bt.bias_kwh, 2)} ${t.kwh} · `}${t.naive} ${this._num(bt.naive_mae_kwh, 2)} ${t.kwh}${gain === null ? "" : ` · <b class="${gain >= 0 ? "good" : "bad"}">${Math.abs(Math.round(gain * 100))} % ${gain >= 0 ? t.better : t.worse}</b>`}</span></div>`;
     return `
       <section class="card pad"><div class="figs">${figs}${btFig}</div><p class="help">${t.help}</p></section>
       ${hours.length ? `<section class="card pad"><h3>${t.forecast}</h3>${this._stack(e, hours, todayEnd)}</section>` : ""}
@@ -158,7 +164,12 @@ class NoxcastLoad extends HTMLElement {
     const val = (arr, h) => (arr && arr[h] != null ? arr[h] : fb[h]);
     const lines = [[t.workday, (h) => val(cells.workday, h), "var(--nx-base-line)", ""], [t.weekend, (h) => val(cells.weekend, h), "var(--nx-base-line)", "4 3"]];
     e.consumers.forEach((c, k) => {
-      if (c.timing === "fixed" && c.profile) lines.push([c.name, (h) => val(c.profile.cells && c.profile.cells.workday, h) ?? (c.profile.fallback || [])[h], this._color(k), ""]);
+      // programs and sessions: what their model expects on a workday; a median would miss rare runs
+      if (c.timing === "fixed" && c.model && c.model.expected) lines.push([c.name, (h) => c.model.expected[h], this._color(k), ""]);
+      else if (c.timing === "fixed" && c.profile) {
+        const own = c.profile.cells && c.profile.cells.workday, ownFb = c.profile.fallback || [];
+        lines.push([c.name, (h) => (own && own[h] != null ? own[h] : ownFb[h]), this._color(k), ""]);
+      }
     });
     const max = Math.max(100, ...lines.flatMap(([, f]) => Array.from({ length: 24 }, (_, h) => f(h) || 0))) * 1.1;
     const x = (h) => pad + (h + 0.5) / 24 * (W - pad), y = (v) => H - 18 - (v / max) * (H - 28);
@@ -179,15 +190,36 @@ class NoxcastLoad extends HTMLElement {
     const t = this._t;
     if (!e.consumers.length) return `<p class="muted">${t.noConsumers}</p>`;
     const daily = (p) => (p ? (p.fallback || []).reduce((a, v) => a + (v || 0), 0) : 0);
+    // programs and sessions: expected energy per day from their model (5 workdays, 2 weekend days)
+    const week = (o) => ((o.workday || 0) * 5 + (o.weekend || 0) * 2) / 7;
+    const expected = (c) => {
+      const m = c.model;
+      if (c.timing !== "fixed" || !m) return daily(c.profile);
+      if (c.kind === "program") return week(m.per_day) * m.energy_wh;
+      if (c.kind === "session") return week(Object.fromEntries(Object.entries(m.p_on).map(([k, v]) => [k, v.reduce((a, x) => a + (x || 0), 0)]))) * m.power;
+      return daily(c.profile);
+    };
     const base = daily(e.profile);
-    const rows = e.consumers.map((c, k) => [c, daily(c.profile), k]);
+    const rows = e.consumers.map((c, k) => [c, expected(c), k]);
     const total = base + rows.reduce((a, [, d]) => a + d, 0);
     const pct = (v) => (total > 0 ? `${Math.round((v / total) * 100)} %` : "–");
     return `<table><thead><tr><th></th><th>${t.timing}</th><th class="num">${t.perDay}</th><th class="num">${t.share}</th></tr></thead><tbody>
       <tr><td><i class="dot" style="background:var(--nx-base)"></i>${t.base}</td><td></td><td class="num">${this._kwh(base)} ${t.kwh}</td><td class="num">${pct(base)}</td></tr>
       ${rows.map(([c, d, k]) => `<tr><td><i class="dot" style="background:${this._color(k)}"></i>${this._esc(c.name)}<div class="muted small mono">${this._esc(c.sensor || "")}</div></td>
-        <td>${t[c.timing] || c.timing}</td><td class="num">${this._kwh(d)} ${t.kwh}</td><td class="num">${pct(d)}</td></tr>`).join("")}
+        <td>${t[c.timing] || c.timing}${c.timing === "fixed" ? ` · ${t.kinds[c.kind] || c.kind}` : ""}${this._modelInfo(c)}</td><td class="num">${this._kwh(d)} ${t.kwh}</td><td class="num">${pct(d)}</td></tr>`).join("")}
     </tbody></table>`;
+  }
+
+  _modelInfo(c) {
+    const t = this._t, m = c.model;
+    if (c.timing !== "fixed" || !m) return "";
+    if (c.kind === "program") {
+      const perDay = ((m.per_day.workday || 0) * 5 + (m.per_day.weekend || 0) * 2) / 7;
+      return `<div class="muted small">${t.programInfo(this._num(perDay, 1), Math.max(m.runs_max.workday || 0, m.runs_max.weekend || 0), this._kwh(m.energy_wh), m.hours)}</div>`;
+    }
+    const on = (m.p_on.workday || []).map((p, h) => [p || 0, h]).filter(([p]) => p >= 0.5).map(([, h]) => h);
+    const span = on.length ? `${on[0]}–${on[on.length - 1] + 1} h` : "";
+    return `<div class="muted small">${t.sessionInfo(Math.round(m.power), span)}</div>`;
   }
 
   // ------------------------------------------------------------ formatting

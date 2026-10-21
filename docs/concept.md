@@ -331,7 +331,10 @@ Status: step 1 built (base-load profile, consumers with fixed / flexible timing 
 sensor, running programs until their remaining time ends, correction k,
 load sensors for the rest of today and tomorrow, backtest) and step 2 (battery subentries, simulation
 until tomorrow's charge start, surplus and battery sensors) and step 3 (flexible consumers: run profile
-learned from history or configured, best window today and tomorrow, PV share if started now); the rest is concept. Today the day card computes a simple version in the browser
+learned from history or configured, best window today and tomorrow, PV share if started now) and
+the kinds of step 4 (fixed consumers as profile, program with learned start rates, runs per day and
+run curve, or session with on-probability and remaining hours by time of day; the backtest reports
+the bias next to the absolute error); day types from a sensor and the rest are concept. Today the day card computes a simple version in the browser
 (7-day mean per hour, battery simulation until tomorrow's charge start); it only exists while a
 dashboard is open, so automations cannot use it. The model below moves into the integration and
 the card only reads its sensors.
@@ -380,8 +383,15 @@ the session is observed ("on at 14:00, median 9 h left").
   inflates the rest of the day, and a low night does not scale down the midday.
 - **Program:** energy per run, duration and power curve over the run (so the heating phase of a
   washer lands at the start). For `fixed` programs also the start-time distribution and runs per
-  day (median and maximum, so a third run is not predicted after two).
-- **Session:** on-probability per hour, typical power, remaining duration by time of day.
+  day (median and maximum, so a third run is not predicted after two). Built as an expected value:
+  each hour carries its start rate (starts per day in that local hour and day type) times the run
+  curve; per day the expected starts are capped at the most runs seen on one day minus the runs
+  already done today. The expected value is deliberately not the median: a dishwasher on one evening
+  in three has a median of zero, which minimises the absolute error of a single day but leaves its
+  energy out of every battery simulation. The backtest therefore reports the bias as well.
+- **Session:** on-probability per hour, typical power, remaining duration by time of day. While on,
+  the current power counts for the median remaining hours seen at that time of day; afterwards and
+  while off, on-probability times typical power.
 - **Regulated:** power against temperature as a hinge (threshold plus slope), per hour; dropped
   when no relation is visible.
 - **Day types:** weekday / weekend by default; optionally any sensor as key (presence, holiday
@@ -463,7 +473,7 @@ The model degrades in steps; each step works on its own and every sensor adds pr
 1. Base-load profile with consumer configuration and backtest.
 2. Battery simulation and sensors; the card reads them.
 3. Flexible planning.
-4. Sessions, fixed programs with learned starts, day types.
+4. Sessions, fixed programs with learned starts (built), day types from a sensor (open).
 5. Temperature (regulated consumers).
 6. Event detection without sensors.
 

@@ -227,7 +227,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 ## Outputs
 
 - Per array and total, 15-minute and hourly resolution, today / tomorrow / day after.
-- Remaining energy today, peak time, P10 / P50 / P90.
+- Remaining energy today, peak time, P10 / P50 / P90. The band is empirical (`band.py`): from the
+  day-ahead archive, the ratio actual / forecast per day and per hour, grouped by the clearness of
+  the forecast (overcast below 0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI),
+  gives the 10th and 90th percentile; a class with fewer than 8 days (40 hours) falls back to all
+  days together, and hours with possible curtailment are left out. Applied to today's rest,
+  tomorrow and the day after (attributes `p10` / `p90` of the total sensors), per hour in the day
+  card, and to the battery simulation (lost surplus and full time with PV at P10 and at P90).
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total
   (measured hours + corrected rest) and the remaining energy. The intraday correction works on
   clearness (output relative to the clear-sky output of the same hour): if the last three hours

@@ -148,6 +148,14 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
             attrs["fixed_at"] = data.morning_fixed.isoformat() if data.morning_fixed else None
         if self.entity_description.series == "expected" and data is not None and self._sub_id is not None:
             attrs["correction"] = data.correction.get(self._sub_id)
+        # P10 / P90 for the total, learned from the forecast archive (band.py)
+        band = data.band if data is not None and self._sub_id is None else None
+        if band:
+            key = self.entity_description.key
+            value = band["rest"] if key == "energy_remaining_today" else band["days"].get(
+                {"energy_expected_today": 0, "energy_tomorrow": 1, "energy_day_after": 2}.get(key, -1))
+            if value:
+                attrs["p10"], attrs["p90"] = value
         return attrs
 
 
@@ -376,10 +384,12 @@ BATTERY_SENSORS = (
     BatteryDescription(key="surplus_lost_today", translation_key="surplus_lost_today", device_class=SensorDeviceClass.ENERGY,
                        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR, icon="mdi:transmission-tower-import",
                        value=lambda b: _today(b, "lost"),
-                       attrs=lambda b: {"from": _iso(b["sim"].lost_from) if b["sim"].lost_from and b["sim"].lost_from < b["day_end"] else None}),
+                       attrs=lambda b: {"from": _iso(b["sim"].lost_from) if b["sim"].lost_from and b["sim"].lost_from < b["day_end"] else None,
+                                        **({"p10_pv": b["band"]["lost_today"][0], "p90_pv": b["band"]["lost_today"][1]} if b.get("band") else {})}),
     BatteryDescription(key="battery_full_at", translation_key="battery_full_at", device_class=SensorDeviceClass.TIMESTAMP,
                        icon="mdi:battery-charging-100",
-                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].full_at) if b["sim"].full_at else None),
+                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].full_at) if b["sim"].full_at else None,
+                       attrs=lambda b: {"p10_pv": _iso(b["band"]["full_at"][0]), "p90_pv": _iso(b["band"]["full_at"][1])} if b.get("band") else {}),
     BatteryDescription(key="battery_max_soc", translation_key="battery_max_soc", native_unit_of_measurement=PERCENTAGE,
                        icon="mdi:battery-arrow-up",
                        value=lambda b: round(b["sim"].max_soc * 100),

@@ -5,6 +5,21 @@
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
   ["battery", "noxcast-battery", "./noxcast-battery.js"], ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
+// shared look of the panel and its sections, loaded with this module's cache buster
+const { adoptTheme, LOGO, ORBIT } = await import(new URL("./noxcast-theme.js" + new URL(import.meta.url).search, import.meta.url).href);
+
+const SECTION_LEADS = {
+  de: { learned: "Was Noxcast über jede Modulfläche gelernt hat: Schatten, Reflexion und Richtung, Sonnenposition für Sonnenposition.",
+    accuracy: "Wie gut die Prognose vom Vortag eingetroffen ist, nach Tag, Wetterlage und Wetterquelle.",
+    load: "Wann im Haus wie viel verbraucht wird, aus welchen Teilen sich das zusammensetzt und wie verlässlich die Prognose ist.",
+    battery: "Wohin der Überschuss heute und morgen geht und was sich mit mehr Kapazität oder einem weiteren Verbraucher ändert.",
+    diagnostics: "Welche Daten Noxcast liest, wie vollständig sie sind und wo etwas fehlt." },
+  en: { learned: "What Noxcast has learned about each array: shade, reflection and direction, sun position by sun position.",
+    accuracy: "How well the day-ahead forecast came true, by day, weather and weather source.",
+    load: "When the house uses how much, which parts it is made of and how reliable the forecast is.",
+    battery: "Where today's and tomorrow's surplus goes and what changes with more capacity or another consumer.",
+    diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
+};
 const SECTION_TITLES = { de: { learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
   en: { learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
 
@@ -158,6 +173,7 @@ class NoxcastPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    adoptTheme(this.shadowRoot);
     this._state = { section: "learned", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
     this._sections = {};
     this._data = null;
@@ -170,7 +186,8 @@ class NoxcastPanel extends HTMLElement {
     const first = !this._hass;
     const dark = this._hass && this._hass.themes && this._hass.themes.darkMode;
     this._hass = hass;
-    for (const el of Object.values(this._sections)) el.hass = hass;
+    this.toggleAttribute("dark", !!(hass.themes && hass.themes.darkMode));
+    for (const el of Object.values(this._sections)) { el.toggleAttribute("dark", this.hasAttribute("dark")); el.hass = hass; }
     if (first) this._load();
     else if ((hass.themes && hass.themes.darkMode) !== dark) this._render();
   }
@@ -280,6 +297,8 @@ class NoxcastPanel extends HTMLElement {
     }
     if (!this._sections[key]) {
       this._sections[key] = document.createElement(tag);
+      adoptTheme(this._sections[key].shadowRoot);
+      this._sections[key].toggleAttribute("dark", this.hasAttribute("dark"));
       this._sections[key].hass = this._hass;
     }
     return this._sections[key];
@@ -289,12 +308,15 @@ class NoxcastPanel extends HTMLElement {
     if (!this.shadowRoot) return;
     const t = this._t, s = this._state;
     const titles = SECTION_TITLES[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_TITLES.en;
+    const lang = (this._hass && this._hass.language || "en").slice(0, 2);
+    const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
+    const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
     const tabs = ["learned", ...SECTIONS.map(([k]) => k)].map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}">${titles[k]}</button>`).join("");
     if (s.section !== "learned") {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}
-        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">Noxcast</div><nav class="navtabs">${tabs}</nav></div>
-        <div class="content" id="section"></div>`;
+        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}Noxcast</div><nav class="navtabs">${tabs}</nav></div>
+        <div class="content">${hero}<div id="section"></div></div>`;
       const section = this._section(s.section);
       if (section) this.shadowRoot.getElementById("section").appendChild(section);
       const menu = this.shadowRoot.querySelector("ha-menu-button");
@@ -313,11 +335,11 @@ class NoxcastPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `${this._style()}
       <div class="toolbar">
         <ha-menu-button></ha-menu-button>
-        <div class="brand">Noxcast</div>
+        <div class="brand">${LOGO}Noxcast</div>
         <nav class="navtabs">${tabs}</nav>
         <nav class="crumbs">${crumbs}</nav>
       </div>
-      <div class="content">${body}</div>`;
+      <div class="content">${this._state.view === "array" ? "" : hero}${body}</div>`;
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
   }

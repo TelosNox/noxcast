@@ -250,7 +250,9 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   details per cell (values, when the sun is there) and a year grid of month × hour for those who do
   not think in sun angles. Follows the Home Assistant theme (light and dark). Data comes from the
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
-  Further sections are tabs in the panel header, each a module of its own:
+  Further sections are tabs in the panel header, each a module of its own. One shared stylesheet
+  (`noxcast-theme.js`, adopted into the panel and every section) gives all pages the same look:
+  a page header with title and lead, frosted cards with a gradient edge, key figures as tiles.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

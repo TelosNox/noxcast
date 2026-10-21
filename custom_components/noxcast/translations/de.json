@@ -112,10 +112,17 @@
           "data": {
             "name": "Name",
             "power_sensor": "Leistungssensor",
-            "timing": "Zeitbindung"
+            "timing": "Zeitbindung",
+            "energy_sensor": "Energiesensor",
+            "remaining_time": "Restlaufzeit",
+            "elapsed_time": "Verstrichene Zeit"
           },
           "data_description": {
-            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
+            "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
+            "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
+            "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
           }
         },
         "reconfigure": {
@@ -124,17 +131,28 @@
           "data": {
             "name": "Name",
             "power_sensor": "Leistungssensor",
-            "timing": "Zeitbindung"
+            "timing": "Zeitbindung",
+            "energy_sensor": "Energiesensor",
+            "remaining_time": "Restlaufzeit",
+            "elapsed_time": "Verstrichene Zeit"
           },
           "data_description": {
-            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
+            "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
+            "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
+            "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
           }
         }
       },
       "error": {
         "sensor_missing": "Der gewählte Sensor existiert nicht.",
         "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
-        "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt."
+        "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
+        "power_or_energy": "Bitte einen Leistungs- oder einen Energiesensor wählen.",
+        "energy_unit": "Energiesensoren müssen Wh oder kWh liefern.",
+        "energy_state_class": "Energiesensoren brauchen state_class „total“ oder „total_increasing“.",
+        "time_unit": "Zeitsensoren müssen Minuten, Stunden oder Sekunden liefern."
       },
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."

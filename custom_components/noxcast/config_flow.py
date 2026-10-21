@@ -20,6 +20,7 @@ from .const import (
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS,
+    CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
 )
 from .sources import (
     NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
@@ -45,7 +46,13 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
 def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
     return vol.Schema({
         vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
-        vol.Required(CONF_POWER_SENSOR, default=defaults.get(CONF_POWER_SENSOR)):
+        vol.Optional(CONF_POWER_SENSOR, description={"suggested_value": defaults.get(CONF_POWER_SENSOR)}):
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Optional(CONF_ENERGY_SENSOR, description={"suggested_value": defaults.get(CONF_ENERGY_SENSOR)}):
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Optional(CONF_REMAINING_TIME, description={"suggested_value": defaults.get(CONF_REMAINING_TIME)}):
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Optional(CONF_ELAPSED_TIME, description={"suggested_value": defaults.get(CONF_ELAPSED_TIME)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])):
             selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING)),
@@ -142,10 +149,30 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure a consumer with its own power sensor."""
 
     def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
+        """A power or an energy sensor is needed; time sensors must report a duration."""
         if user_input is None:
             return {}
-        err = _power_sensor_error(self.hass, user_input.get(CONF_POWER_SENSOR))
-        return {CONF_POWER_SENSOR: err} if err else {}
+        power, energy = user_input.get(CONF_POWER_SENSOR), user_input.get(CONF_ENERGY_SENSOR)
+        if not power and not energy:
+            return {CONF_POWER_SENSOR: "power_or_energy"}
+        if power and (err := _power_sensor_error(self.hass, power)):
+            return {CONF_POWER_SENSOR: err}
+        if energy:
+            state = self.hass.states.get(energy)
+            if state is None:
+                return {CONF_ENERGY_SENSOR: "sensor_missing"}
+            if state.attributes.get("unit_of_measurement") not in ENERGY_UNIT_FACTORS:
+                return {CONF_ENERGY_SENSOR: "energy_unit"}
+            if state.attributes.get("state_class") not in ("total", "total_increasing"):
+                return {CONF_ENERGY_SENSOR: "energy_state_class"}
+        for key in (CONF_REMAINING_TIME, CONF_ELAPSED_TIME):
+            if user_input.get(key):
+                state = self.hass.states.get(user_input[key])
+                if state is None:
+                    return {key: "sensor_missing"}
+                if state.attributes.get("unit_of_measurement") not in MINUTE_FACTORS:
+                    return {key: "time_unit"}
+        return {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errors = self._errors(user_input)

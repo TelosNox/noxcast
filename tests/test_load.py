@@ -64,7 +64,7 @@ def test_flexible_consumer_only_counts_while_running():
     end = end_learn + 24 * H
     fixed = lf.forecast(base, [lf.Consumer("w", lf.TIMING_FIXED, washer)], UTC, now, end, 1.0)
     flexible = lf.forecast(base, [lf.Consumer("w", lf.TIMING_FLEXIBLE, washer)], UTC, now, end, 1.0)
-    running = lf.forecast(base, [lf.Consumer("w", lf.TIMING_FLEXIBLE, washer)], UTC, now, end, 1.0, {"w": 2000.0})
+    running = lf.forecast(base, [lf.Consumer("w", lf.TIMING_FLEXIBLE, washer)], UTC, now, end, 1.0, {"w": lf.Run(2000.0)})
     assert fixed.hours[end_learn + 11 * H] == 700.0
     assert flexible.hours[end_learn + 11 * H] == 200.0
     assert running.hours[end_learn + 10 * H] == 2200.0 and running.hours[end_learn + 11 * H] == 200.0
@@ -85,3 +85,18 @@ def test_backtest_beats_naive_mean_when_a_consumer_is_flexible():
 def test_profile_round_trip():
     p = lf.learn_profile(days(14, lambda d, h: 100.0 + h), UTC, MONDAY + 14 * 86400)
     assert lf.Profile.from_dict(p.as_dict()) == p
+
+
+def test_program_counts_its_remaining_run():
+    end_learn = MONDAY + 28 * 86400
+    base = lf.learn_profile(days(28, lambda d, h: 200.0), UTC, end_learn)
+    now = end_learn + 10 * H + 1800                      # 10:30, washer runs 120 more minutes at 2 kW
+    run = {"w": lf.Run(2000.0, 120)}
+    fc = lf.forecast(base, [lf.Consumer("w", lf.TIMING_FLEXIBLE, lf.Profile())], UTC, now, end_learn + 24 * H, 1.0, run)
+    parts = fc.consumers["w"]
+    assert parts[end_learn + 10 * H] == 2000.0           # whole rest of the running hour
+    assert parts[end_learn + 11 * H] == 2000.0
+    assert parts[end_learn + 12 * H] == 1000.0           # half of 12:00-13:00
+    assert parts[end_learn + 13 * H] == 0.0
+    energy = lf.remaining({t: v for t, v in parts.items()}, now, end_learn + 24 * H)
+    assert abs(energy - 2000.0 * 2) < 1e-6

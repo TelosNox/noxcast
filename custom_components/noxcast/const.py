@@ -16,6 +16,9 @@ CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 # consumer subentry: a device with its own power sensor, removed from the base load
 SUBENTRY_CONSUMER = "consumer"
 CONF_POWER_SENSOR = "power_sensor"
+CONF_ENERGY_SENSOR = "energy_sensor"     # instead of a power sensor: energy per program or meter (kWh)
+CONF_REMAINING_TIME = "remaining_time"   # optional: minutes a running program still needs
+CONF_ELAPSED_TIME = "elapsed_time"       # optional: minutes it has run; with the energy sensor gives its power
 CONF_TIMING = "timing"                   # fixed: part of the load forecast; flexible: the forecast picks its moment
 TIMING_OPTIONS = ("fixed", "flexible")
 
@@ -48,6 +51,8 @@ FORECAST_DAYS = 3
 UPDATE_MINUTES = (0, 30)                 # forecast refresh at these minutes of every hour, plus once at start
 STALE_AFTER = timedelta(hours=6)         # sensors stay available this long after the last successful update
 POWER_UNIT_FACTORS = {"W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
+ENERGY_UNIT_FACTORS = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}
+MINUTE_FACTORS = {"min": 1.0, "h": 60.0, "s": 1 / 60, "d": 1440.0}
 LEARN_TIME = (1, 30)                     # local time of the nightly learning run
 HISTORY_YEARS = 2                        # history window used for learning
 

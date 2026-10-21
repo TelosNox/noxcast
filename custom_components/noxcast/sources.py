@@ -14,7 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import FORECAST_DAYS, IRRADIANCE_KEYS, POWER_UNIT_FACTORS
+from .const import ENERGY_UNIT_FACTORS, FORECAST_DAYS, IRRADIANCE_KEYS, POWER_UNIT_FACTORS
 from .model import WeatherHour
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,16 +60,17 @@ async def async_hourly_statistics(hass: HomeAssistant, statistic_ids: list[str],
     return {sid: {_start_ts(row["start"]): row.get(kind) for row in rows} for sid, rows in result.items()}
 
 
-async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str]) -> dict[str, float]:
-    """Factor converting each sensor's statistics unit to W (statistics keep the sensor's unit)."""
+async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
+                              table: dict[str, float] = POWER_UNIT_FACTORS) -> dict[str, float]:
+    """Factor converting each sensor's statistics unit to W, or to Wh with the energy table."""
     meta = await get_instance(hass).async_add_executor_job(
         lambda: get_metadata(hass, statistic_ids=set(statistic_ids)))
     factors = {}
     for sid, (_, data) in meta.items():
         unit = data.get("unit_of_measurement")
-        if unit not in POWER_UNIT_FACTORS:
-            _LOGGER.warning("%s has unit %r; expected W or kW – values are used as W", sid, unit)
-        factors[sid] = POWER_UNIT_FACTORS.get(unit, 1.0)
+        if unit not in table:
+            _LOGGER.warning("%s has unit %r; expected one of %s – values are used unscaled", sid, unit, ", ".join(table))
+        factors[sid] = table.get(unit, 1.0)
     return factors
 
 

@@ -21,6 +21,7 @@ from .const import (
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
+    CONF_RUN_MINUTES, CONF_RUN_POWER,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
 )
@@ -58,6 +59,12 @@ def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])):
             selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING)),
+        vol.Optional(CONF_RUN_POWER, description={"suggested_value": defaults.get(CONF_RUN_POWER)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=50000, step=10, unit_of_measurement="W",
+                                                                  mode=selector.NumberSelectorMode.BOX)),
+        vol.Optional(CONF_RUN_MINUTES, description={"suggested_value": defaults.get(CONF_RUN_MINUTES)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=5, max=1440, step=5, unit_of_measurement="min",
+                                                                  mode=selector.NumberSelectorMode.BOX)),
     })
 
 

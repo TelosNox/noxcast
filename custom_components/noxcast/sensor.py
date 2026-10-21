@@ -82,6 +82,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
         if coordinator.batteries:
             async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
+        async_add_entities([PlanSensor(coordinator, total_device, sid, c.name)
+                            for sid, c in coordinator.consumers.items() if c.timing == "flexible"])
 
     for sub_id, arr in coordinator.arrays.items():
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
@@ -422,3 +424,46 @@ class BatterySensor(NoxcastEntity, SensorEntity):
         s = b["storage"]
         return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b),
                 "capacity": round(s.capacity_wh / 1000, 2), "limits": [round(s.min_soc * 100, 1), round(s.max_soc * 100, 1)]}
+
+
+
+class PlanSensor(NoxcastEntity, SensorEntity):
+    """PV share of a flexible consumer if started now; the best windows today and tomorrow as attributes."""
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:washing-machine"
+    _attr_translation_key = "flex_pv_share_now"
+
+    def __init__(self, coordinator, device: DeviceInfo, sid: str, name: str) -> None:
+        super().__init__(coordinator, f"{sid}_pv_share_now", device)
+        self._sid = sid
+        self._attr_translation_placeholders = {"name": name}
+
+    def _p(self) -> dict | None:
+        data = self.coordinator.data
+        return data.plan.get(self._sid) if data is not None else None
+
+    @property
+    def available(self) -> bool:
+        return self._p() is not None
+
+    @property
+    def native_value(self) -> int | None:
+        p = self._p()
+        return round(p["now"].pv_share * 100) if p else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        p = self._p()
+        if not p:
+            return None
+
+        def window(w) -> dict | None:
+            return None if w is None else {"start": _iso(w.start), "end": _iso(w.end), "pv_share": round(w.pv_share * 100),
+                                           "lost_share": round(w.lost_share * 100)}
+
+        run = p["run"]
+        return {"schema_version": ATTR_SCHEMA_VERSION, "lost_share_now": round(p["now"].lost_share * 100),
+                "best_today": window(p["today"]), "best_tomorrow": window(p["tomorrow"]),
+                "run_power_w": run.power_w, "run_minutes": run.minutes,
+                "run_learned": not (self.coordinator.consumers[self._sid].run_power and self.coordinator.consumers[self._sid].run_minutes)}

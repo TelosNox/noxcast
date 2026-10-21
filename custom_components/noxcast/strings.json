@@ -115,14 +115,18 @@
             "timing": "Timing",
             "energy_sensor": "Energy sensor",
             "remaining_time": "Remaining time",
-            "elapsed_time": "Elapsed time"
+            "elapsed_time": "Elapsed time",
+            "run_power": "Run power",
+            "run_minutes": "Run duration"
           },
           "data_description": {
             "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs.",
             "power_sensor": "Power of the device (W). Either this or an energy sensor.",
             "energy_sensor": "Instead of power: energy in kWh (meter or per program, total/total_increasing).",
             "remaining_time": "Optional, for programs: the device's remaining time. A running program then counts until it ends.",
-            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program."
+            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
+            "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
+            "run_minutes": "Duration of a typical run. Empty = learned from its history."
           }
         },
         "reconfigure": {
@@ -134,14 +138,18 @@
             "timing": "Timing",
             "energy_sensor": "Energy sensor",
             "remaining_time": "Remaining time",
-            "elapsed_time": "Elapsed time"
+            "elapsed_time": "Elapsed time",
+            "run_power": "Run power",
+            "run_minutes": "Run duration"
           },
           "data_description": {
             "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs.",
             "power_sensor": "Power of the device (W). Either this or an energy sensor.",
             "energy_sensor": "Instead of power: energy in kWh (meter or per program, total/total_increasing).",
             "remaining_time": "Optional, for programs: the device's remaining time. A running program then counts until it ends.",
-            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program."
+            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
+            "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
+            "run_minutes": "Duration of a typical run. Empty = learned from its history."
           }
         }
       },
@@ -308,6 +316,9 @@
       },
       "battery_soc_at_charge_start": {
         "name": "Battery at next charge start"
+      },
+      "flex_pv_share_now": {
+        "name": "{name} PV share now"
       }
     },
     "image": {

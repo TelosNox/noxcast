@@ -22,6 +22,7 @@ WS_LEARNED = f"{DOMAIN}/learned"
 WS_TODAY = f"{DOMAIN}/today"
 WS_ACCURACY = f"{DOMAIN}/accuracy"
 WS_LOAD = f"{DOMAIN}/load"
+WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -30,13 +31,15 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_today)
     websocket_api.async_register_command(hass, ws_accuracy)
     websocket_api.async_register_command(hass, ws_load)
+    websocket_api.async_register_command(hass, ws_diagnostics)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
     from homeassistant.components.http import StaticPathConfig
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
-    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js")
+    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
+                                         "noxcast-diagnostics.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
@@ -196,3 +199,87 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
         })
     connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
                                        "entries": entries})
+
+
+DIAG_DAYS = 30
+
+
+def _sensor_roles(entry, coordinator) -> list[tuple[str, str, str]]:
+    """(entity, role, owner) for every sensor Noxcast reads."""
+    from .const import CONF_SOC_SENSORS
+
+    roles = [(s, "pv", arr.name) for arr in coordinator.arrays.values() for s in arr.sensors]
+    roles += [(s, "curtailment_soc", "Noxcast") for s in entry.data.get(CONF_SOC_SENSORS) or []]
+    if getattr(coordinator, "house_load", None):
+        roles.append((coordinator.house_load, "house_load", "Noxcast"))
+    for c in getattr(coordinator, "consumers", {}).values():
+        for attr, role in (("sensor", "consumer_power"), ("energy", "consumer_energy"),
+                           ("remaining", "remaining_time"), ("elapsed", "elapsed_time")):
+            if getattr(c, attr, None):
+                roles.append((getattr(c, attr), role, c.name))
+    for d in getattr(coordinator, "batteries", {}).values():
+        for key, role in (("soc_sensor", "battery_soc"), ("max_soc_entity", "battery_max"), ("min_soc_entity", "battery_min")):
+            if d.get(key):
+                roles.append((d[key], role, d.get("name", "")))
+    return roles
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_DIAGNOSTICS})
+@websocket_api.async_response
+async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Data quality for the panel: every sensor with unit, state and statistics coverage, learning runs, exclusions."""
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.statistics import get_metadata, statistics_during_period
+
+    now = dt_util.utcnow()
+    start = now - timedelta(days=DIAG_DAYS)
+    expected_hours = DIAG_DAYS * 24
+    entries = []
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator = entry.runtime_data
+        roles = _sensor_roles(entry, coordinator)
+        ids = sorted({e for e, _, _ in roles})
+        try:
+            meta = await get_instance(hass).async_add_executor_job(lambda: get_metadata(hass, statistic_ids=set(ids)))
+            stats = await get_instance(hass).async_add_executor_job(
+                statistics_during_period, hass, start, None, set(ids), "hour", None, {"mean", "change"})
+        except Exception as err:  # noqa: BLE001 – the view still shows states without statistics
+            _LOGGER.debug("Statistics for diagnostics unavailable: %s", err)
+            meta, stats = {}, {}
+        sensors = []
+        for entity_id, role, owner in roles:
+            state = hass.states.get(entity_id)
+            rows = stats.get(entity_id, [])
+            first = rows[0]["start"] if rows else None
+            sensors.append({
+                "entity_id": entity_id, "role": role, "owner": owner,
+                "state": state.state if state else None,
+                "unit": state.attributes.get("unit_of_measurement") if state else None,
+                "state_class": state.attributes.get("state_class") if state else None,
+                "statistics": entity_id in meta,
+                "coverage": round(len(rows) / expected_hours, 3) if entity_id in meta else None,
+                "first": (first.isoformat() if hasattr(first, "isoformat") else dt_util.utc_from_timestamp(first).isoformat()) if first else None,
+                "updated": state.last_updated.isoformat() if state else None,
+            })
+        archive = coordinator.forecast_archive
+        data = coordinator.data
+        entries.append({
+            "title": entry.title,
+            "weather": {"source": entry.data.get("weather_source"), "entity": entry.data.get("weather_entity"),
+                        "updated": data.updated.isoformat() if data and data.updated else None,
+                        "hours": len((data.forecast or {}).get(None, {})) if data else 0},
+            "learning": {"last": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
+                         "error": coordinator.last_learning_error, "archive_errors": coordinator.archive_errors},
+            "arrays": [{"name": arr.name, "samples": coordinator.learned[sid].samples if sid in coordinator.learned else 0,
+                        "coverage": coordinator.learned[sid].coverage if sid in coordinator.learned else None,
+                        "efficiency": coordinator.learned[sid].efficiency if sid in coordinator.learned else None}
+                       for sid, arr in coordinator.arrays.items()],
+            "exclusions": [{"start": dt_util.utc_from_timestamp(e["start"]).isoformat(),
+                            "end": dt_util.utc_from_timestamp(e["end"]).isoformat(), "note": e.get("note", "")}
+                           for e in coordinator.exclusions],
+            "archive": {"days": len(archive),
+                        "complete": sum(1 for d in archive.values()
+                                        if d.get("hours") and all("actual" in h for h in d["hours"].values()))},
+            "sensors": sensors,
+        })
+    connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})

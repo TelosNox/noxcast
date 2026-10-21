@@ -259,6 +259,10 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a
     7-day mean; the forecast by part (base load and each consumer, stacked per hour), the learned
     profile (workday, weekend, fixed consumers) and the consumers with their timing, sensor and share.
+  - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run and archive at a glance;
+    notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30
+    days), learning and archive errors; every sensor Noxcast reads with role, state, state class and
+    coverage; learned arrays and excluded periods.
 - Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home; lines
   have one width and the speed of the dots shows the power, so no line covers another; a charging battery takes PV before the grid; the house icon is coloured

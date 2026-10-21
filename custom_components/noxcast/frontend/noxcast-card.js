@@ -231,6 +231,15 @@ class NoxcastCard extends HTMLElement {
       .legend svg { width: 16px; height: 10px; display: inline-block; }
       .ax { font-size: calc(9px * min(var(--nx-scale, 1), 1.2)); fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
       .divider { border-top: 1px solid var(--divider-color); padding-top: 8px; }
+      .chart { position: relative; touch-action: pan-y; }
+      .tip { position: absolute; top: 2px; display: grid; grid-template-columns: auto auto; gap: 1px 10px; padding: 6px 8px;
+        font-size: 11px; line-height: 1.35; background: var(--card-background-color, #fff); color: var(--primary-text-color);
+        border: 1px solid var(--divider-color); border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.15); pointer-events: none; z-index: 1; }
+      .tip[hidden] { display: none; }
+      .tip b { grid-column: 1 / -1; font-weight: 500; }
+      .tip span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+      .tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+      .tip .v { justify-content: flex-end; font-variant-numeric: tabular-nums; }
     </style>
     <ha-card style="--nx-scale:${this._scale}"><div id="flow"></div><div id="band" class="divider"></div></ha-card>`;
     this._sig = this._signature();
@@ -526,6 +535,17 @@ class NoxcastCard extends HTMLElement {
     const tickStep = Math.max(1, Math.ceil((t1 - t0) / H / 6)) * H;
     const ticks = []; for (let h = Math.ceil(t0 / tickStep) * tickStep; h <= t1; h += tickStep) if (nowX === null || Math.abs(x(h) - nowX) > 16) ticks.push(h);
 
+    // values per hour for the tooltip: hovering or tapping an hour shows what the chart draws there
+    const socAt = (ts) => (!bat ? null : ts <= now ? m.socAt(ts) : sim.at(ts));
+    this._tipRows = dayH.map((h) => {
+      const done = h + H <= now, rows = [[done ? t.actual : t.expected, exp(h), P.pvText]];
+      if (Math.abs(fc(h) - exp(h)) >= 1 || !done) rows.push([t.lg.forecast, fc(h), P.pvDark]);
+      if (loss(h) >= 1) rows.push([t.lg.loss, -loss(h), P.shade]);
+      if (load(h) !== null) rows.push([t.lg.load, lv(h), "var(--primary-text-color)"]);
+      const soc = socAt(Math.min(h + H, Math.max(h, now)));
+      return { label: `${this._hm(h)}–${this._hm(h + H)}`, rows, soc, x: x(h + H / 2) };
+    });
+    const hits = dayH.map((h, i) => `<rect data-tip="${i}" x="${x(h).toFixed(1)}" y="0" width="${(x(h + H) - x(h)).toFixed(1)}" height="${bottom - 14}" fill="transparent"></rect>`).join("");
     const svg = `<svg viewBox="0 0 ${W} ${bottom}" role="img" aria-label="${t.pv}, ${t.load}, ${t.soc}">
       <defs>
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
@@ -535,6 +555,8 @@ class NoxcastCard extends HTMLElement {
       ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
         <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${this._hm(h).slice(0, 2)}</text>`).join("")}
+      <line id="nx-cursor" y1="0" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1" stroke-opacity=".35" visibility="hidden"></line>
+      <g id="nx-hits">${hits}</g>
     </svg>`;
 
     // planning line and the three numbers
@@ -558,7 +580,7 @@ class NoxcastCard extends HTMLElement {
       : `<span>${t.actual} <span class="big">${this._kwh(ist)}</span></span>
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
-    el.innerHTML = `${svg}${this._config.legend === false ? "" : this._legend({
+    el.innerHTML = `<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > t0, loss: lossTotal > 1, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
         shade: arrays.some((a) => a.periods.some((p) => p.type === "shade")),
         refl: arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
@@ -568,6 +590,31 @@ class NoxcastCard extends HTMLElement {
         ${lossTotal >= 50 ? `<span style="color:${P.shade}">${t.shade} −${this._kwh(lossTotal)}</span>` : ""}
         <span class="muted">${t.tomorrow} <b style="color:var(--primary-text-color);font-weight:500">${this._kwh(tomorrow)}</b></span>
       </div>`;
+    const chart = el.querySelector(".chart");
+    chart.addEventListener("pointermove", (ev) => this._tip(ev));
+    chart.addEventListener("pointerdown", (ev) => this._tip(ev));
+    chart.addEventListener("pointerleave", () => this._tip(null));
+  }
+
+  // tooltip for the hour under the pointer; a tap on touch screens shows it until the next tap elsewhere
+  _tip(ev) {
+    const root = this.shadowRoot, tip = root.getElementById("nx-tip"), cursor = root.getElementById("nx-cursor");
+    if (!tip || !cursor) return;
+    const hit = ev && ev.target && ev.target.dataset && ev.target.dataset.tip !== undefined ? this._tipRows[Number(ev.target.dataset.tip)] : null;
+    if (!hit) {
+      if (ev && ev.type === "pointermove" && ev.pointerType !== "mouse") return;
+      tip.hidden = true; cursor.setAttribute("visibility", "hidden");
+      return;
+    }
+    const w = (v) => `${Math.round(v).toLocaleString(this._lang)} W`;
+    tip.innerHTML = `<b>${hit.label}</b>${hit.rows.map(([k, v, c]) => `<span><i style="background:${c}"></i>${k}</span><span class="v">${w(v)}</span>`).join("")}
+      ${hit.soc === null || hit.soc === undefined ? "" : `<span><i style="background:${this._p.bat}"></i>${this._t.lg.bat}</span><span class="v">${Math.round(hit.soc * 100)} %</span>`}`;
+    tip.hidden = false;
+    cursor.setAttribute("x1", hit.x.toFixed(1)); cursor.setAttribute("x2", hit.x.toFixed(1)); cursor.setAttribute("visibility", "visible");
+    const box = tip.parentElement.getBoundingClientRect(), svgBox = tip.parentElement.querySelector("svg").getBoundingClientRect();
+    const px = (hit.x / 408) * svgBox.width;
+    const left = px > box.width / 2 ? px - tip.offsetWidth - 10 : px + 10;
+    tip.style.left = `${Math.max(0, Math.min(box.width - tip.offsetWidth, left))}px`;
   }
 
   // legend for what the chart shows right now

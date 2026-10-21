@@ -272,6 +272,15 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     snapshots as a fan of curves from early to late next to the day-ahead forecast, and the day
     total of each snapshot over time, so it shows when the day became foreseeable and where the
     forecast jumped.
+    "The day in energy" shows two Sankey diagrams. The loss side sums the forecast steps over all
+    hours: clear sky, losses branching off (clouds, shade, heat), gains joining (reflection), the
+    forecast, and the deviation to the actual value (the expectation today). The use side
+    (`flows.py`, past days and today) estimates hour by hour from long-term statistics where the
+    energy went: PV, battery discharge and grid into house, battery charge and grid. The battery
+    energy of an hour is the change of its mean state of charge (central difference) times its
+    capacity; within an hour PV supplies the house first, then the battery. Self-consumption and
+    self-sufficiency follow from it. Without a house-load sensor only PV into the battery and the
+    rest are shown; without house load and batteries the use side is left out.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

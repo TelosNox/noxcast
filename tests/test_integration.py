@@ -111,6 +111,16 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     await client.send_json_auto_id({"type": "noxcast/diagnostics"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["sensors"][0]["role"] == "pv"
+    for offset in (0, 1, -1):                                 # the day view: today, tomorrow, a past day
+        await client.send_json_auto_id({"type": "noxcast/day", "offset": offset})
+        msg = await client.receive_json()
+        assert msg["success"]
+        day = msg["result"]["entries"][0]
+        assert day["arrays"][0]["name"] == "Roof"
+        if offset >= 0:
+            steps = day["arrays"][0]["steps"]
+            assert steps and all(abs(s["clear"] + s["clouds"] + s["shade"] + s["reflection"] + s["direction"]
+                                     + s["heat"] - s["result"]) < 1 for s in steps.values())
 
 
 async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> None:

@@ -25,7 +25,7 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
 )
 from . import archive as fc_archive
 from . import battery as bt
@@ -65,6 +65,7 @@ class ConsumerConfig:
     elapsed: str | None = None           # minutes it has run
     run_power: float | None = None       # flexible: a run's power and duration, None = learned
     run_minutes: float | None = None
+    kind: str = "profile"                # fixed: profile, program or session
 
     @property
     def series_id(self) -> str:
@@ -76,9 +77,15 @@ def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
                                    sub.data.get(CONF_TIMING, lf.TIMING_FIXED), sub.data.get(CONF_ENERGY_SENSOR) or None,
                                    sub.data.get(CONF_REMAINING_TIME) or None, sub.data.get(CONF_ELAPSED_TIME) or None,
                                    float(sub.data[CONF_RUN_POWER]) if sub.data.get(CONF_RUN_POWER) else None,
-                                   float(sub.data[CONF_RUN_MINUTES]) if sub.data.get(CONF_RUN_MINUTES) else None)
+                                   float(sub.data[CONF_RUN_MINUTES]) if sub.data.get(CONF_RUN_MINUTES) else None,
+                                   sub.data.get(CONF_KIND, lf.KIND_PROFILE))
             for sub_id, sub in entry.subentries.items()
             if sub.subentry_type == SUBENTRY_CONSUMER and (sub.data.get(CONF_POWER_SENSOR) or sub.data.get(CONF_ENERGY_SENSOR))}
+
+
+def _models_from_dict(d: dict) -> dict:
+    return {"program": lf.ProgramModel.from_dict(d["program"]) if d.get("program") else None,
+            "session": lf.SessionModel.from_dict(d["session"]) if d.get("session") else None}
 
 
 @dataclass
@@ -139,6 +146,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.load_profile: lf.Profile | None = None
         self.consumer_profiles: dict[str, lf.Profile] = {}
         self.run_profiles: dict[str, dict] = {}      # learned run of flexible consumers: power_w, minutes
+        self.consumer_models: dict[str, dict] = {}   # learned program and session model per consumer
         self.load_backtest: dict | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
@@ -174,6 +182,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                           if sid in self.consumers}
                 self.load_backtest = load.get("backtest")
                 self.run_profiles = {sid: r for sid, r in (load.get("runs") or {}).items() if sid in self.consumers}
+                self.consumer_models = {sid: _models_from_dict(m) for sid, m in (load.get("models") or {}).items()
+                                        if sid in self.consumers}
             if stored.get("last_learning"):
                 self.last_learning = dt_util.parse_datetime(stored["last_learning"])
             day_start = dt_util.start_of_local_day().timestamp()
@@ -257,7 +267,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
             "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
                      "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
-                     "backtest": self.load_backtest, "runs": self.run_profiles} if self.load_profile else None,
+                     "backtest": self.load_backtest, "runs": self.run_profiles,
+                     "models": {sid: {k: m.as_dict() for k, m in ms.items() if m} for sid, ms in self.consumer_models.items()}}
+            if self.load_profile else None,
             "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
         }
@@ -358,8 +370,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
         cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
                 for sid, s in consumers.items()}
+        models = {}
+        for sid, s in consumers.items():
+            models[sid] = {"program": await self.hass.async_add_executor_job(lf.learn_program, s, tz, until),
+                           "session": await self.hass.async_add_executor_job(lf.learn_session, s, tz, until)}
         backtest = await self.hass.async_add_executor_job(
-            lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp())
+            lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp(),
+            lf.BACKTEST_DAYS, {sid: c.kind for sid, c in self.consumers.items()})
+        self.consumer_models = models
         self.load_profile, self.consumer_profiles, self.load_backtest = profile, cons, backtest
         runs = {}
         for sid, c in self.consumers.items():
@@ -374,7 +392,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return None
         tz = dt_util.get_default_time_zone()
         try:
-            series = await self._async_load_series(dt_util.utc_from_timestamp(now - (lf.K_HOURS + 2) * 3600))
+            # from midnight on, so today's program runs can be counted
+            start = min(now - (lf.K_HOURS + 2) * 3600, dt_util.start_of_local_day().timestamp())
+            series = await self._async_load_series(dt_util.utc_from_timestamp(start))
         except Exception as err:  # noqa: BLE001 – without recent values the profile alone is used
             _LOGGER.debug("Recent load statistics unavailable: %s", err)
             series = {}
@@ -382,8 +402,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                               [series.get(c.series_id, {}) for c in self.consumers.values()])
         k = lf.correction(base, self.load_profile, tz, now)
         running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
-        consumers = [lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()))
-                     for sid, c in self.consumers.items()]
+        day_start = dt_util.start_of_local_day().timestamp()
+        consumers = []
+        for sid, c in self.consumers.items():
+            m = self.consumer_models.get(sid, {})
+            consumers.append(lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()), c.kind,
+                                         m.get("program"), m.get("session"),
+                                         lf.runs_since(series.get(c.series_id, {}), day_start, now, sid in running)))
         return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
 
     def _limit(self, number, entity: str | None, default: float) -> float:

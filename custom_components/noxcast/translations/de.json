@@ -117,7 +117,8 @@
             "remaining_time": "Restlaufzeit",
             "elapsed_time": "Verstrichene Zeit",
             "run_power": "Leistung eines Laufs",
-            "run_minutes": "Dauer eines Laufs"
+            "run_minutes": "Dauer eines Laufs",
+            "kind": "Art"
           },
           "data_description": {
             "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
@@ -126,7 +127,8 @@
             "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
             "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
             "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt."
+            "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
+            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt."
           }
         },
         "reconfigure": {
@@ -140,7 +142,8 @@
             "remaining_time": "Restlaufzeit",
             "elapsed_time": "Verstrichene Zeit",
             "run_power": "Leistung eines Laufs",
-            "run_minutes": "Dauer eines Laufs"
+            "run_minutes": "Dauer eines Laufs",
+            "kind": "Art"
           },
           "data_description": {
             "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
@@ -149,7 +152,8 @@
             "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
             "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
             "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt."
+            "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
+            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt."
           }
         }
       },
@@ -252,6 +256,13 @@
       "options": {
         "dc": "DC (am PV-Wechselrichter)",
         "ac": "AC (eigener Wechselrichter)"
+      }
+    },
+    "kind": {
+      "options": {
+        "profile": "Profil",
+        "program": "Programm",
+        "session": "Sitzung"
       }
     }
   },

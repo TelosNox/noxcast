@@ -19,7 +19,7 @@ from .const import (
     CONF_AZIMUTH, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
-    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS,
+    CONF_HOUSE_LOAD, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
@@ -59,6 +59,8 @@ def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])):
             selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING)),
+        vol.Required(CONF_KIND, default=defaults.get(CONF_KIND, KIND_OPTIONS[0])):
+            selector.SelectSelector(selector.SelectSelectorConfig(options=list(KIND_OPTIONS), translation_key=CONF_KIND)),
         vol.Optional(CONF_RUN_POWER, description={"suggested_value": defaults.get(CONF_RUN_POWER)}):
             selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=50000, step=10, unit_of_measurement="W",
                                                                   mode=selector.NumberSelectorMode.BOX)),

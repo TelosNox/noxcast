@@ -4,9 +4,11 @@ Pure functions on hourly series {hour start (UTC ts): mean W}; no Home Assistant
 model can be tested and replayed offline.
 
 Base load = house load minus every configured consumer. It is learned as the median per hour of
-day and day type, so rare runs and spikes do not bend the profile. Consumers are forecast from
-their own profile when their timing is fixed; flexible consumers only count while they run,
-since the forecast is meant to choose their moment.
+day and day type, so rare runs and spikes do not bend the profile. Fixed consumers are forecast by
+their kind: "profile" uses their own median profile, "program" learned start rates and the power
+curve of a run (a washer that runs one evening in three is not a median of zero), "session" the
+on-probability per hour and, while on, the learned remaining duration for that time of day.
+Flexible consumers only count while they run, since the forecast is meant to choose their moment.
 """
 from __future__ import annotations
 
@@ -26,6 +28,9 @@ BACKTEST_ISSUE_HOURS = (6, 12, 18)
 WORKDAY, WEEKEND = "workday", "weekend"
 
 TIMING_FIXED, TIMING_FLEXIBLE = "fixed", "flexible"
+KIND_PROFILE, KIND_PROGRAM, KIND_SESSION = "profile", "program", "session"
+ON_W = 30.0                  # hourly mean above which a program or session counts as on
+MAX_RUN_HOURS = 12           # longest program run that is learned as one run
 
 
 def day_type(ts: float, tz: tzinfo) -> str:
@@ -118,11 +123,184 @@ def k_at(k: float, now: float, t: float) -> float:
     return 1 + (k - 1) * math.exp(-dist / K_DECAY_H)
 
 
+def blocks(series: dict[float, float], threshold: float = ON_W) -> list[list[tuple[float, float]]]:
+    """Runs of consecutive hours at or above the threshold, as [(hour start, W), ...]."""
+    out: list[list[tuple[float, float]]] = []
+    for t in sorted(series):
+        if series[t] < threshold:
+            continue
+        if out and out[-1][-1][0] == t - H:
+            out[-1].append((t, series[t]))
+        else:
+            out.append([(t, series[t])])
+    return out
+
+
+def _days_by_type(series: dict[float, float], tz: tzinfo) -> dict[str, int]:
+    days: dict[str, set] = {WORKDAY: set(), WEEKEND: set()}
+    for t in series:
+        days[day_type(t, tz)].add(datetime.fromtimestamp(t, tz).date())
+    return {k: len(v) for k, v in days.items()}
+
+
+def _local_midnight(ts: float, tz: tzinfo) -> float:
+    return datetime.fromtimestamp(ts, tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+@dataclass
+class ProgramModel:
+    """A fixed program: expected starts per local hour and day type, the most runs a day, a run's power curve."""
+
+    starts: dict[str, list[float]]     # day type -> starts per day in each local hour
+    runs_max: dict[str, int]           # day type -> most runs seen on one day
+    shape: list[float]                 # mean W in hour 0, 1, ... after a start
+    runs: int = 0
+
+    def as_dict(self) -> dict:
+        return {"starts": self.starts, "runs_max": self.runs_max, "shape": self.shape, "runs": self.runs}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ProgramModel:
+        return cls({k: list(v) for k, v in d["starts"].items()}, dict(d["runs_max"]), list(d["shape"]), int(d.get("runs", 0)))
+
+
+def learn_program(series: dict[float, float], tz: tzinfo, until: float, days: int = PROFILE_DAYS) -> ProgramModel | None:
+    """Start rates, runs per day and power curve from the runs in [until - days, until)."""
+    start = until - days * 86400
+    window = {t: w for t, w in series.items() if start <= t < until}
+    runs = [b[:MAX_RUN_HOURS] for b in blocks(window)]
+    if not runs:
+        return None
+    ndays = _days_by_type(window, tz)
+    counts: dict[str, list[int]] = {WORKDAY: [0] * 24, WEEKEND: [0] * 24}
+    per_day: dict = {}
+    for b in runs:
+        t0 = b[0][0]
+        counts[day_type(t0, tz)][local_hour(t0, tz)] += 1
+        d = datetime.fromtimestamp(t0, tz).date()
+        per_day[d] = per_day.get(d, 0) + 1
+    runs_max = {WORKDAY: 0, WEEKEND: 0}
+    for d, n in per_day.items():
+        k = WEEKEND if d.weekday() >= 5 else WORKDAY
+        runs_max[k] = max(runs_max[k], n)
+    length = max(len(b) for b in runs)
+    shape = [round(sum(b[i][1] for b in runs if i < len(b)) / len(runs), 1) for i in range(length)]
+    starts = {k: [round(c / ndays[k], 4) if ndays[k] else 0.0 for c in counts[k]] for k in counts}
+    return ProgramModel(starts, runs_max, shape, len(runs))
+
+
+def runs_since(series: dict[float, float], since: float, now: float | None = None, running: bool = False) -> int:
+    """Runs that started at or after `since`.
+
+    With `running`, a run that reaches into the last full hour before now is the one still going;
+    it is left out, since the forecast counts a running run itself.
+    """
+    runs = [b for b in blocks(series) if b[0][0] >= since]
+    if running and now is not None and runs and runs[-1][-1][0] == now - now % H - H:
+        runs.pop()
+    return len(runs)
+
+
+def program_expected(model: ProgramModel, tz: tzinfo, now: float, end: float, runs_today: int,
+                     running: bool = False) -> dict[float, float]:
+    """Expected mean W per hour from runs that have not started yet.
+
+    Each hour carries its start rate times the run's power curve. Per day the expected starts are
+    capped at the most runs seen on one day, minus the runs already done today (a running run
+    counts as done), so a third run is not predicted after two.
+    """
+    hour = now - now % H
+    by_day: dict[float, list[tuple[float, float]]] = {}
+    t = hour
+    while t < end:
+        if not (running and t == hour):
+            share = (t + H - now) / H if t == hour else 1.0
+            rate = model.starts.get(day_type(t, tz), [0.0] * 24)[local_hour(t, tz)] * share
+            by_day.setdefault(_local_midnight(t + H / 2, tz), []).append((t, rate))
+        t += H
+    today = _local_midnight(now, tz)
+    out: dict[float, float] = {}
+    for day, rates in by_day.items():
+        cap = model.runs_max.get(day_type(day + H, tz), 0)
+        if day == today:
+            cap -= runs_today + (1 if running else 0)
+        total = sum(r for _, r in rates)
+        scale = min(1.0, max(cap, 0) / total) if total > 0 else 0.0
+        for ts, rate in rates:
+            for i, w in enumerate(model.shape):
+                if ts + i * H < end:
+                    out[ts + i * H] = out.get(ts + i * H, 0.0) + rate * scale * w
+    return out
+
+
+@dataclass
+class SessionModel:
+    """A session (PC, TV): on-probability per hour and day type, power while on, remaining hours by hour of day."""
+
+    p_on: dict[str, list[float | None]]
+    power: float
+    remaining: list[float | None]      # median hours still on, counting the hour it is seen on
+
+    def as_dict(self) -> dict:
+        return {"p_on": self.p_on, "power": self.power, "remaining": self.remaining}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> SessionModel:
+        return cls({k: list(v) for k, v in d["p_on"].items()}, float(d["power"]), list(d["remaining"]))
+
+
+def learn_session(series: dict[float, float], tz: tzinfo, until: float, days: int = PROFILE_DAYS) -> SessionModel | None:
+    """On-probability, power while on and remaining hours from [until - days, until)."""
+    start = until - days * 86400
+    window = {t: w for t, w in series.items() if start <= t < until}
+    on = [w for w in window.values() if w >= ON_W]
+    if not on:
+        return None
+    seen: dict[str, list[list[int]]] = {WORKDAY: [[0, 0] for _ in range(24)], WEEKEND: [[0, 0] for _ in range(24)]}
+    for t, w in window.items():
+        cell = seen[day_type(t, tz)][local_hour(t, tz)]
+        cell[0] += 1
+        cell[1] += w >= ON_W
+    rest: list[list[int]] = [[] for _ in range(24)]
+    for b in blocks(window):
+        for i, (t, _) in enumerate(b):
+            rest[local_hour(t, tz)].append(len(b) - i)
+    return SessionModel(
+        p_on={k: [round(c[1] / c[0], 3) if c[0] >= MIN_SAMPLES else None for c in g] for k, g in seen.items()},
+        power=round(median(on), 1),
+        remaining=[float(median(r)) if r else None for r in rest])
+
+
+def session_expected(model: SessionModel, tz: tzinfo, now: float, end: float, on_power: float | None) -> dict[float, float]:
+    """Mean W per hour: while on, the current power for the learned remaining hours; otherwise probability × power."""
+    hour = now - now % H
+    on_until = hour
+    if on_power is not None and on_power >= ON_W:
+        on_until = hour + (model.remaining[local_hour(hour, tz)] or 1.0) * H
+    out: dict[float, float] = {}
+    t = hour
+    while t < end:
+        if t < on_until:
+            out[t] = on_power * min(1.0, (on_until - t) / H)
+        else:
+            dt, h = day_type(t, tz), local_hour(t, tz)
+            p = model.p_on.get(dt, [None] * 24)[h]
+            if p is None:
+                p = model.p_on.get(WEEKEND if dt == WORKDAY else WORKDAY, [None] * 24)[h] or 0.0
+            out[t] = p * model.power
+        t += H
+    return out
+
+
 @dataclass
 class Consumer:
     name: str
     timing: str
     profile: Profile
+    kind: str = KIND_PROFILE
+    program: ProgramModel | None = None
+    session: SessionModel | None = None
+    runs_today: int = 0
 
 
 @dataclass
@@ -163,13 +341,22 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
     """Hourly load from the running hour until `end`; values are mean W of the part from now on.
 
     running: consumers running now. A program with a known remaining time counts with its power
-    until it ends; otherwise a run counts for the running hour only. Outside a run, fixed consumers
-    follow their profile and flexible ones count zero.
+    until it ends; otherwise a run counts for the running hour only. Fixed consumers add what their
+    kind expects (profile, program starts still to come, session), flexible ones count zero.
     """
     running = running or {}
     hours: dict[float, float] = {}
     base: dict[float, float] = {}
     parts: dict[str, dict[float, float]] = {c.name: {} for c in consumers}
+    expected: dict[str, dict[float, float]] = {}       # fixed programs and sessions by their learned model
+    for c in consumers:
+        if c.timing != TIMING_FIXED:
+            continue
+        run = running.get(c.name)
+        if c.kind == KIND_PROGRAM and c.program:
+            expected[c.name] = program_expected(c.program, tz, now, end, c.runs_today, run is not None)
+        elif c.kind == KIND_SESSION and c.session:
+            expected[c.name] = session_expected(c.session, tz, now, end, run.power if run else None)
     t = now - now % H
     while t < end:
         b = base_profile.at(t, tz)
@@ -178,7 +365,9 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
         for c in consumers:
             run = running.get(c.name)
             v = run_value(run, now, t) if run else None
-            if v is not None:
+            if c.name in expected:                 # a session's run is part of its expectation
+                v = expected[c.name].get(t, 0.0) + (0.0 if c.kind == KIND_SESSION else v or 0.0)
+            elif v is not None:
                 pass
             elif c.timing == TIMING_FIXED:
                 v = c.profile.at(t, tz) or 0.0
@@ -202,24 +391,24 @@ def remaining(hours: dict[float, float], now: float, end: float) -> float:
 
 
 def backtest(load: dict[float, float], consumer_series: dict[str, dict[float, float]], timing: dict[str, str],
-             tz: tzinfo, now: float, days: int = BACKTEST_DAYS) -> dict:
+             tz: tzinfo, now: float, days: int = BACKTEST_DAYS, kinds: dict[str, str] | None = None) -> dict:
     """Replay past days: forecast the rest of the day at fixed hours with the knowledge of that moment.
 
     Compares the model with a naive mean of the last 7 days per hour (what the day card did) and
-    returns mean absolute errors of the remaining energy in kWh.
+    returns mean absolute errors of the remaining energy in kWh, plus the model's mean signed error.
     """
     names = list(consumer_series)
     base = base_series(load, [consumer_series[n] for n in names])
     total = load
     today = datetime.fromtimestamp(now, tz).replace(hour=0, minute=0, second=0, microsecond=0)
-    errors, naive_errors = [], []
+    errors, naive_errors, signed = [], [], []
     for d in range(days, 0, -1):
         day = today - timedelta(days=d)
         day_start = day.timestamp()
         day_end = (day + timedelta(days=1)).timestamp()
         bp = learn_profile(base, tz, day_start)
-        cons = [Consumer(n, timing.get(n, TIMING_FIXED), learn_profile(consumer_series[n], tz, day_start))
-                for n in names]
+        cons = [learned_consumer(n, timing.get(n, TIMING_FIXED), (kinds or {}).get(n, KIND_PROFILE),
+                                 consumer_series[n], tz, day_start) for n in names]
         naive = _naive_profile(total, tz, day_start)
         for issue_hour in BACKTEST_ISSUE_HOURS:
             issue = day.replace(hour=issue_hour).timestamp()
@@ -228,17 +417,33 @@ def backtest(load: dict[float, float], consumer_series: dict[str, dict[float, fl
                 continue
             actual = sum(actual_hours)
             k = correction(base, bp, tz, issue)
+            for c in cons:
+                c.runs_today = runs_since({t: w for t, w in consumer_series[c.name].items() if day_start <= t < issue}, day_start)
             fc = forecast(bp, cons, tz, issue, day_end, k)
             if len(fc.hours) < len(actual_hours):
                 continue
             errors.append(abs(remaining(fc.hours, issue, day_end) - actual))
+            signed.append(remaining(fc.hours, issue, day_end) - actual)
             nv = [naive.get(local_hour(t, tz)) for t in _hours(issue, day_end)]
             if all(v is not None for v in nv):
                 naive_errors.append(abs(sum(nv) - actual))
     def mae(e: list[float]) -> float | None:
         return round(sum(e) / len(e) / 1000, 3) if e else None
+    # the median profile minimises the absolute error, but misses rare runs completely; the bias shows
+    # whether the energy over many days comes out right, which matters for the battery
     return {"days": days, "cases": len(errors), "mae_kwh": mae(errors), "naive_mae_kwh": mae(naive_errors),
+            "bias_kwh": round(sum(signed) / len(signed) / 1000, 3) if signed else None,
             "issue_hours": list(BACKTEST_ISSUE_HOURS)}
+
+
+def learned_consumer(name: str, timing: str, kind: str, series: dict[float, float], tz: tzinfo, until: float) -> Consumer:
+    """A consumer with its profile and, for fixed programs and sessions, the model of its kind."""
+    c = Consumer(name, timing, learn_profile(series, tz, until), kind)
+    if timing == TIMING_FIXED and kind == KIND_PROGRAM:
+        c.program = learn_program(series, tz, until)
+    elif timing == TIMING_FIXED and kind == KIND_SESSION:
+        c.session = learn_session(series, tz, until)
+    return c
 
 
 def _hours(start: float, end: float) -> list[float]:

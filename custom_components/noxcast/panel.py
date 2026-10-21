@@ -210,6 +210,8 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
             "house_load": coordinator.house_load,
             "profile": profile.as_dict() if profile else None,
             "consumers": [{"id": sid, "name": c.name, "timing": c.timing, "sensor": c.sensor or getattr(c, "energy", None),
+                           "kind": getattr(c, "kind", "profile"),
+                           "model": _model_summary(coordinator, sid, getattr(c, "kind", "profile")),
                            "profile": coordinator.consumer_profiles[sid].as_dict()
                            if sid in coordinator.consumer_profiles else None}
                           for sid, c in coordinator.consumers.items()],
@@ -223,6 +225,21 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
         })
     connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
                                        "entries": entries})
+
+
+def _model_summary(coordinator, sid: str, kind: str) -> dict | None:
+    """The learned figures of a fixed program or session for the panel."""
+    m = (getattr(coordinator, "consumer_models", {}) or {}).get(sid, {}).get(kind)
+    if m is None:
+        return None
+    if kind == "program":
+        per_day = {k: round(sum(v), 2) for k, v in m.starts.items()}
+        # expected mean W per local hour on a workday: start rates folded with the run's power curve
+        expected = [round(sum(m.starts["workday"][(h - i) % 24] * w for i, w in enumerate(m.shape)), 1) for h in range(24)]
+        return {"runs": m.runs, "per_day": per_day, "runs_max": m.runs_max, "energy_wh": round(sum(m.shape)),
+                "hours": len(m.shape), "expected": expected}
+    return {"power": m.power, "p_on": m.p_on, "remaining": m.remaining,
+            "expected": [round((p or 0) * m.power, 1) for p in m.p_on["workday"]]}
 
 
 DIAG_DAYS = 30

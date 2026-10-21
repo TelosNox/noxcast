@@ -29,6 +29,7 @@ from .const import (
 )
 from . import archive as fc_archive
 from . import band as bd
+from . import events as ev
 from . import battery as bt
 from . import arraycheck as ac
 from . import load as lf
@@ -152,6 +153,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.consumer_profiles: dict[str, lf.Profile] = {}
         self.run_profiles: dict[str, dict] = {}      # learned run of flexible consumers: power_w, minutes
         self.consumer_models: dict[str, dict] = {}   # learned program and session model per consumer
+        self.load_events: dict | None = None         # recurring device runs in the house load (suggestions)
         self.band: dict | None = None                # learned forecast uncertainty (band.learn_band)
         self.load_backtest: dict | None = None
         self.learned: dict[str, LearnedArray] = {}
@@ -189,6 +191,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                           if sid in self.consumers}
                 self.load_backtest = load.get("backtest")
                 self.run_profiles = {sid: r for sid, r in (load.get("runs") or {}).items() if sid in self.consumers}
+                self.load_events = load.get("events")
                 self.consumer_models = {sid: _models_from_dict(m) for sid, m in (load.get("models") or {}).items()
                                         if sid in self.consumers}
             if stored.get("last_learning"):
@@ -276,7 +279,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
                      "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
                      "backtest": self.load_backtest, "runs": self.run_profiles,
-                     "models": {sid: {k: m.as_dict() for k, m in ms.items() if m} for sid, ms in self.consumer_models.items()}}
+                     "models": {sid: {k: m.as_dict() for k, m in ms.items() if m} for sid, ms in self.consumer_models.items()},
+                     "events": self.load_events}
             if self.load_profile else None,
             "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
@@ -401,6 +405,21 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 runs[sid] = {"power_w": run.power_w, "minutes": run.minutes}
         self.run_profiles = runs
         _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
+        await self._async_learn_events(now)
+
+    async def _async_learn_events(self, now: datetime) -> None:
+        """Recurring device runs in the 5-minute house load (the recorder keeps about ten days)."""
+        try:
+            series = await self._async_load_series(now - timedelta(days=ev.DAYS), "5minute")
+        except Exception as err:  # noqa: BLE001 – only the suggestions are missing
+            _LOGGER.debug("5-minute statistics unavailable: %s", err)
+            return
+        load = series.get(self.house_load, {})
+        # energy sensors give Wh per 5 minutes, not mean W
+        consumers = [{t: v * (3600 / ev.SLOT if not c.sensor else 1.0) for t, v in series.get(c.series_id, {}).items()}
+                     for c in self.consumers.values()]
+        tz = dt_util.get_default_time_zone()
+        self.load_events = await self.hass.async_add_executor_job(ev.suggestions, load, consumers, tz) if load else None
 
     async def _async_day_types(self, start: datetime, end: datetime) -> dict:
         """Day type per local date from the history of the day-type entity; empty if there is none."""

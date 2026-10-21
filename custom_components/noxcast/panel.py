@@ -180,6 +180,7 @@ def accuracy_days(archive: dict, site) -> list[dict]:
                 "forecast": h.get("forecast", {}), "actual": h.get("actual"),
                 "alt": {name: a.get("forecast", {}) for name, a in h.get("alt", {}).items()},
                 "curtailed": bool(h.get("curtailed")),
+                "sat_ghi": h.get("sat_ghi"), "measured": h.get("measured"),
             })
         days.append({"date": key, "issued": day.get("issued"), "hours": hours})
     return days

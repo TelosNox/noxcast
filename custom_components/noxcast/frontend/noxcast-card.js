@@ -21,7 +21,7 @@
 // Tapping PV, grid, home or battery opens the entity's more-info dialog.
 
 const TEXT = {
-  de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
+  de: { upTo: "bis", pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
     refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
@@ -29,7 +29,7 @@ const TEXT = {
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
-  en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
+  en: { upTo: "up to", pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
     refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
@@ -493,13 +493,29 @@ class NoxcastCard extends HTMLElement {
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
-    // one lane per array: shade always, reflection where it adds something
+    // one lane per array: shade always, reflection where it adds something. The colour strength follows,
+    // hour by hour, the share the effect takes from (or adds to) what the array could give: pale = a little,
+    // full colour = half of it or more
     const Ly = Hp + 6, Lh = 9;
+    const strength = (share) => 0.22 + 0.78 * Math.min(1, Math.max(0, share) / 0.5);
+    let gradients = "";
     const lanes = arrays.map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
-      const fx = arr.periods.filter((p) => p.end > t0 && p.start < t1).map((p) => {
-        const title = `${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${p.type === "shade" ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}`;
-        return `<rect x="${x(p.start).toFixed(1)}" y="${ly + 1}" width="${Math.max(2, x(p.end) - x(p.start)).toFixed(1)}" height="${Lh - 2}" rx="2" fill="${p.type === "shade" ? P.shade : P.refl}"><title>${this._esc(title)}</title></rect>`;
+      const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
+      const fcA = new Map((arr.forecast && arr.forecast.length ? arr.forecast : arr.morning) || []);
+      const fx = arr.periods.filter((p) => p.end > t0 && p.start < t1).map((p, j) => {
+        const shade = p.type === "shade", color = shade ? P.shade : P.refl, eff = shade ? lossA : gainA;
+        const shares = [];
+        for (let h = Math.floor(p.start / H) * H; h < p.end; h += H) {
+          const e = eff.get(h) || 0, base = (fcA.get(h) || 0) + (shade ? e : -e);
+          shares.push([h, base > 1 ? e / base : 0]);
+        }
+        const peak = shares.reduce((a, [, v]) => Math.max(a, v), 0);
+        const id = `nx-fx-${i}-${j}`, x0 = x(p.start), x1 = Math.max(x0 + 2, x(p.end));
+        gradients += `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x0.toFixed(1)}" x2="${x1.toFixed(1)}" y1="0" y2="0">${
+          shares.map(([h, v]) => `<stop offset="${Math.max(0, Math.min(1, (x(h + H / 2) - x0) / (x1 - x0 || 1))).toFixed(3)}" stop-color="${color}" stop-opacity="${strength(v).toFixed(2)}"></stop>`).join("")}</linearGradient>`;
+        const title = `${shade ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${shade ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}${peak > 0 ? ` · ${t.upTo} ${Math.round(peak * 100)} %` : ""}`;
+        return `<rect x="${x0.toFixed(1)}" y="${ly + 1}" width="${(x1 - x0).toFixed(1)}" height="${Lh - 2}" rx="2" fill="url(#${id})"><title>${this._esc(title)}</title></rect>`;
       }).join("");
       return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
         <text x="${X1 - 2}" y="${ly + Lh - 1}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)" stroke="var(--card-background-color, #fff)" stroke-width="3" paint-order="stroke">${this._esc(arr.label)}</text>`;
@@ -574,6 +590,7 @@ class NoxcastCard extends HTMLElement {
     const svg = `<svg viewBox="0 0 ${W} ${bottom}" role="img" aria-label="${t.pv}, ${t.load}, ${t.soc}">
       <defs>
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
+        ${gradients}
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
       ${svgPv}${lanes}${batSvg}

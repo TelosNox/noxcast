@@ -113,7 +113,10 @@ th { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
   animation: nx-orbit 18s ease-in-out infinite alternate; }
 @keyframes nx-dash { to { stroke-dashoffset: -100; } }
 @keyframes nx-orbit { from { offset-distance: 8%; } to { offset-distance: 92%; } }
-@media (max-width: 640px) { .orbit { display: none; } .hero { padding-top: 10px; } }
+@media (max-width: 640px) {
+  .orbit { display: none; } .hero { padding: 6px 2px 14px; }
+  .hero h1 { font-size: 26px; } .hero p { font-size: 13px; margin-top: 4px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

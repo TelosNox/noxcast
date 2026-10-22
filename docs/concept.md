@@ -51,10 +51,9 @@ the weather enters first and every later step works on its result:
 
 Module output drops with cell temperature, and cell temperature depends on air temperature,
 irradiance (heating) and wind (cooling) – and on mounting/ventilation, which differs strongly
-between e.g. a freely hanging balcony array and modules close to a roof. Instead of asking for a
-mounting type or a datasheet coefficient, Noxcast learns the loss directly:
+between e.g. a freely hanging balcony array and modules close to a roof:
 
-    T_cell = T_air + 30 K · irradiance on the plane / 1000 W/m²
+    T_cell = T_air + heating · irradiance on the plane / 1000 W/m²
     temperature factor = 1 + a · (T_cell − 25 °C)
 
 Only the coefficient a is learned: per 5 K cell-temperature bin the upper envelope (90th
@@ -67,10 +66,18 @@ satellite-confirmed clear hours: in a first installation, learning over all hour
 satellite filter the typical value is used. An optional datasheet value per array replaces both
 and is recommended: cell temperature rises with irradiance, so
 learning over cell-temperature bins also picks up irradiance-dependent model errors (geometry,
-diffuse model, low-light behaviour). Heating is not identifiable even with a fixed coefficient
-(estimates ran into 0 K and 70 K for two arrays), so it keeps a fixed typical value;
-wind is not used. Air temperature comes from the weather forecast (15 °C if missing); for
-learning from history it comes from the reanalysis archive.
+diffuse model, low-light behaviour).
+
+The heating is set per array (default 30 K, free behind). Typical values: balcony or rack
+about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K (PVsyst uses
+U = 29 / 20 / 15 W/m²K for free, semi-integrated and insulated mounting). On steady clear hours of
+one installation the balcony fitted 30 K, while glass-glass full-black modules close to dark roof
+tiles needed about 50 K: with 30 K the roof's output fell with irradiance and rose by about
+1.2 % per m/s of wind, both signs of a hotter module, and the excess showed up as a direction
+factor below 1 at near-normal incidence. Learning the heating automatically was tried and is not
+robust: halves of the same data gave different values, and seasonal effects (air temperature,
+haze) correlate with irradiance. Wind is not used. Air temperature comes from the weather forecast
+(15 °C if missing); for learning from history it comes from the reanalysis archive.
 
 ### Optional: satellite irradiance for learning
 
@@ -92,6 +99,17 @@ Consequences:
   90th percentile over all hours, so coverage does not drop.
 - **Regressions over many hours** (sky view, temperature loss) may use satellite irradiance
   directly, because hourly errors are random and average out.
+- **Steady hours only** for efficiency, direction factor, reflection and the clear-hour median per
+  shading cell, when the power sensors' hourly minimum and maximum are known (long-term
+  statistics keep them): every sensor within ±15 % of its hourly mean. A 5 km satellite pixel
+  called many hours clear while clouds passed over the installation; on one installation only
+  a quarter to a third of the "clear" hours were steady. The others carried cloud-edge peaks cut at the
+  inverter's 500 W input limit, restarts and dropouts, and they spread the direction factor to
+  0.97–1.15 and pulled the efficiency median down by 2.5 % on the balcony. With steady hours the
+  direction factor stayed within about ±5 % and the balcony's daily hindcast error dropped from
+  5.8 % to 5.4 % (bias −2.2 % → +0.8 %); the roof stayed at 5.8 %. Hours with a moving shadow edge
+  are not steady either; their cells keep the 90th percentile over all hours. With fewer than 30
+  steady clear hours (new installation, sensors without statistics) all clear hours are used.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.
@@ -135,8 +153,8 @@ direction factor is reported as a key figure.
 Two modules of the same array that deliver equally at a sun position rule out partial shade
 there; diverging modules confirm it. The roof analysis showed exactly that: the wall in the east
 shades one module more than the other, while the reduced output at high south-west sun was equal
-on both modules and is therefore no shade. Using per-module sensors as shade evidence is a later
-step.
+on both modules and is therefore no shade – it turned out to be module heat (see Temperature).
+Using per-module sensors as shade evidence is a later step.
 
 ### Sky view
 
@@ -222,6 +240,9 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   plateau and applied as a cap in the forecast).
 - Snow: zero output under clear sky and frost.
 - Outages: `unavailable`, all-zero days, incomplete hours.
+- Unsteady hours: hourly minimum or maximum of a power sensor more than 15 % from its mean
+  (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are left out of
+  efficiency, direction factor and reflection.
 - Time reference: an hourly mean belongs to the sun position at the middle of the hour.
 
 ## Outputs

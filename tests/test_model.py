@@ -269,3 +269,72 @@ def test_reflection_is_learned_where_the_module_gets_little_beam():
     assert model.reflection_factor(learned, 100, 30) == 0.0
     assert all(v >= 0 for v in learned.reflection.values())
     assert max(learned.direction.values()) < 1.1             # the wall is not pushed into the direction factor
+
+
+def test_steady_hours_from_hourly_min_and_max():
+    mean = {0.0: 400.0, 3600.0: 400.0, 7200.0: 0.0, 10800.0: 400.0}
+    low = {0.0: 380.0, 3600.0: 120.0, 7200.0: 0.0, 10800.0: 390.0}
+    high = {0.0: 420.0, 3600.0: 500.0, 7200.0: 0.0, 10800.0: 405.0}
+    restart = ({0.0: 400.0, 10800.0: 400.0}, {0.0: 390.0, 10800.0: 0.0}, {0.0: 410.0, 10800.0: 410.0})
+    assert model.steady_hours([(mean, low, high)]) == {0.0, 10800.0}
+    assert model.steady_hours([(mean, low, high), restart]) == {0.0}     # every sensor must be steady
+    assert model.steady_hours([]) == set()
+
+
+def make_patchy_clear_samples(days: int = 200, share: float = 0.65):
+    """Clear days by satellite; in most hours clouds still pass over the installation (not steady)."""
+    rng = random.Random(4)
+    samples, sat, steady = [], {}, set()
+    for d in range(days):
+        for h in range(24):
+            t = START + 60 * 86400 + d * 86400 + h * 3600
+            dni_extra = solar.extra_radiation(t + 1800)
+            power = ghi_sum = 0.0
+            for i in range(model.SUBSTEPS):
+                sun = solar.sun_position(SITE, t + (i + 0.5) * 3600 / model.SUBSTEPS)
+                if sun.elevation <= 0:
+                    continue
+                ghi = solar.clearsky_simplified_solis(sun.elevation, SITE.pressure, dni_extra)[0]
+                dni, dhi = solar.erbs(ghi, sun.zenith, dni_extra)
+                beam, diff = solar.plane_of_array(GEO.tilt, GEO.azimuth, sun, dni, dhi, ghi, dni_extra)
+                power += GEO.peak_w * EFF * (beam + diff) / 1000
+                ghi_sum += ghi
+            power /= model.SUBSTEPS
+            if power > 0 and rng.random() < share:
+                power *= rng.uniform(0.5, 0.9)
+            elif power > 0:
+                steady.add(t)
+            samples.append((t, power))
+            sat[t] = ghi_sum / model.SUBSTEPS
+    return samples, sat, steady
+
+
+def test_steady_filter_ignores_clear_hours_with_passing_clouds():
+    samples, sat, steady = make_patchy_clear_samples()
+    now = START + 260 * 86400
+    noisy = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat)
+    calm = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat, steady=steady)
+    clean = model.learn(SITE, GEO, [(t, p) for t, p in samples if t in steady or p == 0], now=now, satellite_ghi=sat)
+    assert not noisy.steady_filter and calm.steady_filter
+    assert noisy.efficiency < EFF - 0.05                      # passing clouds pull the median down
+    assert abs(calm.efficiency - EFF) < 0.02
+    assert abs(calm.efficiency - clean.efficiency) < 0.005    # as if the cloudy hours were not there
+    shared = [k for k in calm.direction if k in clean.direction]
+    assert len(shared) >= 10 and max(abs(calm.direction[k] - clean.direction[k]) for k in shared) < 0.01
+
+
+def test_steady_filter_needs_enough_hours():
+    samples, sat, steady = make_patchy_clear_samples(days=60)
+    few = set(sorted(steady)[:model.MIN_STEADY_HOURS - 1])
+    learned = model.learn(SITE, GEO, samples, now=START + 120 * 86400, satellite_ghi=sat, steady=few)
+    assert not learned.steady_filter
+
+
+def test_heating_depends_on_the_mounting():
+    learned = model.LearnedArray(efficiency=0.9, temp_coeff=-0.004)
+    hour = [model.WeatherHour(START + 170 * 86400 + 11 * 3600, 800.0, temp=30.0)]
+    roof = model.ArrayGeometry(GEO.tilt, GEO.azimuth, GEO.peak_w, heating=50.0)
+    free_wh = model.forecast(SITE, GEO, learned, hour)[hour[0].start]
+    roof_wh = model.forecast(SITE, roof, learned, hour)[hour[0].start]
+    assert 0.9 < roof_wh / free_wh < 0.99                     # 20 K hotter at the plane irradiance
+    assert model.temperature_factor(-0.004, 25.0, 0.0, heating=50.0) == 1.0

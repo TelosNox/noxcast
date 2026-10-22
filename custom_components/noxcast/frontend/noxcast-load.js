@@ -5,7 +5,7 @@ const LOAD_TEXT = {
   de: {
     noLoad: "Die Lastprognose ist nicht eingerichtet. In der Noxcast-Konfiguration den Hausverbrauch-Sensor eintragen und Verbraucher mit eigenem Sensor hinzufügen.",
     notLearned: "Das Lastprofil wird beim nächsten Lernlauf erstellt.",
-    restToday: "Last Rest heute", tomorrow: "Last morgen", correction: "Korrektur jetzt", days: "Tage Daten",
+    restToday: "Last Rest heute", tomorrow: "Last morgen", correction: "Korrektur jetzt", sustained: "Dauerlast", sustainedSince: (h) => `seit ${h}`, days: "Tage Daten",
     backtest: "Rückrechnung", model: "Modell", naive: "7-Tage-Mittel", better: "besser", worse: "schlechter", cases: "Fälle",
     forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde, Programme und Sitzungen erwartet)",
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
@@ -19,13 +19,13 @@ const LOAD_TEXT = {
     programInfo: (perDay, max, kwh, h) => `Ø ${perDay} Läufe/Tag, höchstens ${max} · ${kwh} kWh in ${h} h je Lauf`,
     sessionInfo: (w, span) => `${w} W wenn an${span ? ` · meist an ${span}` : ""}`, noConsumers: "Keine Verbraucher angelegt. Alles zählt als Grundlast.",
     flexNote: "Flexible Verbraucher zählen nur, solange sie laufen; im Profil sind sie deshalb nicht enthalten.",
-    help: "Grundlast = Hausverbrauch minus aller Verbraucher. Die Korrektur vergleicht die letzten Stunden mit dem Profil und klingt über die nächsten Stunden auf 1 ab. Die Rückrechnung prognostiziert die letzten 14 Tage um 6, 12 und 18 Uhr mit dem damaligen Wissen und vergleicht den Fehler der Restlast mit einem einfachen 7-Tage-Mittel. Der Bias zeigt, ob die Energie im Mittel stimmt: Ein Programm, das nur an manchen Tagen läuft, verfehlt der Median ganz; als Programm erfasst, geht es mit seiner Häufigkeit ein.",
+    help: "Grundlast = Hausverbrauch minus aller Verbraucher. Die Korrektur vergleicht die letzten Stunden mit dem Profil und klingt über die nächsten Stunden auf 1 ab. Liegt dagegen die Untergrenze der Last (das Stundenminimum) seit 3 Stunden, ab 14 Uhr seit 4 Stunden, deutlich über ihrem Profil, gilt der Abstand als Dauerlast (etwa eine Klimaanlage) und wird jeder restlichen Stunde des Tages zugeschlagen; er wird mit jeder Aktualisierung neu gemessen. Die Rückrechnung prognostiziert die letzten 14 Tage um 6, 12 und 18 Uhr mit dem damaligen Wissen und vergleicht den Fehler der Restlast mit einem einfachen 7-Tage-Mittel. Der Bias zeigt, ob die Energie im Mittel stimmt: Ein Programm, das nur an manchen Tagen läuft, verfehlt der Median ganz; als Programm erfasst, geht es mit seiner Häufigkeit ein.",
     kwh: "kWh", now: "jetzt", today: "heute",
   },
   en: {
     noLoad: "The load forecast is not set up. Set the house load sensor in the Noxcast configuration and add consumers with their own sensor.",
     notLearned: "The load profile is created by the next learning run.",
-    restToday: "Load rest of today", tomorrow: "Load tomorrow", correction: "Correction now", days: "days of data",
+    restToday: "Load rest of today", tomorrow: "Load tomorrow", correction: "Correction now", sustained: "Sustained load", sustainedSince: (h) => `since ${h}`, days: "days of data",
     backtest: "Backtest", model: "Model", naive: "7-day mean", better: "better", worse: "worse", cases: "cases",
     forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour, programs and sessions expected)",
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
@@ -39,7 +39,7 @@ const LOAD_TEXT = {
     programInfo: (perDay, max, kwh, h) => `avg ${perDay} runs/day, at most ${max} · ${kwh} kWh in ${h} h per run`,
     sessionInfo: (w, span) => `${w} W when on${span ? ` · mostly on ${span}` : ""}`, noConsumers: "No consumers added. Everything counts as base load.",
     flexNote: "Flexible consumers only count while they run, so they are not part of the profile.",
-    help: "Base load = house load minus all consumers. The correction compares the last hours with the profile and decays to 1 over the next hours. The backtest forecasts the last 14 days at 6, 12 and 18 o'clock with the knowledge of that moment and compares the error of the remaining load with a simple 7-day mean. The bias shows whether the energy is right on average: the median misses a program that only runs on some days entirely; set up as a program it counts with its frequency.",
+    help: "Base load = house load minus all consumers. The correction compares the last hours with the profile and decays to 1 over the next hours. If instead the floor of the load (the hourly minimum) has been clearly above its profile for 3 hours, from 2 pm on for 4 hours, the difference counts as a sustained load (air conditioning, say) and is added to every remaining hour; it is measured anew with every update. The backtest forecasts the last 14 days at 6, 12 and 18 o'clock with the knowledge of that moment and compares the error of the remaining load with a simple 7-day mean. The bias shows whether the energy is right on average: the median misses a program that only runs on some days entirely; set up as a program it counts with its frequency.",
     kwh: "kWh", now: "now", today: "today",
   },
 };
@@ -129,6 +129,7 @@ class NoxcastLoad extends HTMLElement {
       [t.restToday, `${this._kwh(this._sum(hours, now, todayEnd, now))} ${t.kwh}`],
       [t.tomorrow, `${this._kwh(this._sum(hours, tomA, tomB, now))} ${t.kwh}`],
       [t.correction, e.forecast ? `× ${this._num(e.forecast.k, 2)}` : "–"],
+      ...(e.forecast && e.forecast.sustained > 0 ? [[t.sustained, `+${Math.round(e.forecast.sustained)} W${e.forecast.sustained_since ? ` <span class="muted small">${t.sustainedSince(this._hm(e.forecast.sustained_since))}</span>` : ""}`]] : []),
       [t.days, String(e.profile.days || 0)],
     ].map(([k, v]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span></div>`).join("");
     const btFig = bt.mae_kwh == null ? "" : `<div class="fig"><span class="muted small">${t.backtest} (${bt.cases} ${t.cases})</span>

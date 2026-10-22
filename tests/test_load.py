@@ -56,6 +56,41 @@ def test_correction_needs_two_hours():
     assert lf.correction({now - H: 400.0}, p, UTC, now) == 1.0
 
 
+def test_sustained_load_needs_a_raised_floor_for_hours():
+    until = MONDAY + 28 * 86400
+    fp = lf.learn_profile(days(28, lambda d, h: 150.0), UTC, until)
+    now = until + 12 * H + 600
+    hour = now - now % H
+    hot = {hour - i * H: 850.0 for i in range(1, 4)}
+    hot[hour - 2 * H] = 0.0                              # one dropout does not end it (median of 3)
+    hot[hour - 4 * H] = 700.0
+    w, since = lf.sustained(hot, fp, UTC, now)
+    assert w == 700.0 and since == hour - 4 * H
+    short = {hour - H: 900.0, hour - 2 * H: 150.0, hour - 3 * H: 150.0}   # an event: floor raised one hour
+    assert lf.sustained(short, fp, UTC, now) == (0.0, None)
+    small = {hour - i * H: 280.0 for i in range(1, 4)}  # below max(150 W, 30 %)
+    assert lf.sustained(small, fp, UTC, now) == (0.0, None)
+
+
+def test_sustained_load_in_the_afternoon_needs_four_hours():
+    until = MONDAY + 28 * 86400
+    fp = lf.learn_profile(days(28, lambda d, h: 150.0), UTC, until)
+    now = until + 16 * H + 600
+    hour = now - now % H
+    three = {hour - i * H: 900.0 for i in range(1, 4)}
+    assert lf.sustained(three, fp, UTC, now) == (0.0, None)         # the fourth hour is unknown
+    three[hour - 4 * H] = 150.0
+    assert lf.sustained(three, fp, UTC, now)[0] == 750.0           # median of four: 3 of 4 raised
+
+
+def test_sustained_load_is_added_flat_to_the_remaining_hours():
+    until = MONDAY + 28 * 86400
+    base = lf.learn_profile(days(28, lambda d, h: 200.0), UTC, until)
+    now = until + 12 * H + 600
+    fc = lf.forecast(base, [], UTC, now, until + 24 * H, 1.0, None, (500.0, now - 3 * H))
+    assert fc.base[until + 23 * H] == 700.0 and fc.sustained == 500.0 and fc.sustained_since == now - 3 * H
+
+
 def test_flexible_consumer_only_counts_while_running():
     end_learn = MONDAY + 28 * 86400
     base = lf.learn_profile(days(28, lambda d, h: 200.0), UTC, end_learn)

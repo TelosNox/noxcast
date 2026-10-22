@@ -355,6 +355,8 @@ class LoadSensor(NoxcastEntity, SensorEntity):
             "base": day_sum(fc.base),
             "consumers": {names.get(sid, sid): day_sum(series) for sid, series in fc.consumers.items()},
             "correction": fc.k if self._offset == 0 else None,
+            "sustained_w": fc.sustained if self._offset == 0 else None,
+            "sustained_since": _iso(fc.sustained_since) if self._offset == 0 else None,
             "profile_days": profile.days if profile else 0,
             "backtest": self.coordinator.load_backtest,
         }

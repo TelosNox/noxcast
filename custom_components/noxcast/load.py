@@ -11,6 +11,12 @@ on-probability per hour and, while on, the learned remaining duration for that t
 "regulated" (air conditioning, heat pump) a hinge of daily energy against the daily mean outside
 temperature, spread over the day by its mean hourly shape.
 Flexible consumers only count while they run, since the forecast is meant to choose their moment.
+
+Short-term deviations come in two kinds. Events (cooking, a washer heating) lift the hourly mean but
+not the floor of the load, since they pulse or end: the correction factor k follows them and fades.
+A sustained load (air conditioning on a hot day) lifts the floor, the hourly minimum, for hours: once
+the floor of the last hours stays above its learned profile, the difference is added flat to every
+remaining hour. It is recomputed with every update, so it grows, shrinks or ends with the measurement.
 """
 from __future__ import annotations
 
@@ -25,6 +31,11 @@ MIN_SAMPLES = 3              # values a cell needs; otherwise the profile over a
 K_HOURS = 4                  # hours compared for the short-term correction
 K_MIN, K_MAX = 0.35, 1.3     # clamp of the correction factor
 K_DECAY_H = 2.0              # e-folding time of the correction towards 1 (half-life ~1.4 h)
+SUSTAINED_HOURS = 3          # floor hours compared for a sustained load (their median, so one hour may dip)
+SUSTAINED_HOURS_LATE = 4     # from SUSTAINED_LATE_HOUR on: an afternoon of cooking must not count as sustained
+SUSTAINED_LATE_HOUR = 14
+SUSTAINED_MIN_W = 150.0      # a raised floor counts above max(this, SUSTAINED_REL × profile floor)
+SUSTAINED_REL = 0.3
 BACKTEST_DAYS = 14
 BACKTEST_ISSUE_HOURS = (6, 12, 18)
 WORKDAY, WEEKEND = "workday", "weekend"
@@ -177,6 +188,29 @@ def k_at(k: float, now: float, t: float) -> float:
     """Correction for hour t: the current trend for the next hours, the profile further ahead."""
     dist = max(0.0, (t + H / 2 - now) / H)
     return 1 + (k - 1) * math.exp(-dist / K_DECAY_H)
+
+
+def sustained(floor: dict[float, float], floor_profile: Profile, tz: tzinfo, now: float) -> tuple[float, float | None]:
+    """Sustained extra load in W and since when it lasts, from the hourly floors of the last full hours.
+
+    floor: base load built from the hourly minimum of the house load; floor_profile: its learned
+    median per hour. The median of the last hours against the median of their profile values must
+    exceed the threshold; single hours at 0 W (a dropout of the sensor) do not end it.
+    """
+    hour = now - now % H
+    n = SUSTAINED_HOURS_LATE if local_hour(now, tz) >= SUSTAINED_LATE_HOUR else SUSTAINED_HOURS
+    hours = [hour - i * H for i in range(1, n + 1)]
+    refs = [floor_profile.at(t, tz) for t in hours]
+    if any(t not in floor for t in hours) or any(r is None for r in refs):
+        return 0.0, None
+    actual, expected = median(floor[t] for t in hours), median(refs)
+    delta = actual - expected
+    if delta <= max(SUSTAINED_MIN_W, SUSTAINED_REL * expected):
+        return 0.0, None
+    since, t = hours[-1], hours[-1] - H
+    while t in floor and (r := floor_profile.at(t, tz)) is not None and floor[t] - r > max(SUSTAINED_MIN_W, SUSTAINED_REL * r):
+        since, t = t, t - H
+    return round(delta, 1), since
 
 
 def blocks(series: dict[float, float], threshold: float = ON_W) -> list[list[tuple[float, float]]]:
@@ -489,15 +523,18 @@ class LoadForecast:
     base: dict[float, float]
     consumers: dict[str, dict[float, float]]
     k: float
+    sustained: float = 0.0                 # W added to every hour of the base load (see sustained())
+    sustained_since: float | None = None
 
 
 def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: float, end: float, k: float,
-             running: dict[str, Run] | None = None) -> LoadForecast:
+             running: dict[str, Run] | None = None, sustained: tuple[float, float | None] = (0.0, None)) -> LoadForecast:
     """Hourly load from the running hour until `end`; values are mean W of the part from now on.
 
     running: consumers running now. A program with a known remaining time counts with its power
     until it ends; otherwise a run counts for the running hour only. Fixed consumers add what their
     kind expects (profile, program starts still to come, session), flexible ones count zero.
+    sustained: (W, since) from sustained(), added to the base load of every hour.
     """
     running = running or {}
     hours: dict[float, float] = {}
@@ -518,7 +555,7 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
     while t < end:
         b = base_profile.at(t, tz)
         if b is not None:
-            base[t] = round(b * k_at(k, now, t), 1)
+            base[t] = round(b * k_at(k, now, t) + sustained[0], 1)
         for c in consumers:
             run = running.get(c.name)
             v = run_value(run, now, t) if run else None
@@ -534,7 +571,7 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
         if t in base:
             hours[t] = round(base[t] + sum(p[t] for p in parts.values()), 1)
         t += H
-    return LoadForecast(hours, base, parts, round(k, 3))
+    return LoadForecast(hours, base, parts, round(k, 3), sustained[0], sustained[1])
 
 
 def remaining(hours: dict[float, float], now: float, end: float) -> float:

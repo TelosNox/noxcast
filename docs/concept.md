@@ -428,6 +428,13 @@ the session is observed ("on at 14:00, median 9 h left").
   the same hours, clamped (0.35 to 1.3), decaying towards 1 with the distance to the target hour
   (half-life about 1.4 h). Proven in a template prototype: a running large consumer no longer
   inflates the rest of the day, and a low night does not scale down the midday.
+- **Sustained load:** events lift the hourly mean, not the hourly minimum. When the median of
+  the base-load floor (hourly minimum, consumers subtracted) of the last 3 h – 4 h from 14:00 on,
+  so an afternoon of cooking does not count – exceeds its learned profile by more than
+  max(150 W, 30 %), the difference is added flat to every remaining hour and k is computed on top
+  of it. Recomputed with every update. Backtest on a summer with a split air conditioner
+  (108 days, no temperature input): remaining-day error at 12:00 on air-conditioning days
+  4.7 → 3.1 kWh, other days unchanged.
 - **Program:** energy per run, duration and power curve over the run (so the heating phase of a
   washer lands at the start). For `fixed` programs also the start-time distribution and runs per
   day (median and maximum, so a third run is not predicted after two). Built as an expected value:

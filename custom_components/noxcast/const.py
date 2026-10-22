@@ -12,6 +12,8 @@ WEATHER_SOURCE_ENTITY = "entity"
 WEATHER_SOURCE_OPEN_METEO = "open_meteo"
 DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
+CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
+CONF_GRID_INVERT = "grid_invert"          # the grid sensor counts export as positive
 CONF_DAY_TYPE = "day_type_entity"         # optional: entity whose state at noon is the day type (workday sensor, input_select)
 
 # consumer subentry: a device with its own power sensor, removed from the base load

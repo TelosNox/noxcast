@@ -10,14 +10,18 @@
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
-          "day_type_entity": "Day type"
+          "day_type_entity": "Day type",
+          "grid_power": "Grid power",
+          "grid_invert": "Grid sensor counts export as positive"
         },
         "data_description": {
           "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
           "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
-          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state."
+          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
+          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
+          "grid_invert": "Switch on if the grid sensor is positive while feeding in."
         }
       },
       "reconfigure": {
@@ -28,11 +32,15 @@
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
-          "day_type_entity": "Day type"
+          "day_type_entity": "Day type",
+          "grid_power": "Grid power",
+          "grid_invert": "Grid sensor counts export as positive"
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
-          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state."
+          "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
+          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
+          "grid_invert": "Switch on if the grid sensor is positive while feeding in."
         }
       }
     },

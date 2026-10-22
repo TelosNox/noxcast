@@ -75,14 +75,16 @@
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
             "valid_since": "Configuration valid since",
-            "temp_coeff": "Temperature coefficient (datasheet)"
+            "temp_coeff": "Temperature coefficient (datasheet)",
+            "heating": "Module heating"
           },
           "data_description": {
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power.",
             "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules.",
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter."
+            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
+            "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
           }
         },
         "reconfigure": {
@@ -94,10 +96,12 @@
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
             "valid_since": "Configuration valid since",
-            "temp_coeff": "Temperature coefficient (datasheet)"
+            "temp_coeff": "Temperature coefficient (datasheet)",
+            "heating": "Module heating"
           },
           "data_description": {
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter."
+            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
+            "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
           }
         }
       },

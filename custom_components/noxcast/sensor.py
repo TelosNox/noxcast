@@ -189,6 +189,7 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
         return {"samples": learned.samples, "first_sample": first, "shading_cells": len(learned.cells),
                 "temperature_learned": learned.temp_learned,
                 "temperature_source": learned.temp_source, "clear_filter": learned.clear_filter,
+                "steady_filter": learned.steady_filter,
                 "direction_factor": [min(learned.direction.values()), max(learned.direction.values())]
                 if learned.direction else None,
                 "sky_view": learned.sky_view,

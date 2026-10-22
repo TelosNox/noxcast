@@ -4,12 +4,13 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
 
 - efficiency₂₅: system efficiency at 25 °C cell temperature, learned from hours with strong
   expected output.
-- f_temp = 1 + temp_coeff · (T_cell − 25 °C), T_cell = T_air + HEATING_K · POA / 1000 W/m².
+- f_temp = 1 + temp_coeff · (T_cell − 25 °C), T_cell = T_air + heating · POA / 1000 W/m².
   The temperature coefficient comes from the datasheet. Without it, it is learned from the upper
   envelope of actual/expected per cell-temperature bin, only from satellite-confirmed clear hours,
   shrunk towards a typical value and rejected when implausible; otherwise the typical value is used.
-  Heating by irradiance and cooling by wind are not identifiable from hourly data and use a
-  fixed typical heating.
+  The heating at 1000 W/m² depends on the mounting (free behind about 30 K, close to a roof
+  clearly more) and is configured per array; hourly data do not separate it reliably from
+  seasonal effects.
 - T: beam transmission (1 = unshaded) per sun-position cell, learned from hours where direct
   light is geometrically possible. The 90th percentile per cell represents clear conditions;
   clouds and occasional curtailment fall below it. Optionally, satellite irradiance pre-selects
@@ -17,6 +18,11 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
   positions on clear hours: geometry and model errors that are not shade.
+  Efficiency, D, R and the clear-hour refinement of T use only steady hours when the power
+  sensors' hourly minimum and maximum are known: a satellite pixel can call an hour clear while
+  clouds pass over the installation, and such hours (cloud-edge peaks cut at the inverter limit,
+  restarts, dropouts) only add noise. Hours with a moving shadow edge are not steady either; their
+  cells keep the 90th percentile over all hours.
 - R: reflected light per coarse sun-position bin, relative to the direct normal irradiance: sunlit
   walls or roofs in front of the module. It does not depend on how the sun meets the module, so
   it is learned where the module itself gets little direct light; elsewhere it cannot be told
@@ -44,7 +50,7 @@ DEFAULT_EFFICIENCY = 0.9
 HALF_LIFE_DAYS = 365.0
 
 TEMP_REF = 25.0
-HEATING_K = 30.0                 # cell heating in K at 1000 W/m² on the plane
+HEATING_K = 30.0                 # cell heating in K at 1000 W/m² on the plane, free behind (default)
 DEFAULT_TEMP_COEFF = -0.0035     # per K, typical crystalline module
 TEMP_COEFF_PLAUSIBLE = (-0.005, -0.002)   # learned values outside are rejected
 TEMP_BIN_K = 5.0
@@ -54,6 +60,8 @@ FALLBACK_AIR_TEMP = 15.0         # when a forecast has no temperature
 CLEAR_KT = 0.8                   # satellite clearness index for a clear hour
 MIN_CLEAR_COVERAGE = 0.3         # use the satellite filter only if it covers this share of samples
 MIN_UNSHADED_HOURS = 20          # clear hours at unshaded positions needed for the efficiency median
+STEADY_BAND = 0.15               # steady hour: every sensor's minimum and maximum within ±15 % of its mean
+MIN_STEADY_HOURS = 30            # steady clear hours needed to learn efficiency, D and R from them alone
 SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
 SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
 SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a core within this many cells
@@ -76,6 +84,7 @@ class ArrayGeometry:
     tilt: float
     azimuth: float
     peak_w: float
+    heating: float = HEATING_K   # cell heating in K at 1000 W/m², depends on the mounting
 
 
 @dataclass(frozen=True)
@@ -100,6 +109,7 @@ class LearnedArray:
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
     clear_filter: bool = False                                 # satellite pre-filter was applied
+    steady_filter: bool = False                                # only steady hours for efficiency, D and R
     agreement: float | None = None                             # correlation satellite vs. installation
     first_sample: float | None = None
     learned_at: float | None = None
@@ -152,10 +162,27 @@ def _correlation(xs: list[float], ys: list[float]) -> float | None:
     return sxy / math.sqrt(sxx * syy) if sxx > 0 and syy > 0 else None
 
 
-def temperature_factor(temp_coeff: float, air_temp: float | None, poa_w: float) -> float:
-    """Output factor relative to 25 °C cell temperature."""
+def steady_hours(series: list[tuple[dict[float, float | None], dict[float, float | None],
+                                    dict[float, float | None]]]) -> set[float]:
+    """Hours in which every sensor stayed close to its hourly mean: [(mean, min, max) per sensor] -> hour starts.
+
+    From the hourly minimum and maximum of long-term statistics. Passing clouds, a peak cut at the
+    inverter limit, a restart or a dropout show as a minimum or maximum far from the mean.
+    """
+    if not series:
+        return set()
+    hours = set(series[0][0])
+    for mean, low, high in series:
+        hours &= {t for t, m in mean.items()
+                  if m is not None and m > 0 and low.get(t) is not None and high.get(t) is not None
+                  and low[t] >= (1 - STEADY_BAND) * m and high[t] <= (1 + STEADY_BAND) * m}
+    return hours
+
+
+def temperature_factor(temp_coeff: float, air_temp: float | None, poa_w: float, heating: float = HEATING_K) -> float:
+    """Output factor relative to 25 °C cell temperature; heating: cell heating in K at 1000 W/m²."""
     t_air = FALLBACK_AIR_TEMP if air_temp is None else air_temp
-    t_cell = t_air + HEATING_K * poa_w / 1000.0
+    t_cell = t_air + heating * poa_w / 1000.0
     return max(1.0 + temp_coeff * (t_cell - TEMP_REF), 0.5)
 
 
@@ -232,7 +259,8 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
 
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
           air_temp: dict[float, float] | None = None, satellite_ghi: dict[float, float] | None = None,
-          datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS) -> LearnedArray:
+          datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS,
+          steady: set[float] | None = None) -> LearnedArray:
     """Learn efficiency, temperature coefficient, shading map and sky view from (hour_start, mean power W) samples.
 
     air_temp: air temperature (°C) at the middle of each hour.
@@ -240,12 +268,14 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     datasheet_temp_coeff: Pmax temperature coefficient per K; used as fixed value instead of learning it.
       Learning over cell-temperature bins also picks up irradiance-dependent model errors, so a known
       datasheet value is more robust.
+    steady: hour starts in which the power stayed steady (see steady_hours); efficiency, direction
+      factor and reflection then use only those of the clear hours.
 
     The sky view needs satellite irradiance. It and the other parameters depend on each other, so
     they are learned alternately until the sky view settles.
     """
     args = dict(air_temp=air_temp, satellite_ghi=satellite_ghi, datasheet_temp_coeff=datasheet_temp_coeff,
-                half_life_days=half_life_days)
+                half_life_days=half_life_days, steady=steady)
     learned = _learn(site, geo, samples, now, sky_view=1.0, **args)
     if satellite_ghi is None:
         return learned
@@ -286,7 +316,8 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
             sky += diff - ground
         rest, sky = rest / SUBSTEPS, sky / SUBSTEPS
         temp = air_temp.get(t) if air_temp else None
-        f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view) if temp is not None else 1.0
+        f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view, geo.heating) \
+            if temp is not None else 1.0
         seen += p * 1000 / (geo.peak_w * learned.efficiency * f) - rest
         free += sky
         hours += 1
@@ -297,7 +328,8 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 
 def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
            air_temp: dict[float, float] | None, satellite_ghi: dict[float, float] | None,
-           datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float) -> LearnedArray:
+           datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float,
+           steady: set[float] | None = None) -> LearnedArray:
     rows = []
     for t, p in samples:
         beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, sky_view)
@@ -318,6 +350,12 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     basis = [r for r in with_kt if r[8] >= CLEAR_KT] if clear_filter else rows
     if len(basis) < 50:                                  # too few clear hours: fall back to all hours
         basis, clear_filter = rows, False
+    # steady hours only, when there are enough of them: the satellite may call an hour clear while
+    # clouds pass over the installation
+    calm = [r for r in basis if r[0] in steady] if clear_filter and steady is not None else []
+    steady_filter = len(calm) >= MIN_STEADY_HOURS
+    if not steady_filter:
+        calm = basis
 
     # With the satellite filter, expectations are scaled to the measured irradiance (clearness kt) and
     # medians are used: clouds are already removed, so a high percentile would only pick satellite errors.
@@ -330,7 +368,8 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     strong = [r for r in basis if exp[r[0]] > limit and r[1] / exp[r[0]] <= 1.5]
 
     # temperature coefficient from the upper envelope per cell-temperature bin
-    temp_rows = [(r[9] + HEATING_K * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6]) for r in strong if r[9] is not None]
+    temp_rows = [(r[9] + geo.heating * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6])
+                 for r in strong if r[9] is not None]
     if datasheet_temp_coeff is not None:
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
     elif clear_filter:
@@ -343,7 +382,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         temp_coeff, temp_source = 0.0, "none"
 
     def f_temp(r) -> float:
-        return temperature_factor(temp_coeff, r[9], r[2] + r[3]) if r[9] is not None else 1.0
+        return temperature_factor(temp_coeff, r[9], r[2] + r[3], geo.heating) if r[9] is not None else 1.0
 
     # efficiency at 25 °C from strong expected hours
     def eff_quantile(source, q: float) -> float:
@@ -386,11 +425,14 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         # while a high percentile over clear hours would only pick satellite errors.
         probe = LearnedArray(cells=cells)
         unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= 0.95]
+        steady_unshaded = [r for r in unshaded if r[0] in steady] if steady_filter else []
+        if len(steady_unshaded) >= MIN_UNSHADED_HOURS:
+            unshaded = steady_unshaded
         source = unshaded if len(unshaded) >= MIN_UNSHADED_HOURS else strong
         if source:
             efficiency = eff_quantile(source, 0.5)
             cells = cell_values(observe(rows, scaled=False), 0.9)
-        cells.update(cell_values(observe(basis, scaled=True), 0.5))
+        cells.update(cell_values(observe(calm, scaled=True), 0.5))
 
     cells = shape_cells(cells)
     direction: dict[str, float] = {}
@@ -400,14 +442,14 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         # map, smooth and coarse. Modelled with the measured irradiance split as in the forecast.
         probe = LearnedArray(cells=cells, sky_view=sky_view)
         parts = []                                       # (bin, plane-equivalent observed, beam, diffuse, dni)
-        for r in basis:
+        for r in calm:
             t, p, _, _, az, el = r[:6]
             if transmission(probe, az, el) < 0.999:
                 continue
             beam, diff, dni = _measured_parts(site, geo, probe, t, satellite_ghi[t])
             if dni < REFLECTION_MIN_DNI:
                 continue
-            f = temperature_factor(temp_coeff, r[9], beam + diff) if r[9] is not None else 1.0
+            f = temperature_factor(temp_coeff, r[9], beam + diff, geo.heating) if r[9] is not None else 1.0
             observed = p * 1000 / (geo.peak_w * efficiency * f)
             parts.append(((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), observed, beam, diff, dni))
 
@@ -431,7 +473,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
                            cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
-                           samples=len(rows), clear_filter=clear_filter,
+                           samples=len(rows), clear_filter=clear_filter, steady_filter=steady_filter,
                            first_sample=rows[0][0], learned_at=now)
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
@@ -617,7 +659,8 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
         beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
         poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
             learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
-        out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa) * poa / 1000)
+        out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa, geo.heating)
+                   * poa / 1000)
     return out
 
 
@@ -639,6 +682,7 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                                         sky_view=learned.sky_view)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
                 learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
-            total += geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa) * poa / 1000
+            total += geo.peak_w * learned.efficiency * temperature_factor(
+                learned.temp_coeff, wh.temp, poa, geo.heating) * poa / 1000
         out[wh.start] = total / SUBSTEPS
     return out

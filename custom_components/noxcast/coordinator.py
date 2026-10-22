@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
-    ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, CONF_HEATING, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
@@ -37,8 +37,8 @@ from . import load as lf
 from . import plan as pl
 from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
-from .model import (ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, learn,
-                    usable_samples)
+from .model import (HEATING_K, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast,
+                    learn, steady_hours, usable_samples)
 from .solar import Site
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
@@ -133,7 +133,8 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
         valid = dt_util.parse_date(d[CONF_VALID_SINCE]) if d.get(CONF_VALID_SINCE) else None
         configs[sub_id] = ArrayConfig(
             subentry_id=sub_id, name=d[CONF_NAME], sensors=tuple(d[CONF_POWER_SENSORS]),
-            geometry=ArrayGeometry(float(d[CONF_TILT]), float(d[CONF_AZIMUTH]), float(d[CONF_PEAK_POWER])),
+            geometry=ArrayGeometry(float(d[CONF_TILT]), float(d[CONF_AZIMUTH]), float(d[CONF_PEAK_POWER]),
+                                   float(d[CONF_HEATING]) if d.get(CONF_HEATING) is not None else HEATING_K),
             valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None,
             temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None)
     return configs
@@ -247,7 +248,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]
         return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since, a.temp_coeff,
-                bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False))]
+                bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False)),
+                a.geometry.heating]
 
     def _load_key(self) -> list:
         return [self.house_load, sorted([c.subentry_id, c.series_id] for c in self.consumers.values())]
@@ -324,6 +326,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         factors = await async_power_factors(self.hass, sensor_ids)
         self._factors = factors
         power = await async_hourly_statistics(self.hass, sensor_ids, start, "mean")
+        # hourly minimum and maximum tell steady hours from hours with passing clouds or dropouts
+        power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
+        power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
         soc_series = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
         soc: dict[float, float] = {}
         for series in soc_series.values():
@@ -344,15 +349,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                   for s in arr.sensors])
             samples = usable_samples(summed, soc=soc, soc_full=soc_full, exclusions=exclusions,
                                      valid_since=arr.valid_since)
+            steady = steady_hours([(power.get(s, {}), power_min.get(s, {}), power_max.get(s, {})) for s in arr.sensors])
             result = await self.hass.async_add_executor_job(functools.partial(
                 learn, self.site, arr.geometry, samples, now.timestamp(), air_temp=air_temp, satellite_ghi=satellite_ghi,
-                datasheet_temp_coeff=arr.temp_coeff))
+                datasheet_temp_coeff=arr.temp_coeff, steady=steady))
             if result.samples and not 0.5 <= result.efficiency <= 1.2:
                 _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                                 arr.name, result.efficiency)
             if result.samples:
                 await self.hass.async_add_executor_job(
-                    _explain, self.site, arr.geometry, result, samples, air_temp, satellite_ghi, now.year)
+                    _explain, self.site, arr.geometry, result, samples, air_temp, satellite_ghi, now.year, steady)
             learned[sub_id] = result
             fc_archive.add_actuals(self.forecast_archive, sub_id, summed, now.timestamp(),
                                    {t for t, v in soc.items() if v >= soc_full})
@@ -362,9 +368,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     fc_archive.add_measured, self.forecast_archive, sub_id, satellite_ghi, air_temp, predict,
                     now.timestamp())
             _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
-                         "coverage %.0f %%, %d samples, clear filter %s, agreement %s",
+                         "coverage %.0f %%, %d samples, clear filter %s, steady filter %s, agreement %s",
                          arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
-                         result.coverage * 100, result.samples, result.clear_filter, result.agreement)
+                         result.coverage * 100, result.samples, result.clear_filter, result.steady_filter,
+                         result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
         self.band = await self.hass.async_add_executor_job(
             bd.learn_band, self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi)
@@ -903,11 +910,12 @@ def _measured_forecast(site, geo, learned: LearnedArray, hours: list[tuple[float
     return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])
 
 
-def _explain(site, geo, learned: LearnedArray, samples, air_temp, satellite_ghi, year: int) -> None:
+def _explain(site, geo, learned: LearnedArray, samples, air_temp, satellite_ghi, year: int,
+             steady: set[float] | None = None) -> None:
     """Panel explanations of a learned array; a failure never stops the learning."""
     try:
         learned.months = ac.month_balance(site, geo, learned, year, air_temp)
-        learned.efficiency_months = ac.efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp)
-        learned.geometry_check = ac.check_geometry(site, geo, learned, samples, satellite_ghi, air_temp)
+        learned.efficiency_months = ac.efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+        learned.geometry_check = ac.check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Array check failed")

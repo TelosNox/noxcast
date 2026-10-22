@@ -55,6 +55,7 @@ CONF_AZIMUTH = "azimuth"
 CONF_PEAK_POWER = "peak_power"
 CONF_VALID_SINCE = "valid_since"
 CONF_TEMP_COEFF = "temp_coeff"           # datasheet Pmax temperature coefficient in %/K (optional)
+CONF_HEATING = "heating"                 # cell heating in K at 1000 W/m², depends on the mounting (optional)
 
 # options (advanced): history archives used for learning
 CONF_ARCHIVE_TEMPERATURE = "archive_temperature"

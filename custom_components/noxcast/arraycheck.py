@@ -9,7 +9,7 @@ import math
 from datetime import datetime, timezone
 
 from .model import (
-    CLEAR_KT, HEATING_K, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_hour, clearsky_profile,
+    CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_hour, clearsky_profile,
     temperature_factor, transmission,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
@@ -63,8 +63,12 @@ def month_balance(site: Site, geo: ArrayGeometry, learned: LearnedArray, year: i
 
 
 def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-          satellite_ghi: dict[float, float] | None, air_temp: dict[float, float] | None) -> list[dict]:
-    """Hours that show the plane itself: clear (by satellite, if there is one), unshaded, well lit."""
+          satellite_ghi: dict[float, float] | None, air_temp: dict[float, float] | None,
+          steady: set[float] | None = None) -> list[dict]:
+    """Hours that show the plane itself: clear (by satellite, if there is one), unshaded, well lit.
+
+    With steady hours (see model.steady_hours) only those, when there are enough of them.
+    """
     rows = []
     for t, p in samples:
         beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, learned.sky_view)
@@ -79,6 +83,10 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
         if transmission(learned, az, el) < 0.95:
             continue
         rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": (air_temp or {}).get(t)})
+    if steady is not None:
+        calm = [r for r in rows if r["t"] in steady]
+        if len(calm) >= GEOMETRY_MIN_HOURS:
+            rows = calm
     if not rows:
         return []
     best = max(r["poa"] for r in rows)
@@ -87,7 +95,8 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
 
 def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                         satellite_ghi: dict[float, float] | None = None,
-                        air_temp: dict[float, float] | None = None) -> dict[str, list]:
+                        air_temp: dict[float, float] | None = None,
+                        steady: set[float] | None = None) -> dict[str, list]:
     """Efficiency at 25 °C per calendar month: {"YYYY-MM": [efficiency, hours]}.
 
     With the satellite filter the median of clear hours, otherwise the 95th percentile of all strong
@@ -95,9 +104,9 @@ def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, s
     seasonal swing rather at model errors at low sun.
     """
     groups: dict[str, list[float]] = {}
-    for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp):
+    for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady):
         exp = geo.peak_w * r["poa"] / 1000 * (r["kt"] or 1.0)
-        f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"]) if r["temp"] is not None else 1.0
+        f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"], geo.heating) if r["temp"] is not None else 1.0
         ratio = r["p"] / (exp * f)
         if ratio <= 1.5:
             groups.setdefault(_month(r["t"]), []).append(ratio)
@@ -112,7 +121,7 @@ def _spread(ratios: list[float]) -> float:
 
 def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                    satellite_ghi: dict[float, float] | None = None,
-                   air_temp: dict[float, float] | None = None) -> dict | None:
+                   air_temp: dict[float, float] | None = None, steady: set[float] | None = None) -> dict | None:
     """Tilt and azimuth under which clear unshaded hours fit one efficiency best.
 
     With the right geometry the ratio of measured to modelled power stays the same over the day and the
@@ -123,7 +132,7 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
     """
     if satellite_ghi is None:
         return None
-    rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp)
+    rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)
     if len(rows) < GEOMETRY_MIN_HOURS:
         return None
     if len(rows) > GEOMETRY_MAX_ROWS:
@@ -150,7 +159,7 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
             poa /= SUBSTEPS
             if poa <= 0:
                 continue
-            f = temperature_factor(learned.temp_coeff, r["temp"], poa) if r["temp"] is not None else 1.0
+            f = temperature_factor(learned.temp_coeff, r["temp"], poa, geo.heating) if r["temp"] is not None else 1.0
             ratios.append(r["p"] / (geo.peak_w * poa / 1000 * r["kt"] * f))
         return _spread(ratios) if len(ratios) >= GEOMETRY_MIN_HOURS else math.inf
 

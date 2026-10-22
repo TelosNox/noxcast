@@ -203,7 +203,9 @@
             "coupling": "Coupling",
             "efficiency": "Round-trip efficiency",
             "max_charge_w": "Max. charge power",
-            "max_discharge_w": "Max. discharge power"
+            "max_discharge_w": "Max. discharge power",
+            "battery_power": "Charge / discharge power",
+            "battery_power_invert": "Power counts discharging as positive"
           },
           "data_description": {
             "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
@@ -211,7 +213,9 @@
             "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
             "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
             "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
-            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room.",
+            "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
+            "battery_power_invert": "Switch on if the power sensor is positive while discharging."
           }
         },
         "reconfigure": {
@@ -229,7 +233,9 @@
             "coupling": "Coupling",
             "efficiency": "Round-trip efficiency",
             "max_charge_w": "Max. charge power",
-            "max_discharge_w": "Max. discharge power"
+            "max_discharge_w": "Max. discharge power",
+            "battery_power": "Charge / discharge power",
+            "battery_power_invert": "Power counts discharging as positive"
           },
           "data_description": {
             "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
@@ -237,7 +243,9 @@
             "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
             "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
             "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
-            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room.",
+            "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
+            "battery_power_invert": "Switch on if the power sensor is positive while discharging."
           }
         }
       },

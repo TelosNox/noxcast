@@ -314,7 +314,11 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30
     days), learning and archive errors; every sensor Noxcast reads with role, state, state class and
     coverage; learned arrays and excluded periods.
-- Day card `custom:noxcast-card` (registered as a Lovelace resource on start): the power flow now
+- Day card `custom:noxcast-card` (registered as a Lovelace resource on start). Its sensors come from
+  the Noxcast configuration (`noxcast/card_config`: PV arrays with their sensors, house load, grid,
+  batteries with state of charge, capacity, limits and the optional charge / discharge power); the
+  card configuration only overrides parts of it and chooses what the day chart shows (battery
+  forecast, shade and reflection, P10–P90, house load). It shows the power flow now
   (PV, grid, home, batteries; inactive paths dimmed, PV to battery never through the home; lines
   have one width and the speed of the dots shows the power, so no line covers another; a charging battery takes PV before the grid; the house icon is coloured
   by its sources PV, battery and grid in proportion to their share; Home Assistant icons (battery icon by

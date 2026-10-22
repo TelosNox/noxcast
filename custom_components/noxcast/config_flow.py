@@ -24,6 +24,7 @@ from .const import (
     CONF_RUN_MINUTES, CONF_RUN_POWER,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
+    CONF_BATTERY_POWER, CONF_BATTERY_INVERT,
 )
 from .sources import (
     NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
@@ -302,6 +303,8 @@ def _battery_schema(d: dict[str, Any]) -> vol.Schema:
         (vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")), selector.TextSelector()),
         (vol.Required(CONF_SOC_SENSOR, default=d.get(CONF_SOC_SENSOR)),
          selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
+        opt(CONF_BATTERY_POWER, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
+        (vol.Optional(CONF_BATTERY_INVERT, default=d.get(CONF_BATTERY_INVERT, False)), selector.BooleanSelector()),
         (vol.Required(CONF_CAPACITY, default=d.get(CONF_CAPACITY, 5)),
          selector.NumberSelector(selector.NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWh", mode=box))),
         (vol.Required(CONF_MAX_SOC, default=d.get(CONF_MAX_SOC, 100)), selector.NumberSelector(pct)),

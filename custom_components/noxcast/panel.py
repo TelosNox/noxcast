@@ -25,6 +25,7 @@ WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
 WS_DAY = f"{DOMAIN}/day"
+WS_CARD = f"{DOMAIN}/card_config"
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -36,6 +37,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_diagnostics)
     websocket_api.async_register_command(hass, ws_battery)
     websocket_api.async_register_command(hass, ws_day)
+    websocket_api.async_register_command(hass, ws_card_config)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     from homeassistant.components import panel_custom
@@ -411,6 +413,35 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         entries.append(result)
     connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
                                        "review_days": REVIEW_DAYS, "entries": entries})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_CARD})
+@callback
+def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The sensors the day card needs, as configured in the integration; the card may override each part."""
+    from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_GRID_INVERT, CONF_MAX_SOC,
+                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
+
+    entries = hass.config_entries.async_loaded_entries(DOMAIN)
+    if not entries:
+        connection.send_result(msg["id"], None)
+        return
+    entry = entries[0]
+    c = entry.runtime_data
+    batteries = []
+    for sid, d in c.batteries.items():
+        batteries.append({k: v for k, v in {
+            "name": entry.subentries[sid].title if sid in entry.subentries else None,
+            "entity": d.get(CONF_BATTERY_POWER), "invert": bool(d.get(CONF_BATTERY_INVERT)), "soc": d.get(CONF_SOC_SENSOR),
+            "capacity": d.get(CONF_CAPACITY), "max_soc": d.get(CONF_MAX_SOC_ENTITY) or d.get(CONF_MAX_SOC),
+            "min_soc": d.get(CONF_MIN_SOC_ENTITY) or d.get(CONF_MIN_SOC), "reserve": d.get(CONF_RESERVE),
+        }.items() if v not in (None, "")})
+    connection.send_result(msg["id"], {
+        "pv": {"groups": [{"entities": list(arr.sensors), "name": arr.name, "array": arr.name} for arr in c.arrays.values()]},
+        "home": {"entity": c.house_load} if c.house_load else {},
+        "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
+        "batteries": batteries,
+    })
 
 
 def _series(hours: dict[float, float], a: float, b: float) -> list[list[float]]:

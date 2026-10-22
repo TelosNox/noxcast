@@ -203,7 +203,9 @@
             "coupling": "Kopplung",
             "efficiency": "Wirkungsgrad (Zyklus)",
             "max_charge_w": "Max. Ladeleistung",
-            "max_discharge_w": "Max. Entladeleistung"
+            "max_discharge_w": "Max. Entladeleistung",
+            "battery_power": "Lade-/Entladeleistung",
+            "battery_power_invert": "Leistung zählt Entladen positiv"
           },
           "data_description": {
             "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
@@ -211,7 +213,9 @@
             "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
             "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
             "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
-            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
+            "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
+            "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
           }
         },
         "reconfigure": {
@@ -229,7 +233,9 @@
             "coupling": "Kopplung",
             "efficiency": "Wirkungsgrad (Zyklus)",
             "max_charge_w": "Max. Ladeleistung",
-            "max_discharge_w": "Max. Entladeleistung"
+            "max_discharge_w": "Max. Entladeleistung",
+            "battery_power": "Lade-/Entladeleistung",
+            "battery_power_invert": "Leistung zählt Entladen positiv"
           },
           "data_description": {
             "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
@@ -237,7 +243,9 @@
             "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
             "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
             "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
-            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
+            "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
+            "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
           }
         }
       },

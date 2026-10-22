@@ -113,12 +113,20 @@ th { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
   animation: nx-orbit 18s ease-in-out infinite alternate; }
 @keyframes nx-dash { to { stroke-dashoffset: -100; } }
 @keyframes nx-orbit { from { offset-distance: 8%; } to { offset-distance: 92%; } }
-/* phones: smaller header; wide tables scroll sideways instead of pushing columns out of the card */
+/* phones: smaller header; every table row becomes a block: the first cell as its title, the others as
+   "column: value" lines (the labels are set by labelTables from the table head) */
 @media (max-width: 640px) {
   .orbit { display: none; } .hero { padding: 6px 2px 14px; }
   .hero h1 { font-size: 26px; } .hero p { font-size: 13px; margin-top: 4px; }
-  table { display: block; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
-  th, td { padding-left: 4px !important; padding-right: 4px !important; }
+  table, tbody, tr, td { display: block; width: 100%; box-sizing: border-box; }
+  thead { display: none; }
+  tr { padding: 8px 0; border-top: 1px solid var(--divider-color); }
+  tbody tr:first-child { border-top: 0; }
+  td { border: 0 !important; padding: 2px 0 !important; text-align: right !important; white-space: normal; overflow: hidden; }
+  td::before { content: attr(data-label); float: left; margin-right: 12px; color: var(--secondary-text-color); font-size: 12px; }
+  td:first-child { text-align: left !important; font-weight: 500; }
+  td:first-child::before { content: none; }
+  td:empty { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -135,6 +143,23 @@ export function adoptTheme(root) {
     sheet.replaceSync(CSS);
   }
   if (!root.adoptedStyleSheets.includes(sheet)) root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+  if (!observed.has(root)) {                     // label the cells of every table the section renders
+    observed.add(root);
+    new MutationObserver(() => labelTables(root)).observe(root, { childList: true, subtree: true });
+    labelTables(root);
+  }
+}
+
+const observed = new WeakSet();
+
+// each cell gets the text of its column head, shown in front of the value when rows become blocks on phones
+function labelTables(root) {
+  for (const table of root.querySelectorAll("table")) {
+    const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    for (const tr of table.querySelectorAll("tbody tr")) {
+      [...tr.children].forEach((td, i) => { if (heads[i] && td.dataset.label !== heads[i]) td.dataset.label = heads[i]; });
+    }
+  }
 }
 
 // the mark next to the brand: a sun on its arc above the horizon

@@ -32,6 +32,8 @@ CONF_RUN_MINUTES = "run_minutes"          # duration of a run (min), empty = lea
 # battery subentry: simulated against PV and the load forecast
 SUBENTRY_BATTERY = "battery"
 CONF_SOC_SENSOR = "soc_sensor"
+CONF_BATTERY_POWER = "battery_power"      # optional: charge / discharge power, > 0 = charging (for the card)
+CONF_BATTERY_INVERT = "battery_power_invert"
 CONF_CAPACITY = "capacity"                # kWh
 CONF_MAX_SOC = "max_soc"                  # % or an entity with the current limit
 CONF_MAX_SOC_ENTITY = "max_soc_entity"

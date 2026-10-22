@@ -111,6 +111,10 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     await client.send_json_auto_id({"type": "noxcast/diagnostics"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["sensors"][0]["role"] == "pv"
+    await client.send_json_auto_id({"type": "noxcast/card_config"})
+    msg = await client.receive_json()
+    assert msg["success"] and msg["result"]["pv"]["groups"][0]["name"] == "Roof"
+    assert msg["result"]["pv"]["groups"][0]["entities"] and msg["result"]["batteries"] == []
     for offset in (0, 1, -1):                                 # the day view: today, tomorrow, a past day
         await client.send_json_auto_id({"type": "noxcast/day", "offset": offset})
         msg = await client.receive_json()

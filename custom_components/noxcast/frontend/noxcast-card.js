@@ -2,6 +2,9 @@
 // battery and unused surplus. Plain custom element, no build step.
 //
 // type: custom:noxcast-card
+// Without further settings the card takes its sensors from the Noxcast configuration (PV arrays, house
+// load, grid, batteries). Each part below overrides it:
+// show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
 // pv:
 //   entity: sensor.pv_total            # optional, otherwise the sum of the groups
 //   groups:
@@ -64,15 +67,37 @@ const FLOW_PATHS = {
 class NoxcastCard extends HTMLElement {
   static getConfigElement() { return document.createElement("noxcast-card-editor"); }
 
-  static getStubConfig() {
-    return { pv: { groups: [] }, grid: { entity: "" }, home: { entity: "" }, batteries: [] };
-  }
+  static getStubConfig() { return {}; }
 
+  // sensors come from the Noxcast configuration; whatever the card config sets takes precedence
   setConfig(config) {
-    if (!config || !config.pv) throw new Error("pv is required");
-    this._config = config;
+    this._user = config || {};
+    this._config = this._merged();
     if (this._hass) this._renderAll();
   }
+
+  _merged() {
+    const u = this._user || {}, s = this._src || {};
+    const set = (o, k) => !!(o && o[k] && (!Array.isArray(o[k]) || o[k].length));
+    return { ...u,
+      pv: { ...(u.pv || {}), groups: set(u.pv, "groups") ? u.pv.groups : (s.pv && s.pv.groups) || [] },
+      home: set(u.home, "entity") ? u.home : s.home || {},
+      grid: set(u.grid, "entity") ? u.grid : s.grid || {},
+      batteries: set(u, "batteries") ? u.batteries : s.batteries || [] };
+  }
+
+  async _loadSource() {
+    try {
+      this._src = await this._hass.connection.sendMessagePromise({ type: "noxcast/card_config" });
+    } catch (err) {
+      this._src = null;                         // an older integration: the card config alone
+    }
+    this._config = this._merged();
+    this._flow = null;
+    this._renderAll();
+  }
+
+  _show(part) { return this._config[`show_${part}`] !== false; }
 
   getCardSize() { return 8; }
   getGridOptions() { return { columns: 12, min_columns: 6, rows: "auto" }; }
@@ -81,7 +106,7 @@ class NoxcastCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    if (first) { this._renderAll(); this._refresh(); return; }
+    if (first) { this._renderAll(); this._loadSource(); this._refresh(); return; }
     const sig = this._signature();
     if (sig !== this._sig) { this._sig = sig; this._renderFlow(); }
     if (this._stale()) this._refresh();
@@ -141,6 +166,12 @@ class NoxcastCard extends HTMLElement {
     return invert ? -v : v;
   }
 
+  // a PV group: one sensor or the sum of several (the sensors of a Noxcast array)
+  _groupW(g) {
+    const ids = g.entities || [g.entity];
+    return ids.reduce((a, id) => a + Math.max(0, this._watts(id, g.invert) || 0), 0);
+  }
+
   _soc(entityId) {
     const s = entityId && this._hass.states[entityId];
     const v = s ? parseFloat(s.state) : NaN;
@@ -149,7 +180,7 @@ class NoxcastCard extends HTMLElement {
 
   _live() {
     const c = this._config;
-    const groups = (c.pv.groups || []).map((g) => ({ name: g.name || g.entity, id: g.entity, w: Math.max(0, this._watts(g.entity, g.invert) || 0) }));
+    const groups = (c.pv.groups || []).map((g) => ({ name: g.name || g.entity, id: g.entity || (g.entities || [])[0], w: this._groupW(g) }));
     let pv = c.pv.entity ? this._watts(c.pv.entity, c.pv.invert) : null;
     if (pv === null) pv = groups.reduce((a, g) => a + g.w, 0);
     const bats = (c.batteries || []).map((b) => ({ name: b.name || b.entity, id: b.soc || b.entity, w: this._watts(b.entity, b.invert) || 0,
@@ -166,7 +197,7 @@ class NoxcastCard extends HTMLElement {
   }
 
   _signature() {
-    const c = this._config, ids = [c.pv.entity, ...(c.pv.groups || []).map((g) => g.entity), c.grid && c.grid.entity,
+    const c = this._config, ids = [c.pv.entity, ...(c.pv.groups || []).flatMap((g) => g.entities || [g.entity]), c.grid && c.grid.entity,
       c.home && c.home.entity, ...(c.batteries || []).flatMap((b) => [b.entity, b.soc])].filter(Boolean);
     return ids.map((i) => this._hass.states[i] && this._hass.states[i].state).join("|") + (this._hass.themes && this._hass.themes.darkMode);
   }
@@ -359,7 +390,7 @@ class NoxcastCard extends HTMLElement {
     const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11, 15)}${fmtW(-v.grid)}` : "0 W";
     const c = this._config, icons = c.icons || {};
     const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
-    const pvId = c.pv.entity || ((c.pv.groups || [])[0] || {}).entity;
+    const g0 = (c.pv.groups || [])[0] || {}, pvId = c.pv.entity || g0.entity || (g0.entities || [])[0];
     const batId = (v.bats[0] || {}).id;
     const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
     const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
@@ -454,8 +485,8 @@ class NoxcastCard extends HTMLElement {
 
     // PV: expectation pale, the past part (= actual) solid, held forecast as contour, shade as notch below the potential
     const potential = (h) => fc(h) + loss(h);
-    const lossTotal = dayH.reduce((a, h) => a + loss(h), 0);
-    const hasLoad = dayH.some((h) => load(h) !== null);
+    const lossTotal = this._show("effects") ? dayH.reduce((a, h) => a + loss(h), 0) : 0;
+    const hasLoad = this._show("load") && dayH.some((h) => load(h) !== null);
     const lv = (h) => load(h) ?? 0;
     const grid = []; for (let v = step; v <= ymax + 1e-9; v += step) grid.push(v);
     const kw = (v) => (v / 1000).toLocaleString(this._lang, { maximumFractionDigits: 2 });
@@ -474,7 +505,7 @@ class NoxcastCard extends HTMLElement {
     const bandM = new Map(((this._data.today && this._data.today.band) || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
     let bandPath = "";
-    if (bandH.length > 1) {
+    if (bandH.length > 1 && this._show("band")) {
       const hi = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[1])]), lo = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[0])]).reverse();
       bandPath = `${line(hi)} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${curve(lo)} Z`;
     }
@@ -494,8 +525,8 @@ class NoxcastCard extends HTMLElement {
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
     // one lane per array: shade always, reflection where it adds something
-    const Ly = Hp + 6, Lh = 9;
-    const lanes = arrays.map((arr, i) => {
+    const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? arrays.length : 0;
+    const lanes = arrays.slice(0, laneN).map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
       const fx = arr.periods.filter((p) => p.end > t0 && p.start < t1).map((p) => {
         const title = `${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${p.type === "shade" ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}`;
@@ -507,9 +538,9 @@ class NoxcastCard extends HTMLElement {
 
     // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
     // caps (B0, Bh) leave room for their labels; the strip between them also uses the space above
-    const B0 = Ly + arrays.length * (Lh + 4) + 26, Bh = 22;
-    const S0 = Ly + arrays.length * (Lh + 4) + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
-    const bat = m.battery;
+    const B0 = Ly + laneN * (Lh + 4) + 26, Bh = 22;
+    const S0 = Ly + laneN * (Lh + 4) + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
+    const bat = this._show("battery") ? m.battery : null;
     let batSvg = "", sim = null, chargeToday = null, chargeTom = null;
     const seenZones = new Set();
     if (bat) {
@@ -556,7 +587,7 @@ class NoxcastCard extends HTMLElement {
         ${cap(CAPW / 2, startF, chargeToday > now ? t.expected : t.start, this._hm(chargeToday), chargeToday > now, false)}
         ${cap(W - CAPW / 2, endF, t.tomorrow, endF === null ? this._hm(sim.empty) : this._hm(chargeTom), true, endF === null)}`;
     }
-    const bottom = bat ? B0 + Bh + 14 : Ly + arrays.length * (Lh + 4) + 14;
+    const bottom = bat ? B0 + Bh + 14 : Ly + laneN * (Lh + 4) + 14;
     const tickStep = Math.max(1, Math.ceil((t1 - t0) / H / 6)) * H;
     const ticks = []; for (let h = Math.ceil(t0 / tickStep) * tickStep; h <= t1; h += tickStep) if (nowX === null || Math.abs(x(h) - nowX) > 16) ticks.push(h);
 
@@ -611,8 +642,8 @@ class NoxcastCard extends HTMLElement {
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > t0, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
-        shade: arrays.some((a) => a.periods.some((p) => p.type === "shade")),
-        refl: arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
+        shade: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "shade")),
+        refl: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
       ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
       <div class="row nums">${numbers}
@@ -824,6 +855,8 @@ class NoxcastCardEditor extends HTMLElement {
     const de = this._de;
     return {
       font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
+      show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Verschattung und Reflexion" : "Shade and reflection",
+      show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
       export: de ? "Überschuss wird eingespeist (nicht als Verlust werten)" : "Surplus is fed in (not counted as lost)",
       pv_entity: de ? "PV gesamt (optional, sonst Summe der Gruppen)" : "PV total (optional, otherwise the sum of the groups)",
       grid_entity: de ? "Netz (positiv = Bezug)" : "Grid (positive = import)", grid_invert: de ? "Netz-Vorzeichen umkehren" : "Invert grid sign",
@@ -866,38 +899,56 @@ class NoxcastCardEditor extends HTMLElement {
         .nx-head { display: flex; justify-content: space-between; align-items: center; color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
         .nx-btn { background: none; border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 10px;
           color: var(--primary-color); font: inherit; cursor: pointer; }
-      </style><div id="main"></div>
-      <div class="nx-sec">${de ? "PV-Gruppen" : "PV groups"}</div><div id="groups"></div>
+        .nx-note { color: var(--secondary-text-color); font-size: 13px; margin: 4px 0 8px; }
+      </style><div class="nx-sec">${de ? "Anzeige" : "Display"}</div><div id="main"></div>
+      <div class="nx-sec">${de ? "Sensoren" : "Sensors"}</div>
+      <div class="nx-note">${de ? "PV-Gruppen, Hausverbrauch, Netz und Akkus kommen aus der Noxcast-Konfiguration. Hier nur eintragen, was davon abweichen soll."
+        : "PV groups, house load, grid and batteries come from the Noxcast configuration. Only set here what should differ."}</div><div id="sensors"></div>
+      <div class="nx-sec">${de ? "PV-Gruppen (abweichend)" : "PV groups (override)"}</div><div id="groups"></div>
       <button class="nx-btn" id="addGroup">+ ${de ? "Gruppe" : "group"}</button>
-      <div class="nx-sec">${de ? "Akkus" : "Batteries"}</div><div id="bats"></div>
+      <div class="nx-sec">${de ? "Akkus (abweichend)" : "Batteries (override)"}</div><div id="bats"></div>
       <button class="nx-btn" id="addBat">+ ${de ? "Akku" : "battery"}</button>`;
 
+    const shows = ["show_battery", "show_effects", "show_band", "show_load"];
     this.querySelector("#main").appendChild(this._form([
-      { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
+      ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
+      { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
+      { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
+      { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
+    ], {
+      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false,
+      ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
+      ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
+    }, (v) => {
+      const n = { ...this._config };
+      n.font_scale = v.font_scale; n.legend = v.legend;
+      for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
+      const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
+      if (Object.keys(icons).length) n.icons = icons; else delete n.icons;
+      if (n.legend !== false) delete n.legend;
+      if (n.font_scale === 1) delete n.font_scale;
+      this._emit(n);
+    }));
+
+    this.querySelector("#sensors").appendChild(this._form([
       { name: "pv_entity", selector: sensor },
       { name: "grid_entity", selector: sensor },
       { name: "grid_invert", selector: { boolean: {} } },
       { name: "home_entity", selector: sensor },
       { name: "export", selector: { boolean: {} } },
-      { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
-      { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
-      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, export: !!c.export,
-      pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
+      export: !!c.export, pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
       grid_invert: !!(c.grid && c.grid.invert), home_entity: (c.home && c.home.entity) || "",
-      ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
       const n = { ...this._config };
-      for (const k of ["font_scale", "legend", "export"]) n[k] = v[k];
-      n.pv = { ...(n.pv || {}), entity: v.pv_entity || undefined };
-      n.grid = { ...(n.grid || {}), entity: v.grid_entity || undefined, invert: v.grid_invert || undefined };
-      n.home = { ...(n.home || {}), entity: v.home_entity || undefined };
-      const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
-      if (Object.keys(icons).length) n.icons = icons; else delete n.icons;
-      if (n.legend !== false) delete n.legend;
+      n.export = v.export;
+      const clean = (o) => { const r = Object.fromEntries(Object.entries(o).filter(([, x]) => x)); return Object.keys(r).length ? r : undefined; };
+      n.pv = clean({ ...(n.pv || {}), entity: v.pv_entity });
+      n.grid = clean({ entity: v.grid_entity, invert: v.grid_invert });
+      n.home = clean({ entity: v.home_entity });
+      for (const k of ["pv", "grid", "home"]) if (n[k] === undefined) delete n[k];
       if (!n.export) delete n.export;
-      if (n.font_scale === 1) delete n.font_scale;
       this._emit(n);
     }));
 

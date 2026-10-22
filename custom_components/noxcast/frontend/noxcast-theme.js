@@ -113,9 +113,12 @@ th { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
   animation: nx-orbit 18s ease-in-out infinite alternate; }
 @keyframes nx-dash { to { stroke-dashoffset: -100; } }
 @keyframes nx-orbit { from { offset-distance: 8%; } to { offset-distance: 92%; } }
+/* phones: smaller header; wide tables scroll sideways instead of pushing columns out of the card */
 @media (max-width: 640px) {
   .orbit { display: none; } .hero { padding: 6px 2px 14px; }
   .hero h1 { font-size: 26px; } .hero p { font-size: 13px; margin-top: 4px; }
+  table { display: block; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+  th, td { padding-left: 4px !important; padding-right: 4px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

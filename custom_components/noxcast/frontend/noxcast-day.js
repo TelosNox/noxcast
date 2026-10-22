@@ -535,15 +535,19 @@ class NoxcastDay extends HTMLElement {
     const devCell = (d) => (d === null ? "–" : `<span class="${Math.abs(d) < 0.05 ? "" : d < 0 ? "bad" : "good"}">${this._pct(d)}</span>`);
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
     const refLabel = phase === "today" ? t.morning : t.dayAhead;
-    return `<section class="card pad grow"><h3>${t.groups}</h3><table><thead><tr><th></th><th class="num">${mainLabel}</th>
-      ${phase !== "future" ? `<th class="num">${refLabel}</th><th class="num">${t.deviation}</th>` : ""}
-      ${phase === "today" ? `<th class="num">${t.correction}</th>` : ""}<th class="num">${t.share}</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr><td><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${this._esc(r.arr.name)}</div>${spark(r.m, r.i)}</td>
-        <td class="num">${this._kwh(r.main)} ${t.kwh}</td>
-        ${phase !== "future" ? `<td class="num">${r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–"}</td><td class="num">${devCell(r.dev)}</td>` : ""}
-        ${phase === "today" ? `<td class="num">${r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`}</td>` : ""}
-        <td class="num">${total > 0 ? Math.round(r.main / total * 100) : 0} %</td></tr>`).join("")}
-    </tbody></table></section>`;
+    // one block per group instead of a wide table: name and main value, the course, then small figures that wrap
+    const fig = (k, v) => `<span class="gfig"><span class="muted">${k}</span> ${v}</span>`;
+    return `<section class="card pad grow"><h3>${t.groups}</h3><div class="glist">
+      ${rows.map((r) => `<div class="gitem">
+        <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${this._esc(r.arr.name)}</div>
+          <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main)} ${t.kwh}</b></div></div>
+        ${spark(r.m, r.i)}
+        <div class="gfigs">
+          ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, devCell(r.dev)) : ""}
+          ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
+          ${fig(t.share, `${total > 0 ? Math.round(r.main / total * 100) : 0} %`)}
+        </div></div>`).join("")}
+    </div></section>`;
   }
 
   _waterfall(e) {
@@ -642,7 +646,13 @@ class NoxcastDay extends HTMLElement {
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .gname { display: flex; align-items: center; gap: 6px; font-weight: 500; }
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
-      .spark { width: 120px; height: 22px; margin-top: 4px; }
+      .spark { width: 100%; height: 26px; margin: 4px 0 2px; }
+      .glist { display: flex; flex-direction: column; }
+      .gitem { padding: 10px 0; border-top: 1px solid var(--divider-color); } .gitem:first-child { border-top: 0; padding-top: 2px; }
+      .ghead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+      .gmain b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .gfigs { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
+      .gfig { white-space: nowrap; }
       .good { color: var(--nx-good); font-weight: 500; } .bad { color: var(--nx-bad); font-weight: 500; }
       .wfall { max-width: 640px; }
       .wl { font-size: 12px; fill: var(--primary-text-color); } .wv { font-size: 12px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }

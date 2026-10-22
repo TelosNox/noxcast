@@ -279,7 +279,9 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     energy went: PV, battery discharge and grid into house, battery charge and grid. The battery
     energy of an hour is the change of its mean state of charge (central difference) times its
     capacity; within an hour PV supplies the house first, then the battery. Self-consumption and
-    self-sufficiency follow from it. Without a house-load sensor only PV into the battery and the
+    self-sufficiency follow from it. With the optional grid sensor (configuration, positive =
+    import, can be inverted) import and export are measured instead of derived, and a missing
+    house load follows from the balance PV + import − battery charge + discharge. Without a house-load sensor only PV into the battery and the
     rest are shown; without house load and batteries the use side is left out.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);

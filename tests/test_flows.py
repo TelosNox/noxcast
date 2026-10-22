@@ -28,3 +28,16 @@ def test_without_load_only_battery_and_rest_and_hours_need_all_series():
     f = flows.day_flows({H: 1000.0, 2 * H: 800.0}, None, {H: 300.0}, 0.0, 3 * H)
     assert f["hours"] == 1 and f["pv_battery"] == 300 and f["pv_rest"] == 700 and not f["load"]
     assert flows.day_flows({}, {5 * H: 1.0}, None, 0.0, 3 * H) is None
+
+
+def test_measured_grid_and_house_load_from_the_balance():
+    pv = {0.0: 0.0, H: 2000.0}
+    battery = {0.0: -300.0, H: 1000.0}
+    grid = {0.0: 100.0, H: -400.0}                          # import at night, export at noon
+    f = flows.day_flows(pv, None, battery, 0.0, 2 * H, grid)
+    assert f["load"] and f["grid"] and f["hours"] == 2
+    assert f["pv_home"] == 600 and f["pv_grid"] == 400 and f["pv_battery"] == 1000
+    assert f["battery_home"] == 300 and f["grid_home"] == 100
+    # with a house load as well, the grid paths follow the measured import and export
+    g = flows.day_flows(pv, {0.0: 400.0, H: 600.0}, battery, 0.0, 2 * H, grid)
+    assert g["pv_grid"] == 400 and g["grid_home"] == 100 and g["grid_battery"] == 0

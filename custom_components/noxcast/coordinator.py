@@ -22,7 +22,7 @@ from .const import (
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
     FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
-    CONF_HOUSE_LOAD, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
+    CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
@@ -149,6 +149,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
+        self.grid: str | None = entry.data.get(CONF_GRID) or None
+        self.grid_sign = -1.0 if entry.data.get(CONF_GRID_INVERT) else 1.0
         self.day_type_entity: str | None = entry.data.get(CONF_DAY_TYPE) or None
         self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
@@ -388,10 +390,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Where the energy of [start, end) went (see flows.py); None without house load and batteries."""
         socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
                 for d in self.batteries.values() if d.get(CONF_SOC_SENSOR)}
-        if not self.house_load and not socs:
+        if not self.house_load and not socs and not self.grid:
             return None
         a, b = dt_util.utc_from_timestamp(start - 3600), dt_util.utc_from_timestamp(end + 3600)
-        load = battery = None
+        load = battery = grid = None
+        if self.grid:
+            factor = (await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0) * self.grid_sign
+            stats = await async_hourly_statistics(self.hass, [self.grid], a, "mean", end=b)
+            grid = {t: v * factor for t, v in stats.get(self.grid, {}).items() if v is not None}
         if self.house_load:
             factor = (await async_power_factors(self.hass, [self.house_load])).get(self.house_load, 1.0)
             stats = await async_hourly_statistics(self.hass, [self.house_load], a, "mean", end=b)
@@ -404,7 +410,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 for t, wh in fl.battery_energy(soc, capacity).items():
                     parts.setdefault(t, []).append(wh)
             battery = {t: sum(v) for t, v in parts.items() if len(v) == len(socs)}   # every battery known
-        return fl.day_flows(pv, load, battery, start, end)
+        return fl.day_flows(pv, load, battery, start, end, grid)
 
     async def _async_learn_load(self, now: datetime, air_temp: dict[float, float] | None = None) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""

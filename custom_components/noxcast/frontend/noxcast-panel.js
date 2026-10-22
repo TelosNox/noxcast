@@ -22,6 +22,10 @@ const SECTION_LEADS = {
     battery: "Where today's and tomorrow's surplus goes and what changes with more capacity or another consumer.",
     diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
 };
+// Home Assistant icons of the sections; on a phone only the active tab shows its title
+const SECTION_ICONS = { learned: "mdi:brain", day: "mdi:calendar-today", accuracy: "mdi:target", load: "mdi:home-lightning-bolt",
+  battery: "mdi:battery-charging", diagnostics: "mdi:stethoscope" };
+
 const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
   en: { day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
 
@@ -339,16 +343,15 @@ class NoxcastPanel extends HTMLElement {
     const lang = (this._hass && this._hass.language || "en").slice(0, 2);
     const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
     const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
-    const tabs = ["learned", ...SECTIONS.map(([k]) => k)].map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}">${titles[k]}</button>`).join("");
+    const tabs = ["learned", ...SECTIONS.map(([k]) => k)].map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span>${titles[k]}</span></button>`).join("");
     if (s.section !== "learned") {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}
-        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}Noxcast</div><nav class="navtabs">${tabs}</nav></div>
+        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}<span>Noxcast</span></div><nav class="navtabs">${tabs}</nav></div>
         <div class="content">${hero}<div id="section"></div></div>`;
       const section = this._section(s.section);
       if (section) this.shadowRoot.getElementById("section").appendChild(section);
-      const menu = this.shadowRoot.querySelector("ha-menu-button");
-      if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
+      this._afterRender();
       return;
     }
     let body;
@@ -357,19 +360,25 @@ class NoxcastPanel extends HTMLElement {
     else if (!this._data.arrays.length) body = `<div class="card pad">${t.noData}</div>`;
     else if (this._state.view === "array" && this._array(this._state.arrayId)) body = this._renderArray(this._array(this._state.arrayId));
     else body = this._renderOverview();
-    const crumbs = this._state.view === "array"
-      ? `<button class="link" data-action="overview">${t.overview}</button><span class="muted"> / </span><span>${this._esc(this._array(this._state.arrayId).name)}</span>`
-      : `<span>${t.overview}</span>`;
+    // inside an array the way back sits above the content, not in the toolbar
+    const crumbs = this._state.view === "array" && this._array(this._state.arrayId)
+      ? `<nav class="crumbs"><button class="link" data-action="overview">‹ ${t.overview}</button><span class="muted"> / </span><span>${this._esc(this._array(this._state.arrayId).name)}</span></nav>`
+      : "";
     this.shadowRoot.innerHTML = `${this._style()}
       <div class="toolbar">
         <ha-menu-button></ha-menu-button>
-        <div class="brand">${LOGO}Noxcast</div>
+        <div class="brand">${LOGO}<span>Noxcast</span></div>
         <nav class="navtabs">${tabs}</nav>
-        <nav class="crumbs">${crumbs}</nav>
       </div>
-      <div class="content">${this._state.view === "array" ? "" : hero}${body}</div>`;
+      <div class="content">${crumbs}${this._state.view === "array" ? "" : hero}${body}</div>`;
+    this._afterRender();
+  }
+
+  _afterRender() {
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
+    const on = this.shadowRoot.querySelector(".navtab.on"), bar = this.shadowRoot.querySelector(".navtabs");
+    if (on && bar && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2;
   }
 
   _figures(arr) {
@@ -745,7 +754,17 @@ class NoxcastPanel extends HTMLElement {
       .navtab { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 10px; cursor: pointer;
         font-size: 14px; color: var(--secondary-text-color); white-space: nowrap; }
       .navtab.on { color: var(--primary-text-color); border-bottom-color: var(--primary-color); }
-      .crumbs { margin-left: 8px; display: flex; gap: 4px; align-items: center; font-size: 14px; }
+      .crumbs { display: flex; gap: 4px; align-items: center; font-size: 14px; margin: 0 0 12px; }
+      .navtabs { min-width: 0; }
+      .navtab { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+      .navtab ha-icon { --mdc-icon-size: 18px; }
+      @media (max-width: 720px) {
+        .toolbar { gap: 8px; padding: 0 8px; }
+        .brand span { display: none; }
+        .navtab:not(.on) span { display: none; }
+        .navtabs { gap: 2px; }
+        .navtab:not(.on) { padding: 6px 8px !important; }
+      }
       .content { padding: 16px; max-width: 1400px; margin: 0 auto; box-sizing: border-box; }
       .muted { color: var(--secondary-text-color); }
       .small { font-size: 12px; }

@@ -224,6 +224,8 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
                           for sid, c in coordinator.consumers.items()],
             "forecast": None if fc is None else {
                 "k": fc.k,
+                "sustained": fc.sustained,
+                "sustained_since": fc.sustained_since,
                 "base": [[t, v] for t, v in sorted(fc.base.items())],
                 "consumers": {sid: [[t, v] for t, v in sorted(series.items())] for sid, series in fc.consumers.items()},
             },

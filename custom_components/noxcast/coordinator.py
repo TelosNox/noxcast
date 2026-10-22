@@ -156,6 +156,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.consumers = consumer_configs(entry)
         self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
         self.load_profile: lf.Profile | None = None
+        self.floor_profile: lf.Profile | None = None    # base load from the hourly minimum, for sustained loads
         self.consumer_profiles: dict[str, lf.Profile] = {}
         self.run_profiles: dict[str, dict] = {}      # learned run of flexible consumers: power_w, minutes
         self.consumer_models: dict[str, dict] = {}   # learned program and session model per consumer
@@ -195,6 +196,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
                 self.load_profile = lf.Profile.from_dict(load["base"])
+                self.floor_profile = lf.Profile.from_dict(load["floor"]) if load.get("floor") else None
                 self.consumer_profiles = {sid: lf.Profile.from_dict(p) for sid, p in load.get("consumers", {}).items()
                                           if sid in self.consumers}
                 self.load_backtest = load.get("backtest")
@@ -286,6 +288,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             # today's hours survive a restart even if the weather source no longer reports past hours
             "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
             "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
+                     "floor": self.floor_profile.as_dict() if self.floor_profile else None,
                      "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
                      "backtest": self.load_backtest, "runs": self.run_profiles,
                      "models": {sid: {k: m.as_dict() for k, m in ms.items() if m} for sid, ms in self.consumer_models.items()},
@@ -386,6 +389,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                       for t, v in stats.get(sid, {}).items() if v is not None}
                 for sid in ids + energy}
 
+    async def _async_floor_series(self, start: datetime, series: dict[str, dict[float, float]]) -> dict[float, float]:
+        """Base load from the hourly minimum of the house load (consumers subtracted by their mean)."""
+        factor = (await async_power_factors(self.hass, [self.house_load])).get(self.house_load, 1.0)
+        stats = await async_hourly_statistics(self.hass, [self.house_load], start, "min")
+        floor = {t: v * factor for t, v in stats.get(self.house_load, {}).items() if v is not None}
+        return lf.base_series(floor, [series.get(c.series_id, {}) for c in self.consumers.values()])
+
     async def async_day_flows(self, start: float, end: float, pv: dict[float, float]) -> dict | None:
         """Where the energy of [start, end) went (see flows.py); None without house load and batteries."""
         socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
@@ -428,6 +438,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             tz = lf.DayTypeZone(tz, self.day_types)
         base = lf.base_series(load, list(consumers.values()))
         profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
+        floor = await self._async_floor_series(now - timedelta(days=days), series)
+        self.floor_profile = await self.hass.async_add_executor_job(lf.learn_profile, floor, tz, until)
         cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
                 for sid, s in consumers.items()}
         models = {}
@@ -508,7 +520,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             series = {}
         base = lf.base_series(series.get(self.house_load, {}),
                               [series.get(c.series_id, {}) for c in self.consumers.values()])
-        k = lf.correction(base, self.load_profile, tz, now)
+        sustained = (0.0, None)
+        if self.floor_profile is not None and series:
+            try:
+                floor = await self._async_floor_series(dt_util.utc_from_timestamp(start), series)
+                sustained = lf.sustained(floor, self.floor_profile, tz, now)
+            except Exception as err:  # noqa: BLE001 – without the floor only the correction factor applies
+                _LOGGER.debug("Load floor statistics unavailable: %s", err)
+        # the correction factor follows the events on top of a sustained load
+        k = lf.correction({t: max(0.0, v - sustained[0]) for t, v in base.items()}, self.load_profile, tz, now)
         running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
         day_start = dt_util.start_of_local_day().timestamp()
         # mean forecast temperature per local day, for regulated consumers (partial days count with what they have)
@@ -524,7 +544,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                          m.get("program"), m.get("session"),
                                          lf.runs_since(series.get(c.series_id, {}), day_start, now, sid in running),
                                          m.get("regulated"), day_temp))
-        return lf.forecast(self.load_profile, consumers, tz, now, end, k, running)
+        return lf.forecast(self.load_profile, consumers, tz, now, end, k, running, sustained)
 
     def _limit(self, number, entity: str | None, default: float) -> float:
         """A limit in percent: the entity's current value if set and readable, else the number."""

@@ -683,6 +683,8 @@ class NoxcastCard extends HTMLElement {
     const shownArrays = arrays.filter((a) => !a.hide);
     const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? shownArrays.length : 0;
     const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share));
+    // the array's name beside its lane, in the margin with the axis labels; long names are cut
+    const lane = (name) => (String(name).length > 7 ? `${String(name).slice(0, 6)}…` : String(name));
     const lanes = shownArrays.slice(0, laneN).map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
       const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
@@ -715,12 +717,13 @@ class NoxcastCard extends HTMLElement {
           <polygon points="${outline(shares)}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
       }).join("");
       return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
-        ${(arr.icon && this._icon(arr.icon, X1 - 7, ly + Lh / 2, 12, "var(--secondary-text-color)"))
-          || `<text x="${X1 - 2}" y="${ly + Lh - 1}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)" stroke="var(--card-background-color, #fff)" stroke-width="3" paint-order="stroke">${this._esc(arr.label)}</text>`}`;
+        ${(arr.icon && this._icon(arr.icon, X1 + 10, ly + Lh / 2, 12, "var(--secondary-text-color)"))
+          || `<text x="${X1 + 3}" y="${ly + Lh - 1}" class="ax">${this._esc(lane(arr.label))}</text>`}`;
     }).join("");
 
     // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
-    // caps (B0, Bh) leave room for their labels; the strip between them also uses the space above
+    // caps (B0, Bh) sit with their labels below the lanes, which keep the margins for their names;
+    // the strip between them also uses the space above
     const B0 = Ly + laneN * (Lh + 4) + 26, Bh = 22;
     const S0 = Ly + laneN * (Lh + 4) + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
     const bat = this._show("battery") ? m.battery : null;
@@ -755,7 +758,7 @@ class NoxcastCard extends HTMLElement {
       const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
       const endF = sim.empty !== null && sim.empty < chargeTom ? null : sim.at(chargeTom);
       const cap = (cx, f, label, time, future, empty) => {
-        const bw = 12, bx = cx - bw / 2, h = Bh + 12, by = B0 - 12, fh = (f ?? 0) * (h - 4);
+        const bw = 12, bx = cx - bw / 2, h = Bh, by = B0, fh = (f ?? 0) * (h - 4);
         const color = empty ? P.grid : P.bat;
         return `<rect x="${bx}" y="${by}" width="${bw}" height="${h}" rx="2" fill="none" stroke="${color}" stroke-width="1.4"${future ? ` stroke-dasharray="2 2"` : ""}></rect>
           <rect x="${bx + 2}" y="${(by + h - 2 - fh).toFixed(1)}" width="${bw - 4}" height="${fh.toFixed(1)}" fill="${P.bat}" fill-opacity="${future ? 0.45 : 0.85}"></rect>

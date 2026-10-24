@@ -650,7 +650,9 @@ class NoxcastCard extends HTMLElement {
     }
     // lines get a halo in the card colour, so they stay visible on the PV area in both themes
     const halo = (d) => `<path d="${d}" fill="none" stroke="var(--card-background-color, #fff)" stroke-width="4" stroke-opacity=".75" stroke-linejoin="round"></path>`;
-    const loadLine = hasLoad ? line(dayH.map((h) => [x(h + H / 2), y(lv(h))])) : "";
+    // the load spans the same hours as PV: the first and last hourly means are held to the edges
+    const loadPts = [[x(t0), y(lv(dayH[0]))], ...dayH.map((h) => [x(h + H / 2), y(lv(h))]), [x(t1), y(lv(dayH[dayH.length - 1]))]];
+    const loadLine = hasLoad ? line(loadPts) : "";
     // P10–P90 of the coming hours, learned by Noxcast from its forecast archive
     const bandM = new Map(((this._data.today && this._data.today.band) || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
@@ -660,15 +662,14 @@ class NoxcastCard extends HTMLElement {
       bandPath = `${line(hi)} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${curve(lo)} Z`;
     }
     let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>
-        <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}</text>`).join("")}
-      <text x="${X1 + 3}" y="${(y(ymax) - 9).toFixed(1)}" class="ax">kW</text>
+        <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}${v === grid[grid.length - 1] ? " kW" : ""}</text>`).join("")}
       ${lossTotal > 1 ? `<path d="${between(potential, fc)}" fill="url(#nx-shade)"></path>
         <path d="${line(pts(potential))}" fill="none" stroke="${P.shade}" stroke-width="1" stroke-opacity=".6"></path>` : ""}
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
       <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
       ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
       ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 Z"></path></clipPath>
-        <path d="${fill(dayH.map((h) => [x(h + H / 2), y(lv(h))]))}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
+        <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
       ${hasLoad ? `${halo(loadLine)}<path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
       ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>

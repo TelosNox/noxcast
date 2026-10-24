@@ -120,6 +120,20 @@ Consequences:
   (balcony 5.4 → 5.5 %, roof 5.7 %): these hours carry little energy. Hours with the sun behind
   the plane are still too high on that roof (diffuse light from the bright side of the sky is
   blocked by the house behind the wall); the isotropic diffuse model cannot show that.
+- **Shadow edges within the hour.** The per-cell estimate gives each hour to the cell of its
+  mid-hour sun position; an edge crossed during the hour is smeared over about one and a half
+  cells, and the forecast, which integrates over 10-minute sub-steps, smears it again. On steady
+  clear hours the cells are therefore finally fitted so that the forecast integrated over the
+  sub-steps meets the hourly means (bounded least squares, a weak pull towards the per-cell
+  estimate, one reweighting against outliers). The sun path of a clock hour shifts across the
+  edge from day to day, which places it within the hour – from the hourly history, no finer data
+  needed. Only hours whose expected light is at least 70 % direct take part: with the sun nearly
+  behind the plane, errors of the diffuse model would otherwise darken the cells (balcony
+  afternoon bias went from 0 to −14 % without that limit). Result on the installation above:
+  roof at sun azimuth 90–120° from +14 % to 0 % bias (error 23 → 15 %), held up when fitting on
+  even and checking on odd days and vice versa; balcony daily error 5.5 → 5.4 %. A smoothing
+  term between neighbouring cells was tried and dropped: it blurred a sharp synthetic wall edge
+  and did not help on real data.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.

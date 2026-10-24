@@ -23,6 +23,9 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   clouds pass over the installation, and such hours (cloud-edge peaks cut at the inverter limit,
   restarts, dropouts) only add noise. With several sensors per array one steady sensor is enough
   (a cloud reaches all of them, a shadow edge not), and sensors far apart mark a partial shadow.
+  On steady clear hours T is finally fitted so that the forecast, integrated over the sub-steps
+  of each hour, meets the hourly means: an edge crossed within the hour is then placed by the
+  shifting sun path over many days instead of being smeared over the hour.
 - R: reflected light per coarse sun-position bin, relative to the direct normal irradiance: sunlit
   walls or roofs in front of the module. It does not depend on how the sun meets the module, so
   it is learned where the module itself gets little direct light; elsewhere it cannot be told
@@ -35,6 +38,7 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .solar import Site, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position
@@ -67,6 +71,9 @@ MIN_STEADY_HOURS = 30            # steady clear hours needed to learn efficiency
 SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
 SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
 SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a core within this many cells
+SHADE_FIT_PRIOR = 0.01           # shading fit: pull towards the per-cell estimate, relative to a typical cell's weight
+SHADE_FIT_BEAM_SHARE = 0.7       # ... hours whose expected light is mostly direct (else diffuse-model errors enter)
+SHADE_FIT_SWEEPS = 400
 DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
 DIRECTION_EL_STEP = 15.0
 DIRECTION_MIN_SAMPLES = 8
@@ -446,6 +453,8 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             efficiency = eff_quantile(source, 0.5)
             cells = cell_values(observe(rows, scaled=False), 0.9)
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
+        if steady_filter:
+            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale)
 
     cells = shape_cells(cells)
     direction: dict[str, float] = {}
@@ -506,6 +515,92 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     learned.coverage = round(len(reachable & {tuple(map(int, k.split(","))) for k in cells}) / len(reachable), 3) \
         if reachable else 0.0
     return learned
+
+
+def _bilinear(azimuth: float, elevation: float) -> list[tuple[tuple[int, int], float]]:
+    """Cells and weights of the bilinear interpolation in transmission()."""
+    fa, fe = azimuth / AZ_STEP - 0.5, elevation / EL_STEP - 0.5
+    a0, e0 = math.floor(fa), math.floor(fe)
+    da, de = fa - a0, fe - e0
+    return [((ai % 36, ei), wa * we) for ai, wa in ((a0, 1 - da), (a0 + 1, da))
+            for ei, we in ((e0, 1 - de), (e0 + 1, de)) if wa * we > 0 and ei >= 0]
+
+
+def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[str, float],
+               factor: Callable[[tuple], float], scale: Callable[[tuple], float]) -> dict[str, float]:
+    """Shading cells such that the forecast, integrated over the sub-steps of each hour, meets the hourly means.
+
+    The per-cell estimate gives each hour to the cell of its mid-hour sun position, so a shadow
+    edge crossed during the hour is smeared over about one and a half cells, and the forecast,
+    which integrates over sub-steps, smears it again. Here every hour is an equation over the cells
+    its sun path crossed (bilinear weights as in transmission()); over many days the path of a
+    given clock hour shifts across the edge, which places it within the hour. Least squares with
+    bounds 0..1 and a weak pull towards the per-cell estimate (cells the hours barely touch),
+    solved by projected Gauss-Seidel; one reweighting damps hours that do not fit
+    (a cloud the steady test missed). Only hours whose expected light on the plane is mostly
+    direct take part; otherwise errors of the diffuse model (sun nearly behind the plane) would
+    darken the cells. rows: steady clear hours; factor(row): efficiency x temperature factor;
+    scale(row): satellite clearness.
+    """
+    eqs = []
+    for r in rows:
+        t, p, _, diff = r[:4]
+        k = scale(r)
+        dni_extra = extra_radiation(t + 1800)
+        coef: dict[tuple[int, int], float] = {}
+        for i in range(SUBSTEPS):
+            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+            if sun.elevation <= 0:
+                continue
+            ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
+            beam, _ = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+            for cell, w in _bilinear(sun.azimuth, sun.elevation):
+                coef[cell] = coef.get(cell, 0.0) + beam * k / SUBSTEPS * w
+        beam = sum(coef.values())
+        if geo.peak_w * beam / 1000 <= MIN_BEAM_W or beam < SHADE_FIT_BEAM_SHARE * (beam + diff * k):
+            continue
+        eqs.append((p * 1000 / (geo.peak_w * factor(r)) - diff * k, coef, r[6]))
+    if len(eqs) < MIN_STEADY_HOURS:
+        return cells
+    probe = LearnedArray(cells=cells)                     # cells without an estimate start from their neighbours
+    prior = {c: cells[_key(*c)] if _key(*c) in cells else transmission(probe, (c[0] + 0.5) * AZ_STEP,
+                                                                       (c[1] + 0.5) * EL_STEP)
+             for _, coef, _ in eqs for c in coef}
+
+    def solve(weights: list[float]) -> dict[tuple[int, int], float]:
+        normal: dict[tuple[int, int], dict[tuple[int, int], float]] = {c: {} for c in prior}
+        rhs = dict.fromkeys(prior, 0.0)
+        for (y, coef, w), extra in zip(eqs, weights):
+            for c, a in coef.items():
+                rhs[c] += w * extra * a * y
+                row = normal[c]
+                for c2, a2 in coef.items():
+                    row[c2] = row.get(c2, 0.0) + w * extra * a * a2
+        pull = SHADE_FIT_PRIOR * _quantile([row[c] for c, row in normal.items()], 0.5)
+        for c, row in normal.items():
+            row[c] += pull
+            rhs[c] += pull * prior[c]
+        value = dict(prior)
+        for _ in range(SHADE_FIT_SWEEPS):
+            change = 0.0
+            for c, row in normal.items():
+                v = (rhs[c] - sum(a * value[c2] for c2, a in row.items() if c2 != c)) / row[c]
+                v = min(max(v, 0.0), 1.0)
+                change = max(change, abs(v - value[c]))
+                value[c] = v
+            if change < 1e-4:
+                break
+        return value
+
+    value = solve([1.0] * len(eqs))
+    residuals = [y - sum(a * value[c] for c, a in coef.items()) for y, coef, _ in eqs]
+    centre = _quantile(residuals, 0.5)
+    spread = 1.4826 * _quantile([abs(x - centre) for x in residuals], 0.5)
+    if spread > 0:
+        value = solve([min(1.0, 2 * spread / max(abs(x), 1e-9)) for x in residuals])
+    out = dict(cells)
+    out.update({_key(*c): round(v, 3) for c, v in value.items()})
+    return out
 
 
 def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float,

@@ -111,13 +111,17 @@ class NoxcastDay extends HTMLElement {
 
   async _load() {
     try {
-      this._data = await this._hass.connection.sendMessagePromise({ type: "noxcast/day", offset: this._offset });
+      // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
+      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/day", offset: this._offset }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
       this._loaded = Date.now();
       this._error = null;
       const e = (this._data.entries || [])[0];
       if (this._hour === null || this._hour < this._data.start || this._hour >= this._data.end) this._hour = e ? this._defaultHour(e) : null;
     } catch (err) {
       this._error = String((err && err.message) || err);
+      clearTimeout(this._retry);                // Noxcast may still be starting after a restart
+      this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }
     this._render();
   }

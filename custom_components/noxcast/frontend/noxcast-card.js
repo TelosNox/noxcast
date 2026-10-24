@@ -53,6 +53,14 @@ const PALETTE = {
 
 const ACTIVE_W = 5;
 const REFRESH_MS = 5 * 60 * 1000;
+const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
+const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
+
+// a websocket request that gives up instead of waiting forever
+function ask(hass, msg) {
+  return Promise.race([hass.connection.sendMessagePromise(msg),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS))]);
+}
 // symmetric: PV paths on top (y 80), grid <-> battery in the middle (y 88), paths to the home below (y 96);
 // where grid <-> battery crosses PV -> home it bridges over it, so the two read as separate paths
 const FLOW_PATHS = {
@@ -88,9 +96,12 @@ class NoxcastCard extends HTMLElement {
 
   async _loadSource() {
     try {
-      this._src = await this._hass.connection.sendMessagePromise({ type: "noxcast/card_config" });
+      this._src = await ask(this._hass, { type: "noxcast/card_config" });
+      this._srcPending = false;
     } catch (err) {
-      this._src = null;                         // an older integration: the card config alone
+      // an older integration, or Noxcast not loaded yet: the card config alone, asked again after the next good refresh
+      this._src = null;
+      this._srcPending = true;
     }
     this._config = this._merged();
     this._flow = null;
@@ -106,6 +117,7 @@ class NoxcastCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    if (this.isConnected) this._listenReady();
     if (first) { this._renderAll(); this._loadSource(); this._refresh(); return; }
     const sig = this._signature();
     if (sig !== this._sig) { this._sig = sig; this._renderFlow(); }
@@ -114,6 +126,7 @@ class NoxcastCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._timer) this._timer = setInterval(() => this._refresh(), REFRESH_MS);
+    this._listenReady();
     if (!this._onVisible) {
       this._onVisible = () => { if (document.visibilityState === "visible" && this._stale(60)) this._refresh(); };
       document.addEventListener("visibilitychange", this._onVisible);
@@ -130,6 +143,19 @@ class NoxcastCard extends HTMLElement {
     this._timer = null;
     if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
     this._onVisible = null;
+    clearTimeout(this._retry);
+    if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
+    this._readyConn = null;
+  }
+
+  // after a reconnect (Home Assistant restarted, the app came back) load again instead of keeping an error
+  _listenReady() {
+    const conn = this._hass && this._hass.connection;
+    if (!conn || this._readyConn === conn) return;
+    if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
+    this._onReady = this._onReady || (() => { this._tries = 0; this._refresh(); });
+    conn.addEventListener("ready", this._onReady);
+    this._readyConn = conn;
   }
 
   // data older than `seconds`, or from another day
@@ -208,12 +234,19 @@ class NoxcastCard extends HTMLElement {
     if (!this._hass || this._loading) return;
     this._loading = true;
     try {
-      const today = await this._hass.connection.sendMessagePromise({ type: "noxcast/today" });
+      const today = await ask(this._hass, { type: "noxcast/today" });
       const stats = await this._history();
       this._data = { today, ...stats, loaded: Date.now() };
       this._error = null;
+      this._tries = 0;
+      if (this._srcPending) this._loadSource();
     } catch (err) {
       this._error = String((err && err.message) || err);
+      clearTimeout(this._retry);
+      if (this.isConnected) {
+        this._retry = setTimeout(() => this._refresh(), RETRY_MS[Math.min(this._tries || 0, RETRY_MS.length - 1)]);
+        this._tries = (this._tries || 0) + 1;
+      }
     } finally {
       this._loading = false;
     }
@@ -227,7 +260,7 @@ class NoxcastCard extends HTMLElement {
     const ids = [c.home && c.home.entity, ...(c.batteries || []).map((b) => b.soc)].filter(Boolean);
     // the last 7 days give the load profile for the rest of today and the night
     if (!ids.length) return { stats: {}, dayStart };
-    const res = await this._hass.connection.sendMessagePromise({
+    const res = await ask(this._hass, {
       type: "recorder/statistics_during_period", start_time: new Date(dayStart - 7 * 86400000).toISOString(),
       end_time: now.toISOString(), statistic_ids: ids, period: "hour", types: ["mean"],
     });
@@ -451,8 +484,7 @@ class NoxcastCard extends HTMLElement {
     const el = this.shadowRoot && this.shadowRoot.getElementById("band");
     if (!el) return;
     const t = this._t, P = this._p;
-    if (this._error) { el.innerHTML = `<div class="muted">${this._esc(this._error)}</div>`; return; }
-    if (!this._data) { el.innerHTML = `<div class="muted">…</div>`; return; }
+    if (!this._data) { el.innerHTML = `<div class="muted">${this._error && (this._tries || 0) > 2 ? this._esc(this._error) : "…"}</div>`; return; }
     const arrays = this._arrays();
     if (!arrays.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
 

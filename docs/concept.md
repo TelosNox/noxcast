@@ -118,9 +118,8 @@ Consequences:
   at sun azimuth 90–120° was 28 % too high and became 14 % too high; on the balcony the
   afternoon (azimuth 240–300°) improved from −9/−17 % to 0/−7 % bias. Daily errors hardly moved
   (balcony 5.4 → 5.5 %, roof 5.7 %): these hours carry little energy. Hours with the sun behind
-  the plane are still
-  too high on that roof (diffuse light from the bright side of the sky is blocked by the house
-  behind the wall); the isotropic diffuse model cannot show that.
+  the plane are still too high on that roof (diffuse light from the bright side of the sky is
+  blocked by the house behind the wall); the isotropic diffuse model cannot show that.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.

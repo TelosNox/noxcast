@@ -330,10 +330,12 @@ class NoxcastCard extends HTMLElement {
         background: linear-gradient(var(--ha-card-background, var(--card-background-color, #fff)), var(--ha-card-background, var(--card-background-color, #fff))) padding-box,
           linear-gradient(135deg, rgba(245,165,36,.55), rgba(127,127,127,.14) 28%, rgba(127,127,127,.14) 72%, rgba(139,92,246,.55)) border-box;
         box-shadow: 0 18px 40px -24px rgba(40,24,80,.35); }
-      .cf { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: flex-end; }
-      .cf .f { display: flex; flex-direction: column; cursor: pointer; min-width: 0; }
+      .cf { display: grid; align-items: end; container-type: inline-size; }
+      .cf .f { display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 0; padding: 0 8px; }
+      .cf .f + .f { border-left: 1px solid var(--divider-color); }
       .cf .l { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--secondary-text-color); }
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
       .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
       .wx { margin-bottom: -2px; }
       .muted { color: var(--secondary-text-color); }
@@ -521,17 +523,22 @@ class NoxcastCard extends HTMLElement {
     const num = (x) => (Math.abs(x) >= 1000
       ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
       : `${Math.round(x)} W`);
-    const fig = (label, value, color, id) => `<div class="f"${id ? ` data-more="${this._esc(id)}"` : ""}><span class="l">${label}</span>
+    // fixed columns, centred, so a growing value does not push the others aside
+    const fig = (label, value, color, id, title) => `<div class="f"${id ? ` data-more="${this._esc(id)}"` : ""}${title ? ` title="${title}"` : ""}><span class="l">${label}</span>
       <span class="v" style="color:${color}">${value}</span></div>`;
     const pvId = (v.groups.find((g) => g.id) || {}).id;
     const figs = [fig(t.pv, num(v.pv), P.pvText, pvId), fig(t.home, num(v.home), "var(--primary-text-color)", c.home && c.home.entity)];
-    if (c.grid && c.grid.entity) figs.push(fig(v.grid < -ACTIVE_W ? t.export : t.import, num(Math.abs(v.grid)), P.grid, c.grid.entity));
+    if (c.grid && c.grid.entity) {
+      const dir = v.grid > ACTIVE_W ? "import" : v.grid < -ACTIVE_W ? "export" : null;
+      figs.push(fig(t.grid, `${dir === "import" ? "▲ " : dir === "export" ? "▼ " : ""}${num(Math.abs(v.grid))}`, P.grid, c.grid.entity,
+        dir && t[dir]));
+    }
     if (v.bats.length) {
       const arrow = v.bat > ACTIVE_W ? "▲ " : v.bat < -ACTIVE_W ? "▼ " : "";
       figs.push(fig(t.battery, `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow}${num(Math.abs(v.bat))}</small>`,
         P.bat, (v.bats.find((b) => b.id) || {}).id));
     }
-    el.innerHTML = `<div class="cf">${figs.join("")}</div>`;
+    el.innerHTML = `<div class="cf" style="grid-template-columns:repeat(${figs.length}, minmax(0, 1fr))">${figs.join("")}</div>`;
     el.onclick = (ev) => this._moreInfo(ev);
   }
 
@@ -660,7 +667,8 @@ class NoxcastCard extends HTMLElement {
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
       <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
       ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
-      ${hasLoad ? `<path d="${between((h) => Math.max(lv(h), exp(h)), exp)}" fill="${P.grid}" fill-opacity=".3"></path>` : ""}
+      ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 Z"></path></clipPath>
+        <path d="${fill(dayH.map((h) => [x(h + H / 2), y(lv(h))]))}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
       ${hasLoad ? `${halo(loadLine)}<path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
       ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
@@ -860,7 +868,7 @@ class NoxcastCard extends HTMLElement {
     const items = [
       [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast], [on.band, box(P.pv, 0.2), l.band],
       [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
-      [on.load, dash(P.home, false), l.load], [on.deficit, box(P.grid, 0.3), l.deficit],
+      [on.load, dash(P.home, false), l.load], [on.deficit, box(P.home, 0.16), l.deficit],
       [on.shade, box(P.shade), l.shade], [on.refl, box(P.refl), l.refl],
       [on.bat, box(P.bat, 0.45), l.bat], [on.lost, box(P.lost, 0.85), l.lost], [on.near, box(P.near, 0.85), l.near],
     ];

@@ -610,6 +610,8 @@ class NoxcastCard extends HTMLElement {
       this._frame = null;
       const f = this._flow;
       if (!f || !this.isConnected) return;
+      // about 30 frames a second are smooth enough for the dots and halve the work on a wall tablet
+      if (!reduced && time - last < 30) { this._frame = requestAnimationFrame(step); return; }
       const dt = Math.min(0.1, (time - last) / 1000);
       last = time;
       let moving = false;

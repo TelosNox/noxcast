@@ -212,6 +212,14 @@ class NoxcastPanel extends HTMLElement {
     this._cache = {};
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
+    // the theme import above delays the definition: Home Assistant may already have created the
+    // element and set these as plain properties, which would hide the setters; pass them on
+    for (const p of ["narrow", "panel", "route", "hass"]) {
+      if (!Object.prototype.hasOwnProperty.call(this, p)) continue;
+      const v = this[p];
+      delete this[p];
+      this[p] = v;
+    }
   }
 
   set hass(hass) {

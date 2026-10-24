@@ -275,10 +275,23 @@ def test_steady_hours_from_hourly_min_and_max():
     mean = {0.0: 400.0, 3600.0: 400.0, 7200.0: 0.0, 10800.0: 400.0}
     low = {0.0: 380.0, 3600.0: 120.0, 7200.0: 0.0, 10800.0: 390.0}
     high = {0.0: 420.0, 3600.0: 500.0, 7200.0: 0.0, 10800.0: 405.0}
-    restart = ({0.0: 400.0, 10800.0: 400.0}, {0.0: 390.0, 10800.0: 0.0}, {0.0: 410.0, 10800.0: 410.0})
     assert model.steady_hours([(mean, low, high)]) == {0.0, 10800.0}
-    assert model.steady_hours([(mean, low, high), restart]) == {0.0}     # every sensor must be steady
     assert model.steady_hours([]) == set()
+
+
+def test_steady_hours_with_two_inputs():
+    """A cloud reaches both inputs; a shadow edge or a shadow on one input does not."""
+    a = ({0.0: 400.0, 3600.0: 300.0, 7200.0: 400.0, 10800.0: 400.0, 14400.0: 10.0},
+         {0.0: 390.0, 3600.0: 100.0, 7200.0: 390.0, 10800.0: 300.0, 14400.0: 2.0},
+         {0.0: 410.0, 3600.0: 500.0, 7200.0: 410.0, 10800.0: 500.0, 14400.0: 20.0})
+    b = ({0.0: 400.0, 3600.0: 300.0, 7200.0: 300.0, 10800.0: 60.0, 14400.0: 2.0},
+         {0.0: 390.0, 3600.0: 100.0, 7200.0: 150.0, 10800.0: 20.0, 14400.0: 0.5},
+         {0.0: 410.0, 3600.0: 500.0, 7200.0: 400.0, 10800.0: 100.0, 14400.0: 5.0})
+    steady = model.steady_hours([a, b])
+    assert 0.0 in steady and 3600.0 not in steady              # calm / a passing cloud
+    assert 7200.0 in steady                                    # shadow edge moving over b, a steady
+    assert 10800.0 in steady                                   # b shaded while a sees passing light: shade evidence
+    assert 14400.0 not in steady                               # low light is noise
 
 
 def make_patchy_clear_samples(days: int = 200, share: float = 0.65):
@@ -314,7 +327,8 @@ def test_steady_filter_ignores_clear_hours_with_passing_clouds():
     now = START + 260 * 86400
     noisy = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat)
     calm = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat, steady=steady)
-    clean = model.learn(SITE, GEO, [(t, p) for t, p in samples if t in steady or p == 0], now=now, satellite_ghi=sat)
+    clean = model.learn(SITE, GEO, [(t, p) for t, p in samples if t in steady or p == 0], now=now, satellite_ghi=sat,
+                        steady=steady)
     assert not noisy.steady_filter and calm.steady_filter
     assert noisy.efficiency < EFF - 0.05                      # passing clouds pull the median down
     assert abs(calm.efficiency - EFF) < 0.02
@@ -338,3 +352,49 @@ def test_heating_depends_on_the_mounting():
     roof_wh = model.forecast(SITE, roof, learned, hour)[hour[0].start]
     assert 0.9 < roof_wh / free_wh < 0.99                     # 20 K hotter at the plane irradiance
     assert model.temperature_factor(-0.004, 25.0, 0.0, heating=50.0) == 1.0
+
+
+def test_shadow_edge_placed_within_the_hour():
+    """A wall edge crossed during an hour: the fit over sub-steps keeps it sharp and dark."""
+    def mask(az: float) -> float:
+        return 0.0 if az < 112 else 1.0
+
+    samples, sat, steady = [], {}, set()
+    for d in range(240):
+        for h in range(24):
+            t = START + 60 * 86400 + d * 86400 + h * 3600
+            dni_extra = solar.extra_radiation(t + 1800)
+            power = ghi_sum = 0.0
+            for i in range(model.SUBSTEPS):
+                sun = solar.sun_position(SITE, t + (i + 0.5) * 3600 / model.SUBSTEPS)
+                if sun.elevation <= 0:
+                    continue
+                ghi, dni, dhi = solar.clearsky_simplified_solis(sun.elevation, SITE.pressure, dni_extra)
+                beam, diff = solar.plane_of_array(GEO.tilt, GEO.azimuth, sun, dni, dhi, ghi, dni_extra)
+                power += GEO.peak_w * EFF * (beam * mask(sun.azimuth) + diff) / 1000
+                ghi_sum += ghi
+            power /= model.SUBSTEPS
+            samples.append((t, power))
+            sat[t] = ghi_sum / model.SUBSTEPS
+            if power > 0:
+                steady.add(t)
+    now = START + 300 * 86400
+    per_cell = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat)
+    fitted = model.learn(SITE, GEO, samples, now=now, satellite_ghi=sat, steady=steady)
+    assert fitted.steady_filter and not per_cell.steady_filter
+
+    def edge_error(learned) -> float:
+        err = total = 0.0
+        for t, p in samples:
+            azimuths = [solar.sun_position(SITE, t + s * 600).azimuth for s in (0, 6)]
+            if p <= 0 or not min(azimuths) < 112 < max(azimuths):
+                continue
+            weather = [model.WeatherHour(t, sat[t])]
+            err += abs(model.forecast(SITE, GEO, learned, weather)[t] - p)
+            total += p
+        return err / total
+
+    assert edge_error(fitted) <= 1.02 * edge_error(per_cell)
+    behind = [v for k, v in fitted.cells.items()                                         # 80-100°, 15-35°
+              if int(k.split(",")[0]) in (8, 9) and 3 <= int(k.split(",")[1]) <= 6]
+    assert behind and max(behind) < 0.05

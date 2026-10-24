@@ -101,15 +101,39 @@ Consequences:
   directly, because hourly errors are random and average out.
 - **Steady hours only** for efficiency, direction factor, reflection and the clear-hour median per
   shading cell, when the power sensors' hourly minimum and maximum are known (long-term
-  statistics keep them): every sensor within ±15 % of its hourly mean. A 5 km satellite pixel
+  statistics keep them): a sensor within ±15 % of its hourly mean. A 5 km satellite pixel
   called many hours clear while clouds passed over the installation; on one installation only
   a quarter to a third of the "clear" hours were steady. The others carried cloud-edge peaks cut at the
   inverter's 500 W input limit, restarts and dropouts, and they spread the direction factor to
   0.97–1.15 and pulled the efficiency median down by 2.5 % on the balcony. With steady hours the
   direction factor stayed within about ±5 % and the balcony's daily hindcast error dropped from
-  5.8 % to 5.4 % (bias −2.2 % → +0.8 %); the roof stayed at 5.8 %. Hours with a moving shadow edge
-  are not steady either; their cells keep the 90th percentile over all hours. With fewer than 30
+  5.8 % to 5.4 % (bias −2.2 % → +0.8 %); the roof stayed at 5.8 %. With fewer than 30
   steady clear hours (new installation, sensors without statistics) all clear hours are used.
+- **Several sensors per array** (one per module or input) tell a cloud from a shadow: a cloud
+  reaches all of them, a shadow edge often only one. An hour counts as steady when at least one
+  sensor was steady, or when the sensors are far apart relative to their own peaks (below 60 %
+  of each other: one part shaded). A steady test on the sum alone dropped exactly the hours with
+  a shadow edge, so these cells kept the 90th percentile over all hours and stayed too bright: on
+  a roof whose upper module lies in the shadow of a wall in the morning, the clear-hour forecast
+  at sun azimuth 90–120° was 28 % too high and became 14 % too high; on the balcony the
+  afternoon (azimuth 240–300°) improved from −9/−17 % to 0/−7 % bias. Daily errors hardly moved
+  (balcony 5.4 → 5.5 %, roof 5.7 %): these hours carry little energy. Hours with the sun behind
+  the plane are still too high on that roof (diffuse light from the bright side of the sky is
+  blocked by the house behind the wall); the isotropic diffuse model cannot show that.
+- **Shadow edges within the hour.** The per-cell estimate gives each hour to the cell of its
+  mid-hour sun position; an edge crossed during the hour is smeared over about one and a half
+  cells, and the forecast, which integrates over 10-minute sub-steps, smears it again. On steady
+  clear hours the cells are therefore finally fitted so that the forecast integrated over the
+  sub-steps meets the hourly means (bounded least squares, a weak pull towards the per-cell
+  estimate, one reweighting against outliers). The sun path of a clock hour shifts across the
+  edge from day to day, which places it within the hour – from the hourly history, no finer data
+  needed. Only hours whose expected light is at least 70 % direct take part: with the sun nearly
+  behind the plane, errors of the diffuse model would otherwise darken the cells (balcony
+  afternoon bias went from 0 to −14 % without that limit). Result on the installation above:
+  roof at sun azimuth 90–120° from +14 % to 0 % bias (error 23 → 15 %), held up when fitting on
+  even and checking on odd days and vice versa; balcony daily error 5.5 → 5.4 %. A smoothing
+  term between neighbouring cells was tried and dropped: it blurred a sharp synthetic wall edge
+  and did not help on real data.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.
@@ -240,9 +264,10 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   plateau and applied as a cap in the forecast).
 - Snow: zero output under clear sky and frost.
 - Outages: `unavailable`, all-zero days, incomplete hours.
-- Unsteady hours: hourly minimum or maximum of a power sensor more than 15 % from its mean
-  (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are left out of
-  efficiency, direction factor and reflection.
+- Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
+  its mean (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are
+  left out of efficiency, direction factor, reflection and the clear-hour median of the shading
+  map – unless the sensors disagree strongly, which is a shadow on part of the array.
 - Time reference: an hourly mean belongs to the sun position at the middle of the hour.
 
 ## Outputs

@@ -29,6 +29,22 @@ def hourly_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray,
     return loss, gain
 
 
+def clear_shares(site: Site, geo: ArrayGeometry, learned: LearnedArray,
+                 clear_weather: list[WeatherHour]) -> tuple[dict[float, float], dict[float, float]]:
+    """(shade share, reflection share) per hour under a clear sky: what the geometry allows.
+
+    Shade: the share of the unshaded output the obstacles take; reflection: the share it adds to the
+    output without reflection. Independent of today's weather, so the band can show both what shade
+    could cost and what it costs today; under clouds the cost stays well below this.
+    """
+    base = forecast(site, geo, learned, clear_weather)
+    free = forecast(site, geo, replace(learned, cells={}), clear_weather)
+    plain = forecast(site, geo, replace(learned, reflection={}), clear_weather)
+    shade_share = {t: min(1.0, max(0.0, (free[t] - base.get(t, 0.0)) / free[t])) for t in free if free[t] > 1.0}
+    refl_share = {t: min(1.0, max(0.0, (base.get(t, 0.0) - plain[t]) / plain[t])) for t in plain if plain[t] > 1.0}
+    return shade_share, refl_share
+
+
 def _overlap_wh(series: dict[float, float], start: float, end: float) -> float:
     return sum(wh * max(0.0, min(end, t + 3600) - max(start, t)) / 3600 for t, wh in series.items())
 

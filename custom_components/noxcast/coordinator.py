@@ -35,7 +35,7 @@ from . import battery as bt
 from . import arraycheck as ac
 from . import load as lf
 from . import plan as pl
-from .effects import hourly_effects, significant_periods
+from .effects import clear_shares, hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .model import (HEATING_K, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast,
                     learn, steady_hours, usable_samples)
@@ -847,7 +847,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self._held[sub_id] = held_forecast(self._held.get(sub_id) or result.morning[sub_id], corrected, now,
                                                day_start)
             result.held[sub_id] = self._held[sub_id]
-            result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, today, result.expected[sub_id],
+            result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, clear_weather, today,
+                                                               result.expected[sub_id],
                                                                day_start, day_end)
         for series in (result.forecast, result.morning, result.expected, result.clear):
             total: dict[float, float] = {}
@@ -877,12 +878,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return result
 
     async def _async_effects(self, sub_id: str, arr: ArrayConfig, weather: list[WeatherHour],
-                             today: dict[float, float], expected: dict[float, float], day_start: float,
-                             day_end: float) -> dict:
-        """Shade loss and reflection gain of today, scaled like the expected output, with significant periods."""
+                             clear_weather: list[WeatherHour], today: dict[float, float],
+                             expected: dict[float, float], day_start: float, day_end: float) -> dict:
+        """Shade loss and reflection gain of today, scaled like the expected output, with significant periods
+        and the shares a clear sky would give."""
         learned = self.learned.get(sub_id)
         if learned is None:
-            return {"loss": {}, "gain": {}, "periods": []}
+            return {"loss": {}, "gain": {}, "periods": [], "shade_clear": {}, "refl_clear": {}}
         hours = [w for w in weather if day_start <= w.start < day_end]
         loss, gain = await self.hass.async_add_executor_job(hourly_effects, self.site, arr.geometry, learned, hours)
 
@@ -892,7 +894,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         loss, gain = scaled(loss), scaled(gain)
         periods = await self.hass.async_add_executor_job(
             significant_periods, self.site, arr.geometry, learned, day_start, loss, gain, sum(expected.values()))
-        return {"loss": loss, "gain": gain, "periods": periods}
+        shade_clear, refl_clear = await self.hass.async_add_executor_job(
+            clear_shares, self.site, arr.geometry, learned, [w for w in clear_weather if day_start <= w.start < day_end])
+        return {"loss": loss, "gain": gain, "periods": periods, "shade_clear": shade_clear, "refl_clear": refl_clear}
 
     @property
     def forecast_available(self) -> bool:

@@ -173,3 +173,33 @@ async def test_options_test_archive_on_save(hass: HomeAssistant) -> None:
             await hass.async_block_till_done()
     assert done["type"] is FlowResultType.CREATE_ENTRY
     assert hass.config_entries.async_get_entry(entry.entry_id).options["satellite"] is True
+
+
+async def test_change_during_reload_is_not_lost(hass: HomeAssistant) -> None:
+    """A subentry saved while a reload builds the coordinator (no update listener yet) triggers one more reload."""
+    from types import MappingProxyType
+
+    from custom_components.noxcast.coordinator import NoxcastCoordinator
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    original = NoxcastCoordinator.async_load
+    added = []
+
+    async def load_and_edit(self):
+        await original(self)
+        if not added:                                           # the second edit lands mid-reload
+            added.append(True)
+            hass.config_entries.async_add_subentry(self.config_entry, config_entries.ConfigSubentry(
+                data=MappingProxyType(ARRAY), subentry_type="array", title="Roof", unique_id=None))
+
+    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
+         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+        with patch.object(NoxcastCoordinator, "async_load", load_and_edit):
+            await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+    assert added and len(hass.config_entries.async_get_entry(entry.entry_id).runtime_data.arrays) == 1

@@ -119,15 +119,24 @@ class NoxcastCard extends HTMLElement {
     this._subscribeWeather();
   }
 
-  // hourly forecast of the weather entity for the strip above the chart; kept current by Home Assistant
+  // hourly forecast of the weather entity for the strip above the chart; kept current by Home Assistant.
+  // The forecast starts at the current hour, so the hours already seen are kept (in this browser) to show
+  // the whole day, not only what is left of it.
   async _subscribeWeather() {
     const id = this._config.weather_entity || (this._src && this._src.weather);
     if (!this._show("weather") || !id || !this._hass || !this.isConnected || this._wxFor === id) return;
     this._unsubWeather();
     this._wxFor = id;
+    const key = `noxcast-wx:${id}`;
+    let seen = {};
+    try { seen = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (err) { seen = {}; }
     try {
       this._wxUnsub = await this._hass.connection.subscribeMessage((msg) => {
-        this._wx = msg.forecast || [];
+        const keep = Date.now() - 36 * 3600 * 1000;
+        for (const f of msg.forecast || []) seen[f.datetime] = { datetime: f.datetime, condition: f.condition, temperature: f.temperature };
+        for (const k of Object.keys(seen)) if (Date.parse(k) < keep) delete seen[k];
+        try { localStorage.setItem(key, JSON.stringify(seen)); } catch (err) { /* storage unavailable: current forecast only */ }
+        this._wx = Object.values(seen).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
         this._renderBand();
       }, { type: "weather/subscribe_forecast", forecast_type: "hourly", entity_id: id });
     } catch (err) {

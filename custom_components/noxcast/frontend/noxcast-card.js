@@ -119,29 +119,57 @@ class NoxcastCard extends HTMLElement {
     this._subscribeWeather();
   }
 
-  // hourly forecast of the weather entity for the strip above the chart; kept current by Home Assistant.
-  // The forecast starts at the current hour, so the hours already seen are kept (in this browser) to show
-  // the whole day, not only what is left of it.
+  // hourly weather for the strip above the chart. Coming hours: the hourly forecast, kept current by
+  // Home Assistant. It starts at the current hour, so past hours come from the recorded states of the
+  // weather entity (the condition as reported at the middle of each hour); same on every device.
   async _subscribeWeather() {
     const id = this._config.weather_entity || (this._src && this._src.weather);
     if (!this._show("weather") || !id || !this._hass || !this.isConnected || this._wxFor === id) return;
     this._unsubWeather();
     this._wxFor = id;
-    const key = `noxcast-wx:${id}`;
-    let seen = {};
-    try { seen = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (err) { seen = {}; }
+    this._wxPast = [];
+    this._wxForecast = [];
+    this._loadWeatherHistory(id);
     try {
       this._wxUnsub = await this._hass.connection.subscribeMessage((msg) => {
-        const keep = Date.now() - 36 * 3600 * 1000;
-        for (const f of msg.forecast || []) seen[f.datetime] = { datetime: f.datetime, condition: f.condition, temperature: f.temperature };
-        for (const k of Object.keys(seen)) if (Date.parse(k) < keep) delete seen[k];
-        try { localStorage.setItem(key, JSON.stringify(seen)); } catch (err) { /* storage unavailable: current forecast only */ }
-        this._wx = Object.values(seen).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
-        this._renderBand();
+        this._wxForecast = msg.forecast || [];
+        if (Date.now() - (this._wxPastAt || 0) > 30 * 60 * 1000) this._loadWeatherHistory(id);
+        this._mergeWeather();
       }, { type: "weather/subscribe_forecast", forecast_type: "hourly", entity_id: id });
     } catch (err) {
       this._wxFor = null;                       // no hourly forecast: no strip
     }
+  }
+
+  async _loadWeatherHistory(id) {
+    this._wxPastAt = Date.now();
+    const start = this._localMidnight(new Date());
+    try {
+      const res = await ask(this._hass, { type: "history/history_during_period", start_time: new Date(start).toISOString(),
+        entity_ids: [id], minimal_response: false, no_attributes: false, significant_changes_only: false });
+      const states = ((res && res[id]) || []).map((r) => ({ ts: (r.lu ?? r.lc) * 1000, cond: r.s, temp: r.a && r.a.temperature }))
+        .filter((r) => r.cond && r.cond !== "unavailable" && r.cond !== "unknown").sort((a, b) => a.ts - b.ts);
+      const past = [];
+      for (let h = start; h + 3600000 <= Date.now(); h += 3600000) {
+        const mid = h + 1800000;
+        let cur = null;
+        for (const r of states) { if (r.ts <= mid) cur = r; else break; }
+        if (cur) past.push({ datetime: new Date(h).toISOString(), condition: cur.cond, temperature: cur.temp });
+      }
+      if (this._wxFor !== id) return;
+      this._wxPast = past;
+      this._mergeWeather();
+    } catch (err) {
+      this._wxPast = [];                        // no recorder history: coming hours only
+    }
+  }
+
+  _mergeWeather() {
+    const hours = new Map();
+    for (const f of this._wxPast || []) hours.set(Date.parse(f.datetime), f);
+    for (const f of this._wxForecast || []) if (!hours.has(Date.parse(f.datetime))) hours.set(Date.parse(f.datetime), f);
+    this._wx = [...hours.entries()].sort((a, b) => a[0] - b[0]).map(([, f]) => f);
+    this._renderBand();
   }
 
   _unsubWeather() {

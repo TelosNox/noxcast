@@ -100,6 +100,7 @@ class NoxcastData:
     forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
     morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
     expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
+    clear: dict[str | None, dict[float, float]] = field(default_factory=dict)      # clear-sky output over the horizon
     held: dict[str, dict[float, float]] = field(default_factory=dict)  # today: latest forecast, held once the hour began
     correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
@@ -822,12 +823,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         result.actual, result.weather = actual, weather
         temps = {w.start: w.temp for w in weather}
         clear_weather = [clearsky_weather(self.site, t, temps.get(t))
-                         for t in sorted(result.forecast.get(next(iter(self.arrays), None), {})) if t < day_end]
+                         for t in sorted(result.forecast.get(next(iter(self.arrays), None), {}))]
         for sub_id, arr in self.arrays.items():
             today = {t: v for t, v in result.forecast[sub_id].items() if t < day_end}
             result.morning[sub_id] = self._morning.get(sub_id) or today
-            clear = await self.hass.async_add_executor_job(
+            result.clear[sub_id] = await self.hass.async_add_executor_job(
                 forecast, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), clear_weather)
+            clear = {t: v for t, v in result.clear[sub_id].items() if t < day_end}
             partial = None
             if sub_id in running:
                 start, power, share = running[sub_id]
@@ -847,7 +849,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             result.held[sub_id] = self._held[sub_id]
             result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, today, result.expected[sub_id],
                                                                day_start, day_end)
-        for series in (result.forecast, result.morning, result.expected):
+        for series in (result.forecast, result.morning, result.expected, result.clear):
             total: dict[float, float] = {}
             for hours in list(series.values()):
                 for t, wh in hours.items():

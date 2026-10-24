@@ -171,10 +171,10 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
 
 
 def day_totals(data, days: int) -> list[dict]:
-    """PV energy per local day over the forecast horizon, with the P10-P90 band where known.
+    """Forecast PV energy per local day over the horizon, with clear-sky energy and the P10-P90 band where known.
 
-    Today counts its expected curve (actual so far, forecast for the rest); a day needs almost all of
-    its hours, so a horizon cut off mid-day does not show as a bad day.
+    Today counts its forecast too (past hours as they were forecast), not the expected curve, so the days
+    stay comparable. A day needs almost all of its hours, so a horizon cut off mid-day does not show as a bad day.
     """
     out = []
     today = dt_util.now().date()
@@ -183,12 +183,12 @@ def day_totals(data, days: int) -> list[dict]:
         day = today + timedelta(days=offset)
         a = dt_util.start_of_local_day(day).timestamp()
         b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
-        hours = (data.expected if offset == 0 else data.forecast).get(None, {})
-        values = [v for t, v in hours.items() if a <= t < b]
+        values = [v for t, v in data.forecast.get(None, {}).items() if a <= t < b]
         if len(values) < 20:
             continue
+        clear = sum(v for t, v in data.clear.get(None, {}).items() if a <= t < b)
         p = band.get(offset) or band.get(str(offset))
-        out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)),
+        out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)), "clear_wh": round(clear) or None,
                     "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None})
     return out
 

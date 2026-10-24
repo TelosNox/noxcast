@@ -84,3 +84,17 @@ def test_measured_once_per_hour_from_satellite():
     assert calls[0][0][2] == 5.0 and calls[0][1][2] == 12.0       # measured air temperature, else the archived one
     assert archive.add_measured(a, "roof", sat, None, predict, before=T0 + 6 * 3600) == 0   # never recomputed
     assert archive.add_measured(a, "roof", {}, None, predict, before=T0 + 24 * 3600) == 0   # no satellite data yet
+
+
+def test_weather_details_only_for_daylight_and_compact():
+    a = {}
+    wx = {T0 + h * 3600: archive.details(87.4, 0.234, 3.06, 361.2) for h in range(24)}
+    alt = {"open_meteo": ({T0 + h * 3600: 50.0 for h in range(24)}, {"roof": {}})}
+    alt_wx = {"open_meteo": {T0 + 3600: archive.details(sun=1.0)}}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}}, alt, wx, alt_wx)
+    hours = a[DAY.isoformat()]["hours"]
+    assert "wx" not in hours[str(int(T0))]                     # no irradiance in this hour
+    assert hours[str(int(T0 + 3600))]["wx"] == {"cloud": 87, "sun": 0.23, "wind": 3.1, "wdir": 1}
+    assert hours[str(int(T0 + 3600))]["alt"]["open_meteo"]["wx"] == {"sun": 1.0}
+    assert "wx" not in hours[str(int(T0 + 7200))]["alt"]["open_meteo"]
+    assert archive.details() == {}

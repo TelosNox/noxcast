@@ -377,7 +377,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
 - Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast
-  source (e.g. the sky view).
+  source (e.g. the sky view). For daylight hours it also keeps what each source says besides
+  irradiance – cloud cover, sunshine share of the hour, wind speed and direction, as far as the
+  source has them – so other predictors can be tested on archived days: on one installation the
+  sunshine duration of Open-Meteo matched sunny autumn days better than its irradiance, while
+  total cloud cover was too pessimistic under thin high cloud; wind cools the modules by about
+  1 % per m/s. These values are not used by the model. They add about 40 bytes per daylight hour
+  and source, well below 1 MB over the 120 days.
 
 ## Architecture
 

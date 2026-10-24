@@ -78,6 +78,8 @@ STALE_AFTER = timedelta(hours=6)         # sensors stay available this long afte
 POWER_UNIT_FACTORS = {"W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
 ENERGY_UNIT_FACTORS = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}
 MINUTE_FACTORS = {"min": 1.0, "h": 60.0, "s": 1 / 60, "d": 1440.0}
+SPEED_UNIT_FACTORS = {"m/s": 1.0, "km/h": 1 / 3.6, "mph": 0.44704, "kn": 0.514444, "ft/s": 0.3048}
+COMPASS = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
 LEARN_TIME = (1, 30)                     # local time of the nightly learning run
 HISTORY_YEARS = 2                        # history window used for learning
 

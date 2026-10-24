@@ -12,7 +12,8 @@
           "house_load": "House load",
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
-          "grid_invert": "Grid sensor counts export as positive"
+          "grid_invert": "Grid sensor counts export as positive",
+          "feed_in": "Surplus is fed into the grid"
         },
         "data_description": {
           "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
@@ -21,7 +22,8 @@
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
-          "grid_invert": "Switch on if the grid sensor is positive while feeding in."
+          "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
+          "feed_in": "Turn on if surplus power may go to the grid. Otherwise the day card counts surplus with full batteries as unused (zero export)."
         }
       },
       "reconfigure": {
@@ -34,13 +36,15 @@
           "house_load": "House load",
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
-          "grid_invert": "Grid sensor counts export as positive"
+          "grid_invert": "Grid sensor counts export as positive",
+          "feed_in": "Surplus is fed into the grid"
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
-          "grid_invert": "Switch on if the grid sensor is positive while feeding in."
+          "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
+          "feed_in": "Turn on if surplus power may go to the grid. Otherwise the day card counts surplus with full batteries as unused (zero export)."
         }
       }
     },

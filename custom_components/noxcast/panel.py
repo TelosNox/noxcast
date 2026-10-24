@@ -420,8 +420,8 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 @websocket_api.websocket_command({vol.Required("type"): WS_CARD})
 @callback
 def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """The sensors the day card needs, as configured in the integration; the card may override each part."""
-    from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_GRID_INVERT, CONF_MAX_SOC,
+    """The sensors the day card shows, as configured in the integration; the card only changes the display."""
+    from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_FEED_IN, CONF_GRID_INVERT, CONF_MAX_SOC,
                         CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
 
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
@@ -443,6 +443,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         "home": {"entity": c.house_load} if c.house_load else {},
         "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
         "batteries": batteries,
+        "export": bool(entry.data.get(CONF_FEED_IN)),
     })
 
 

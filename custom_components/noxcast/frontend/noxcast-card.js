@@ -2,21 +2,13 @@
 // battery and unused surplus. Plain custom element, no build step.
 //
 // type: custom:noxcast-card
-// Without further settings the card takes its sensors from the Noxcast configuration (PV arrays, house
-// load, grid, batteries). Each part below overrides it:
+// The card shows what Noxcast is configured with: PV groups and their sensors, house load, grid,
+// batteries and whether surplus is fed in. The card config only changes the display:
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
-// pv:
-//   entity: sensor.pv_total            # optional, otherwise the sum of the groups
-//   groups:
-//     - entity: sensor.pv_balcony
-//       name: Balkon                   # also the Noxcast array name, unless "array" is given
-// grid: { entity: sensor.grid, invert: false }        # positive = import
-// home: { entity: sensor.house_load }
-// batteries:
-//   - { entity: sensor.bat_power, soc: sensor.bat_soc, capacity: 1.9, name: Pro, invert: false }  # positive = charging
-//     # optional limits in percent, a number or an entity: max_soc (default 100), min_soc (default 0)
-//     # reserve: percent points above min_soc where discharging stops in practice (e.g. a feed-in rule)
-// export: false                        # surplus can be fed in; otherwise it counts as unused once batteries are full
+// groups:                              # per Noxcast PV group, by its name in Noxcast
+//   Balkon: { name: Süd, icon: mdi:balcony, hide: false }   # icon instead of the name; hide: not listed
+//                                      # on its own (its power still counts in PV and the chart)
+// battery_names: { Pro: Akku 1 }       # display names of Noxcast batteries
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 // icons: { pv: mdi:solar-power-variant, grid: mdi:transmission-tower, battery: auto, home: auto }
@@ -77,7 +69,7 @@ class NoxcastCard extends HTMLElement {
 
   static getStubConfig() { return {}; }
 
-  // sensors come from the Noxcast configuration; whatever the card config sets takes precedence
+  // sensors come from the Noxcast configuration; the card config only changes how they are shown
   setConfig(config) {
     this._user = config || {};
     this._config = this._merged();
@@ -86,12 +78,16 @@ class NoxcastCard extends HTMLElement {
 
   _merged() {
     const u = this._user || {}, s = this._src || {};
-    const set = (o, k) => !!(o && o[k] && (!Array.isArray(o[k]) || o[k].length));
+    const shown = (u.groups && typeof u.groups === "object" && !Array.isArray(u.groups)) ? u.groups : {};
+    const batNames = u.battery_names || {};
     return { ...u,
-      pv: { ...(u.pv || {}), groups: set(u.pv, "groups") ? u.pv.groups : (s.pv && s.pv.groups) || [] },
-      home: set(u.home, "entity") ? u.home : s.home || {},
-      grid: set(u.grid, "entity") ? u.grid : s.grid || {},
-      batteries: set(u, "batteries") ? u.batteries : s.batteries || [] };
+      pv: { groups: ((s.pv && s.pv.groups) || []).map((g) => {
+        const d = shown[g.name] || {};
+        return { ...g, label: d.name || g.name, icon: d.icon || "", hide: !!d.hide };
+      }) },
+      home: s.home || {}, grid: s.grid || {},
+      batteries: (s.batteries || []).map((b) => ({ ...b, name: batNames[b.name] || b.name })),
+      export: !!s.export };
   }
 
   async _loadSource() {
@@ -206,9 +202,9 @@ class NoxcastCard extends HTMLElement {
 
   _live() {
     const c = this._config;
-    const groups = (c.pv.groups || []).map((g) => ({ name: g.name || g.entity, id: g.entity || (g.entities || [])[0], w: this._groupW(g) }));
-    let pv = c.pv.entity ? this._watts(c.pv.entity, c.pv.invert) : null;
-    if (pv === null) pv = groups.reduce((a, g) => a + g.w, 0);
+    const groups = (c.pv.groups || []).map((g) => ({ name: g.label || g.name, icon: g.icon, hide: g.hide,
+      id: g.entity || (g.entities || [])[0], w: this._groupW(g) }));
+    const pv = groups.reduce((a, g) => a + g.w, 0);
     const bats = (c.batteries || []).map((b) => ({ name: b.name || b.entity, id: b.soc || b.entity, w: this._watts(b.entity, b.invert) || 0,
       soc: this._soc(b.soc), cap: Number(b.capacity) || 0 }));
     const capSum = bats.reduce((a, b) => a + b.cap, 0);
@@ -223,7 +219,7 @@ class NoxcastCard extends HTMLElement {
   }
 
   _signature() {
-    const c = this._config, ids = [c.pv.entity, ...(c.pv.groups || []).flatMap((g) => g.entities || [g.entity]), c.grid && c.grid.entity,
+    const c = this._config, ids = [...(c.pv.groups || []).flatMap((g) => g.entities || [g.entity]), c.grid && c.grid.entity,
       c.home && c.home.entity, ...(c.batteries || []).flatMap((b) => [b.entity, b.soc])].filter(Boolean);
     return ids.map((i) => this._hass.states[i] && this._hass.states[i].state).join("|") + (this._hass.themes && this._hass.themes.darkMode);
   }
@@ -406,8 +402,11 @@ class NoxcastCard extends HTMLElement {
     const fmtW = (x) => `${num(x)}W`;
     const small = (x) => (Math.abs(x) >= 1000 ? fmtW(x) : `${Math.round(x)}`);   // group and battery rows
     const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
-    // groups left and right of the PV symbol: first half left, the rest right; each opens its own entity
-    const gText = v.groups.map((g) => `<tspan data-more="${this._esc(g.id)}">${this._esc(g.name)} ${small(g.w)}</tspan>`);
+    // groups left and right of the PV symbol: first half left, the rest right; each opens its own entity.
+    // HTML rows inside the SVG, so an icon can stand in for the name
+    const iconOk = !!customElements.get("ha-icon");
+    const gText = v.groups.filter((g) => !g.hide).map((g) => `<span data-more="${this._esc(g.id)}" title="${this._esc(g.name)}" style="cursor:pointer">${
+      g.icon && iconOk ? `<ha-icon icon="${this._esc(g.icon)}" style="--mdc-icon-size:1.25em;vertical-align:-0.25em"></ha-icon>` : this._esc(g.name)} ${small(g.w)}</span>`);
     // small triangles instead of signs, pointing the way the power flows on screen (grid left, battery right);
     // smaller than the number, so raised to its middle and the baseline restored after it (U+FE0E: no emoji)
     const tri = (dir, size, text) => {
@@ -416,14 +415,15 @@ class NoxcastCard extends HTMLElement {
     };
     const batArrow = (w, size = 9, text = 11) => (w >= ACTIVE_W ? tri(1, size, text) : w <= -ACTIVE_W ? tri(-1, size, text) : "");
     const half = Math.ceil(gText.length / 2);
-    const gY = (27 - lift).toFixed(1);
-    const groups = gText.length ? `<text x="186" y="${gY}" text-anchor="end" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(0, half).join(" · ")}</text>
-        <text x="222" y="${gY}" font-size="${fs(11)}" fill="${P.pvText}">${gText.slice(half).join(" · ")}</text>` : "";
+    const gH = 18 * sc, gTop = (27 - lift - 0.68 * gH).toFixed(1);
+    const gRow = (x, align, items) => `<foreignObject x="${x}" y="${gTop}" width="186" height="${gH.toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml"
+        style="display:flex;justify-content:${align};align-items:center;height:100%;gap:0 .3em;font-size:${fs(11)}px;color:${P.pvText};white-space:nowrap;line-height:1">${items.join("<span>·</span>")}</div></foreignObject>`;
+    const groups = gText.length ? `${gRow(0, "flex-end", gText.slice(0, half))}${gRow(222, "flex-start", gText.slice(half))}` : "";
     const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
     const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11, 15)}${fmtW(-v.grid)}` : "0 W";
     const c = this._config, icons = c.icons || {};
     const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
-    const g0 = (c.pv.groups || [])[0] || {}, pvId = c.pv.entity || g0.entity || (g0.entities || [])[0];
+    const g0 = (c.pv.groups || [])[0] || {}, pvId = g0.entity || (g0.entities || [])[0];
     const batId = (v.bats[0] || {}).id;
     const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
     const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
@@ -559,9 +559,10 @@ class NoxcastCard extends HTMLElement {
     // one lane per array: shade always, reflection where it adds something. The band's thickness
     // follows, hour by hour, the share the effect takes from (or adds to) what the array could give: a thin
     // line = a little, the full lane = half of it or more. Thickness reads the same on light and dark themes
-    const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? arrays.length : 0;
+    const shownArrays = arrays.filter((a) => !a.hide);
+    const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? shownArrays.length : 0;
     const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share) / 0.5);
-    const lanes = arrays.slice(0, laneN).map((arr, i) => {
+    const lanes = shownArrays.slice(0, laneN).map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
       const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
       const fcA = new Map((arr.forecast && arr.forecast.length ? arr.forecast : arr.morning) || []);
@@ -585,7 +586,8 @@ class NoxcastCard extends HTMLElement {
           <polygon points="${outline}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
       }).join("");
       return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
-        <text x="${X1 - 2}" y="${ly + Lh - 1}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)" stroke="var(--card-background-color, #fff)" stroke-width="3" paint-order="stroke">${this._esc(arr.label)}</text>`;
+        ${(arr.icon && this._icon(arr.icon, X1 - 7, ly + Lh / 2, 12, "var(--secondary-text-color)"))
+          || `<text x="${X1 - 2}" y="${ly + Lh - 1}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)" stroke="var(--card-background-color, #fff)" stroke-width="3" paint-order="stroke">${this._esc(arr.label)}</text>`}`;
     }).join("");
 
     // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
@@ -745,18 +747,13 @@ class NoxcastCard extends HTMLElement {
     return `<div class="legend">${items.filter(([show]) => show).map(([, icon, text]) => `<span>${icon}${text}</span>`).join("")}</div>`;
   }
 
-  // arrays of today in the configured order (by group name / array), else all
+  // arrays of today in the Noxcast order, with the display settings of their group
   _arrays() {
-    const all = this._data.today.arrays.map((a) => ({ ...a, label: a.name }));
     const groups = this._config.pv.groups || [];
-    if (!groups.length) return all;
-    const out = [];
-    for (const g of groups) {
-      const key = (g.array || g.name || "").toLowerCase();
-      const a = all.find((x) => x.name.toLowerCase() === key);
-      if (a) out.push({ ...a, label: g.name || a.name });
-    }
-    return out.length ? out : all;
+    return this._data.today.arrays.map((a) => {
+      const g = groups.find((x) => x.name === a.name) || {};
+      return { ...a, label: g.label || a.name, icon: g.icon || "", hide: !!g.hide };
+    });
   }
 
   // a battery limit: a number or the entity holding it, in percent
@@ -891,12 +888,29 @@ function line(p) {
   return `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${curve(p)}`;
 }
 
-// Visual editor: text size, main entities, PV groups and batteries as editable lists.
+// Visual editor: display only. Sensors, batteries and feed-in come from the Noxcast configuration.
+const LEGACY_KEYS = ["pv", "grid", "home", "export"];
+
 class NoxcastCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    const first = !this._hass;
+    this._hass = hass;
+    if (first) this._loadSource();
+    this._render();
+  }
 
   get _de() { return (this._hass.language || "en").startsWith("de"); }
+
+  async _loadSource() {
+    try {
+      this._src = await ask(this._hass, { type: "noxcast/card_config" });
+    } catch (err) {
+      this._src = null;
+    }
+    this._shape = null;
+    this._render();
+  }
 
   _emit(c) {
     this._config = c;
@@ -909,19 +923,12 @@ class NoxcastCardEditor extends HTMLElement {
       font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
       show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Verschattung und Reflexion" : "Shade and reflection",
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
-      export: de ? "Überschuss wird eingespeist (nicht als Verlust werten)" : "Surplus is fed in (not counted as lost)",
-      pv_entity: de ? "PV gesamt (optional, sonst Summe der Gruppen)" : "PV total (optional, otherwise the sum of the groups)",
-      grid_entity: de ? "Netz (positiv = Bezug)" : "Grid (positive = import)", grid_invert: de ? "Netz-Vorzeichen umkehren" : "Invert grid sign",
-      home_entity: de ? "Hausverbrauch" : "House load",
       icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
       icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
       icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
-      entity: de ? "Leistung" : "Power", name: "Name", invert: de ? "Vorzeichen umkehren" : "Invert sign",
-      array: de ? "Noxcast-Fläche (optional, sonst der Name)" : "Noxcast array (optional, otherwise the name)",
-      soc: de ? "Ladestand" : "State of charge", capacity: de ? "Kapazität (kWh)" : "Capacity (kWh)",
-      max_soc: de ? "Ladegrenze oben (%)" : "Upper limit (%)", max_soc_entity: de ? "… oder als Entität" : "… or as an entity",
-      min_soc: de ? "Entladegrenze unten (%)" : "Lower limit (%)", min_soc_entity: de ? "… oder als Entität" : "… or as an entity",
-      reserve: de ? "Reserve über der Entladegrenze (Prozentpunkte, z. B. Einspeisestopp)" : "Reserve above the lower limit (percent points, e.g. a feed-in stop)",
+      name: de ? "Anzeigename (leer = Name in Noxcast)" : "Display name (empty = name in Noxcast)",
+      icon: de ? "Symbol statt Name (optional)" : "Icon instead of the name (optional)",
+      hide: de ? "Nicht einzeln anzeigen" : "Do not list on its own",
     };
   }
 
@@ -934,32 +941,43 @@ class NoxcastCardEditor extends HTMLElement {
     return f;
   }
 
+  // sensor settings of earlier versions; the card ignores them
+  _legacy() {
+    const c = this._config || {};
+    return LEGACY_KEYS.some((k) => k in c) || Array.isArray(c.batteries) || Array.isArray(c.groups);
+  }
+
   _render() {
     if (!this._hass || !this._config) return;
-    const c = this._config, groups = (c.pv && c.pv.groups) || [], bats = c.batteries || [];
-    const shape = `${groups.length}/${bats.length}/${this._de}`;
+    const c = this._config, src = this._src || {};
+    const groups = ((src.pv && src.pv.groups) || []).map((g) => g.name);
+    const bats = (src.batteries || []).map((b) => b.name).filter(Boolean);
+    const shape = `${groups.join("|")}/${bats.join("|")}/${this._legacy()}/${this._de}`;
     if (this._shape === shape) {                       // only refresh hass, keeps the focus while typing
       for (const f of this.querySelectorAll("ha-form")) f.hass = this._hass;
       return;
     }
     this._shape = shape;
-    const de = this._de, sensor = { entity: { domain: "sensor" } }, entity = { entity: {} };
-    const percent = { number: { min: 0, max: 100, step: 1, mode: "box", unit_of_measurement: "%" } };
+    const de = this._de;
     this.innerHTML = `<style>
         .nx-sec { margin: 16px 0 4px; font-weight: 500; }
         .nx-item { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
-        .nx-head { display: flex; justify-content: space-between; align-items: center; color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
+        .nx-head { color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
         .nx-btn { background: none; border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 10px;
           color: var(--primary-color); font: inherit; cursor: pointer; }
         .nx-note { color: var(--secondary-text-color); font-size: 13px; margin: 4px 0 8px; }
-      </style><div class="nx-sec">${de ? "Anzeige" : "Display"}</div><div id="main"></div>
-      <div class="nx-sec">${de ? "Sensoren" : "Sensors"}</div>
-      <div class="nx-note">${de ? "PV-Gruppen, Hausverbrauch, Netz und Akkus kommen aus der Noxcast-Konfiguration. Hier nur eintragen, was davon abweichen soll."
-        : "PV groups, house load, grid and batteries come from the Noxcast configuration. Only set here what should differ."}</div><div id="sensors"></div>
-      <div class="nx-sec">${de ? "PV-Gruppen (abweichend)" : "PV groups (override)"}</div><div id="groups"></div>
-      <button class="nx-btn" id="addGroup">+ ${de ? "Gruppe" : "group"}</button>
-      <div class="nx-sec">${de ? "Akkus (abweichend)" : "Batteries (override)"}</div><div id="bats"></div>
-      <button class="nx-btn" id="addBat">+ ${de ? "Akku" : "battery"}</button>`;
+        .nx-warn { border-left: 3px solid var(--warning-color, #F29900); padding: 6px 10px; margin: 8px 0; font-size: 13px; }
+      </style>
+      ${this._legacy() ? `<div class="nx-warn">${de
+        ? "Diese Karte enthält Sensor-Einstellungen einer früheren Version. Sie werden ignoriert: Die Karte zeigt immer, was in Noxcast konfiguriert ist."
+        : "This card has sensor settings of an earlier version. They are ignored: the card always shows what Noxcast is configured with."}
+        <div style="margin-top:6px"><button class="nx-btn" id="clean">${de ? "Alte Sensor-Einstellungen entfernen" : "Remove old sensor settings"}</button></div></div>` : ""}
+      <div class="nx-sec">${de ? "Anzeige" : "Display"}</div><div id="main"></div>
+      <div class="nx-sec">${de ? "PV-Gruppen" : "PV groups"}</div>
+      <div class="nx-note">${de ? "Sensoren, Akkus und Einspeisung kommen aus der Noxcast-Konfiguration. Hier nur, wie sie angezeigt werden."
+        : "Sensors, batteries and feed-in come from the Noxcast configuration. Here only how they are shown."}</div>
+      <div id="groups">${groups.length ? "" : `<div class="nx-note">${de ? "Noxcast ist noch nicht geladen." : "Noxcast is not loaded yet."}</div>`}</div>
+      ${bats.length ? `<div class="nx-sec">${de ? "Akkus" : "Batteries"}</div><div id="bats"></div>` : ""}`;
 
     const shows = ["show_battery", "show_effects", "show_band", "show_load"];
     this.querySelector("#main").appendChild(this._form([
@@ -983,74 +1001,49 @@ class NoxcastCardEditor extends HTMLElement {
       this._emit(n);
     }));
 
-    this.querySelector("#sensors").appendChild(this._form([
-      { name: "pv_entity", selector: sensor },
-      { name: "grid_entity", selector: sensor },
-      { name: "grid_invert", selector: { boolean: {} } },
-      { name: "home_entity", selector: sensor },
-      { name: "export", selector: { boolean: {} } },
-    ], {
-      export: !!c.export, pv_entity: (c.pv && c.pv.entity) || "", grid_entity: (c.grid && c.grid.entity) || "",
-      grid_invert: !!(c.grid && c.grid.invert), home_entity: (c.home && c.home.entity) || "",
-    }, (v) => {
-      const n = { ...this._config };
-      n.export = v.export;
-      const clean = (o) => { const r = Object.fromEntries(Object.entries(o).filter(([, x]) => x)); return Object.keys(r).length ? r : undefined; };
-      n.pv = clean({ ...(n.pv || {}), entity: v.pv_entity });
-      n.grid = clean({ entity: v.grid_entity, invert: v.grid_invert });
-      n.home = clean({ entity: v.home_entity });
-      for (const k of ["pv", "grid", "home"]) if (n[k] === undefined) delete n[k];
-      if (!n.export) delete n.export;
-      this._emit(n);
-    }));
-
-    const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, x]) => x !== undefined && x !== "" && x !== false && x !== null));
-    const setGroups = (list) => this._emit({ ...this._config, pv: { ...(this._config.pv || {}), groups: list } });
-    const setBats = (list) => this._emit({ ...this._config, batteries: list });
-    const item = (box, title, form, remove) => {
+    const item = (box, title, form) => {
       const el = document.createElement("div");
       el.className = "nx-item";
-      el.innerHTML = `<div class="nx-head"><span>${title}</span><button class="nx-btn">${de ? "Entfernen" : "Remove"}</button></div>`;
-      el.querySelector("button").addEventListener("click", remove);
+      el.innerHTML = `<div class="nx-head">${title.replace(/[&<>"']/g, "")}</div>`;
       el.appendChild(form);
       box.appendChild(el);
     };
-
+    // per Noxcast group: display name, icon, hidden; only set values are kept
+    const shown = () => (this._config.groups && !Array.isArray(this._config.groups) ? this._config.groups : {});
     const gBox = this.querySelector("#groups");
-    groups.forEach((g, i) => item(gBox, `${de ? "Gruppe" : "Group"} ${i + 1}`, this._form([
-      { name: "entity", selector: sensor }, { name: "name", selector: { text: {} } },
-      { name: "array", selector: { text: {} } }, { name: "invert", selector: { boolean: {} } },
-    ], { entity: g.entity || "", name: g.name || "", array: g.array || "", invert: !!g.invert }, (v) => {
-      const list = [...((this._config.pv && this._config.pv.groups) || [])];
-      list[i] = clean({ ...list[i], ...v });
-      setGroups(list);
-    }), () => setGroups(((this._config.pv && this._config.pv.groups) || []).filter((_, j) => j !== i))));
-
-    // a limit is a number or an entity; the entity wins when both are set
-    const limit = (x) => (typeof x === "string" && x.includes(".") ? { e: x, n: undefined }
-      : { e: "", n: x === undefined || x === "" ? undefined : Number(x) });
+    for (const name of groups) {
+      const d = shown()[name] || {};
+      item(gBox, name, this._form([
+        { name: "name", selector: { text: {} } }, { name: "icon", selector: { icon: {} } }, { name: "hide", selector: { boolean: {} } },
+      ], { name: d.name || "", icon: d.icon || "", hide: !!d.hide }, (v) => {
+        const next = { ...shown() };
+        const entry = Object.fromEntries(Object.entries({ name: v.name, icon: v.icon, hide: v.hide }).filter(([, x]) => x));
+        if (Object.keys(entry).length) next[name] = entry; else delete next[name];
+        const n = { ...this._config };
+        if (Object.keys(next).length) n.groups = next; else delete n.groups;
+        this._emit(n);
+      }));
+    }
     const bBox = this.querySelector("#bats");
-    bats.forEach((b, i) => {
-      const mx = limit(b.max_soc), mn = limit(b.min_soc);
-      item(bBox, `${de ? "Akku" : "Battery"} ${i + 1}`, this._form([
-        { name: "entity", selector: sensor }, { name: "soc", selector: sensor },
-        { name: "name", selector: { text: {} } },
-        { name: "capacity", selector: { number: { min: 0, max: 100, step: 0.1, mode: "box", unit_of_measurement: "kWh" } } },
-        { name: "invert", selector: { boolean: {} } },
-        { name: "max_soc", selector: percent }, { name: "max_soc_entity", selector: entity },
-        { name: "min_soc", selector: percent }, { name: "min_soc_entity", selector: entity },
-        { name: "reserve", selector: { number: { min: 0, max: 50, step: 1, mode: "box", unit_of_measurement: "%" } } },
-      ], { entity: b.entity || "", soc: b.soc || "", name: b.name || "", capacity: b.capacity, invert: !!b.invert,
-        max_soc: mx.n, max_soc_entity: mx.e, min_soc: mn.n, min_soc_entity: mn.e, reserve: b.reserve }, (v) => {
-        const list = [...(this._config.batteries || [])];
-        const { max_soc_entity, min_soc_entity, ...rest } = v;
-        list[i] = clean({ ...list[i], ...rest, max_soc: max_soc_entity || rest.max_soc, min_soc: min_soc_entity || rest.min_soc });
-        setBats(list);
-      }), () => setBats((this._config.batteries || []).filter((_, j) => j !== i)));
+    for (const name of bats) {
+      const names = this._config.battery_names || {};
+      item(bBox, name, this._form([{ name: "name", selector: { text: {} } }], { name: names[name] || "" }, (v) => {
+        const next = { ...(this._config.battery_names || {}) };
+        if (v.name) next[name] = v.name; else delete next[name];
+        const n = { ...this._config };
+        if (Object.keys(next).length) n.battery_names = next; else delete n.battery_names;
+        this._emit(n);
+      }));
+    }
+    const clean = this.querySelector("#clean");
+    if (clean) clean.addEventListener("click", () => {
+      const n = { ...this._config };
+      for (const k of LEGACY_KEYS) delete n[k];
+      if (Array.isArray(n.batteries)) delete n.batteries;
+      if (Array.isArray(n.groups)) delete n.groups;
+      this._emit(n);
+      this._render();
     });
-
-    this.querySelector("#addGroup").addEventListener("click", () => setGroups([...groups, { entity: "" }]));
-    this.querySelector("#addBat").addEventListener("click", () => setBats([...bats, { entity: "", soc: "", capacity: 1 }]));
   }
 }
 

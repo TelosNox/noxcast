@@ -5,18 +5,21 @@
 // entity: weather.home                 # default: the weather entity Noxcast uses
 // days: 5                              # 1 to 10; days beyond the Noxcast horizon show weather only
 // show_pv: true                        # PV yield per day where Noxcast has a forecast
+// pv_bar: line                         # share of the clear-sky yield: line (row edge), fill (row background), none
 // temperature: sensor.outdoor_temp     # optional: measured outside values above the days
 // humidity: sensor.outdoor_humidity
 // name: Außen                          # label of the measured values
 // look: noxcast                        # noxcast: the Noxcast panel look; plain: Home Assistant card
 
 const W_TEXT = {
-  de: { today: "Heute", tomorrow: "Morgen", outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Keine Wetterentität",
+  de: { outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Keine Wetterentität",
     entity: "Wetterentität (leer = die von Noxcast)", days: "Tage", show_pv: "PV-Ertrag pro Tag", temperature: "Außentemperatur (optional)",
-    humidity_s: "Außenfeuchte (optional)", name: "Bezeichnung der Außenwerte", look: "Aussehen" },
-  en: { today: "Today", tomorrow: "Tomorrow", outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather entity",
+    humidity_s: "Außenfeuchte (optional)", name: "Bezeichnung der Außenwerte", look: "Aussehen",
+    pv_bar: "Balken: Anteil am Ertrag bei klarem Himmel", line: "Linie am Zeilenrand", fill: "Zeilenhintergrund", none: "Kein Balken" },
+  en: { outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather entity",
     entity: "Weather entity (empty = the one Noxcast uses)", days: "Days", show_pv: "PV yield per day", temperature: "Outside temperature (optional)",
-    humidity_s: "Outside humidity (optional)", name: "Label of the outside values", look: "Look" },
+    humidity_s: "Outside humidity (optional)", name: "Label of the outside values", look: "Look",
+    pv_bar: "Bar: share of the clear-sky yield", line: "Line at the row edge", fill: "Row background", none: "No bar" },
 };
 
 const W_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night", partlycloudy: "mdi:weather-partly-cloudy",
@@ -33,25 +36,24 @@ class NoxcastWeatherCard extends HTMLElement {
   static getStubConfig() { return { days: 5 }; }
 
   static getConfigForm() {
+    const t = W_TEXT[(document.documentElement.lang || "en").slice(0, 2)] || W_TEXT.en;
     return {
       schema: [
         { name: "entity", selector: { entity: { domain: "weather" } } },
         { name: "days", selector: { number: { min: 1, max: 10, step: 1, mode: "box" } } },
         { name: "show_pv", selector: { boolean: {} } },
+        { name: "pv_bar", selector: { select: { mode: "dropdown", options: ["line", "fill", "none"].map((value) => ({ value, label: t[value] })) } } },
         { name: "temperature", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
         { name: "humidity", selector: { entity: { domain: "sensor", device_class: "humidity" } } },
         { name: "name", selector: { text: {} } },
         { name: "look", selector: { select: { mode: "dropdown", options: [{ value: "noxcast", label: "Noxcast" }, { value: "plain", label: "Home Assistant" }] } } },
       ],
-      computeLabel: (s) => {
-        const t = W_TEXT[(document.documentElement.lang || "en").slice(0, 2)] || W_TEXT.en;
-        return s.name === "humidity" ? t.humidity_s : t[s.name] || s.name;
-      },
+      computeLabel: (s) => (s.name === "humidity" ? t.humidity_s : t[s.name] || s.name),
     };
   }
 
   setConfig(config) {
-    this._config = { days: 5, show_pv: true, look: "noxcast", ...(config || {}) };
+    this._config = { days: 5, show_pv: true, pv_bar: "line", look: "noxcast", ...(config || {}) };
     if (this._hass) { this._resubscribe(); this._render(); }
   }
 
@@ -149,15 +151,18 @@ class NoxcastWeatherCard extends HTMLElement {
     const temp = st(c.temperature), hum = st(c.humidity);
     const tv = temp && !isNaN(parseFloat(temp.state)) ? parseFloat(temp.state) : null;
     const hv = hum && !isNaN(parseFloat(hum.state)) ? parseFloat(hum.state) : null;
-    const today = this._date(Date.now()), tomorrow = this._date(Date.now() + 86400000);
+    const today = this._date(Date.now());
     const pvColor = dark ? "#F2B233" : "#9A6400";
+    const bar = c.show_pv ? c.pv_bar || "line" : "none";
     const rows = (this._days || []).filter((f) => this._date(Date.parse(f.datetime)) >= today).slice(0, Number(c.days) || 5).map((f) => {
       const date = this._date(Date.parse(f.datetime));
-      const label = date === today ? t.today : date === tomorrow ? t.tomorrow
-        : new Date(f.datetime).toLocaleDateString(this._lang, { weekday: "short", timeZone: this._tz || this._hass.config.time_zone });
+      const label = new Date(f.datetime).toLocaleDateString(this._lang, { weekday: "short", timeZone: this._tz || this._hass.config.time_zone });
       const pv = c.show_pv && this._pv && this._pv.get(date);
       const rain = Number(f.precipitation) >= 0.5 ? `${this._num(f.precipitation, Number(f.precipitation) < 10 ? 1 : 0)} mm` : "";
-      return `<div class="day">
+      // the day's forecast as a share of its clear-sky yield; cloud enhancement can exceed it slightly
+      const share = pv && pv.clear_wh ? `${Math.min(100, (100 * pv.wh) / pv.clear_wh).toFixed(1)}%` : null;
+      const shown = share !== null && bar !== "none";
+      return `<div class="day${shown ? ` bar-${bar}" style="--share:${share}` : ""}">
         <span class="d">${this._esc(label)}</span>
         <ha-icon icon="${W_ICON[f.condition] || "mdi:weather-cloudy"}" style="color:${W_COLOR[f.condition] || "var(--secondary-text-color)"}"></ha-icon>
         <span class="tmp">${f.temperature == null ? "–" : `${Math.round(f.temperature)}°`} <span class="lo">${f.templow == null ? "" : `${Math.round(f.templow)}°`}</span></span>
@@ -170,7 +175,7 @@ class NoxcastWeatherCard extends HTMLElement {
         ${tv === null ? "" : `<span class="now">${this._num(tv, 1)}°</span>`}
         ${hv === null ? "" : `<span class="hum">${this._num(hv)} % ${t.humidity}</span>`}
       </div>` : "";
-    const body = this._entity ? rows : `<div class="muted">${t.noWeather}</div>`;
+    const body = this._entity ? `<div class="rows ${bar}">${rows}</div>` : `<div class="muted">${t.noWeather}</div>`;
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
       ha-card.nx { border-radius: 20px; border: 1px solid transparent;
@@ -181,9 +186,15 @@ class NoxcastWeatherCard extends HTMLElement {
       .lbl { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--secondary-text-color); }
       .now { font-size: 44px; font-weight: 500; letter-spacing: -.02em; line-height: 1.1; }
       .hum { font-size: 17px; color: var(--secondary-text-color); }
-      .day { display: grid; grid-template-columns: 4.2em 28px 1fr auto auto; align-items: center; gap: 8px; min-height: 44px;
-        border-top: 1px solid var(--divider-color); font-size: 16px; }
-      .day:first-child { border-top: none; }
+      .day { display: grid; grid-template-columns: 2.4em 28px 1fr auto auto; align-items: center; gap: 8px; min-height: 44px;
+        border-bottom: 1px solid var(--divider-color); font-size: 16px; }
+      .day:last-child { border-bottom-color: transparent; }
+      .day.bar-line { border-bottom: none; background: linear-gradient(90deg, ${pvColor} var(--share), var(--divider-color) var(--share))
+        no-repeat left bottom / 100% 3px; }
+      .day.bar-fill { border-bottom-color: transparent; margin: 0 -8px; padding: 0 8px; border-radius: 10px;
+        background: linear-gradient(90deg, rgba(242,178,51,.22) var(--share), rgba(127,127,127,.06) var(--share)); }
+      .rows.fill { display: flex; flex-direction: column; gap: 6px; }
+      .rows.fill .day { border-bottom-color: transparent; }
       .d { color: var(--secondary-text-color); }
       ha-icon { --mdc-icon-size: 24px; display: flex; }
       .lo { color: var(--secondary-text-color); }

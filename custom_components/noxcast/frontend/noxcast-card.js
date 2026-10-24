@@ -619,7 +619,11 @@ class NoxcastCard extends HTMLElement {
 
     const m = this._model(now);
     const load = m.load;
-    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 104;
+    // the margins hold the battery caps with their labels: wide enough for the longest label at the
+    // axis font size (monospace, at most about 0.7 em per character), so larger text is not cut at the card edge
+    const axF = 9 * Math.min(this._scale, 1.2);
+    const capChars = Math.max(5, t.start.length, t.tomorrow.length, t.empty.length, now < t0 ? t.expected.length : 0);
+    const W = 408, CAPW = Math.max(46, Math.ceil(capChars * 0.7 * axF + 10)), X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 104;
     const x = (ts) => X0 + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (X1 - X0);
     // fixed scale: installed peak power, so a weak day shows as a low curve; the top 14 px stay free
     // for the value of a load cut off by the scale

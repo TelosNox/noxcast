@@ -20,7 +20,7 @@
 // Tapping PV, grid, home or battery opens the entity's more-info dialog.
 
 const TEXT = {
-  de: { upTo: "bis", pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
+  de: { upTo: "bis", clearSky: "bei klarem Himmel bis", pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
     refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
@@ -28,7 +28,7 @@ const TEXT = {
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
-  en: { upTo: "up to", pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
+  en: { upTo: "up to", clearSky: "clear sky up to", pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
     refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
@@ -667,34 +667,43 @@ class NoxcastCard extends HTMLElement {
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
-    // one lane per array: shade always, reflection where it adds something. The band's thickness
-    // follows, hour by hour, the share the effect takes from (or adds to) what the array could give: a thin
-    // line = a little, the full lane = half of it or more. Thickness reads the same on light and dark themes
+    // one lane per array: shade always, reflection where it adds something. Hour by hour, the light band
+    // shows the share the effect would take from (or add to) what the array could give under a clear sky,
+    // the solid band the share it takes today; the full lane = all of it. Under clouds the solid band
+    // stays thin inside the light one. Thickness reads the same on light and dark themes
     const shownArrays = arrays.filter((a) => !a.hide);
     const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? shownArrays.length : 0;
-    const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share) / 0.5);
+    const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share));
     const lanes = shownArrays.slice(0, laneN).map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
       const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
+      const shadeC = new Map(arr.shade_clear || []), reflC = new Map(arr.refl_clear || []);
       const fcA = new Map((arr.forecast && arr.forecast.length ? arr.forecast : arr.morning) || []);
       const fx = arr.periods.filter((p) => p.end > t0 && p.start < t1).map((p, j) => {
         const shade = p.type === "shade", color = shade ? P.shade : P.refl, eff = shade ? lossA : gainA;
-        const shares = [];
+        const clear = shade ? shadeC : reflC;
+        const shares = [], potential = [];
         for (let h = Math.floor(p.start / H) * H; h < p.end; h += H) {
           const e = eff.get(h) || 0, base = (fcA.get(h) || 0) + (shade ? e : -e);
-          shares.push([h, base > 1 ? e / base : 0]);
+          const c = clear.has(h) ? clear.get(h) : null, v = base > 1 ? e / base : 0;
+          potential.push([h, c === null ? v : c]);
+          shares.push([h, c === null ? v : Math.min(v, c)]);   // today never beyond the clear-sky share
         }
         const peak = shares.reduce((a, [, v]) => Math.max(a, v), 0);
+        const peakClear = potential.reduce((a, [, v]) => Math.max(a, v), 0);
         const x0 = x(p.start), x1 = Math.max(x0 + 2, x(p.end)), cy = ly + Lh / 2;
         // the outline through the hour middles, held flat to the period's edges
-        const pts = [[x0, shares.length ? shares[0][1] : 0],
-          ...shares.map(([h, v]) => [Math.max(x0, Math.min(x1, x(h + H / 2))), v]),
-          [x1, shares.length ? shares[shares.length - 1][1] : 0]];
-        const outline = [...pts.map(([px, v]) => `${px.toFixed(1)},${(cy - half(v)).toFixed(1)}`),
-          ...pts.reverse().map(([px, v]) => `${px.toFixed(1)},${(cy + half(v)).toFixed(1)}`)].join(" ");
-        const title = `${shade ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${shade ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}${peak > 0 ? ` · ${t.upTo} ${Math.round(peak * 100)} %` : ""}`;
+        const outline = (series) => {
+          const pts = [[x0, series.length ? series[0][1] : 0],
+            ...series.map(([h, v]) => [Math.max(x0, Math.min(x1, x(h + H / 2))), v]),
+            [x1, series.length ? series[series.length - 1][1] : 0]];
+          return [...pts.map(([px, v]) => `${px.toFixed(1)},${(cy - half(v)).toFixed(1)}`),
+            ...pts.reverse().map(([px, v]) => `${px.toFixed(1)},${(cy + half(v)).toFixed(1)}`)].join(" ");
+        };
+        const title = `${shade ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${shade ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}${peak > 0 ? ` · ${t.upTo} ${Math.round(peak * 100)} %` : ""}${peakClear > peak ? ` · ${t.clearSky} ${Math.round(peakClear * 100)} %` : ""}`;
         return `<g><title>${this._esc(title)}</title><rect x="${x0.toFixed(1)}" y="${ly}" width="${(x1 - x0).toFixed(1)}" height="${Lh}" fill="transparent"></rect>
-          <polygon points="${outline}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
+          <polygon points="${outline(potential)}" fill="${color}" fill-opacity=".22"></polygon>
+          <polygon points="${outline(shares)}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
       }).join("");
       return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
         ${(arr.icon && this._icon(arr.icon, X1 - 7, ly + Lh / 2, 12, "var(--secondary-text-color)"))

@@ -55,13 +55,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+def _config_state(entry: NoxcastConfigEntry) -> tuple:
+    return (dict(entry.data), dict(entry.options), {sid: (sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
+    built_from = _config_state(entry)
     coordinator = NoxcastCoordinator(hass, entry)
     await coordinator.async_load()
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    # a change saved while this setup ran (e.g. a second subentry edited during the reload of the
+    # first) found no listener; reload once more so it is not lost until the next restart
+    if _config_state(entry) != built_from:
+        hass.config_entries.async_schedule_reload(entry.entry_id)
     return True
 
 

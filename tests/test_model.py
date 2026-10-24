@@ -397,4 +397,4 @@ def test_shadow_edge_placed_within_the_hour():
     assert edge_error(fitted) <= 1.02 * edge_error(per_cell)
     behind = [v for k, v in fitted.cells.items()                                         # 80-100°, 15-35°
               if int(k.split(",")[0]) in (8, 9) and 3 <= int(k.split(",")[1]) <= 6]
-    assert behind and max(behind) < 0.05, {k: v for k, v in fitted.cells.items() if int(k.split(",")[0]) in (8, 9, 10, 11)}
+    assert behind and max(behind) < 0.05

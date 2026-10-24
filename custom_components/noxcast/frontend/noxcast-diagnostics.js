@@ -56,10 +56,14 @@ class NoxcastDiagnostics extends HTMLElement {
 
   async _load() {
     try {
-      this._data = await this._hass.connection.sendMessagePromise({ type: "noxcast/diagnostics" });
+      // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
+      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/diagnostics" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
       this._error = null;
     } catch (err) {
       this._error = String((err && err.message) || err);
+      clearTimeout(this._retry);                // Noxcast may still be starting after a restart
+      this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }
     this._render();
   }

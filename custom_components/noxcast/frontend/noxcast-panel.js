@@ -216,31 +216,55 @@ class NoxcastPanel extends HTMLElement {
 
   set hass(hass) {
     const first = !this._hass;
+    if (hass.connection !== (this._hass && this._hass.connection)) this._listenReady(hass.connection);
     const dark = this._hass && this._hass.themes && this._hass.themes.darkMode;
     this._hass = hass;
     this.toggleAttribute("dark", !!(hass.themes && hass.themes.darkMode));
     for (const el of Object.values(this._sections)) { el.toggleAttribute("dark", this.hasAttribute("dark")); el.hass = hass; }
-    if (first) this._load();
+    if (first) { this._render(); this._load(); }
     else if ((hass.themes && hass.themes.darkMode) !== dark) this._render();
   }
 
   set narrow(v) { this._narrow = v; }
   set panel(v) { this._panel = v; }
 
-  connectedCallback() { if (this._data) this._render(); }
-  disconnectedCallback() { this._stop(); }
+  connectedCallback() {
+    if (!this._hass) return;
+    this._render();
+    if (!this._data) this._load();
+  }
+  disconnectedCallback() { this._stop(); clearTimeout(this._retry); }
+
+  // a reconnect (Home Assistant restarted, the app came back from the background) loads again
+  _listenReady(conn) {
+    if (this._conn) this._conn.removeEventListener("ready", this._onReady);
+    this._onReady = this._onReady || (() => { if (!this._data || this._error) this._load(); });
+    this._conn = conn;
+    if (conn) conn.addEventListener("ready", this._onReady);
+  }
 
   get _t() { return TEXT[(this._hass && this._hass.language || "en").slice(0, 2)] || TEXT.en; }
   get _pal() { return this._hass && this._hass.themes && this._hass.themes.darkMode ? PALETTE.dark : PALETTE.light; }
   get _lang() { return (this._hass && this._hass.language) || "en"; }
 
   async _load() {
+    if (this._loading) return;
+    this._loading = true;
+    clearTimeout(this._retry);
     try {
-      this._data = await this._hass.connection.sendMessagePromise({ type: "noxcast/learned" });
+      // a request lost while the connection is rebuilt never answers: give up and ask again
+      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/learned" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
       this._cache = {};
+      this._error = null;
+      this._tries = 0;
       if (this._state.doy === null) this._state.doy = dayOfYear(new Date());
     } catch (err) {
-      this._error = String(err && err.message || err);
+      this._tries = (this._tries || 0) + 1;
+      if (this._tries > 2) this._error = String(err && err.message || err);   // shown only once retries failed
+      if (this.isConnected) this._retry = setTimeout(() => this._load(), Math.min(60000, 5000 * this._tries));
+    } finally {
+      this._loading = false;
     }
     this._render();
   }

@@ -21,8 +21,8 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   Efficiency, D, R and the clear-hour refinement of T use only steady hours when the power
   sensors' hourly minimum and maximum are known: a satellite pixel can call an hour clear while
   clouds pass over the installation, and such hours (cloud-edge peaks cut at the inverter limit,
-  restarts, dropouts) only add noise. Hours with a moving shadow edge are not steady either; their
-  cells keep the 90th percentile over all hours.
+  restarts, dropouts) only add noise. With several sensors per array one steady sensor is enough
+  (a cloud reaches all of them, a shadow edge not), and sensors far apart mark a partial shadow.
 - R: reflected light per coarse sun-position bin, relative to the direct normal irradiance: sunlit
   walls or roofs in front of the module. It does not depend on how the sun meets the module, so
   it is learned where the module itself gets little direct light; elsewhere it cannot be told
@@ -60,7 +60,9 @@ FALLBACK_AIR_TEMP = 15.0         # when a forecast has no temperature
 CLEAR_KT = 0.8                   # satellite clearness index for a clear hour
 MIN_CLEAR_COVERAGE = 0.3         # use the satellite filter only if it covers this share of samples
 MIN_UNSHADED_HOURS = 20          # clear hours at unshaded positions needed for the efficiency median
-STEADY_BAND = 0.15               # steady hour: every sensor's minimum and maximum within ±15 % of its mean
+STEADY_BAND = 0.15               # steady hour: a sensor's minimum and maximum within ±15 % of its mean
+SPLIT_RATIO = 0.6                # sensors of one array this far apart (relative to their peaks): a shadow on part of it
+SPLIT_MIN_SHARE = 0.05           # ... above this share of the sensor's peak (low light is noise)
 MIN_STEADY_HOURS = 30            # steady clear hours needed to learn efficiency, D and R from them alone
 SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
 SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
@@ -164,18 +166,29 @@ def _correlation(xs: list[float], ys: list[float]) -> float | None:
 
 def steady_hours(series: list[tuple[dict[float, float | None], dict[float, float | None],
                                     dict[float, float | None]]]) -> set[float]:
-    """Hours in which every sensor stayed close to its hourly mean: [(mean, min, max) per sensor] -> hour starts.
+    """Hours with a calm sky over the array: [(mean, min, max) per sensor] -> hour starts.
 
     From the hourly minimum and maximum of long-term statistics. Passing clouds, a peak cut at the
-    inverter limit, a restart or a dropout show as a minimum or maximum far from the mean.
+    inverter limit, a restart or a dropout show as a minimum or maximum far from the mean. With
+    several sensors (modules or inputs of one array) an hour counts when at least one of them was
+    steady – a cloud reaches all of them, a shadow edge moving over one input does not – or when
+    the sensors are far apart relative to their peaks: one part shaded, the other not. Such hours
+    are what the shading map needs, and a steady test on the sum would drop them.
     """
     if not series:
         return set()
-    hours = set(series[0][0])
+    present = set.intersection(*({t for t, m in mean.items() if m is not None and m > 0} for mean, _, _ in series))
+    hours: set[float] = set()
     for mean, low, high in series:
-        hours &= {t for t, m in mean.items()
-                  if m is not None and m > 0 and low.get(t) is not None and high.get(t) is not None
-                  and low[t] >= (1 - STEADY_BAND) * m and high[t] <= (1 + STEADY_BAND) * m}
+        hours |= {t for t in present if low.get(t) is not None and high.get(t) is not None
+                  and low[t] >= (1 - STEADY_BAND) * mean[t] and high[t] <= (1 + STEADY_BAND) * mean[t]}
+    if len(series) > 1:
+        peaks = [_quantile([mean[t] for t in present], 0.95) if present else 0.0 for mean, _, _ in series]
+        if all(peaks):
+            for t in present:
+                shares = [mean[t] / peak for (mean, _, _), peak in zip(series, peaks)]
+                if max(shares) >= SPLIT_MIN_SHARE and min(shares) < SPLIT_RATIO * max(shares):
+                    hours.add(t)
     return hours
 
 

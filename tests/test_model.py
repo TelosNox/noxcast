@@ -275,10 +275,23 @@ def test_steady_hours_from_hourly_min_and_max():
     mean = {0.0: 400.0, 3600.0: 400.0, 7200.0: 0.0, 10800.0: 400.0}
     low = {0.0: 380.0, 3600.0: 120.0, 7200.0: 0.0, 10800.0: 390.0}
     high = {0.0: 420.0, 3600.0: 500.0, 7200.0: 0.0, 10800.0: 405.0}
-    restart = ({0.0: 400.0, 10800.0: 400.0}, {0.0: 390.0, 10800.0: 0.0}, {0.0: 410.0, 10800.0: 410.0})
     assert model.steady_hours([(mean, low, high)]) == {0.0, 10800.0}
-    assert model.steady_hours([(mean, low, high), restart]) == {0.0}     # every sensor must be steady
     assert model.steady_hours([]) == set()
+
+
+def test_steady_hours_with_two_inputs():
+    """A cloud reaches both inputs; a shadow edge or a shadow on one input does not."""
+    a = ({0.0: 400.0, 3600.0: 300.0, 7200.0: 400.0, 10800.0: 400.0, 14400.0: 10.0},
+         {0.0: 390.0, 3600.0: 100.0, 7200.0: 390.0, 10800.0: 300.0, 14400.0: 2.0},
+         {0.0: 410.0, 3600.0: 500.0, 7200.0: 410.0, 10800.0: 500.0, 14400.0: 20.0})
+    b = ({0.0: 400.0, 3600.0: 300.0, 7200.0: 300.0, 10800.0: 60.0, 14400.0: 2.0},
+         {0.0: 390.0, 3600.0: 100.0, 7200.0: 150.0, 10800.0: 20.0, 14400.0: 0.5},
+         {0.0: 410.0, 3600.0: 500.0, 7200.0: 400.0, 10800.0: 100.0, 14400.0: 5.0})
+    steady = model.steady_hours([a, b])
+    assert 0.0 in steady and 3600.0 not in steady              # calm / a passing cloud
+    assert 7200.0 in steady                                    # shadow edge moving over b, a steady
+    assert 10800.0 in steady                                   # b shaded while a sees passing light: shade evidence
+    assert 14400.0 not in steady                               # low light is noise
 
 
 def make_patchy_clear_samples(days: int = 200, share: float = 0.65):

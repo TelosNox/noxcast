@@ -48,6 +48,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
                                          "noxcast-diagnostics.js", "noxcast-battery.js",
                                          "noxcast-theme.js", "noxcast-day.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
+    weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
     await panel_custom.async_register_panel(
@@ -55,6 +56,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         module_url=f"{URL_BASE}/noxcast-panel.js?v={version}", sidebar_title="Noxcast",
         sidebar_icon="mdi:solar-power-variant", require_admin=False, config={})
     await _async_register_card(hass, f"{URL_BASE}/noxcast-card.js?v={card_version}")
+    await _async_register_card(hass, f"{URL_BASE}/noxcast-weather-card.js?v={weather_version}")
 
 
 async def _async_register_card(hass: HomeAssistant, url: str) -> None:
@@ -140,12 +142,13 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                                          if tomorrow_start <= t < tomorrow_end)),
                 "updated": data.updated.isoformat() if data.updated else None,
             })
-    result = {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone, "arrays": arrays}
+    result = {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone, "arrays": arrays, "days": []}
     # with a load forecast and batteries the card shows what Noxcast computed instead of its own estimate
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         data = entry.runtime_data.data
         if data is None:
             continue
+        result["days"] = day_totals(data, entry.runtime_data.forecast_days)
         if data.load is not None:
             result["load"] = series(data.load.hours)
         if data.band:
@@ -165,6 +168,29 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                           for sid, p in (getattr(data, "plan", None) or {}).items()]
         break
     connection.send_result(msg["id"], result)
+
+
+def day_totals(data, days: int) -> list[dict]:
+    """PV energy per local day over the forecast horizon, with the P10-P90 band where known.
+
+    Today counts its expected curve (actual so far, forecast for the rest); a day needs almost all of
+    its hours, so a horizon cut off mid-day does not show as a bad day.
+    """
+    out = []
+    today = dt_util.now().date()
+    band = (data.band or {}).get("days", {})
+    for offset in range(days):
+        day = today + timedelta(days=offset)
+        a = dt_util.start_of_local_day(day).timestamp()
+        b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
+        hours = (data.expected if offset == 0 else data.forecast).get(None, {})
+        values = [v for t, v in hours.items() if a <= t < b]
+        if len(values) < 20:
+            continue
+        p = band.get(offset) or band.get(str(offset))
+        out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)),
+                    "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None})
+    return out
 
 
 def accuracy_days(archive: dict, site) -> list[dict]:
@@ -422,7 +448,8 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The sensors the day card shows, as configured in the integration; the card only changes the display."""
     from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_FEED_IN, CONF_GRID_INVERT, CONF_MAX_SOC,
-                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
+                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR,
+                        CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, WEATHER_SOURCE_OPEN_METEO)
 
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
@@ -444,6 +471,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
         "batteries": batteries,
         "export": bool(entry.data.get(CONF_FEED_IN)),
+        "weather": entry.data.get(CONF_WEATHER_ENTITY) if entry.data.get(CONF_WEATHER_SOURCE) != WEATHER_SOURCE_OPEN_METEO else None,
     })
 
 

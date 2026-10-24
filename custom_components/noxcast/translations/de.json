@@ -13,7 +13,8 @@
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
-          "feed_in": "Überschuss wird eingespeist"
+          "feed_in": "Überschuss wird eingespeist",
+          "forecast_days": "Prognosetage"
         },
         "data_description": {
           "weather_entity": "Muss stündliche Strahlung liefern (z. B. DWD sun_irradiance).",
@@ -23,7 +24,8 @@
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
-          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung)."
+          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung).",
+          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag."
         }
       },
       "reconfigure": {
@@ -37,14 +39,16 @@
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
-          "feed_in": "Überschuss wird eingespeist"
+          "feed_in": "Überschuss wird eingespeist",
+          "forecast_days": "Prognosetage"
         },
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
-          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung)."
+          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung).",
+          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag."
         }
       }
     },

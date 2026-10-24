@@ -20,7 +20,7 @@ from .const import (
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
     ARCHIVE_DAYS, COMPARE_SOURCE, CONF_AZIMUTH, CONF_COMPARE_OPEN_METEO, CONF_HEATING, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
-    FORECAST_DAYS, HISTORY_YEARS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
+    CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     WEATHER_SOURCE_OPEN_METEO,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
@@ -152,6 +152,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
         self.grid: str | None = entry.data.get(CONF_GRID) or None
         self.grid_sign = -1.0 if entry.data.get(CONF_GRID_INVERT) else 1.0
+        self.forecast_days = max(2, min(MAX_FORECAST_DAYS, int(entry.data.get(CONF_FORECAST_DAYS) or FORECAST_DAYS)))
         self.day_type_entity: str | None = entry.data.get(CONF_DAY_TYPE) or None
         self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
@@ -719,7 +720,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_fetch_weather(self) -> list[WeatherHour]:
         data = self.config_entry.data
         if data.get(CONF_WEATHER_SOURCE) == WEATHER_SOURCE_OPEN_METEO:
-            return await async_open_meteo(self.hass, self.site.latitude, self.site.longitude)
+            return await async_open_meteo(self.hass, self.site.latitude, self.site.longitude, self.forecast_days)
         return await async_weather_entity(self.hass, data[CONF_WEATHER_ENTITY])
 
     async def _async_compare_weather(self) -> list[WeatherHour]:
@@ -731,7 +732,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         now = dt_util.utcnow().timestamp()
         if self._compare is None or now - self._compare[0] > 3300:
             try:
-                self._compare = (now, await async_open_meteo(self.hass, self.site.latitude, self.site.longitude))
+                self._compare = (now, await async_open_meteo(self.hass, self.site.latitude, self.site.longitude,
+                                                             self.forecast_days))
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Open-Meteo comparison forecast failed: %s", err)
                 return self._compare[1] if self._compare else []
@@ -786,7 +788,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         local_now = dt_util.now()
         day_start = dt_util.start_of_local_day().timestamp()
         day_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=1)).timestamp()
-        horizon = (dt_util.start_of_local_day() + timedelta(days=FORECAST_DAYS)).timestamp()
+        horizon = dt_util.start_of_local_day(local_now.date() + timedelta(days=self.forecast_days)).timestamp()
         weather = [w for w in weather if day_start <= w.start < horizon]
         if not weather:
             raise UpdateFailed("Weather source returned no hours for the forecast horizon")

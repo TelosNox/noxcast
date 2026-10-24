@@ -524,12 +524,11 @@ class NoxcastCard extends HTMLElement {
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
-    // one lane per array: shade always, reflection where it adds something. The colour strength follows,
-    // hour by hour, the share the effect takes from (or adds to) what the array could give: pale = a little,
-    // full colour = half of it or more
+    // one lane per array: shade always, reflection where it adds something. The band's thickness
+    // follows, hour by hour, the share the effect takes from (or adds to) what the array could give: a thin
+    // line = a little, the full lane = half of it or more. Thickness reads the same on light and dark themes
     const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? arrays.length : 0;
-    const strength = (share) => 0.22 + 0.78 * Math.min(1, Math.max(0, share) / 0.5);
-    let gradients = "";
+    const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share) / 0.5);
     const lanes = arrays.slice(0, laneN).map((arr, i) => {
       const ly = Ly + i * (Lh + 4);
       const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
@@ -542,11 +541,16 @@ class NoxcastCard extends HTMLElement {
           shares.push([h, base > 1 ? e / base : 0]);
         }
         const peak = shares.reduce((a, [, v]) => Math.max(a, v), 0);
-        const id = `nx-fx-${i}-${j}`, x0 = x(p.start), x1 = Math.max(x0 + 2, x(p.end));
-        gradients += `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x0.toFixed(1)}" x2="${x1.toFixed(1)}" y1="0" y2="0">${
-          shares.map(([h, v]) => `<stop offset="${Math.max(0, Math.min(1, (x(h + H / 2) - x0) / (x1 - x0 || 1))).toFixed(3)}" stop-color="${color}" stop-opacity="${strength(v).toFixed(2)}"></stop>`).join("")}</linearGradient>`;
+        const x0 = x(p.start), x1 = Math.max(x0 + 2, x(p.end)), cy = ly + Lh / 2;
+        // the outline through the hour middles, held flat to the period's edges
+        const pts = [[x0, shares.length ? shares[0][1] : 0],
+          ...shares.map(([h, v]) => [Math.max(x0, Math.min(x1, x(h + H / 2))), v]),
+          [x1, shares.length ? shares[shares.length - 1][1] : 0]];
+        const outline = [...pts.map(([px, v]) => `${px.toFixed(1)},${(cy - half(v)).toFixed(1)}`),
+          ...pts.reverse().map(([px, v]) => `${px.toFixed(1)},${(cy + half(v)).toFixed(1)}`)].join(" ");
         const title = `${shade ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${shade ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}${peak > 0 ? ` · ${t.upTo} ${Math.round(peak * 100)} %` : ""}`;
-        return `<rect x="${x0.toFixed(1)}" y="${ly + 1}" width="${(x1 - x0).toFixed(1)}" height="${Lh - 2}" rx="2" fill="url(#${id})"><title>${this._esc(title)}</title></rect>`;
+        return `<g><title>${this._esc(title)}</title><rect x="${x0.toFixed(1)}" y="${ly}" width="${(x1 - x0).toFixed(1)}" height="${Lh}" fill="transparent"></rect>
+          <polygon points="${outline}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
       }).join("");
       return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
         <text x="${X1 - 2}" y="${ly + Lh - 1}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)" stroke="var(--card-background-color, #fff)" stroke-width="3" paint-order="stroke">${this._esc(arr.label)}</text>`;
@@ -621,7 +625,6 @@ class NoxcastCard extends HTMLElement {
     const svg = `<svg viewBox="0 0 ${W} ${bottom}" role="img" aria-label="${t.pv}, ${t.load}, ${t.soc}">
       <defs>
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
-        ${gradients}
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
       ${svgPv}${lanes}${batSvg}

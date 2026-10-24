@@ -151,11 +151,12 @@ async def async_weather_entity(hass: HomeAssistant, entity_id: str) -> list[Weat
             for ts, value in rows]
 
 
-async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float) -> list[WeatherHour]:
+async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float,
+                           days: int = FORECAST_DAYS) -> list[WeatherHour]:
     """Hourly GHI/DNI/DHI from Open-Meteo (mean of the preceding hour), including yesterday."""
     params = {
         "latitude": latitude, "longitude": longitude, "timezone": "UTC", "past_days": 1,
-        "forecast_days": FORECAST_DAYS,
+        "forecast_days": days,
         "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,"
                   "cloud_cover,sunshine_duration,wind_speed_10m,wind_direction_10m",
         "wind_speed_unit": "ms",

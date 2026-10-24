@@ -5,6 +5,10 @@
 // The card shows what Noxcast is configured with: PV groups and their sensors, house load, grid,
 // batteries and whether surplus is fed in. The card config only changes the display:
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
+// show_weather: true                   # hourly weather above the chart, marked where it changes
+// weather_entity: weather.home         # source of that strip; default: the weather entity Noxcast uses
+// flow: full                           # full: power flow diagram; compact: one row of figures
+// look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
 // groups:                              # per Noxcast PV group, by its name in Noxcast
 //   Balkon: { name: Süd, icon: mdi:balcony, hide: false }   # icon instead of the name; hide: not listed
 //                                      # on its own (its power still counts in PV and the chart)
@@ -20,7 +24,7 @@ const TEXT = {
     refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
-    lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um",
+    lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um", import: "Bezug", export: "Einspeisung",
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
@@ -28,7 +32,7 @@ const TEXT = {
     refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
-    lasts: "battery lasts until tomorrow", emptyAt: "battery empty at",
+    lasts: "battery lasts until tomorrow", emptyAt: "battery empty at", import: "Import", export: "Export",
     lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV", band: "range P10–P90",
       loss: "lost to shade", shade: "shade", refl: "reflection", bat: "battery", lost: "full, surplus lost",
       near: "almost full" } },
@@ -47,6 +51,16 @@ const ACTIVE_W = 5;
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
+
+// weather conditions in classes; the strip marks where the class changes
+const WX_CLASS = { sunny: "sun", "clear-night": "sun", partlycloudy: "part", cloudy: "cloud", fog: "cloud", windy: "cloud",
+  "windy-variant": "cloud", rainy: "rain", pouring: "rain", "lightning-rainy": "rain", lightning: "rain", hail: "rain",
+  snowy: "snow", "snowy-rainy": "snow", exceptional: "cloud" };
+const WX_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night", partlycloudy: "mdi:weather-partly-cloudy",
+  cloudy: "mdi:weather-cloudy", fog: "mdi:weather-fog", windy: "mdi:weather-windy", "windy-variant": "mdi:weather-windy-variant",
+  rainy: "mdi:weather-rainy", pouring: "mdi:weather-pouring", "lightning-rainy": "mdi:weather-lightning-rainy",
+  lightning: "mdi:weather-lightning", hail: "mdi:weather-hail", snowy: "mdi:weather-snowy", "snowy-rainy": "mdi:weather-snowy-rainy",
+  exceptional: "mdi:alert-circle-outline" };
 
 // a websocket request that gives up instead of waiting forever
 function ask(hass, msg) {
@@ -102,6 +116,29 @@ class NoxcastCard extends HTMLElement {
     this._config = this._merged();
     this._flow = null;
     this._renderAll();
+    this._subscribeWeather();
+  }
+
+  // hourly forecast of the weather entity for the strip above the chart; kept current by Home Assistant
+  async _subscribeWeather() {
+    const id = this._config.weather_entity || (this._src && this._src.weather);
+    if (!this._show("weather") || !id || !this._hass || !this.isConnected || this._wxFor === id) return;
+    this._unsubWeather();
+    this._wxFor = id;
+    try {
+      this._wxUnsub = await this._hass.connection.subscribeMessage((msg) => {
+        this._wx = msg.forecast || [];
+        this._renderBand();
+      }, { type: "weather/subscribe_forecast", forecast_type: "hourly", entity_id: id });
+    } catch (err) {
+      this._wxFor = null;                       // no hourly forecast: no strip
+    }
+  }
+
+  _unsubWeather() {
+    if (this._wxUnsub) { try { this._wxUnsub(); } catch (err) { /* connection already gone */ } }
+    this._wxUnsub = null;
+    this._wxFor = null;
   }
 
   _show(part) { return this._config[`show_${part}`] !== false; }
@@ -129,6 +166,7 @@ class NoxcastCard extends HTMLElement {
     }
     if (this._hass && this._stale(60)) this._refresh();
     if (this._flow) this._animate();
+    if (this._hass && this._config) this._subscribeWeather();
   }
 
   disconnectedCallback() {
@@ -140,6 +178,7 @@ class NoxcastCard extends HTMLElement {
     if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
     this._onVisible = null;
     clearTimeout(this._retry);
+    this._unsubWeather();
     if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
     this._readyConn = null;
   }
@@ -149,7 +188,7 @@ class NoxcastCard extends HTMLElement {
     const conn = this._hass && this._hass.connection;
     if (!conn || this._readyConn === conn) return;
     if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
-    this._onReady = this._onReady || (() => { this._tries = 0; this._refresh(); });
+    this._onReady = this._onReady || (() => { this._tries = 0; this._refresh(); this._unsubWeather(); this._subscribeWeather(); });
     conn.addEventListener("ready", this._onReady);
     this._readyConn = conn;
   }
@@ -278,6 +317,16 @@ class NoxcastCard extends HTMLElement {
     const P = this._p;
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+      ha-card.nx { border-radius: 20px; border: 1px solid transparent;
+        background: linear-gradient(var(--ha-card-background, var(--card-background-color, #fff)), var(--ha-card-background, var(--card-background-color, #fff))) padding-box,
+          linear-gradient(135deg, rgba(245,165,36,.55), rgba(127,127,127,.14) 28%, rgba(127,127,127,.14) 72%, rgba(139,92,246,.55)) border-box;
+        box-shadow: 0 18px 40px -24px rgba(40,24,80,.35); }
+      .cf { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: flex-end; }
+      .cf .f { display: flex; flex-direction: column; cursor: pointer; min-width: 0; }
+      .cf .l { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--secondary-text-color); }
+      .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
+      .wx { margin-bottom: -2px; }
       .muted { color: var(--secondary-text-color); }
       .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
       #band { container-type: inline-size; }
@@ -301,7 +350,7 @@ class NoxcastCard extends HTMLElement {
       .tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
       .tip .v { justify-content: flex-end; font-variant-numeric: tabular-nums; }
     </style>
-    <ha-card style="--nx-scale:${this._scale}"><div id="flow"></div><div id="band" class="divider"></div></ha-card>`;
+    <ha-card class="${this._config.look === "noxcast" ? "nx" : ""}" style="--nx-scale:${this._scale}"><div id="flow"></div><div id="band" class="divider"></div></ha-card>`;
     this._sig = this._signature();
     this._renderFlow();
     this._renderBand();
@@ -333,6 +382,7 @@ class NoxcastCard extends HTMLElement {
     const el = this.shadowRoot && this.shadowRoot.getElementById("flow");
     if (!el) return;
     const P = this._p, t = this._t, v = this._live();
+    if (this._config.flow === "compact") { this._renderCompact(el, v); return; }
     // allocation of the flows, all values >= 0
     const charge = Math.max(v.bat, 0), discharge = Math.max(-v.bat, 0);
     const pvBat = Math.min(v.pv, charge);                    // a charging battery takes PV first, the grid only covers the rest
@@ -453,6 +503,58 @@ class NoxcastCard extends HTMLElement {
       <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${homeStroke}" stroke-width="2.5" stroke-linejoin="round"></path>`}
       <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text></g>`;
     this._animate();
+  }
+
+  // one row of figures instead of the flow diagram: PV, home, grid, battery; each opens its entity
+  _renderCompact(el, v) {
+    const P = this._p, t = this._t, c = this._config;
+    this._flow = null;
+    const num = (x) => (Math.abs(x) >= 1000
+      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
+      : `${Math.round(x)} W`);
+    const fig = (label, value, color, id) => `<div class="f"${id ? ` data-more="${this._esc(id)}"` : ""}><span class="l">${label}</span>
+      <span class="v" style="color:${color}">${value}</span></div>`;
+    const pvId = (v.groups.find((g) => g.id) || {}).id;
+    const figs = [fig(t.pv, num(v.pv), P.pvText, pvId), fig(t.home, num(v.home), "var(--primary-text-color)", c.home && c.home.entity)];
+    if (c.grid && c.grid.entity) figs.push(fig(v.grid < -ACTIVE_W ? t.export : t.import, num(Math.abs(v.grid)), P.grid, c.grid.entity));
+    if (v.bats.length) {
+      const arrow = v.bat > ACTIVE_W ? "▲ " : v.bat < -ACTIVE_W ? "▼ " : "";
+      figs.push(fig(t.battery, `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow}${num(Math.abs(v.bat))}</small>`,
+        P.bat, (v.bats.find((b) => b.id) || {}).id));
+    }
+    el.innerHTML = `<div class="cf">${figs.join("")}</div>`;
+    el.onclick = (ev) => this._moreInfo(ev);
+  }
+
+  // hourly weather over [t0, t1): one mark where the condition class changes, runs under two hours merged
+  _weatherStrip(t0, t1, x, X0, X1, W) {
+    if (!this._show("weather") || !this._wx || !this._wx.length) return "";
+    const P = this._p, H = 3600;
+    const hours = this._wx.map((f) => ({ ts: Date.parse(f.datetime) / 1000, cond: f.condition, temp: f.temperature }))
+      .filter((f) => f.ts >= t0 - H && f.ts < t1 && f.cond);
+    if (!hours.length) return "";
+    const runs = [];
+    for (const f of hours) {
+      const cls = WX_CLASS[f.cond] || "cloud", last = runs[runs.length - 1];
+      if (last && last.cls === cls) last.end = f.ts + H;
+      else runs.push({ cls, cond: f.cond, temp: f.temp, start: f.ts, end: f.ts + H });
+    }
+    for (let i = runs.length - 1; i > 0; i--) {
+      if (runs[i].end - runs[i].start < 2 * H) { runs[i - 1].end = runs[i].end; runs.splice(i, 1); }
+    }
+    const color = { sun: P.pv, part: P.pvDark, cloud: "var(--secondary-text-color)", rain: P.grid, snow: P.grid };
+    let lastX = -99;
+    const marks = runs.map((r) => {
+      const a = Math.max(X0, x(r.start)), b = Math.min(X1, x(r.end));
+      if (b - a < 1) return "";
+      const bar = `<line x1="${a.toFixed(1)}" x2="${b.toFixed(1)}" y1="19" y2="19" stroke="${color[r.cls]}" stroke-width="1.6" stroke-opacity=".6" stroke-linecap="round"></line>`;
+      if (a - lastX < 34) return bar;
+      lastX = a;
+      const icon = this._icon(WX_ICON[r.cond] || "mdi:weather-cloudy", a + 7, 8, 14, color[r.cls]) || "";
+      const temp = r.temp == null ? "" : `<text x="${(a + 16).toFixed(1)}" y="12" class="ax">${Math.round(r.temp)}°</text>`;
+      return `${bar}${icon}${temp}`;
+    }).join("");
+    return `<svg class="wx" viewBox="0 0 ${W} 22" role="img" aria-label="weather">${marks}</svg>`;
   }
 
   // moves the dots frame by frame; a speed change only changes the pace, never the position
@@ -694,7 +796,7 @@ class NoxcastCard extends HTMLElement {
       : `<span>${t.actual} <span class="big">${this._kwh(ist)}</span></span>
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
-    el.innerHTML = `<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
+    el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > t0, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
         shade: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "shade")),
         refl: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
@@ -923,6 +1025,8 @@ class NoxcastCardEditor extends HTMLElement {
       font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
       show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Verschattung und Reflexion" : "Shade and reflection",
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
+      show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
+      flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
       icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
       icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
       icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
@@ -979,20 +1083,25 @@ class NoxcastCardEditor extends HTMLElement {
       <div id="groups">${groups.length ? "" : `<div class="nx-note">${de ? "Noxcast ist noch nicht geladen." : "Noxcast is not loaded yet."}</div>`}</div>
       ${bats.length ? `<div class="nx-sec">${de ? "Akkus" : "Batteries"}</div><div id="bats"></div>` : ""}`;
 
-    const shows = ["show_battery", "show_effects", "show_band", "show_load"];
+    const shows = ["show_battery", "show_effects", "show_band", "show_load", "show_weather"];
+    const opt = (pairs) => ({ select: { mode: "dropdown", options: pairs.map(([value, label]) => ({ value, label })) } });
     this.querySelector("#main").appendChild(this._form([
+      { name: "flow", selector: opt([["full", de ? "Flussdiagramm" : "Flow diagram"], ["compact", de ? "Kompakte Zeile" : "Compact row"]]) },
+      { name: "look", selector: opt([["plain", "Home Assistant"], ["noxcast", "Noxcast"]]) },
       ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
       { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
       { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
       { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
-      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false,
+      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain",
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
       ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
       const n = { ...this._config };
       n.font_scale = v.font_scale; n.legend = v.legend;
+      if (v.flow && v.flow !== "full") n.flow = v.flow; else delete n.flow;
+      if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;
       for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
       const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
       if (Object.keys(icons).length) n.icons = icons; else delete n.icons;

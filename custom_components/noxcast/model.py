@@ -94,6 +94,11 @@ class WeatherHour:
     dni: float | None = None     # optional; split from GHI (Erbs) when missing
     dhi: float | None = None
     temp: float | None = None    # air temperature °C
+    # archived for evaluating sources, not used by the model:
+    cloud: float | None = None   # total cloud cover %, middle of the hour
+    sun: float | None = None     # sunshine share of the hour, 0-1
+    wind: float | None = None    # wind speed m/s (10 m), middle of the hour
+    wind_dir: float | None = None  # wind direction ° (from), middle of the hour
 
 
 @dataclass

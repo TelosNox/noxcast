@@ -14,7 +14,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import ENERGY_UNIT_FACTORS, FORECAST_DAYS, IRRADIANCE_KEYS, POWER_UNIT_FACTORS
+from .const import (COMPASS, ENERGY_UNIT_FACTORS, FORECAST_DAYS, IRRADIANCE_KEYS, POWER_UNIT_FACTORS,
+                    SPEED_UNIT_FACTORS)
 from .model import WeatherHour
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +41,31 @@ def _number(value) -> float | None:
 def _mid_hour(instant: dict[float, float]) -> dict[float, float]:
     """Instantaneous values at full hours -> value at the middle of the hour starting there."""
     return {t: (v + instant[t + 3600]) / 2 for t, v in instant.items() if t + 3600 in instant}
+
+
+def _bearing(value) -> float | None:
+    """Wind direction in degrees from a number or a compass point ("SW")."""
+    v = _number(value)
+    if v is not None:
+        return v % 360
+    text = str(value or "").strip().upper()
+    return COMPASS.index(text) * 22.5 if text in COMPASS else None
+
+
+def _mid_wind(instant: dict[float, tuple[float, float | None]]) -> dict[float, tuple[float, float | None]]:
+    """Wind (speed, direction) at full hours -> middle of the hour; the direction as vector mean."""
+    out = {}
+    for t, (s1, d1) in instant.items():
+        if t + 3600 not in instant:
+            continue
+        s2, d2 = instant[t + 3600]
+        direction = None
+        if d1 is not None and d2 is not None:
+            x = s1 * math.sin(math.radians(d1)) + s2 * math.sin(math.radians(d2))
+            y = s1 * math.cos(math.radians(d1)) + s2 * math.cos(math.radians(d2))
+            direction = math.degrees(math.atan2(x, y)) % 360 if x or y else None
+        out[t] = ((s1 + s2) / 2, direction)
+    return out
 
 
 def _irradiance(value) -> float | None:
@@ -79,6 +105,8 @@ async def async_weather_entity(hass: HomeAssistant, entity_id: str) -> list[Weat
     """Hourly global irradiance from a weather entity.
 
     The value at a forecast time is taken as the mean of the preceding hour (DWD MOSMIX convention).
+    Cloud cover, sunshine duration and wind are passed along for the archive when the entity has them
+    (sunshine duration in seconds per hour as with DWD, or in minutes when no value exceeds 60).
     """
     response = await hass.services.async_call(
         "weather", "get_forecasts", {"type": "hourly"}, target={"entity_id": entity_id},
@@ -86,10 +114,11 @@ async def async_weather_entity(hass: HomeAssistant, entity_id: str) -> list[Weat
     items = (response or {}).get(entity_id, {}).get("forecast") or []
     state = hass.states.get(entity_id)
     fahrenheit = bool(state and state.attributes.get("temperature_unit") == "°F")
+    speed = SPEED_UNIT_FACTORS.get(state.attributes.get("wind_speed_unit")) if state else None
     key = next((k for k in IRRADIANCE_KEYS if any(k in item for item in items)), None)
     if key is None:
         raise NoIrradianceError(f"{entity_id} provides no irradiance in its hourly forecast")
-    rows, temps = [], {}
+    rows, temps, clouds, sun, wind = [], {}, {}, {}, {}
     for item in items:
         when = dt_util.parse_datetime(str(item.get("datetime", "")))
         if when is None:
@@ -98,12 +127,27 @@ async def async_weather_entity(hass: HomeAssistant, entity_id: str) -> list[Weat
         temp = _number(item.get("temperature"))
         if temp is not None:
             temps[ts] = (temp - 32) / 1.8 if fahrenheit else temp
+        cloud = _number(item.get("cloud_coverage"))
+        if cloud is not None:
+            clouds[ts] = cloud
+        duration = _number(item.get("sun_duration"))
+        if duration is not None:
+            sun[ts] = max(duration, 0.0)
+        wind_speed = _number(item.get("wind_speed"))
+        if wind_speed is not None and speed is not None:
+            wind[ts] = (wind_speed * speed, _bearing(item.get("wind_bearing")))
         value = _irradiance(item.get(key))
         if value is not None:
             rows.append((ts, value))
-    # irradiance is the mean of the preceding hour; temperature is instantaneous
-    return [WeatherHour(start=ts - 3600, ghi=value,
-                        temp=(temps[ts] + temps[ts - 3600]) / 2 if ts - 3600 in temps and ts in temps else temps.get(ts))
+    per_hour = 60.0 if sun and 0 < max(sun.values()) <= 60 else 3600.0
+    clouds, wind = _mid_hour(clouds), _mid_wind(wind)
+    # irradiance and sunshine are for the preceding hour; temperature, clouds and wind are instantaneous
+    temps = {ts - 3600: (temps[ts] + temps[ts - 3600]) / 2 if ts - 3600 in temps else temps[ts] for ts in temps}
+    return [WeatherHour(start=ts - 3600, ghi=value, temp=temps.get(ts - 3600),
+                        cloud=clouds.get(ts - 3600),
+                        sun=min(sun[ts] / per_hour, 1.0) if ts in sun else None,
+                        wind=wind[ts - 3600][0] if ts - 3600 in wind else None,
+                        wind_dir=wind[ts - 3600][1] if ts - 3600 in wind else None)
             for ts, value in rows]
 
 
@@ -112,7 +156,9 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
     params = {
         "latitude": latitude, "longitude": longitude, "timezone": "UTC", "past_days": 1,
         "forecast_days": FORECAST_DAYS,
-        "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m",
+        "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,"
+                  "cloud_cover,sunshine_duration,wind_speed_10m,wind_direction_10m",
+        "wind_speed_unit": "ms",
     }
     session = async_get_clientsession(hass)
     async with session.get(OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
@@ -121,6 +167,13 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
     times = [_parse_utc(t) for t in data["time"]]
     temps = _mid_hour({ts: v for ts, v in zip(times, map(_number, data.get("temperature_2m") or []))
                        if ts is not None and v is not None})
+    clouds = _mid_hour({ts: v for ts, v in zip(times, map(_number, data.get("cloud_cover") or []))
+                        if ts is not None and v is not None})
+    sun = {ts: v for ts, v in zip(times, map(_number, data.get("sunshine_duration") or []))
+           if ts is not None and v is not None}
+    wind = _mid_wind({ts: (v, _bearing(d)) for ts, v, d in zip(times, map(_number, data.get("wind_speed_10m") or []),
+                                                               data.get("wind_direction_10m") or [])
+                      if ts is not None and v is not None})
     hours = []
     for ts, ghi, dni, dhi in zip(times, data["shortwave_radiation"],
                                  data["direct_normal_irradiance"], data["diffuse_radiation"]):
@@ -130,7 +183,10 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
         both = n is not None and d is not None
         start = ts - 3600
         hours.append(WeatherHour(start=start, ghi=g, dni=n if both else None, dhi=d if both else None,
-                                 temp=temps.get(start)))
+                                 temp=temps.get(start), cloud=clouds.get(start),
+                                 sun=min(max(sun[ts], 0.0) / 3600, 1.0) if ts in sun else None,
+                                 wind=wind[start][0] if start in wind else None,
+                                 wind_dir=wind[start][1] if start in wind else None))
     return hours
 
 

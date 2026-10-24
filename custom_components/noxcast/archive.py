@@ -5,13 +5,19 @@ from the recorder, so without this archive a past forecast cannot be evaluated. 
 from long-term statistics during the nightly learning run.
 
 Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
+         "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
          "forecast": {array_id: Wh}, "actual": {array_id: Wh},
-         "alt": {source: {"ghi": W/m², "forecast": {array_id: Wh}}},
+         "alt": {source: {"ghi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
          "sat_ghi": W/m², "measured": {array_id: Wh}}},
          "history": {"<snapshot ts>": {"<ts>": Wh}}}}
 
 "history" holds the expectation for the whole day (actual so far + corrected rest, all arrays) as it
 stood at each full hour of that day, so the panel can show how the forecast developed.
+
+"wx" holds what the weather source says besides irradiance (cloud cover, sunshine share of the
+hour, wind), only for hours with irradiance and only the values the source has – about 40 bytes
+per daylight hour and source. It is not used by the model; it allows comparing sources and
+predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archived days.
 
 "alt" holds the same day computed from another weather source (e.g. Open-Meteo next to DWD),
 so sources and their mix can be compared against the actual values.
@@ -28,20 +34,43 @@ MIN_DAY_HOURS = 20
 HISTORY_HOURS = range(5, 22)     # local hours at which the day's expectation is recorded
 
 
+def details(cloud: float | None = None, sun: float | None = None, wind: float | None = None,
+            wind_dir: float | None = None) -> dict:
+    """Compact weather details of an hour; values the source does not have are left out."""
+    out = {}
+    if cloud is not None:
+        out["cloud"] = round(cloud)
+    if sun is not None:
+        out["sun"] = round(sun, 2)
+    if wind is not None:
+        out["wind"] = round(wind, 1)
+    if wind_dir is not None:
+        out["wdir"] = round(wind_dir) % 360
+    return out
+
+
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
              forecasts: dict[str, dict[float, float]],
-             alt: dict[str, tuple[dict[float, float], dict[str, dict[float, float]]]] | None = None) -> bool:
-    """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains."""
+             alt: dict[str, tuple[dict[float, float], dict[str, dict[float, float]]]] | None = None,
+             wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None) -> bool:
+    """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
+
+    wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source.
+    """
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
-        hours[str(int(ts))] = {
+        hours[str(int(ts))] = hour = {
             "ghi": round(ghi, 1), "temp": None if temp is None else round(temp, 1),
             "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in forecasts.items()},
         }
+        if ghi > 0 and (wx or {}).get(ts):
+            hour["wx"] = wx[ts]
         for name, (alt_ghi, alt_fc) in (alt or {}).items():
             if ts in alt_ghi:
-                hours[str(int(ts))].setdefault("alt", {})[name] = {
+                hour.setdefault("alt", {})[name] = entry = {
                     "ghi": round(alt_ghi[ts], 1), "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in alt_fc.items()}}
+                if alt_ghi[ts] > 0 and (alt_wx or {}).get(name, {}).get(ts):
+                    entry["wx"] = alt_wx[name][ts]
     if len(hours) < MIN_DAY_HOURS:
         return False
     history = archive.get(day.isoformat(), {}).get("history")

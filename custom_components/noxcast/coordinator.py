@@ -692,15 +692,21 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return {"days": self.forecast_archive}
 
     def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
-                          alt: dict[str, tuple[dict, dict]] | None = None) -> None:
+                          alt: dict[str, tuple[dict, dict]] | None = None,
+                          alt_weather: dict[str, list[WeatherHour]] | None = None) -> None:
         """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
         tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
         a = tomorrow.timestamp()
         b = dt_util.start_of_local_day(tomorrow.date() + timedelta(days=1)).timestamp()
         hours = {w.start: (w.ghi, w.temp) for w in weather if a <= w.start < b}
         alt = {name: ({t: g for t, g in ghi.items() if a <= t < b}, fc) for name, (ghi, fc) in (alt or {}).items()}
+
+        def wx(series: list[WeatherHour]) -> dict[float, dict]:
+            return {w.start: fc_archive.details(w.cloud, w.sun, w.wind, w.wind_dir) for w in series if a <= w.start < b}
+
         if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
-                               result.arrays, alt):
+                               result.arrays, alt, wx(weather),
+                               {name: wx(series) for name, series in (alt_weather or {}).items()}):
             fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self._archive_store.async_delay_save(self._archive_data, 300)
 
@@ -858,10 +864,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._log_battery(result.battery, local_now, now, day_end)
         result.plan = self._plan(result, now, day_end)
 
-        alt = None
+        alt = alt_weather = None
         if alt_forecasts:
             alt = {COMPARE_SOURCE: ({w.start: w.ghi for w in compare}, alt_forecasts)}
-        self._archive_forecast(weather, result, alt)
+            alt_weather = {COMPARE_SOURCE: compare}
+        self._archive_forecast(weather, result, alt, alt_weather)
         self._store.async_delay_save(self._store_data, 60)
         return result
 

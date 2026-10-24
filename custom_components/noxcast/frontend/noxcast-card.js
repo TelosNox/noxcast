@@ -754,6 +754,10 @@ class NoxcastCard extends HTMLElement {
       // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable
       const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; if (c) seenZones.add(c); return c ? `<rect x="${x(h).toFixed(1)}" y="${S0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Sh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
       const past = m.socPast.filter(([ts]) => ts >= t0 && ts <= Math.min(now, t1)).map(([ts, f]) => [x(ts), ys(f)]);
+      // like PV, the measured level reaches the chart edge (and now): the level there, not the first sample
+      const pastEnd = Math.min(now, t1), f0 = m.socAt(t0), f1 = m.socAt(pastEnd);
+      if (past.length && f0 !== null && past[0][0] > x(t0)) past.unshift([x(t0), ys(f0)]);
+      if (past.length && f1 !== null && past[past.length - 1][0] < x(pastEnd)) past.push([x(pastEnd), ys(f1)]);
       const fut = sim.points.filter(([ts]) => ts <= t1).map(([ts, f]) => [x(ts), ys(f)]);
       const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
       const endF = sim.empty !== null && sim.empty < chargeTom ? null : sim.at(chargeTom);

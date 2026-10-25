@@ -370,7 +370,7 @@ class NoxcastCard extends HTMLElement {
     const P = this._p;
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
-      ha-card.nx { border-radius: 20px; border: var(--nx-edge-width, 3px) solid transparent;   /* edge width: set --nx-edge-width in a theme */
+      ha-card.nx { border-radius: 20px; border: var(--nx-edge-width, 2px) solid transparent;   /* edge width: set --nx-edge-width in a theme */
         background: linear-gradient(var(--ha-card-background, var(--card-background-color, #fff)), var(--ha-card-background, var(--card-background-color, #fff))) padding-box,
           linear-gradient(135deg, rgba(245,165,36,.55), rgba(127,127,127,.14) 28%, rgba(127,127,127,.14) 72%, rgba(139,92,246,.55)) border-box;
         box-shadow: 0 18px 40px -24px rgba(40,24,80,.35); }

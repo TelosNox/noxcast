@@ -43,10 +43,10 @@ const TEXT = {
 };
 
 const PALETTE = {
-  light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A", night: "#5B6BC0",
+  light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
     shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)",
     warnText: "#8E2418", warnBg: "#FBE3DE", lost: "#D93025", near: "#F29900" },
-  dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A", night: "#7D8FD6",
+  dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
     shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)",
     warnText: "#FFB4A6", warnBg: "#4A2620", lost: "#F2635A", near: "#F5A524" },
 };
@@ -915,12 +915,13 @@ class NoxcastCard extends HTMLElement {
     const tick = (h) => { if (ticks.every((q) => Math.abs(x(q) - x(h)) > 14)) ticks.push(h); };
     if (whole) { tick(t0); tick(t1); }
     for (let h = Math.ceil(pS / tickStep) * tickStep; h <= pE; h += tickStep) tick(h);
-    // the compressed night: tinted, a line where the day begins and ends, a moon on top
+    // the compressed night steps back: a veil in the card colour over everything drawn there (darker in a
+    // dark theme, lighter in a light one), a faint line where the day begins and ends, a moon on top
     const nightSvg = !whole ? "" : [[t0, pS], [pE, t1]].filter(([a, b]) => b > a).map(([a, b]) => {
       const xa = x(a), xb = x(b), edge = a === t0 ? xb : xa;
-      return `<rect x="${xa.toFixed(1)}" y="0" width="${(xb - xa).toFixed(1)}" height="${bottom - 14}" fill="${P.night}" fill-opacity=".10"></rect>
-        <line x1="${edge.toFixed(1)}" x2="${edge.toFixed(1)}" y1="0" y2="${bottom - 14}" stroke="${P.night}" stroke-opacity=".45"></line>
-        ${xb - xa > 12 ? this._icon("mdi:weather-night", (xa + xb) / 2, 7, 10, P.night) || "" : ""}`;
+      return `<rect x="${xa.toFixed(1)}" y="0" width="${(xb - xa).toFixed(1)}" height="${bottom - 14}" fill="var(--card-background-color, #fff)" fill-opacity=".55"></rect>
+        <line x1="${edge.toFixed(1)}" x2="${edge.toFixed(1)}" y1="0" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-opacity=".3"></line>
+        ${xb - xa > 12 ? this._icon("mdi:weather-night", (xa + xb) / 2, 7, 10, "var(--secondary-text-color)") || "" : ""}`;
     }).join("");
 
     // values per hour for the tooltip: hovering or tapping an hour shows what the chart draws there
@@ -939,7 +940,7 @@ class NoxcastCard extends HTMLElement {
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
-      ${nightSvg}${svgPv}${batSvg}
+      ${svgPv}${batSvg}${nightSvg}
       ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${whole && h === t1 ? "24" : this._hm(h).slice(0, 2)}</text>`).join("")}
       <line id="nx-cursor" y1="0" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1" stroke-opacity=".35" visibility="hidden"></line>

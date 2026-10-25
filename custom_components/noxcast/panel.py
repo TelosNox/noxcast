@@ -345,8 +345,8 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
         data = coordinator.data
         entries.append({
             "title": entry.title,
-            "weather": {"source": entry.data.get("weather_source"), "entity": entry.data.get("weather_entity"),
-                        "updated": data.updated.isoformat() if data and data.updated else None,
+            "weather": {"source": "open_meteo", "models": coordinator.weather_models,
+                        "updated": data.weather_fetched.isoformat() if data and data.weather_fetched else None,
                         "hours": len((data.forecast or {}).get(None, {})) if data else 0},
             "learning": {"last": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
                          "error": coordinator.last_learning_error, "archive_errors": coordinator.archive_errors},
@@ -449,7 +449,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     """The sensors the day card shows, as configured in the integration; the card only changes the display."""
     from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_FEED_IN, CONF_GRID_INVERT, CONF_MAX_SOC,
                         CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR,
-                        CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, WEATHER_SOURCE_OPEN_METEO)
+                        CONF_WEATHER_ENTITY)
 
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
@@ -471,7 +471,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
         "batteries": batteries,
         "export": bool(entry.data.get(CONF_FEED_IN)),
-        "weather": entry.data.get(CONF_WEATHER_ENTITY) if entry.data.get(CONF_WEATHER_SOURCE) != WEATHER_SOURCE_OPEN_METEO else None,
+        "weather": entry.data.get(CONF_WEATHER_ENTITY),
     })
 
 

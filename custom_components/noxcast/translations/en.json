@@ -3,10 +3,8 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Choose the weather source and, optionally, battery sensors used to detect curtailment. Add your PV arrays afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). Optionally add battery sensors used to detect curtailment. Add your PV arrays afterwards.",
         "data": {
-          "weather_source": "Weather source",
-          "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
@@ -17,7 +15,6 @@
           "forecast_days": "Forecast days"
         },
         "data_description": {
-          "weather_entity": "Must provide hourly irradiance (e.g. DWD sun_irradiance).",
           "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
@@ -31,8 +28,6 @@
       "reconfigure": {
         "title": "Noxcast",
         "data": {
-          "weather_source": "Weather source",
-          "weather_entity": "Weather entity",
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
@@ -53,9 +48,6 @@
       }
     },
     "error": {
-      "weather_entity_required": "Select a weather entity.",
-      "no_irradiance": "This weather entity provides no irradiance in its hourly forecast.",
-      "weather_unavailable": "The weather entity did not return a forecast.",
       "soc_unit": "Battery sensors must report their state of charge in %.",
       "sensor_missing": "The selected sensor does not exist.",
       "sensor_unit": "Power sensors must report W or kW.",
@@ -272,12 +264,6 @@
     }
   },
   "selector": {
-    "weather_source": {
-      "options": {
-        "entity": "Home Assistant weather entity",
-        "open_meteo": "Open-Meteo (internet)"
-      }
-    },
     "timing": {
       "options": {
         "fixed": "Fixed",
@@ -401,28 +387,32 @@
   "options": {
     "step": {
       "init": {
-        "title": "Learning sources",
-        "description": "Weather archives used when learning from history. Open-Meteo is the default and needs no key.",
+        "title": "Weather and learning sources",
+        "description": "Weather models for the forecast and archives used when learning from history. Open-Meteo is the default and needs no key; its free API is for non-commercial use.",
         "data": {
+          "weather_models": "Weather models",
           "archive_temperature": "Air temperature from archive",
           "archive_url": "Temperature archive URL",
           "satellite": "Satellite filter for clear hours",
           "satellite_url": "Satellite archive URL",
           "satellite_model": "Satellite model",
-          "api_key": "API key",
-          "compare_open_meteo": "Archive Open-Meteo for comparison"
+          "api_key": "API key"
         },
         "data_description": {
+          "weather_models": "Open-Meteo models, averaged hour by hour. Default ICON + ECMWF IFS: in a day-ahead test over ten months their mean beat every single model. With several models each one is also archived on its own, so the accuracy panel can compare them.",
           "archive_temperature": "Needed to learn the temperature loss. Without it, efficiency absorbs the average temperature.",
           "satellite": "Uses satellite irradiance to select clear hours for learning. Optional; quality varies by region.",
-          "api_key": "Only for commercial or self-hosted access.",
-          "compare_open_meteo": "With a weather entity as source, Open-Meteo is forecast in parallel and archived, so both sources and their mix can be compared with the actual values (forecast error sensor)."
+          "api_key": "Only for commercial or self-hosted access."
         }
       }
     },
     "error": {
       "archive_failed": "The archive could not be reached or returned an error.",
-      "archive_empty": "The archive returned no data."
+      "archive_empty": "The archive returned no data.",
+      "models_required": "Select at least one weather model.",
+      "weather_unavailable": "Open-Meteo could not be reached.",
+      "model_unknown": "Open-Meteo returned no data for these models.",
+      "model_partial": "Open-Meteo returned no data for at least one of these models."
     }
   }
 }

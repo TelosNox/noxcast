@@ -10,20 +10,14 @@ import aiohttp
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_metadata, statistics_during_period
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import (COMPASS, ENERGY_UNIT_FACTORS, FORECAST_DAYS, IRRADIANCE_KEYS, POWER_UNIT_FACTORS,
-                    SPEED_UNIT_FACTORS)
+from .const import DEFAULT_WEATHER_MODELS, FORECAST_DAYS, POWER_UNIT_FACTORS
 from .model import WeatherHour
 
 _LOGGER = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-
-
-class NoIrradianceError(HomeAssistantError):
-    """The weather entity provides no irradiance in its hourly forecast."""
 
 
 def _start_ts(value) -> float:
@@ -44,12 +38,8 @@ def _mid_hour(instant: dict[float, float]) -> dict[float, float]:
 
 
 def _bearing(value) -> float | None:
-    """Wind direction in degrees from a number or a compass point ("SW")."""
     v = _number(value)
-    if v is not None:
-        return v % 360
-    text = str(value or "").strip().upper()
-    return COMPASS.index(text) * 22.5 if text in COMPASS else None
+    return None if v is None else v % 360
 
 
 def _mid_wind(instant: dict[float, tuple[float, float | None]]) -> dict[float, tuple[float, float | None]]:
@@ -101,83 +91,50 @@ async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
     return factors
 
 
-async def async_weather_entity(hass: HomeAssistant, entity_id: str) -> list[WeatherHour]:
-    """Hourly global irradiance from a weather entity.
+HOURLY = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m", "cloud_cover",
+          "sunshine_duration", "wind_speed_10m", "wind_direction_10m")
 
-    The value at a forecast time is taken as the mean of the preceding hour (DWD MOSMIX convention).
-    Cloud cover, sunshine duration and wind are passed along for the archive when the entity has them
-    (sunshine duration in seconds per hour as with DWD, or in minutes when no value exceeds 60).
+
+async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float, days: int = FORECAST_DAYS,
+                           models: tuple[str, ...] | list[str] = DEFAULT_WEATHER_MODELS
+                           ) -> tuple[list[WeatherHour], dict[str, list[WeatherHour]]]:
+    """Hourly weather from Open-Meteo, including yesterday: (mean of the models, each model on its own).
+
+    Irradiance is the mean of the preceding hour; GHI, DNI and DHI are averaged alike, so the mean stays
+    consistent (GHI = DHI + DNI·cos z is linear). An hour a model lacks is averaged over the others.
     """
-    response = await hass.services.async_call(
-        "weather", "get_forecasts", {"type": "hourly"}, target={"entity_id": entity_id},
-        blocking=True, return_response=True)
-    items = (response or {}).get(entity_id, {}).get("forecast") or []
-    state = hass.states.get(entity_id)
-    fahrenheit = bool(state and state.attributes.get("temperature_unit") == "°F")
-    speed = SPEED_UNIT_FACTORS.get(state.attributes.get("wind_speed_unit")) if state else None
-    key = next((k for k in IRRADIANCE_KEYS if any(k in item for item in items)), None)
-    if key is None:
-        raise NoIrradianceError(f"{entity_id} provides no irradiance in its hourly forecast")
-    rows, temps, clouds, sun, wind = [], {}, {}, {}, {}
-    for item in items:
-        when = dt_util.parse_datetime(str(item.get("datetime", "")))
-        if when is None:
-            continue
-        ts = dt_util.as_utc(when).timestamp()
-        temp = _number(item.get("temperature"))
-        if temp is not None:
-            temps[ts] = (temp - 32) / 1.8 if fahrenheit else temp
-        cloud = _number(item.get("cloud_coverage"))
-        if cloud is not None:
-            clouds[ts] = cloud
-        duration = _number(item.get("sun_duration"))
-        if duration is not None:
-            sun[ts] = max(duration, 0.0)
-        wind_speed = _number(item.get("wind_speed"))
-        if wind_speed is not None and speed is not None:
-            wind[ts] = (wind_speed * speed, _bearing(item.get("wind_bearing")))
-        value = _irradiance(item.get(key))
-        if value is not None:
-            rows.append((ts, value))
-    per_hour = 60.0 if sun and 0 < max(sun.values()) <= 60 else 3600.0
-    clouds, wind = _mid_hour(clouds), _mid_wind(wind)
-    # irradiance and sunshine are for the preceding hour; temperature, clouds and wind are instantaneous
-    temps = {ts - 3600: (temps[ts] + temps[ts - 3600]) / 2 if ts - 3600 in temps else temps[ts] for ts in temps}
-    return [WeatherHour(start=ts - 3600, ghi=value, temp=temps.get(ts - 3600),
-                        cloud=clouds.get(ts - 3600),
-                        sun=min(sun[ts] / per_hour, 1.0) if ts in sun else None,
-                        wind=wind[ts - 3600][0] if ts - 3600 in wind else None,
-                        wind_dir=wind[ts - 3600][1] if ts - 3600 in wind else None)
-            for ts, value in rows]
-
-
-async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float,
-                           days: int = FORECAST_DAYS) -> list[WeatherHour]:
-    """Hourly GHI/DNI/DHI from Open-Meteo (mean of the preceding hour), including yesterday."""
+    models = list(models) or list(DEFAULT_WEATHER_MODELS)
     params = {
         "latitude": latitude, "longitude": longitude, "timezone": "UTC", "past_days": 1,
-        "forecast_days": days,
-        "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,"
-                  "cloud_cover,sunshine_duration,wind_speed_10m,wind_direction_10m",
-        "wind_speed_unit": "ms",
+        "forecast_days": days, "hourly": ",".join(HOURLY), "models": ",".join(models), "wind_speed_unit": "ms",
     }
     session = async_get_clientsession(hass)
     async with session.get(OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
         resp.raise_for_status()
         data = (await resp.json())["hourly"]
     times = [_parse_utc(t) for t in data["time"]]
-    temps = _mid_hour({ts: v for ts, v in zip(times, map(_number, data.get("temperature_2m") or []))
+
+    def column(var: str, model: str) -> list:
+        # several models: one column per model with its name as suffix; a single model: plain names
+        return data.get(f"{var}_{model}") or (data.get(var) if len(models) == 1 else None) or []
+
+    per_model = {m: _hours(times, {var: column(var, m) for var in HOURLY}) for m in models}
+    per_model = {m: hours for m, hours in per_model.items() if hours}
+    return _mean(list(per_model.values())), per_model
+
+
+def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour]:
+    temps = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["temperature_2m"]))
                        if ts is not None and v is not None})
-    clouds = _mid_hour({ts: v for ts, v in zip(times, map(_number, data.get("cloud_cover") or []))
+    clouds = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["cloud_cover"]))
                         if ts is not None and v is not None})
-    sun = {ts: v for ts, v in zip(times, map(_number, data.get("sunshine_duration") or []))
-           if ts is not None and v is not None}
-    wind = _mid_wind({ts: (v, _bearing(d)) for ts, v, d in zip(times, map(_number, data.get("wind_speed_10m") or []),
-                                                               data.get("wind_direction_10m") or [])
+    sun = {ts: v for ts, v in zip(times, map(_number, data["sunshine_duration"])) if ts is not None and v is not None}
+    wind = _mid_wind({ts: (v, _bearing(d)) for ts, v, d in zip(times, map(_number, data["wind_speed_10m"]),
+                                                               data["wind_direction_10m"] or [None] * len(times))
                       if ts is not None and v is not None})
     hours = []
-    for ts, ghi, dni, dhi in zip(times, data["shortwave_radiation"],
-                                 data["direct_normal_irradiance"], data["diffuse_radiation"]):
+    for ts, ghi, dni, dhi in zip(times, data["shortwave_radiation"], data["direct_normal_irradiance"] or [None] * len(times),
+                                 data["diffuse_radiation"] or [None] * len(times)):
         g, n, d = _irradiance(ghi), _irradiance(dni), _irradiance(dhi)
         if ts is None or g is None:
             continue
@@ -189,6 +146,34 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
                                  wind=wind[start][0] if start in wind else None,
                                  wind_dir=wind[start][1] if start in wind else None))
     return hours
+
+
+def _mean(series: list[list[WeatherHour]]) -> list[WeatherHour]:
+    """Hour by hour mean of several models; wind direction as vector mean."""
+    if len(series) == 1:
+        return series[0]
+    by_start: dict[float, list[WeatherHour]] = {}
+    for hours in series:
+        for w in hours:
+            by_start.setdefault(w.start, []).append(w)
+
+    def avg(values: list[float | None]) -> float | None:
+        v = [x for x in values if x is not None]
+        return sum(v) / len(v) if v else None
+
+    out = []
+    for start, ws in sorted(by_start.items()):
+        split = [w for w in ws if w.dni is not None and w.dhi is not None]
+        x = sum(w.wind * math.sin(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
+        y = sum(w.wind * math.cos(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
+        out.append(WeatherHour(
+            start=start, ghi=avg([w.ghi for w in ws]),
+            # the irradiance split only when every model has it, otherwise GHI and split would disagree
+            dni=avg([w.dni for w in split]) if len(split) == len(ws) else None,
+            dhi=avg([w.dhi for w in split]) if len(split) == len(ws) else None,
+            temp=avg([w.temp for w in ws]), cloud=avg([w.cloud for w in ws]), sun=avg([w.sun for w in ws]),
+            wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None))
+    return out
 
 
 def _parse_utc(text: str) -> float | None:

@@ -46,15 +46,17 @@ def test_actuals_only_for_ended_hours():
     assert len(with_actual) == 5
 
 
-def test_alternative_source_and_mix():
+def test_alternative_sources():
     a = {}
-    alt = {"open_meteo": ({T0 + h * 3600: 50.0 for h in range(24)}, {"roof": {T0 + h * 3600: 30.0 for h in range(24)}})}
+    alt = {m: ({T0 + h * 3600: 50.0 for h in range(24)}, {"roof": {T0 + h * 3600: wh for h in range(24)}})
+           for m, wh in (("icon_seamless", 30.0), ("ecmwf_ifs", 70.0))}
     archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)}}, alt)
     archive.add_actuals(a, "roof", {T0 + h * 3600: 40.0 for h in range(24)}, before=T0 + 24 * 3600)
     primary, _ = archive.daily_error(a, date(2026, 10, 1))
-    other, _ = archive.daily_error(a, date(2026, 10, 1), source="open_meteo")
-    mix, n = archive.daily_error(a, date(2026, 10, 1), source=archive.MIX)
-    assert abs(primary - 0.25) < 1e-9 and abs(other - 0.25) < 1e-9 and n == 1 and mix == 0.0
+    icon, _ = archive.daily_error(a, date(2026, 10, 1), source="icon_seamless")
+    ifs, n = archive.daily_error(a, date(2026, 10, 1), source="ecmwf_ifs")
+    assert abs(primary - 0.25) < 1e-9 and abs(icon - 0.25) < 1e-9 and abs(ifs - 0.75) < 1e-9 and n == 1
+    assert archive.alt_sources(a) == ["icon_seamless", "ecmwf_ifs"] and archive.alt_sources(a, date(2027, 1, 1)) == []
 
 
 def test_history_once_per_stamp_and_kept_on_snapshot():

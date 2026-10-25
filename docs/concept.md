@@ -227,9 +227,19 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   inverter clips systematically (e.g. 800 W inverter on 2 kWp) are rejected during setup:
   if more than ~20 % of clear midday hours sit on a plateau, geometry, efficiency and shading
   cannot be learned. Occasional clipping is detected and excluded from learning.
-- **One weather source** with irradiance: a Home Assistant weather entity that provides
-  irradiance (e.g. DWD MOSMIX `sun_irradiance`), or Open-Meteo directly (GHI / DNI / DHI).
+- **Open-Meteo as the only weather source** (GHI / DNI / DHI, free for non-commercial use, no key).
   Global irradiance is split into direct and diffuse (e.g. Erbs) if only GHI is available.
+  - Several models are averaged hour by hour (GHI, DNI and DHI alike, so the mean stays
+    consistent); default ICON (`icon_seamless`) + ECMWF IFS (`ecmwf_ifs`), changeable under
+    advanced options. A day-ahead hindcast over 230 days (12/2025–10/2026, one installation,
+    learned model, previous-runs API) gave 10.0 % daily error for that mean against 11.7 % (IFS,
+    bias +5 %) and 12.6 % (ICON / Open-Meteo default, bias −7 %): the two err in opposite
+    directions. Only the mean was significantly better (bootstrap); single models were not.
+  - Weather entities were dropped as a source: the common ones (met.no, the Open-Meteo
+    integration) carry no irradiance, and DWD MOSMIX irradiance was clearly worse in the archive
+    (31–36 % against 16–17 % daily error over the same days).
+  - The last answer is stored; when Open-Meteo cannot be reached it stands in for up to 24 h,
+    also across a restart.
 - **No local weather sensors** (temperature, humidity, lux, wind). A 2 K deviation is ~0.7 %
   power, while badly placed sensors cause much larger errors. Fog probability comes from the
   weather service; current conditions are visible in the PV output itself. Revisit only if
@@ -290,8 +300,9 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
   running hour come from 5-minute statistics. The running hour counts from 15 measured minutes,
   weighted by its measured share and compared with the clear-sky profile of the measured part;
   a change in the weather shows within half an hour instead of after the next full hour.
-- With a weather entity as source, Open-Meteo is computed in parallel and archived, so the
-  forecast error of both sources and of their mean can be compared before mixing them.
+- With several weather models, each one is also computed on its own and archived next to their
+  mean (no extra request: Open-Meteo returns all models in one answer), so each model can be
+  compared with the mean on the same days.
 - Energy dashboard solar forecast.
 - Diagnostics: shading-map coverage, last learning run, excluded hours with reason,
   forecast error of the last 30 days.
@@ -330,10 +341,10 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     house load follows from the balance PV + import − battery charge + discharge. Without a house-load sensor only PV into the battery and the
     rest are shown; without house load and batteries the use side is left out.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
-    14 / 30 / 90 days, per array or in total, per weather source (main, Open-Meteo, mean of both);
+    14 / 30 / 90 days, per array or in total, per weather source (the mean used for the forecast, each averaged model on its own);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day
     (hours with a full battery hatched), the error by weather class (forecast irradiance relative to
-    clear sky) and the sources compared on the same days. With the satellite archive enabled, the
+    clear sky) and each model against the mean on the days it was archived. With the satellite archive enabled, the
     deviation is split into a weather part and a model part ("Weather or model?"): the learning run
     computes the model once more for every past hour on the satellite irradiance and the measured air
     temperature (stored as `measured` per array, once, with the parameters of that night). Weather

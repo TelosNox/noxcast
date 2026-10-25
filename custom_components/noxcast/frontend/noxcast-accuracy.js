@@ -4,10 +4,10 @@
 const ACC_TEXT = {
   de: {
     title: "Prognosegüte", days: "Tage", error: "Tagesfehler", bias: "Abweichung", noData: "Noch keine abgeschlossenen Tage im Archiv. Die Tagesprognose wird jeden Abend archiviert und nachts mit den Messwerten ergänzt.",
-    source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", mix: "Mittel beider", all: "Alle Flächen",
+    source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", all: "Alle Flächen",
     range: "Zeitraum", perDay: "Prognose und Ist pro Tag", forecast: "Prognose", actual: "Ist", calendar: "Kalender",
-    byWeather: "Nach Wetterlage", clear: "klar", mixed: "wechselhaft", overcast: "bedeckt", compare: "Quellen im Vergleich",
-    sameDays: "auf denselben Tagen", hourly: "Stundenverlauf", curtailed: "Akku voll (evtl. abgeregelt)", issued: "erstellt",
+    byWeather: "Nach Wetterlage", clear: "klar", mixed: "wechselhaft", overcast: "bedeckt", compare: "Modelle einzeln",
+    sameDays: "Hauptquelle an denselben Tagen", hourly: "Stundenverlauf", curtailed: "Akku voll (evtl. abgeregelt)", issued: "erstellt",
     pick: "Tag im Diagramm oder Kalender anklicken", over: "zu hoch", under: "zu niedrig", kwh: "kWh",
     help: "Fehler = Summe der absoluten Tagesabweichungen geteilt durch die Summe der Ist-Werte. Abweichung > 0 heißt: im Mittel zu hoch prognostiziert. Die Wetterlage folgt aus der prognostizierten Einstrahlung im Verhältnis zum klaren Himmel.",
     split: "Wetter oder Modell?", weatherPart: "Wetteranteil", modelPart: "Modellanteil", modelBias: "Modell-Abweichung",
@@ -20,10 +20,10 @@ const ACC_TEXT = {
   },
   en: {
     title: "Forecast accuracy", days: "days", error: "Daily error", bias: "Bias", noData: "No completed days in the archive yet. The day-ahead forecast is archived every evening and completed with measurements at night.",
-    source: "Weather source", primary: "Main source", open_meteo: "Open-Meteo", mix: "Mean of both", all: "All arrays",
+    source: "Weather source", primary: "Main source", open_meteo: "Open-Meteo", all: "All arrays",
     range: "Period", perDay: "Forecast and actual per day", forecast: "Forecast", actual: "Actual", calendar: "Calendar",
-    byWeather: "By weather", clear: "clear", mixed: "mixed", overcast: "overcast", compare: "Sources compared",
-    sameDays: "on the same days", hourly: "Hourly", curtailed: "Battery full (possibly curtailed)", issued: "issued",
+    byWeather: "By weather", clear: "clear", mixed: "mixed", overcast: "overcast", compare: "Models on their own",
+    sameDays: "main source on the same days", hourly: "Hourly", curtailed: "Battery full (possibly curtailed)", issued: "issued",
     pick: "Click a day in the chart or calendar", over: "too high", under: "too low", kwh: "kWh",
     help: "Error = sum of the absolute daily deviations divided by the sum of the actual values. Bias > 0 means forecast too high on average. The weather class follows from the forecast irradiance relative to a clear sky.",
     split: "Weather or model?", weatherPart: "Weather part", modelPart: "Model part", modelBias: "Model bias",
@@ -36,7 +36,13 @@ const ACC_TEXT = {
   },
 };
 
-const SOURCES = ["primary", "open_meteo", "mix"];
+// "alt" sources of the archive: each Open-Meteo model when several are averaged; "open_meteo" on days
+// archived next to a weather entity
+const MODEL_NAMES = { icon_seamless: "ICON", icon_d2: "ICON-D2", icon_eu: "ICON-EU", icon_global: "ICON global",
+  ecmwf_ifs: "ECMWF IFS", ecmwf_ifs025: "ECMWF IFS 0.25°", ecmwf_aifs025_single: "ECMWF AIFS", meteoswiss_icon_ch2: "ICON-CH2",
+  meteofrance_seamless: "Météo-France", gfs_seamless: "GFS", knmi_seamless: "KNMI", ukmo_seamless: "UK Met Office",
+  gem_seamless: "GEM", best_match: "Open-Meteo best match" };
+const ALT_COLORS = ["var(--nx-alt)", "var(--nx-mix)", "#2EA36B", "#D0543C"];
 const CLASSES = [["clear", 0.7, Infinity], ["mixed", 0.35, 0.7], ["overcast", -Infinity, 0.35]];
 
 class NoxcastAccuracy extends HTMLElement {
@@ -74,15 +80,28 @@ class NoxcastAccuracy extends HTMLElement {
 
   // ------------------------------------------------------------ evaluation
 
+  // "primary" and every alternative source in the archive, in order of appearance
+  get _sources() {
+    const entry = this._data && (this._data.entries || [])[0];
+    const out = new Set(["primary"]);
+    for (const d of (entry && entry.days) || []) for (const h of d.hours) for (const k of Object.keys(h.alt || {})) out.add(k);
+    return [...out];
+  }
+
+  _label(src) { return this._t[src] || MODEL_NAMES[src] || src; }
+
+  _color(src) {
+    if (src === "primary") return "var(--nx-fc)";
+    if (src === "measured") return "var(--nx-md)";
+    const alts = this._sources.slice(1);
+    return ALT_COLORS[Math.max(0, alts.indexOf(src)) % ALT_COLORS.length];
+  }
+
   // forecast of one hour for the chosen source; null when that source has no value
   _fc(h, source, ids) {
     const pick = (f) => (ids.every((id) => id in f) ? ids.reduce((a, id) => a + f[id], 0) : null);
-    const prim = pick(h.forecast);
-    if (source === "primary") return prim;
-    const other = Object.values(h.alt || {})[0];
-    const alt = source === "open_meteo" ? (h.alt && h.alt.open_meteo ? pick(h.alt.open_meteo) : null) : other ? pick(other) : null;
-    if (source === "open_meteo") return alt;
-    return prim === null || alt === null ? null : (prim + alt) / 2;
+    if (source === "primary") return pick(h.forecast);
+    return h.alt && h.alt[source] ? pick(h.alt[source].forecast || h.alt[source]) : null;
   }
 
   // complete days: every hour has an actual value and a forecast of the source
@@ -143,7 +162,7 @@ class NoxcastAccuracy extends HTMLElement {
     const arrays = entry ? [chip("array", "all", t.all), ...entry.arrays.map((a) => chip("array", a.id, this._esc(a.name)))] : [];
     return `<div class="controls">
       <div class="group"><span class="muted small">${t.range}</span>${[14, 30, 90].map((r) => chip("range", r, `${r} ${t.days}`)).join("")}</div>
-      ${hasAlt ? `<div class="group"><span class="muted small">${t.source}</span>${SOURCES.map((src) => chip("source", src, t[src])).join("")}</div>` : ""}
+      ${hasAlt ? `<div class="group"><span class="muted small">${t.source}</span>${this._sources.map((src) => chip("source", src, this._esc(this._label(src)))).join("")}</div>` : ""}
       ${arrays.length > 2 ? `<div class="group">${arrays.join("")}</div>` : ""}
     </div>`;
   }
@@ -251,7 +270,7 @@ class NoxcastAccuracy extends HTMLElement {
     const t = this._t, entry = this._data.entries[0];
     const ids = this._s.array === "all" ? entry.arrays.map((a) => a.id) : [this._s.array];
     const hours = day.raw.hours.filter((h) => h.actual);
-    const series = SOURCES.map((src) => [src, hours.map((h) => this._fc(h, src, ids))]).filter(([, v]) => v.some((x) => x !== null));
+    const series = this._sources.map((src) => [src, hours.map((h) => this._fc(h, src, ids))]).filter(([, v]) => v.some((x) => x !== null));
     const actual = hours.map((h) => ids.reduce((s, id) => s + (h.actual[id] || 0), 0));
     const measured = hours.map((h) => (h.measured && ids.every((id) => id in h.measured) ? ids.reduce((s, id) => s + h.measured[id], 0) : null));
     if (measured.some((x) => x !== null)) series.push(["measured", measured]);
@@ -260,7 +279,6 @@ class NoxcastAccuracy extends HTMLElement {
     const W = 720, H = 200, pad = 28, n = i1 - i0 + 1, bw = (W - pad) / n;
     const max = Math.max(...actual.slice(i0, i1 + 1), ...series.flatMap(([, v]) => v.slice(i0, i1 + 1).map((x) => x || 0)), 1) * 1.1;
     const y = (v) => H - 18 - (v / max) * (H - 30);
-    const colors = { primary: "var(--nx-fc)", open_meteo: "var(--nx-alt)", mix: "var(--nx-mix)", measured: "var(--nx-md)" };
     let svg = "";
     for (let i = i0; i <= i1; i++) {
       const x = pad + (i - i0) * bw, h = hours[i];
@@ -271,9 +289,9 @@ class NoxcastAccuracy extends HTMLElement {
     for (const [src, v] of series) {
       const pts = [];
       for (let i = i0; i <= i1; i++) if (v[i] !== null) pts.push(`${(pad + (i - i0 + 0.5) * bw).toFixed(1)},${y(v[i]).toFixed(1)}`);
-      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${colors[src]}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></polyline>`;
+      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></polyline>`;
     }
-    const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${colors[src]}"></i>${t[src]} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
+    const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${this._color(src)}"></i>${src === "measured" ? t.measured : this._esc(this._label(src))} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
     const issued = day.raw.issued ? ` · ${t.issued} ${new Date(day.raw.issued).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" })}` : "";
     return `<h3>${t.hourly} ${this._date(day.date)}<span class="muted small">${issued}</span></h3>
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.hourly}"><defs><pattern id="acc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="6" fill="var(--nx-hatch)"></rect></pattern></defs>${svg}</svg>
@@ -292,17 +310,20 @@ class NoxcastAccuracy extends HTMLElement {
     return `<table><thead><tr><th></th><th class="num">${t.days}</th><th class="num">${t.error}</th><th class="num">${t.bias}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
+  // each model on its own against the main source (their mean) on the days the model was archived
   _compare(days) {
-    const t = this._t;
-    const per = SOURCES.map((src) => [src, new Map(this._inRange(this._days(src)).map((d) => [d.date, d]))]);
-    const common = days.map((d) => d.date).filter((k) => per.every(([, m]) => m.has(k)));
-    if (common.length < 3 || per.some(([, m]) => !m.size)) return "";
-    const rows = per.map(([src, m]) => {
-      const sc = this._score(common.map((k) => m.get(k)));
-      return `<tr${src === this._s.source ? ` class="on"` : ""}><td>${t[src]}</td><td class="num">${this._pct(sc.error)}</td><td class="num">${this._pct(sc.bias, true)}</td><td>${this._meter(sc.error)}</td></tr>`;
+    const t = this._t, shown = new Set(days.map((d) => d.date));
+    const prim = new Map(this._days("primary").filter((d) => shown.has(d.date)).map((d) => [d.date, d]));
+    const rows = this._sources.slice(1).map((src) => {
+      const own = this._inRange(this._days(src)).filter((d) => prim.has(d.date));
+      if (own.length < 3) return "";
+      const sc = this._score(own), base = this._score(own.map((d) => prim.get(d.date)));
+      return `<tr${src === this._s.source ? ` class="on"` : ""}><td>${this._esc(this._label(src))}</td><td class="num">${own.length}</td>
+        <td class="num">${this._pct(sc.error)}</td><td class="num">${this._pct(sc.bias, true)}</td><td class="num">${this._pct(base.error)}</td><td>${this._meter(sc.error)}</td></tr>`;
     }).join("");
-    return `<section class="card pad grow"><h3>${t.compare}</h3><p class="muted small">${common.length} ${t.days} ${t.sameDays}</p>
-      <table><thead><tr><th></th><th class="num">${t.error}</th><th class="num">${t.bias}</th><th></th></tr></thead><tbody>${rows}</tbody></table></section>`;
+    if (!rows) return "";
+    return `<section class="card pad grow"><h3>${t.compare}</h3>
+      <table><thead><tr><th></th><th class="num">${t.days}</th><th class="num">${t.error}</th><th class="num">${t.bias}</th><th class="num" title="${t.sameDays}">${t.primary}</th><th></th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }
 
   _meter(v) {

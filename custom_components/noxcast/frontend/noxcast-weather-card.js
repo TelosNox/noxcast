@@ -1,8 +1,8 @@
 // Noxcast weather card: the coming days one below the other, each with the PV yield Noxcast expects
 // where its forecast reaches. Plain custom element, no build step.
+// The weather is Noxcast's own weather entity, the same that drives the PV forecast.
 //
 // type: custom:noxcast-weather-card
-// entity: weather.home                 # default: Noxcast's own weather entity
 // days: 5                              # 1 to 10; days beyond the Noxcast horizon show weather only
 // show_pv: true                        # PV yield per day where Noxcast has a forecast
 // pv_bar: line                         # share of the clear-sky yield: line (row edge), fill (row background), none
@@ -12,12 +12,12 @@
 // look: noxcast                        # noxcast: the Noxcast panel look; plain: Home Assistant card
 
 const W_TEXT = {
-  de: { outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Keine Wetterentität",
-    entity: "Wetterentität (leer = die von Noxcast)", days: "Tage", show_pv: "PV-Ertrag pro Tag", temperature: "Außentemperatur (optional)",
+  de: { outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Noch kein Wetter von Noxcast",
+    days: "Tage", show_pv: "PV-Ertrag pro Tag", temperature: "Außentemperatur (optional)",
     humidity_s: "Außenfeuchte (optional)", name: "Bezeichnung der Außenwerte", look: "Aussehen",
     pv_bar: "Balken: Anteil am Ertrag bei klarem Himmel", line: "Linie am Zeilenrand", fill: "Zeilenhintergrund", none: "Kein Balken" },
-  en: { outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather entity",
-    entity: "Weather entity (empty = the one Noxcast uses)", days: "Days", show_pv: "PV yield per day", temperature: "Outside temperature (optional)",
+  en: { outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather from Noxcast yet",
+    days: "Days", show_pv: "PV yield per day", temperature: "Outside temperature (optional)",
     humidity_s: "Outside humidity (optional)", name: "Label of the outside values", look: "Look",
     pv_bar: "Bar: share of the clear-sky yield", line: "Line at the row edge", fill: "Row background", none: "No bar" },
 };
@@ -39,7 +39,6 @@ class NoxcastWeatherCard extends HTMLElement {
     const t = W_TEXT[(document.documentElement.lang || "en").slice(0, 2)] || W_TEXT.en;
     return {
       schema: [
-        { name: "entity", selector: { entity: { domain: "weather" } } },
         { name: "days", selector: { number: { min: 1, max: 10, step: 1, mode: "box" } } },
         { name: "show_pv", selector: { boolean: {} } },
         { name: "pv_bar", selector: { select: { mode: "dropdown", options: ["line", "fill", "none"].map((value) => ({ value, label: t[value] })) } } },
@@ -83,7 +82,7 @@ class NoxcastWeatherCard extends HTMLElement {
 
   get _t() { return W_TEXT[(this._hass.language || "en").slice(0, 2)] || W_TEXT.en; }
   get _lang() { return this._hass.language || "en"; }
-  get _entity() { return this._config.entity || this._srcWeather; }
+  get _entity() { return this._srcWeather; }
 
   _ask(msg) {
     return Promise.race([this._hass.connection.sendMessagePromise(msg),

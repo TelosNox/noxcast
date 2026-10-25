@@ -5,8 +5,7 @@
 // The card shows what Noxcast is configured with: PV groups and their sensors, house load, grid,
 // batteries and whether surplus is fed in. The card config only changes the display:
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
-// show_weather: true                   # hourly weather above the chart, marked where it changes
-// weather_entity: weather.home         # source of that strip; default: Noxcast's own weather entity
+// show_weather: true                   # hourly weather above the chart (Noxcast's weather), marked where it changes
 // range: production                    # day chart: production (an hour either side) or day (0–24 h, night compressed)
 // flow_style: chain                    # power now: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
@@ -105,7 +104,7 @@ class NoxcastCard extends HTMLElement {
   // Home Assistant. It starts at the current hour, so past hours come from the recorded states of the
   // weather entity (the condition as reported at the middle of each hour); same on every device.
   async _subscribeWeather() {
-    const id = this._config.weather_entity || (this._src && this._src.weather);
+    const id = this._src && this._src.weather;
     if (!this._show("weather") || !id || !this._hass || !this.isConnected || this._wxFor === id) return;
     this._unsubWeather();
     this._wxFor = id;

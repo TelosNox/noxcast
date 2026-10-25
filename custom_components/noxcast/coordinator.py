@@ -740,9 +740,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 raise
             _LOGGER.warning("Open-Meteo failed (%s); using the forecast from %.1f h ago", err, age / 3600)
             return self._weather
+        fetched = (dt_util.utcnow().timestamp(), mean, per_model)
         if mean:
-            self._weather = (dt_util.utcnow().timestamp(), mean, per_model)
-        return dt_util.utcnow().timestamp(), mean, per_model
+            self._weather = fetched
+        return fetched
 
     async def _async_today_actual(self, day_start: float, now: float
                                   ) -> tuple[dict[str, dict[float, float]], dict[str, tuple[float, float, float]]]:

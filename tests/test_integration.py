@@ -54,15 +54,15 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     async def fake_factors(_hass, ids):
         return {i: 1.0 for i in ids}
 
-    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
-         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather), \
+    models = {"icon_seamless": weather, "ecmwf_ifs": weather}
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, models)), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
          patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         assert result["type"] is FlowResultType.FORM
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+            result["flow_id"], {"soc_full_pct": 95})
         assert result["type"] is FlowResultType.CREATE_ENTRY
         entry = result["result"]
         await hass.async_block_till_done()
@@ -82,6 +82,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     assert abs(learned.efficiency - 0.92) < 0.03
     tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
     assert len(coordinator.forecast_archive[tomorrow]["hours"]) >= 23        # day-ahead forecast archived
+    lit = [h for h in coordinator.forecast_archive[tomorrow]["hours"].values() if h["ghi"] > 0]
+    assert lit and all(set(h["alt"]) == {"icon_seamless", "ecmwf_ifs"} for h in lit)    # each model on its own
     image = next(s for s in hass.states.async_all("image") if s.entity_id.endswith("shading_map"))
     assert image.state not in ("unknown", "unavailable")
 
@@ -132,11 +134,10 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
 async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> None:
     weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
     hass.states.async_set("sensor.pv_kwh", "1", {"unit_of_measurement": "kWh", "state_class": "total_increasing"})
-    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
-         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+            result["flow_id"], {"soc_full_pct": 95})
         entry = result["result"]
         sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
                                                               context={"source": config_entries.SOURCE_USER})
@@ -148,24 +149,30 @@ async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> No
 
 async def test_options_test_archive_on_save(hass: HomeAssistant) -> None:
     weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
-    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
-         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+            result["flow_id"], {"soc_full_pct": 95})
         entry = result["result"]
         await hass.async_block_till_done()
 
         flow = await hass.config_entries.options.async_init(entry.entry_id)
         assert flow["type"] is FlowResultType.FORM
-        options = {"archive_temperature": True, "archive_url": "https://archive.invalid/v1/archive",
+        options = {"weather_models": ["icon_seamless", "ecmwf_ifs"], "archive_temperature": True,
+                   "archive_url": "https://archive.invalid/v1/archive",
                    "satellite": True, "satellite_url": "https://satellite.invalid/v1/archive",
                    "satellite_model": "satellite_radiation_seamless"}
-        with patch("custom_components.noxcast.config_flow.async_archive_temperature", side_effect=OSError), \
+        both = {"icon_seamless": weather, "ecmwf_ifs": weather}
+        with patch("custom_components.noxcast.config_flow.async_open_meteo", return_value=(weather, {"icon_seamless": weather})):
+            partial = await hass.config_entries.options.async_configure(flow["flow_id"], options)
+        assert partial["errors"] == {"weather_models": "model_partial"}       # one model unknown to Open-Meteo
+        with patch("custom_components.noxcast.config_flow.async_open_meteo", return_value=(weather, both)), \
+             patch("custom_components.noxcast.config_flow.async_archive_temperature", side_effect=OSError), \
              patch("custom_components.noxcast.config_flow.async_archive_irradiance", return_value={1.0: 500.0}):
             bad = await hass.config_entries.options.async_configure(flow["flow_id"], options)
         assert bad["errors"] == {"archive_url": "archive_failed"}
-        with patch("custom_components.noxcast.config_flow.async_archive_temperature", return_value={1.0: 12.0}), \
+        with patch("custom_components.noxcast.config_flow.async_open_meteo", return_value=(weather, both)), \
+             patch("custom_components.noxcast.config_flow.async_archive_temperature", return_value={1.0: 12.0}), \
              patch("custom_components.noxcast.config_flow.async_archive_irradiance", return_value={1.0: 500.0}), \
              patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}), \
              patch("custom_components.noxcast.coordinator.async_archive_irradiance", return_value={}):
@@ -192,14 +199,45 @@ async def test_change_during_reload_is_not_lost(hass: HomeAssistant) -> None:
             hass.config_entries.async_add_subentry(self.config_entry, config_entries.ConfigSubentry(
                 data=MappingProxyType(ARRAY), subentry_type="array", title="Roof", unique_id=None))
 
-    with patch("custom_components.noxcast.config_flow.async_weather_entity", return_value=weather), \
-         patch("custom_components.noxcast.coordinator.async_weather_entity", return_value=weather):
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95})
+            result["flow_id"], {"soc_full_pct": 95})
         entry = result["result"]
         await hass.async_block_till_done()
         with patch.object(NoxcastCoordinator, "async_load", load_and_edit):
             await hass.config_entries.async_reload(entry.entry_id)
             await hass.async_block_till_done()
     assert added and len(hass.config_entries.async_get_entry(entry.entry_id).runtime_data.arrays) == 1
+
+
+async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=1, unique_id=DOMAIN, title="Noxcast",
+                            data={"weather_source": "entity", "weather_entity": "weather.home", "soc_full_pct": 95},
+                            options={"compare_open_meteo": True, "satellite": False})
+    entry.add_to_hass(hass)
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.minor_version == 2
+    assert dict(entry.data) == {"weather_entity": "weather.home", "soc_full_pct": 95}    # the entity stays for the cards
+    assert dict(entry.options) == {"satellite": False}
+
+
+async def test_stored_weather_stands_in_when_open_meteo_fails(hass: HomeAssistant) -> None:
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        await hass.async_block_till_done()
+    coordinator = result["result"].runtime_data
+    fetched = coordinator.data.weather_fetched
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", side_effect=OSError):
+        await coordinator.async_refresh()
+    assert coordinator.last_update_success and coordinator.data.weather_fetched == fetched
+    stored = coordinator._store_data()["weather"]
+    assert stored and len(stored["mean"]) == len(weather)

@@ -1,4 +1,4 @@
-"""Config flow: main entry (weather, battery) and one subentry per PV array."""
+"""Config flow: main entry (batteries, house load, grid) and subentries per PV array, consumer and battery."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -14,11 +14,11 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_COMPARE_OPEN_METEO, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
-    DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL,
+    CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
+    CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
+    WEATHER_MODEL_OPTIONS,
     CONF_AZIMUTH, CONF_HEATING, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
-    CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, CONF_WEATHER_SOURCE, DEFAULT_SOC_FULL, DOMAIN,
-    POWER_UNIT_FACTORS, SUBENTRY_ARRAY, WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO,
+    CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER,
@@ -26,18 +26,11 @@ from .const import (
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
     CONF_BATTERY_POWER, CONF_BATTERY_INVERT,
 )
-from .sources import (
-    NoIrradianceError, async_archive_irradiance, async_archive_temperature, async_weather_entity,
-)
+from .sources import async_archive_irradiance, async_archive_temperature, async_open_meteo
 
 
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
     return vol.Schema({
-        vol.Required(CONF_WEATHER_SOURCE, default=defaults.get(CONF_WEATHER_SOURCE, WEATHER_SOURCE_ENTITY)):
-            selector.SelectSelector(selector.SelectSelectorConfig(
-                options=[WEATHER_SOURCE_ENTITY, WEATHER_SOURCE_OPEN_METEO], translation_key=CONF_WEATHER_SOURCE)),
-        vol.Optional(CONF_WEATHER_ENTITY, description={"suggested_value": defaults.get(CONF_WEATHER_ENTITY)}):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
         vol.Optional(CONF_SOC_SENSORS, default=defaults.get(CONF_SOC_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
         vol.Required(CONF_SOC_FULL, default=defaults.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)):
@@ -122,22 +115,12 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
         state = flow.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
             return {CONF_SOC_SENSORS: "soc_unit"}
-    if user_input[CONF_WEATHER_SOURCE] != WEATHER_SOURCE_ENTITY:
-        return {}
-    entity = user_input.get(CONF_WEATHER_ENTITY)
-    if not entity:
-        return {CONF_WEATHER_ENTITY: "weather_entity_required"}
-    try:
-        await async_weather_entity(flow.hass, entity)
-    except NoIrradianceError:
-        return {CONF_WEATHER_ENTITY: "no_irradiance"}
-    except Exception:  # noqa: BLE001
-        return {CONF_WEATHER_ENTITY: "weather_unavailable"}
     return {}
 
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2              # 1.2: Open-Meteo is the only weather source (migration in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -155,7 +138,9 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = await _validate_main(self, user_input)
             if not errors:
-                return self.async_update_reload_and_abort(entry, data=user_input)
+                # the weather entity of the former source choice still feeds the cards' weather strip
+                kept = {CONF_WEATHER_ENTITY: entry.data[CONF_WEATHER_ENTITY]} if entry.data.get(CONF_WEATHER_ENTITY) else {}
+                return self.async_update_reload_and_abort(entry, data={**user_input, **kept})
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
                                     errors=errors)
 
@@ -251,6 +236,9 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
 
 def _options_schema(d: dict[str, Any]) -> vol.Schema:
     return vol.Schema({
+        vol.Required(CONF_WEATHER_MODELS, default=list(d.get(CONF_WEATHER_MODELS) or DEFAULT_WEATHER_MODELS)):
+            selector.SelectSelector(selector.SelectSelectorConfig(options=list(WEATHER_MODEL_OPTIONS), multiple=True,
+                                                                  custom_value=True, sort=False)),
         vol.Required(CONF_ARCHIVE_TEMPERATURE, default=d.get(CONF_ARCHIVE_TEMPERATURE, True)): selector.BooleanSelector(),
         vol.Required(CONF_ARCHIVE_URL, default=d.get(CONF_ARCHIVE_URL, DEFAULT_ARCHIVE_URL)):
             selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
@@ -259,14 +247,13 @@ def _options_schema(d: dict[str, Any]) -> vol.Schema:
             selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
         vol.Required(CONF_SATELLITE_MODEL, default=d.get(CONF_SATELLITE_MODEL, DEFAULT_SATELLITE_MODEL)):
             selector.TextSelector(),
-        vol.Required(CONF_COMPARE_OPEN_METEO, default=d.get(CONF_COMPARE_OPEN_METEO, True)): selector.BooleanSelector(),
         vol.Optional(CONF_API_KEY, description={"suggested_value": d.get(CONF_API_KEY)}):
             selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
     })
 
 
 class NoxcastOptionsFlow(OptionsFlow):
-    """Advanced options: history archives used for learning (temperature, optional satellite filter)."""
+    """Advanced options: weather models, history archives used for learning (temperature, optional satellite filter)."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors = {}
@@ -282,6 +269,14 @@ class NoxcastOptionsFlow(OptionsFlow):
         end = dt_util.utcnow() - timedelta(days=7)
         start = end - timedelta(days=1)
         lat, lon, key = self.hass.config.latitude, self.hass.config.longitude, data.get(CONF_API_KEY) or None
+        if not data.get(CONF_WEATHER_MODELS):
+            return {CONF_WEATHER_MODELS: "models_required"}
+        try:
+            _, per_model = await async_open_meteo(self.hass, lat, lon, 2, data[CONF_WEATHER_MODELS])
+        except Exception:  # noqa: BLE001
+            return {CONF_WEATHER_MODELS: "weather_unavailable"}
+        if missing := [m for m in data[CONF_WEATHER_MODELS] if m not in per_model]:
+            return {CONF_WEATHER_MODELS: "model_unknown"} if len(missing) == len(data[CONF_WEATHER_MODELS])                 else {CONF_WEATHER_MODELS: "model_partial"}
         if data[CONF_ARCHIVE_TEMPERATURE]:
             try:
                 if not await async_archive_temperature(self.hass, data[CONF_ARCHIVE_URL], lat, lon, start, end, key):

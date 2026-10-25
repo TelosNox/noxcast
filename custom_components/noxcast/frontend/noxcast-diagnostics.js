@@ -99,7 +99,7 @@ class NoxcastDiagnostics extends HTMLElement {
   _entry(e) {
     const t = this._t, issues = this._issues(e);
     const tiles = [
-      [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `${this._esc(e.weather.entity || e.weather.source || "")} · ${e.weather.hours} ${t.hours}`],
+      [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `Open-Meteo ${this._esc((e.weather.models || []).join(" + "))} · ${e.weather.hours} ${t.hours}`],
       [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._dt(e.learning.last) : ""],
       [t.archive, `${e.archive.days} ${t.days}`, `${e.archive.complete} ${t.complete}`],
     ].map(([k, v, sub]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span><span class="muted small">${sub}</span></div>`).join("");

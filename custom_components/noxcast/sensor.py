@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import load as lf
-from .const import ATTR_SCHEMA_VERSION, COMPARE_SOURCE, DOMAIN, ERROR_DAYS
+from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
 
@@ -293,7 +293,7 @@ class ForecastErrorSensor(NoxcastEntity, SensorEntity):
             error, _ = fc_archive.daily_error(archive, self._since(), sub_id)
             per_array[arr.name] = None if error is None else round(error * 100, 1)
         sources = {}
-        for name in (COMPARE_SOURCE, fc_archive.MIX):            # same days as the comparison source
+        for name in fc_archive.alt_sources(archive, self._since()):   # each model, on the days it has
             error, n = fc_archive.daily_error(archive, self._since(), source=name)
             if n:
                 own = {k: v for k, v in fc_archive.day_totals(archive).items()

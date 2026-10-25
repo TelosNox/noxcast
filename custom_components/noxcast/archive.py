@@ -19,8 +19,10 @@ hour, wind), only for hours with irradiance and only the values the source has �
 per daylight hour and source. It is not used by the model; it allows comparing sources and
 predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archived days.
 
-"alt" holds the same day computed from another weather source (e.g. Open-Meteo next to DWD),
-so sources and their mix can be compared against the actual values.
+"alt" holds the same day computed from each weather model on its own when the forecast averages
+several (e.g. ICON and ECMWF IFS), so each model can be compared with their mean and the actual
+values. Days archived before Open-Meteo became the only source hold "open_meteo" there, next to a
+weather entity as primary source.
 
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
@@ -105,26 +107,28 @@ def prune(archive: dict, oldest: date) -> None:
         del archive[key]
 
 
-MIX = "mix"
-
-
 def _forecast(hour: dict, source: str | None) -> dict[str, float] | None:
-    """Forecast of an hour from the primary source, an alternative source or the mean of both."""
+    """Forecast of an hour from the primary source or an alternative source."""
     if source is None:
         return hour["forecast"]
     alt = hour.get("alt", {})
-    if source == MIX:
-        other = next(iter(alt.values()), None)
-        if other is None:
-            return None
-        return {sid: (wh + other["forecast"].get(sid, wh)) / 2 for sid, wh in hour["forecast"].items()}
     return alt[source]["forecast"] if source in alt else None
+
+
+def alt_sources(archive: dict, since: date | None = None) -> list[str]:
+    """Names of the alternative sources archived (since a date), in order of appearance."""
+    names: dict[str, None] = {}
+    for key, day in sorted(archive.items()):
+        if since is None or key >= since.isoformat():
+            for hour in day["hours"].values():
+                names.update(dict.fromkeys(hour.get("alt", {})))
+    return list(names)
 
 
 def day_totals(archive: dict, array_id: str | None = None, source: str | None = None) -> dict[str, tuple[float, float]]:
     """Complete days only: {day: (forecast Wh, actual Wh)}; array_id None sums all arrays.
 
-    source: None = primary weather source, an alternative source name, or MIX (mean of primary and alternative).
+    source: None = primary weather source or an alternative source name.
     """
     out = {}
     for key, day in archive.items():

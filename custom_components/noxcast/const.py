@@ -4,12 +4,9 @@ from datetime import timedelta
 DOMAIN = "noxcast"
 
 # main entry
-CONF_WEATHER_SOURCE = "weather_source"
-CONF_WEATHER_ENTITY = "weather_entity"
+CONF_WEATHER_ENTITY = "weather_entity"   # left over from the weather source choice; only the cards' weather strip
 CONF_SOC_SENSORS = "soc_sensors"
 CONF_SOC_FULL = "soc_full_pct"
-WEATHER_SOURCE_ENTITY = "entity"
-WEATHER_SOURCE_OPEN_METEO = "open_meteo"
 DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
@@ -65,13 +62,17 @@ CONF_SATELLITE = "satellite"
 CONF_SATELLITE_URL = "satellite_url"
 CONF_SATELLITE_MODEL = "satellite_model"
 CONF_API_KEY = "api_key"
-CONF_COMPARE_OPEN_METEO = "compare_open_meteo"   # archive Open-Meteo next to a weather entity for comparison
+CONF_WEATHER_MODELS = "weather_models"   # Open-Meteo models; several are averaged hour by hour
+# day-ahead hindcast 12/2025-10/2026 (230 days): the mean of ICON and ECMWF IFS beat every single model,
+# their errors run in opposite directions (ICON too low, IFS too high)
+DEFAULT_WEATHER_MODELS = ("icon_seamless", "ecmwf_ifs")
+WEATHER_MODEL_OPTIONS = ("icon_seamless", "icon_d2", "icon_eu", "icon_global", "ecmwf_ifs", "ecmwf_ifs025",
+                         "ecmwf_aifs025_single", "meteoswiss_icon_ch2", "meteofrance_seamless", "gfs_seamless",
+                         "knmi_seamless", "ukmo_seamless", "gem_seamless", "best_match")
+WEATHER_MAX_AGE = timedelta(hours=24)    # a stored forecast stands in this long when Open-Meteo cannot be reached
 DEFAULT_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"
-
-# irradiance attributes recognised in weather entity hourly forecasts (W/m², mean of the preceding hour)
-IRRADIANCE_KEYS = ("sun_irradiance", "solar_irradiance", "irradiance", "global_horizontal_irradiance")
 
 FORECAST_DAYS = 3                         # default horizon: today and the next two days
 MAX_FORECAST_DAYS = 7                     # beyond a week a weather forecast says little about the yield
@@ -81,16 +82,13 @@ STALE_AFTER = timedelta(hours=6)         # sensors stay available this long afte
 POWER_UNIT_FACTORS = {"W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
 ENERGY_UNIT_FACTORS = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}
 MINUTE_FACTORS = {"min": 1.0, "h": 60.0, "s": 1 / 60, "d": 1440.0}
-SPEED_UNIT_FACTORS = {"m/s": 1.0, "km/h": 1 / 3.6, "mph": 0.44704, "kn": 0.514444, "ft/s": 0.3048}
-COMPASS = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
 LEARN_TIME = (1, 30)                     # local time of the nightly learning run
 HISTORY_YEARS = 2                        # history window used for learning
 
 STORAGE_VERSION = 1
 ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluation
-ERROR_DAYS = 30
+ERROR_DAYS = 30                          # window of the forecast error sensor
 MORNING_HOUR = 6                         # local hour at which today's forecast is fixed
-COMPARE_SOURCE = "open_meteo"                          # window of the forecast error sensor
 ATTR_SCHEMA_VERSION = 1
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"

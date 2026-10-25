@@ -59,6 +59,17 @@ def _config_state(entry: NoxcastConfigEntry) -> tuple:
     return (dict(entry.data), dict(entry.options), {sid: (sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
+    """1.1 -> 1.2: Open-Meteo is the only weather source; the weather entity stays for the cards' weather strip."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        data = {k: v for k, v in entry.data.items() if k != "weather_source"}
+        options = {k: v for k, v in entry.options.items() if k != "compare_open_meteo"}
+        hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=2)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
     built_from = _config_state(entry)
     coordinator = NoxcastCoordinator(hass, entry)

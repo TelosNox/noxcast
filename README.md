@@ -15,8 +15,9 @@ shading, and the irradiance forecast of your weather source – every number exp
 - Learning runs at startup and every night; recent observations weigh more, and abrupt changes
   (a tree cut, a new building) replace old values instead of being averaged.
 - Hours with a full battery (possible curtailment) and excluded periods are ignored.
-- The forecast combines clear-sky geometry, the shading map and the hourly irradiance of a
-  weather entity (e.g. DWD `sun_irradiance`) or Open-Meteo, for today, tomorrow and the day after.
+- The forecast combines clear-sky geometry, the shading map and the hourly irradiance from
+  Open-Meteo (mean of ICON and ECMWF IFS by default, other models under advanced options), for
+  today, tomorrow and the day after. Open-Meteo's free API needs no key and is for non-commercial use.
 - Optional load forecast: with a house load sensor, Noxcast learns a base-load profile (median per
   hour, workday / weekend or the states of an optional day-type entity such as the Workday sensor,
   last 6 weeks) without the consumers you add with their own power

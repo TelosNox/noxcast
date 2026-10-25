@@ -10,6 +10,7 @@
 // flow: full                           # full: power flow diagram; compact: one row of figures
 // flow_style: chain                    # compact row: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
+// flow_min_w: 10                       # a flow shows from this many watts (sensors drift by a few watts)
 // look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
 // groups:                              # per Noxcast PV group, by its name in Noxcast
 //   Balkon: { name: Süd, icon: mdi:balcony, hide: false }   # icon instead of the name; hide: not listed
@@ -50,9 +51,9 @@ const PALETTE = {
 };
 
 const ACTIVE_W = 5;
-// a flow shows from FLOW_ON_W and stays until it falls below FLOW_OFF_W: sensors drift by a few watts, so
-// small mismatches show no flow, and a flow near the threshold does not flicker
-const FLOW_ON_W = 20, FLOW_OFF_W = 12;
+// a flow shows from flow_min_w (default FLOW_MIN_W) and stays until it falls below FLOW_OFF of that: sensors
+// drift by a few watts, so small mismatches show no flow, and a flow near the threshold does not flicker
+const FLOW_MIN_W = 10, FLOW_OFF = 0.6;
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
@@ -255,10 +256,11 @@ class NoxcastCard extends HTMLElement {
   get _p() { return this._hass.themes && this._hass.themes.darkMode ? PALETTE.dark : PALETTE.light; }
   get _lang() { return this._hass.language || "en"; }
   get _tz() { return this._hass.config.time_zone; }
-  // whether the flow `key` with `w` watts counts as running, with hysteresis (see FLOW_ON_W)
+  // whether the flow `key` with `w` watts counts as running, with hysteresis (see FLOW_MIN_W)
   _on(key, w) {
     const st = this._onState || (this._onState = {});
-    st[key] = Math.abs(w) >= (st[key] ? FLOW_OFF_W : FLOW_ON_W);
+    const min = Number(this._config.flow_min_w) >= 0 && this._config.flow_min_w !== "" ? Number(this._config.flow_min_w) : FLOW_MIN_W;
+    st[key] = Math.abs(w) >= Math.max(1, st[key] ? min * FLOW_OFF : min);
     return st[key];
   }
 
@@ -1161,6 +1163,7 @@ class NoxcastCardEditor extends HTMLElement {
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
       flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
       flow_style: de ? "Fluss in der kompakten Zeile" : "Flow in the compact row", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
+      flow_min_w: de ? "Fluss ab (W)" : "Flow from (W)",
       icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
       icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
       icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
@@ -1224,6 +1227,7 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "flow_style", selector: opt([["chain", de ? "Kette: Punkte zwischen den Werten" : "Chain: dots between the figures"],
         ["bus", de ? "Bus: Linie unter den Werten" : "Bus: line below the figures"]]) },
       { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
+      { name: "flow_min_w", selector: { number: { min: 0, max: 200, step: 1, mode: "box", unit_of_measurement: "W" } } },
       { name: "look", selector: opt([["plain", "Home Assistant"], ["noxcast", "Noxcast"]]) },
       ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
@@ -1232,7 +1236,7 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain",
-      flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal",
+      flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
       ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
@@ -1241,6 +1245,7 @@ class NoxcastCardEditor extends HTMLElement {
       if (v.flow && v.flow !== "full") n.flow = v.flow; else delete n.flow;
       if (v.flow_style && v.flow_style !== "chain") n.flow_style = v.flow_style; else delete n.flow_style;
       if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
+      if (v.flow_min_w !== undefined && v.flow_min_w !== "" && Number(v.flow_min_w) !== FLOW_MIN_W) n.flow_min_w = Number(v.flow_min_w); else delete n.flow_min_w;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;
       for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
       const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));

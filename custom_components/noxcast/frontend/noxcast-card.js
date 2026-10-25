@@ -381,10 +381,12 @@ class NoxcastCard extends HTMLElement {
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
       .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
-      .cf .gapc { display: flex; flex-direction: column; min-width: 0; }
-      .cf .gap { display: block; width: 100%; height: 1.2em; overflow: visible; }
-      .cf .v { line-height: 1.2; }   /* fixed, so the chain line (55 % of 1.2em) meets the middle of the digits */
-      .cf.chain { padding: 0 4px; }
+      .cf .v { line-height: 1.2; }
+      /* chain: the row aligns on the baseline of the values; a gap has no baseline of its own, so its bottom
+         edge sits on it. It is one cap height tall (digits are cap height), so its middle is the middle of
+         the digits, whatever the font, size or line height. 0.72em: the cap height of Roboto, where cap is unknown */
+      .cf.chain { padding: 0 4px; align-items: last baseline; }
+      .cf .gap { display: block; width: 100%; height: .72em; height: 1cap; overflow: visible; }
       .cf.chain .f { padding: 0 10px; }   /* room between a value and the lines beside it */
       .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
       .wx { margin-bottom: -2px; }
@@ -645,10 +647,10 @@ class NoxcastCard extends HTMLElement {
     let html;
     if (!bus) {
       // the figures take their width, the gaps share the rest, so a line runs from one value to the next;
-      // it sits in the middle of the value line (same font size, an empty label above)
+      // it sits in the middle of the digits (see .cf .gap)
       const cols = nodes.map(() => "auto").join(" minmax(22px, 1fr) ");
       html = `<div class="cf chain" style="grid-template-columns:${cols}">${nodes.map((n, i) => `${cell(n)}${i < N - 1
-        ? `<div class="gapc"><span class="l">&nbsp;</span><svg class="gap v" data-seg="${i}" data-x0="8" data-x1="92"><line x1="4%" x2="96%" y1="55%" y2="55%" stroke-width="2" stroke-linecap="round"></line>${dots("55%")}</svg></div>`
+        ? `<svg class="gap v" data-seg="${i}" data-x0="8" data-x1="92"><line x1="4%" x2="96%" y1="50%" y2="50%" stroke-width="2" stroke-linecap="round"></line>${dots("50%")}</svg>`
         : ""}`).join("")}</div>`;
     } else {
       const segs = nodes.slice(1).map((_, i) => `<g data-seg="${i}" data-x0="${mid(i) + 3}" data-x1="${mid(i + 1) - 3}"><line x1="${mid(i) + 2}%" x2="${mid(i + 1) - 2}%" y1="16" y2="16" stroke-width="2"></line>${dots(16)}</g>`).join("");

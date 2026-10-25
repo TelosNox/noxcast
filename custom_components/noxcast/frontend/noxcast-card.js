@@ -385,7 +385,7 @@ class NoxcastCard extends HTMLElement {
       .cf .gap { display: block; width: 100%; height: 1.2em; overflow: visible; }
       .cf .v { line-height: 1.2; }   /* fixed, so the chain line (55 % of 1.2em) meets the middle of the digits */
       .cf.chain { padding: 0 4px; }
-      .cf.chain .f { padding: 0 4px; }
+      .cf.chain .f { padding: 0 10px; }   /* room between a value and the lines beside it */
       .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
       .wx { margin-bottom: -2px; }
       .muted { color: var(--secondary-text-color); }

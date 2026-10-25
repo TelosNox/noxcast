@@ -597,11 +597,12 @@ class NoxcastCard extends HTMLElement {
     const gridDir = !this._on("n:grid", v.grid) ? "" : v.grid > 0 ? t.import : t.export;
     if (f.cells.grid) f.cells.grid.title = gridDir;
 
-    // net flow across each border: the mean of what the left side gives and the right side takes, so sensors
-    // that do not add up exactly still give one value; made of the supplying figures on the sending side
+    // net flow across each border: what the left side gives and the right side takes. Sensors rarely add up
+    // exactly, so only what both sides confirm counts (the smaller amount, none if they disagree on the
+    // direction); made of the supplying figures on the sending side
     const borders = f.segs.map((seg, i) => {
-      const left = nodes.slice(0, i + 1).reduce((a, n) => a + n.prod, 0), right = nodes.slice(i + 1).reduce((a, n) => a + n.prod, 0);
-      const p = (left - right) / 2, side = p >= 0 ? nodes.slice(0, i + 1) : nodes.slice(i + 1);
+      const give = nodes.slice(0, i + 1).reduce((a, n) => a + n.prod, 0), take = -nodes.slice(i + 1).reduce((a, n) => a + n.prod, 0);
+      const p = give * take > 0 ? Math.sign(give) * Math.min(Math.abs(give), Math.abs(take)) : 0, side = p >= 0 ? nodes.slice(0, i + 1) : nodes.slice(i + 1);
       const srcs = side.filter((n) => n.prod > 0 && this._on(`n:${n.key}`, n.prod)).map((n) => [n.dot, n.prod]);
       return { p, mix: srcs.length ? srcs : [[side[0].dot, 1]] };
     });
@@ -801,6 +802,12 @@ class NoxcastCard extends HTMLElement {
     // the load spans the same hours as PV: the first and last hourly means are held to the edges
     const loadPts = [[x(t0), y(lv(dayH[0]))], ...dayH.map((h) => [x(h + H / 2), y(lv(h))]), [x(t1), y(lv(dayH[dayH.length - 1]))]];
     const loadLine = hasLoad ? line(loadPts) : "";
+    // measured until now, forecast after it: solid, then dashed like every forecast
+    const nowCut = now <= t0 ? X0 : now >= t1 ? X1 : x(now);
+    const loadSvg = `<clipPath id="nx-load-past"><rect x="0" y="0" width="${nowCut.toFixed(1)}" height="${Hp}"></rect></clipPath>
+      <clipPath id="nx-load-next"><rect x="${nowCut.toFixed(1)}" y="0" width="${(W - nowCut).toFixed(1)}" height="${Hp}"></rect></clipPath>
+      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" clip-path="url(#nx-load-past)"></path>
+      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" stroke-dasharray="3 3" clip-path="url(#nx-load-next)"></path>`;
     // P10–P90 of the coming hours, learned by Noxcast from its forecast archive
     const bandM = new Map(((this._data.today && this._data.today.band) || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
@@ -819,7 +826,7 @@ class NoxcastCard extends HTMLElement {
       ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 Z"></path></clipPath>
         <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
-      ${hasLoad ? `${halo(loadLine)}<path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5"></path>` : ""}
+      ${hasLoad ? `${halo(loadLine)}${loadSvg}` : ""}
       ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
@@ -863,7 +870,10 @@ class NoxcastCard extends HTMLElement {
       const pastEnd = Math.min(now, t1), f0 = m.socAt(t0), f1 = m.socAt(pastEnd);
       if (past.length && f0 !== null && past[0][0] > x(t0)) past.unshift([x(t0), ys(f0)]);
       if (past.length && f1 !== null && past[past.length - 1][0] < x(pastEnd)) past.push([x(pastEnd), ys(f1)]);
-      const fut = sim.points.filter(([ts]) => ts <= t1).map(([ts, f]) => [x(ts), ys(f)]);
+      // the simulation starts at the full hour; drawn from now on, joined to the measured level
+      const futStart = Math.max(now, t0), fStart = futStart === pastEnd && f1 !== null ? f1 : sim.at(futStart);
+      const fut = [...(fStart === null ? [] : [[futStart, fStart]]), ...sim.points.filter(([ts]) => ts > futStart && ts <= t1)]
+        .map(([ts, f]) => [x(ts), ys(f)]);
       const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
       const endF = sim.empty !== null && sim.empty < chargeTom ? null : sim.at(chargeTom);
       const cap = (cx, f, label, time, future, empty) => {

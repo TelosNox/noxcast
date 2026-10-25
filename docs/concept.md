@@ -240,6 +240,13 @@ the balcony's clear-day bias went from −4.5 % to −1.5 %.
     (31–36 % against 16–17 % daily error over the same days).
   - The last answer is stored; when Open-Meteo cannot be reached it stands in for up to 24 h,
     also across a restart.
+  - **Own weather entity** from the same averaged values, for a week regardless of the PV horizon,
+    so dashboard weather and expected yield agree; the cards use it by default. The condition is
+    derived from the averaged numbers rather than a weather code, which cannot be averaged:
+    precipitation ≥ 0.1 mm/h is rain (≥ 4 mm pouring; snow at ≤ 0 °C, sleet up to 2 °C), otherwise
+    cloud cover < 20 % sunny / clear night, < 70 % partly cloudy, else cloudy; wind ≥ 10.8 m/s
+    windy. Only thunderstorms (any model) and fog (first model) come from the weather code. A day
+    is judged on its daylight hours, rain on its sum (≥ 1 mm).
 - **No local weather sensors** (temperature, humidity, lux, wind). A 2 K deviation is ~0.7 %
   power, while badly placed sensors cause much larger errors. Fog probability comes from the
   weather service; current conditions are visible in the PV output itself. Revisit only if

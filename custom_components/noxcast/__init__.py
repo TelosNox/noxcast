@@ -16,7 +16,7 @@ from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .panel import async_setup_panel
 
-PLATFORMS = [Platform.IMAGE, Platform.SENSOR]
+PLATFORMS = [Platform.IMAGE, Platform.SENSOR, Platform.WEATHER]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 EXCLUDE_SCHEMA = vol.Schema({
@@ -60,13 +60,13 @@ def _config_state(entry: NoxcastConfigEntry) -> tuple:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    """1.1 -> 1.2: Open-Meteo is the only weather source; the weather entity stays for the cards' weather strip."""
+    """1.1 -> 1.3: Open-Meteo is the only weather source, and Noxcast's own weather entity feeds the cards."""
     if entry.version > 1:
         return False
-    if entry.minor_version < 2:
-        data = {k: v for k, v in entry.data.items() if k != "weather_source"}
+    if entry.minor_version < 3:
+        data = {k: v for k, v in entry.data.items() if k not in ("weather_source", "weather_entity")}
         options = {k: v for k, v in entry.options.items() if k != "compare_open_meteo"}
-        hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=2)
+        hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=3)
     return True
 
 

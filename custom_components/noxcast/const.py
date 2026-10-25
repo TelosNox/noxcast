@@ -4,7 +4,6 @@ from datetime import timedelta
 DOMAIN = "noxcast"
 
 # main entry
-CONF_WEATHER_ENTITY = "weather_entity"   # left over from the weather source choice; only the cards' weather strip
 CONF_SOC_SENSORS = "soc_sensors"
 CONF_SOC_FULL = "soc_full_pct"
 DEFAULT_SOC_FULL = 95
@@ -76,6 +75,7 @@ DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"
 
 FORECAST_DAYS = 3                         # default horizon: today and the next two days
 MAX_FORECAST_DAYS = 7                     # beyond a week a weather forecast says little about the yield
+WEATHER_DAYS = 7                          # the weather entity shows a week, whatever the PV horizon
 CONF_FORECAST_DAYS = "forecast_days"
 UPDATE_MINUTES = (0, 30)                 # forecast refresh at these minutes of every hour, plus once at start
 STALE_AFTER = timedelta(hours=6)         # sensors stay available this long after the last successful update

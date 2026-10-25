@@ -448,8 +448,8 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The sensors the day card shows, as configured in the integration; the card only changes the display."""
     from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_FEED_IN, CONF_GRID_INVERT, CONF_MAX_SOC,
-                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR,
-                        CONF_WEATHER_ENTITY)
+                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
+    from homeassistant.helpers import entity_registry as er
 
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
@@ -471,7 +471,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
         "batteries": batteries,
         "export": bool(entry.data.get(CONF_FEED_IN)),
-        "weather": entry.data.get(CONF_WEATHER_ENTITY),
+        "weather": er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather"),
     })
 
 

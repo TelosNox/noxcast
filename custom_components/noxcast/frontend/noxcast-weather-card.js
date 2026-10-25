@@ -2,7 +2,7 @@
 // where its forecast reaches. Plain custom element, no build step.
 //
 // type: custom:noxcast-weather-card
-// entity: weather.home                 # default: the weather entity Noxcast uses
+// entity: weather.home                 # default: Noxcast's own weather entity
 // days: 5                              # 1 to 10; days beyond the Noxcast horizon show weather only
 // show_pv: true                        # PV yield per day where Noxcast has a forecast
 // pv_bar: line                         # share of the clear-sky yield: line (row edge), fill (row background), none

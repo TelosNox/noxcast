@@ -18,6 +18,8 @@ shading, and the irradiance forecast of your weather source – every number exp
 - The forecast combines clear-sky geometry, the shading map and the hourly irradiance from
   Open-Meteo (mean of ICON and ECMWF IFS by default, other models under advanced options), for
   today, tomorrow and the day after. Open-Meteo's free API needs no key and is for non-commercial use.
+- A weather entity from the same data (current hour, hourly and daily forecast for a week), so the
+  weather on the dashboard and the expected yield cannot disagree. The cards use it by default.
 - Optional load forecast: with a house load sensor, Noxcast learns a base-load profile (median per
   hour, workday / weekend or the states of an optional day-type entity such as the Workday sensor,
   last 6 weeks) without the consumers you add with their own power

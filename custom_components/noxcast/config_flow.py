@@ -18,7 +18,7 @@ from .const import (
     CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
     WEATHER_MODEL_OPTIONS,
     CONF_AZIMUTH, CONF_HEATING, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
-    CONF_TILT, CONF_VALID_SINCE, CONF_WEATHER_ENTITY, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
+    CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER,
@@ -120,7 +120,7 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 2              # 1.2: Open-Meteo is the only weather source (migration in __init__)
+    MINOR_VERSION = 3              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity (migration in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -138,9 +138,7 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = await _validate_main(self, user_input)
             if not errors:
-                # the weather entity of the former source choice still feeds the cards' weather strip
-                kept = {CONF_WEATHER_ENTITY: entry.data[CONF_WEATHER_ENTITY]} if entry.data.get(CONF_WEATHER_ENTITY) else {}
-                return self.async_update_reload_and_abort(entry, data={**user_input, **kept})
+                return self.async_update_reload_and_abort(entry, data=user_input)
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
                                     errors=errors)
 

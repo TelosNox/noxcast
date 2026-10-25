@@ -6,7 +6,7 @@
 // batteries and whether surplus is fed in. The card config only changes the display:
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
 // show_weather: true                   # hourly weather above the chart, marked where it changes
-// weather_entity: weather.home         # source of that strip; default: the weather entity Noxcast uses
+// weather_entity: weather.home         # source of that strip; default: Noxcast's own weather entity
 // flow: full                           # full: power flow diagram; compact: one row of figures
 // flow_style: chain                    # compact row: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively

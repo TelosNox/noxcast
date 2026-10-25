@@ -358,6 +358,11 @@
       "shade_today": {
         "name": "Shade today"
       }
+    },
+    "weather": {
+      "weather": {
+        "name": "Weather"
+      }
     }
   },
   "services": {

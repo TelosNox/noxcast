@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -112,6 +112,7 @@ class NoxcastData:
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see _band)
     actual: dict[str, dict[float, float]] = field(default_factory=dict)   # today's measured hours per array
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
+    outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
 
     @property
     def arrays(self) -> dict[str, dict[float, float]]:
@@ -215,8 +216,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 if sub_id in self.arrays:
                     self._hours[sub_id] = {float(t): float(v) for t, v in hours.items() if float(t) >= day_start}
             if cached := stored.get("weather"):
-                self._weather = (float(cached["fetched"]), [_weather_hour(r) for r in cached["mean"]],
-                                 {m: [_weather_hour(r) for r in rows] for m, rows in cached["models"].items()})
+                self._weather = (float(cached["fetched"]), [_weather_hour(r) for r in cached["mean"]], {})
             morning = stored.get("morning") or {}
             fixed = dt_util.parse_datetime(morning.get("fixed") or "")
             if fixed and dt_util.as_local(fixed).date() == dt_util.now().date():
@@ -304,8 +304,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             if self.load_profile else None,
             "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
-            "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]],
-                        "models": {m: [_weather_row(w) for w in hours] for m, hours in self._weather[2].items()}}
+            # only the mean: the single models serve the archive, which can skip an outage
+            "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,
         }
 
@@ -733,7 +733,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Open-Meteo forecast; when it fails, the last answer stands in for up to WEATHER_MAX_AGE."""
         try:
             mean, per_model = await async_open_meteo(self.hass, self.site.latitude, self.site.longitude,
-                                                     self.forecast_days, self.weather_models)
+                                                     max(self.forecast_days, WEATHER_DAYS), self.weather_models)
         except Exception as err:  # noqa: BLE001
             age = dt_util.utcnow().timestamp() - self._weather[0] if self._weather else None
             if age is None or age > WEATHER_MAX_AGE.total_seconds():
@@ -795,7 +795,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         day_start = dt_util.start_of_local_day().timestamp()
         day_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=1)).timestamp()
         horizon = dt_util.start_of_local_day(local_now.date() + timedelta(days=self.forecast_days)).timestamp()
-        weather = [w for w in weather if day_start <= w.start < horizon]
+        outlook = [w for w in weather if w.start >= day_start]
+        weather = [w for w in outlook if w.start < horizon]
         if not weather:
             raise UpdateFailed("Weather source returned no hours for the forecast horizon")
         # each model on its own, only for the archive (tomorrow) and only when several are averaged
@@ -803,7 +804,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         models = {m: [w for w in hours if tomorrow[0] <= w.start < tomorrow[1]]
                   for m, hours in per_model.items()} if len(per_model) > 1 else {}
 
-        result = NoxcastData(updated=dt_util.utcnow(), weather_fetched=dt_util.utc_from_timestamp(fetched))
+        result = NoxcastData(updated=dt_util.utcnow(), weather_fetched=dt_util.utc_from_timestamp(fetched), outlook=outlook)
         alt_forecasts: dict[str, dict[str, dict[float, float]]] = {m: {} for m in models}
         for sub_id, arr in self.arrays.items():
             learned = self.learned.get(sub_id, LearnedArray())
@@ -912,7 +913,7 @@ RECENT_MIN_SLOTS_RUNNING = 3     # 5-minute values (15 minutes) before the runni
 RUNNING_W = 20                   # a consumer drawing at least this much counts as running
 
 
-_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir")
+_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity")
 
 
 def _weather_row(w: WeatherHour) -> list:

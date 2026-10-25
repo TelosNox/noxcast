@@ -108,6 +108,10 @@ class WeatherHour:
     sun: float | None = None     # sunshine share of the hour, 0-1
     wind: float | None = None    # wind speed m/s (10 m), middle of the hour
     wind_dir: float | None = None  # wind direction ° (from), middle of the hour
+    # for the weather entity only:
+    precip: float | None = None  # precipitation in the hour, mm
+    code: int | None = None      # WMO weather code of the hour (thunderstorm and fog cannot be averaged)
+    humidity: float | None = None  # relative humidity %, middle of the hour
 
 
 @dataclass

@@ -118,6 +118,14 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     assert msg["success"] and msg["result"]["pv"]["groups"][0]["name"] == "Roof"
     assert msg["result"]["pv"]["groups"][0]["entities"] and msg["result"]["batteries"] == []
     assert msg["result"]["export"] is False                  # zero export unless the integration says otherwise
+    weather_id = msg["result"]["weather"]                    # the cards show Noxcast's own weather
+    assert weather_id and weather_id.startswith("weather.")
+    state = hass.states.get(weather_id)
+    assert state.state not in ("unknown", "unavailable")
+    for kind, n in (("daily", 2), ("hourly", 24)):
+        res = await hass.services.async_call("weather", "get_forecasts", {"type": kind}, target={"entity_id": weather_id},
+                                             blocking=True, return_response=True)
+        assert len(res[weather_id]["forecast"]) >= n
     for offset in (0, 1, -1):                                 # the day view: today, tomorrow, a past day
         await client.send_json_auto_id({"type": "noxcast/day", "offset": offset})
         msg = await client.receive_json()
@@ -222,8 +230,8 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 2
-    assert dict(entry.data) == {"weather_entity": "weather.home", "soc_full_pct": 95}    # the entity stays for the cards
+    assert entry.minor_version == 3
+    assert dict(entry.data) == {"soc_full_pct": 95}
     assert dict(entry.options) == {"satellite": False}
 
 

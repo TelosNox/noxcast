@@ -92,7 +92,9 @@ async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
 
 
 HOURLY = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m", "cloud_cover",
-          "sunshine_duration", "wind_speed_10m", "wind_direction_10m")
+          "sunshine_duration", "wind_speed_10m", "wind_direction_10m", "precipitation", "weather_code",
+          "relative_humidity_2m")
+THUNDER = 95                    # WMO weather codes from here on: thunderstorm
 
 
 async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float, days: int = FORECAST_DAYS,
@@ -129,6 +131,11 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
     clouds = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["cloud_cover"]))
                         if ts is not None and v is not None})
     sun = {ts: v for ts, v in zip(times, map(_number, data["sunshine_duration"])) if ts is not None and v is not None}
+    humidity = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["relative_humidity_2m"]))
+                          if ts is not None and v is not None})
+    # precipitation and weather code are for the preceding hour, like irradiance
+    precip = {ts: max(v, 0.0) for ts, v in zip(times, map(_number, data["precipitation"])) if ts is not None and v is not None}
+    code = {ts: int(v) for ts, v in zip(times, map(_number, data["weather_code"])) if ts is not None and v is not None}
     wind = _mid_wind({ts: (v, _bearing(d)) for ts, v, d in zip(times, map(_number, data["wind_speed_10m"]),
                                                                data["wind_direction_10m"] or [None] * len(times))
                       if ts is not None and v is not None})
@@ -144,12 +151,17 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
                                  temp=temps.get(start), cloud=clouds.get(start),
                                  sun=min(max(sun[ts], 0.0) / 3600, 1.0) if ts in sun else None,
                                  wind=wind[start][0] if start in wind else None,
-                                 wind_dir=wind[start][1] if start in wind else None))
+                                 wind_dir=wind[start][1] if start in wind else None,
+                                 precip=precip.get(ts), code=code.get(ts), humidity=humidity.get(start)))
     return hours
 
 
 def _mean(series: list[list[WeatherHour]]) -> list[WeatherHour]:
-    """Hour by hour mean of several models; wind direction as vector mean."""
+    """Hour by hour mean of several models; wind direction as vector mean.
+
+    The weather code cannot be averaged: a thunderstorm in any model counts, otherwise the first
+    model's code is kept (fog); rain and snow follow from the averaged precipitation.
+    """
     if len(series) == 1:
         return series[0]
     by_start: dict[float, list[WeatherHour]] = {}
@@ -172,7 +184,9 @@ def _mean(series: list[list[WeatherHour]]) -> list[WeatherHour]:
             dni=avg([w.dni for w in split]) if len(split) == len(ws) else None,
             dhi=avg([w.dhi for w in split]) if len(split) == len(ws) else None,
             temp=avg([w.temp for w in ws]), cloud=avg([w.cloud for w in ws]), sun=avg([w.sun for w in ws]),
-            wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None))
+            wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None,
+            precip=avg([w.precip for w in ws]), humidity=avg([w.humidity for w in ws]),
+            code=max((w.code for w in ws if w.code is not None and w.code >= THUNDER), default=ws[0].code)))
     return out
 
 

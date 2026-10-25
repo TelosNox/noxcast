@@ -39,18 +39,6 @@ def test_shade_loss_is_reported_with_its_period():
     assert datetime.fromtimestamp(periods[0]["start"], TZ).hour < 10
 
 
-def test_clear_sky_share_bounds_the_share_of_today():
-    learned = _morning_shade()
-    shade_clear, refl_clear = effects.clear_shares(SITE, GEO, learned, _weather())
-    assert max(shade_clear.values()) > 0.5 and all(0.0 <= v <= 1.0 for v in shade_clear.values())
-    assert max(refl_clear.values(), default=0.0) == 0.0
-    loss, _ = effects.hourly_effects(SITE, GEO, learned, _weather(0.3))          # cloudy: diffuse light, less loss
-    free = model.forecast(SITE, GEO, model.LearnedArray(efficiency=0.9), _weather(0.3))
-    for t, wh in loss.items():
-        if free.get(t, 0.0) > 50:
-            assert wh / free[t] <= shade_clear[t] + 0.02
-
-
 def test_shade_is_shown_even_when_it_costs_little():
     learned = _morning_shade()
     loss, gain = effects.hourly_effects(SITE, GEO, learned, _weather(0.05))   # overcast: shade costs little

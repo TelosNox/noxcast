@@ -138,8 +138,6 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                 "loss": series(effects.get("loss", {})),
                 "gain": series(effects.get("gain", {})),
                 "periods": effects.get("periods", []),
-                "shade_clear": [[t, round(v, 3)] for t, v in sorted(effects.get("shade_clear", {}).items())],
-                "refl_clear": [[t, round(v, 3)] for t, v in sorted(effects.get("refl_clear", {}).items())],
                 "tomorrow_wh": round(sum(v for t, v in data.forecast.get(sub_id, {}).items()
                                          if tomorrow_start <= t < tomorrow_end)),
                 "updated": data.updated.isoformat() if data.updated else None,

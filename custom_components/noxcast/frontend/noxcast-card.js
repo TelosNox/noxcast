@@ -50,6 +50,9 @@ const PALETTE = {
 };
 
 const ACTIVE_W = 5;
+// a flow shows from FLOW_ON_W and stays until it falls below FLOW_OFF_W: sensors drift by a few watts, so
+// small mismatches show no flow, and a flow near the threshold does not flicker
+const FLOW_ON_W = 20, FLOW_OFF_W = 12;
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
@@ -252,6 +255,13 @@ class NoxcastCard extends HTMLElement {
   get _p() { return this._hass.themes && this._hass.themes.darkMode ? PALETTE.dark : PALETTE.light; }
   get _lang() { return this._hass.language || "en"; }
   get _tz() { return this._hass.config.time_zone; }
+  // whether the flow `key` with `w` watts counts as running, with hysteresis (see FLOW_ON_W)
+  _on(key, w) {
+    const st = this._onState || (this._onState = {});
+    st[key] = Math.abs(w) >= (st[key] ? FLOW_OFF_W : FLOW_ON_W);
+    return st[key];
+  }
+
   // pace of the moving dots: a factor on their travel times (calm = slower)
   get _pace() { return { calm: 1.8, lively: 0.55 }[this._config.flow_speed] || 1; }
   get _scale() { return Math.min(1.6, Math.max(0.8, Number(this._config.font_scale) || 1)); }
@@ -369,8 +379,10 @@ class NoxcastCard extends HTMLElement {
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
       .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
-      .cf .gap { width: 100%; height: 20px; align-self: end; margin-bottom: .35em; overflow: visible; }
-      .cf.chain .f { padding: 0 2px; }
+      .cf .gapc { display: flex; flex-direction: column; min-width: 0; }
+      .cf .gap { display: block; width: 100%; height: 1.2em; overflow: visible; }
+      .cf.chain { padding: 0 4px; }
+      .cf.chain .f { padding: 0 4px; }
       .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
       .wx { margin-bottom: -2px; }
       .muted { color: var(--secondary-text-color); }
@@ -469,7 +481,7 @@ class NoxcastCard extends HTMLElement {
     const f = this._flow;
     f.svg.setAttribute("aria-label", `${t.pv} ${Math.round(v.pv)} W, ${t.home} ${Math.round(v.home)} W, ${t.grid} ${Math.round(v.grid)} W, ${t.battery} ${Math.round(v.bat)} W`);
     for (const [k, [p, color, dir]] of Object.entries(flows)) {
-      const line = f.lines[k], dot = f.dots[k], on = p >= ACTIVE_W;
+      const line = f.lines[k], dot = f.dots[k], on = this._on(k, p);
       line.path.setAttribute("stroke", on ? color : P.rail);
       line.path.setAttribute("stroke-width", on ? "3.5" : "2");
       line.path.setAttribute("stroke-opacity", on ? "0.85" : "1");
@@ -480,7 +492,7 @@ class NoxcastCard extends HTMLElement {
       dot.setAttribute("visibility", on && line.len ? "visible" : "hidden");
     }
     // the house shows where its power comes from: hard colour bands left to right, PV, battery, grid, by share
-    const srcs = [[pvHome, P.pv], [batHome, P.bat], [gridHome, P.grid]].filter(([w]) => w >= ACTIVE_W);
+    const srcs = [[pvHome, P.pv, "pvHome"], [batHome, P.bat, "batHome"], [gridHome, P.grid, "gridHome"]].filter(([w, , k]) => this._on(k, w));
     const srcSum = srcs.reduce((a, [w]) => a + w, 0);
     let homeGrad = "", homeStroke = P.home;
     if (srcs.length === 1) homeStroke = srcs[0][1];
@@ -509,21 +521,21 @@ class NoxcastCard extends HTMLElement {
       const up = (0.36 * (text - size) * sc).toFixed(1);
       return `<tspan font-size="${fs(size)}" dy="-${up}">${dir > 0 ? "▶" : "◀"}\uFE0E</tspan><tspan dy="${up}"> </tspan>`;
     };
-    const batArrow = (w, size = 9, text = 11) => (w >= ACTIVE_W ? tri(1, size, text) : w <= -ACTIVE_W ? tri(-1, size, text) : "");
+    const batArrow = (w, key, size = 9, text = 11) => (!this._on(key, w) ? "" : w > 0 ? tri(1, size, text) : tri(-1, size, text));
     const half = Math.ceil(gText.length / 2);
     const gH = 18 * sc, gTop = (27 - lift - 0.68 * gH).toFixed(1);
     const gRow = (x, align, items) => `<foreignObject x="${x}" y="${gTop}" width="186" height="${gH.toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml"
         style="display:flex;justify-content:${align};align-items:center;height:100%;gap:0 .3em;font-size:${fs(11)}px;color:${P.pvText};white-space:nowrap;line-height:1">${items.join("<span>·</span>")}</div></foreignObject>`;
     const groups = gText.length ? `${gRow(0, "flex-end", gText.slice(0, half))}${gRow(222, "flex-start", gText.slice(half))}` : "";
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
-    const gridLabel = v.grid >= ACTIVE_W ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : v.grid <= -ACTIVE_W ? `${tri(-1, 11, 15)}${fmtW(-v.grid)}` : "0 W";
+    const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w, `bat:${b.name}`)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
+    const gridLabel = !this._on("n:grid", v.grid) ? fmtW(Math.abs(v.grid)) : v.grid > 0 ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : `${tri(-1, 11, 15)}${fmtW(-v.grid)}`;
     const c = this._config, icons = c.icons || {};
     const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
     const g0 = (c.pv.groups || [])[0] || {}, pvId = g0.entity || (g0.entities || [])[0];
     const batId = (v.bats[0] || {}).id;
     const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
     const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
-    const batName = !icons.battery || icons.battery === "auto" ? this._batteryIcon(v.socAll, v.bat >= ACTIVE_W) : icons.battery;
+    const batName = !icons.battery || icons.battery === "auto" ? this._batteryIcon(v.socAll, v.bat > 0 && this._on("n:bat", v.bat)) : icons.battery;
     const batIcon = this._icon(batName, 374, 85, 30, P.bat);
     const homeIcon = icons.home && icons.home !== "auto"
       ? this._icon(icons.home, 204, 161, 28, srcs.length ? srcs.reduce((a, b) => (b[0] > a[0] ? b : a))[1] : P.home) : null;
@@ -541,7 +553,7 @@ class NoxcastCard extends HTMLElement {
         ${batIcon || `<rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
         <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
         <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>`}
-        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, 11, 15)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
+        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, "n:bat", 11, 15)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
       </g>
       ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
       <g${more(c.home && c.home.entity)}>
@@ -570,16 +582,16 @@ class NoxcastCard extends HTMLElement {
     const f = this._flow;
 
     // the arrows only on the bus, which leaves room for them; in the chain the dots show the direction
-    const arrow = (w) => (!bus ? "" : w > ACTIVE_W ? "▲ " : w < -ACTIVE_W ? "▼ " : "");
+    const arrow = (w, key) => (!bus || !this._on(key, w) ? "" : w > 0 ? "▲ " : "▼ ");
     const text = {
-      pv: num(v.pv), home: num(v.home), grid: `${arrow(v.grid)}${num(Math.abs(v.grid))}`,
-      bat: `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow(v.bat)}${num(Math.abs(v.bat))}</small>`,
+      pv: num(v.pv), home: num(v.home), grid: `${arrow(v.grid, "n:grid")}${num(Math.abs(v.grid))}`,
+      bat: `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow(v.bat, "n:bat")}${num(Math.abs(v.bat))}</small>`,
     };
     for (const n of nodes) {
       f.values[n.key].innerHTML = text[n.key];
       f.values[n.key].style.color = n.color;
     }
-    const gridDir = v.grid > ACTIVE_W ? t.import : v.grid < -ACTIVE_W ? t.export : "";
+    const gridDir = !this._on("n:grid", v.grid) ? "" : v.grid > 0 ? t.import : t.export;
     if (f.cells.grid) f.cells.grid.title = gridDir;
 
     // net flow across each border: the mean of what the left side gives and the right side takes, so sensors
@@ -587,12 +599,12 @@ class NoxcastCard extends HTMLElement {
     const borders = f.segs.map((seg, i) => {
       const left = nodes.slice(0, i + 1).reduce((a, n) => a + n.prod, 0), right = nodes.slice(i + 1).reduce((a, n) => a + n.prod, 0);
       const p = (left - right) / 2, side = p >= 0 ? nodes.slice(0, i + 1) : nodes.slice(i + 1);
-      const srcs = side.filter((n) => n.prod >= ACTIVE_W).map((n) => [n.dot, n.prod]);
+      const srcs = side.filter((n) => n.prod > 0 && this._on(`n:${n.key}`, n.prod)).map((n) => [n.dot, n.prod]);
       return { p, mix: srcs.length ? srcs : [[side[0].dot, 1]] };
     });
     const topP = Math.max(...borders.map((b) => Math.abs(b.p)), 1);
     borders.forEach(({ p, mix }, i) => {
-      const seg = f.segs[i], on = Math.abs(p) >= ACTIVE_W;
+      const seg = f.segs[i], on = this._on(`seg:${i}`, p);
       const sum = mix.reduce((a, [, w]) => a + w, 0), main = mix.reduce((a, m) => (m[1] > a[1] ? m : a))[0];
       // dots by the share of the largest flow of the moment, at least one per source (the short chain gaps hold
       // three, the bus four); pace by the power itself
@@ -613,7 +625,7 @@ class NoxcastCard extends HTMLElement {
     });
     if (bus) {
       for (const n of nodes) {
-        const on = Math.abs(n.prod) >= ACTIVE_W;
+        const on = this._on(`n:${n.key}`, n.prod);
         f.stubs[n.key].setAttribute("stroke", on ? n.dot : P.rail);
         f.stubs[n.key].setAttribute("stroke-opacity", on ? "0.8" : "1");
         f.knots[n.key].setAttribute("fill", on ? n.dot : P.rail);
@@ -629,9 +641,11 @@ class NoxcastCard extends HTMLElement {
     const dots = (y) => [0, 1, 2, 3].map(() => `<circle cy="${y}" r="2.8" visibility="hidden"></circle>`).join("");
     let html;
     if (!bus) {
-      const cols = nodes.map((n) => (n.key === "bat" ? "minmax(0, 1.25fr)" : "minmax(0, 1fr)")).join(" clamp(22px, 7vw, 40px) ");   // narrower gaps on a phone
+      // the figures take their width, the gaps share the rest, so a line runs from one value to the next;
+      // it sits in the middle of the value line (same font size, an empty label above)
+      const cols = nodes.map(() => "auto").join(" minmax(22px, 1fr) ");
       html = `<div class="cf chain" style="grid-template-columns:${cols}">${nodes.map((n, i) => `${cell(n)}${i < N - 1
-        ? `<svg class="gap" data-seg="${i}" data-x0="10" data-x1="90"><line x1="6%" x2="94%" y1="10" y2="10" stroke-width="2" stroke-linecap="round"></line>${dots(10)}</svg>`
+        ? `<div class="gapc"><span class="l">&nbsp;</span><svg class="gap v" data-seg="${i}" data-x0="8" data-x1="92"><line x1="4%" x2="96%" y1="55%" y2="55%" stroke-width="2" stroke-linecap="round"></line>${dots("55%")}</svg></div>`
         : ""}`).join("")}</div>`;
     } else {
       const segs = nodes.slice(1).map((_, i) => `<g data-seg="${i}" data-x0="${mid(i) + 3}" data-x1="${mid(i + 1) - 3}"><line x1="${mid(i) + 2}%" x2="${mid(i + 1) - 2}%" y1="16" y2="16" stroke-width="2"></line>${dots(16)}</g>`).join("");

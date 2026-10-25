@@ -8,20 +8,13 @@
 // show_weather: true                   # hourly weather above the chart, marked where it changes
 // weather_entity: weather.home         # source of that strip; default: Noxcast's own weather entity
 // range: production                    # day chart: production (an hour either side) or day (0–24 h, night compressed)
-// flow: full                           # full: power flow diagram; compact: one row of figures
-// flow_style: chain                    # compact row: chain (dots between the figures) or bus (a line below them)
+// flow_style: chain                    # power now: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
 // flow_min_w: 10                       # a flow shows from this many watts (sensors drift by a few watts)
 // look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
-// groups:                              # per Noxcast PV group, by its name in Noxcast
-//   Balkon: { name: Süd, icon: mdi:balcony, hide: false }   # icon instead of the name; hide: not listed
-//                                      # on its own (its power still counts in PV and the chart)
-// battery_names: { Pro: Akku 1 }       # display names of Noxcast batteries
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
-// icons: { pv: mdi:solar-power-variant, grid: mdi:transmission-tower, battery: auto, home: auto }
-//   # Home Assistant icons; "auto" = battery icon by state of charge, house coloured by its sources
-// Tapping PV, grid, home or battery opens the entity's more-info dialog.
+// Tapping PV, battery, home or grid opens the entity's more-info dialog.
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -51,7 +44,6 @@ const PALETTE = {
     warnText: "#FFB4A6", warnBg: "#4A2620", lost: "#F2635A", near: "#F5A524" },
 };
 
-const ACTIVE_W = 5;
 // with range "day" a night hour gets this share of a day hour's width in the day chart
 const NIGHT_W = 0.3;
 // a flow shows from flow_min_w (default FLOW_MIN_W) and stays until it falls below FLOW_OFF of that: sensors
@@ -76,17 +68,6 @@ function ask(hass, msg) {
   return Promise.race([hass.connection.sendMessagePromise(msg),
     new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS))]);
 }
-// symmetric: PV paths on top (y 80), grid <-> battery in the middle (y 88), paths to the home below (y 96);
-// where grid <-> battery crosses PV -> home it bridges over it, so the two read as separate paths
-const FLOW_PATHS = {
-  pvHome: "M204 62 L204 146",
-  pvBat: "M212 62 L212 70 Q212 80 222 80 L352 80",
-  pvGrid: "M196 62 L196 70 Q196 80 186 80 L52 80",
-  gridHome: "M52 96 L186 96 Q196 96 196 106 L196 146",
-  batHome: "M352 96 L222 96 Q212 96 212 106 L212 146",
-  gridBat: "M52 88 L198 88 A6 6 0 0 1 210 88 L352 88",          // bridge over PV -> home
-};
-
 class NoxcastCard extends HTMLElement {
   static getConfigElement() { return document.createElement("noxcast-card-editor"); }
 
@@ -101,16 +82,8 @@ class NoxcastCard extends HTMLElement {
 
   _merged() {
     const u = this._user || {}, s = this._src || {};
-    const shown = (u.groups && typeof u.groups === "object" && !Array.isArray(u.groups)) ? u.groups : {};
-    const batNames = u.battery_names || {};
-    return { ...u,
-      pv: { groups: ((s.pv && s.pv.groups) || []).map((g) => {
-        const d = shown[g.name] || {};
-        return { ...g, label: d.name || g.name, icon: d.icon || "", hide: !!d.hide };
-      }) },
-      home: s.home || {}, grid: s.grid || {},
-      batteries: (s.batteries || []).map((b) => ({ ...b, name: batNames[b.name] || b.name })),
-      export: !!s.export };
+    return { ...u, pv: { groups: (s.pv && s.pv.groups) || [] }, home: s.home || {}, grid: s.grid || {},
+      batteries: s.batteries || [], export: !!s.export };
   }
 
   async _loadSource() {
@@ -297,10 +270,9 @@ class NoxcastCard extends HTMLElement {
 
   _live() {
     const c = this._config;
-    const groups = (c.pv.groups || []).map((g) => ({ name: g.label || g.name, icon: g.icon, hide: g.hide,
-      id: g.entity || (g.entities || [])[0], w: this._groupW(g) }));
+    const groups = (c.pv.groups || []).map((g) => ({ id: g.entity || (g.entities || [])[0], w: this._groupW(g) }));
     const pv = groups.reduce((a, g) => a + g.w, 0);
-    const bats = (c.batteries || []).map((b) => ({ name: b.name || b.entity, id: b.soc || b.entity, w: this._watts(b.entity, b.invert) || 0,
+    const bats = (c.batteries || []).map((b) => ({ id: b.soc || b.entity, w: this._watts(b.entity, b.invert) || 0,
       soc: this._soc(b.soc), cap: Number(b.capacity) || 0 }));
     const capSum = bats.reduce((a, b) => a + b.cap, 0);
     const socAll = capSum ? bats.reduce((a, b) => a + (b.soc ?? 0) * b.cap, 0) / capSum
@@ -433,13 +405,6 @@ class NoxcastCard extends HTMLElement {
       <ha-icon icon="${this._esc(name)}" style="--mdc-icon-size:${size}px;color:${color};display:block;line-height:0"></ha-icon></foreignObject>`;
   }
 
-  _batteryIcon(soc, charging) {
-    if (soc === null) return "mdi:battery-unknown";
-    const step = Math.round(Math.min(100, Math.max(0, soc)) / 10) * 10;
-    if (charging) return step >= 100 ? "mdi:battery-charging-100" : step <= 0 ? "mdi:battery-charging-outline" : `mdi:battery-charging-${step}`;
-    return step >= 100 ? "mdi:battery" : step <= 0 ? "mdi:battery-outline" : `mdi:battery-${step}`;
-  }
-
   // more-info of the entity behind a tapped flow element
   _moreInfo(ev) {
     const g = ev.target.closest && ev.target.closest("[data-more]");
@@ -447,135 +412,12 @@ class NoxcastCard extends HTMLElement {
     this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: g.dataset.more }, bubbles: true, composed: true }));
   }
 
-  // The flow is built once; later updates only change colours, texts and speeds, so the dots never jump.
   _renderFlow() {
     const el = this.shadowRoot && this.shadowRoot.getElementById("flow");
-    if (!el) return;
-    const P = this._p, t = this._t, v = this._live();
-    if (this._config.flow === "compact") { this._renderCompact(el, v); return; }
-    // allocation of the flows, all values >= 0
-    const charge = Math.max(v.bat, 0), discharge = Math.max(-v.bat, 0);
-    const pvBat = Math.min(v.pv, charge);                    // a charging battery takes PV first, the grid only covers the rest
-    const pvHome = Math.min(v.pv - pvBat, v.home);
-    // sensors rarely add up exactly: flows to and from the grid never exceed what the grid sensor shows
-    const gridKnown = !!(this._config.grid && this._config.grid.entity);
-    const imp = gridKnown ? Math.max(v.grid, 0) : Infinity, exp = gridKnown ? Math.max(-v.grid, 0) : Infinity;
-    const pvGrid = Math.min(Math.max(v.pv - pvHome - pvBat, 0), exp);
-    const batHome = Math.max(Math.min(discharge, v.home - pvHome), 0);
-    const gridHome = Math.min(Math.max(v.home - pvHome - batHome, 0), imp);
-    const gridBat = Math.min(Math.max(charge - pvBat, 0), imp - gridHome);
-    const batGrid = Math.min(Math.max(discharge - batHome, 0), exp - pvGrid);
-    const flows = {
-      pvHome: [pvHome, P.pv, 1], pvBat: [pvBat, P.pv, 1], pvGrid: [pvGrid, P.pv, 1], gridHome: [gridHome, P.grid, 1],
-      batHome: [batHome, P.bat, 1], gridBat: [Math.max(gridBat, batGrid), gridBat >= batGrid ? P.grid : P.bat, batGrid > gridBat ? -1 : 1],
-    };
-    const sc = this._scale * 1.3,      // the live numbers are the main reading, larger than the rows below
-          fs = (n) => (n * sc).toFixed(1);
-    const lift = (sc - 1) * 18;                  // larger text: PV symbol and groups move up
-    const top = 10 - lift;                       // groups sit beside the PV symbol, so nothing is above it
-    const subY = (i) => 122 + 16 * sc + i * 14 * sc, homeY = 176 + 16 * sc;
-    const height = Math.ceil(Math.max(homeY + 4, v.bats.length > 1 ? subY(Math.min(v.bats.length, 3) - 1) + 4 : 0, 186));
-    if (!this._flow || this._flow.height !== height - top || !el.contains(this._flow.svg)) {
-      el.innerHTML = `<svg viewBox="0 ${top.toFixed(1)} 408 ${(height - top).toFixed(1)}" role="img">
-        ${Object.entries(FLOW_PATHS).map(([k, d]) => `<path data-k="${k}" d="${d}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
-        ${Object.keys(FLOW_PATHS).map((k) => `<circle data-dot="${k}" r="4.5" stroke-width="2" visibility="hidden"></circle>`).join("")}
-        <g data-labels></g></svg>`;
-      const svg = el.querySelector("svg");
-      svg.addEventListener("click", (ev) => this._moreInfo(ev));
-      const lines = {}, dots = {};
-      for (const k of Object.keys(FLOW_PATHS)) {
-        const path = svg.querySelector(`[data-k="${k}"]`);
-        lines[k] = { path, len: path.getTotalLength ? path.getTotalLength() : 0, pos: 0, speed: 0, dir: 1 };
-        dots[k] = svg.querySelector(`[data-dot="${k}"]`);
-      }
-      this._flow = { svg, lines, dots, height: height - top, labels: svg.querySelector("[data-labels]") };
-    }
-    const f = this._flow;
-    f.svg.setAttribute("aria-label", `${t.pv} ${Math.round(v.pv)} W, ${t.home} ${Math.round(v.home)} W, ${t.grid} ${Math.round(v.grid)} W, ${t.battery} ${Math.round(v.bat)} W`);
-    for (const [k, [p, color, dir]] of Object.entries(flows)) {
-      const line = f.lines[k], dot = f.dots[k], on = this._on(k, p);
-      line.path.setAttribute("stroke", on ? color : P.rail);
-      line.path.setAttribute("stroke-width", on ? "3.5" : "2");
-      line.path.setAttribute("stroke-opacity", on ? "0.85" : "1");
-      line.speed = on ? Math.min(140, 18 + p / 8) / this._pace : 0;   // px per second: the speed carries the power
-      line.dir = dir;
-      dot.setAttribute("fill", "var(--card-background-color, #fff)");
-      dot.setAttribute("stroke", color);
-      dot.setAttribute("visibility", on && line.len ? "visible" : "hidden");
-    }
-    // the house shows where its power comes from: hard colour bands left to right, PV, battery, grid, by share
-    const srcs = [[pvHome, P.pv, "pvHome"], [batHome, P.bat, "batHome"], [gridHome, P.grid, "gridHome"]].filter(([w, , k]) => this._on(k, w));
-    const srcSum = srcs.reduce((a, [w]) => a + w, 0);
-    let homeGrad = "", homeStroke = P.home;
-    if (srcs.length === 1) homeStroke = srcs[0][1];
-    else if (srcs.length > 1) {
-      let at = 0;
-      const stops = srcs.map(([w, col]) => { const a = at; at += w / srcSum;
-        return `<stop offset="${a.toFixed(3)}" stop-color="${col}"></stop><stop offset="${at.toFixed(3)}" stop-color="${col}"></stop>`; }).join("");
-      homeGrad = `<defs><linearGradient id="nx-home" gradientUnits="userSpaceOnUse" x1="190" y1="0" x2="218" y2="0">${stops}</linearGradient></defs>`;
-      homeStroke = "url(#nx-home)";
-    }
-    // from 1000 W on in kW with one decimal, so long numbers do not crowd the flow
-    const num = (x) => (Math.abs(x) >= 1000
-      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} k`
-      : `${Math.round(x)} `);
-    const fmtW = (x) => `${num(x)}W`;
-    const small = (x) => (Math.abs(x) >= 1000 ? fmtW(x) : `${Math.round(x)}`);   // group and battery rows
-    const op = (x) => (Math.abs(x) < ACTIVE_W ? 0.35 : 1);
-    // groups left and right of the PV symbol: first half left, the rest right; each opens its own entity.
-    // HTML rows inside the SVG, so an icon can stand in for the name
-    const iconOk = !!customElements.get("ha-icon");
-    const gText = v.groups.filter((g) => !g.hide).map((g) => `<span data-more="${this._esc(g.id)}" title="${this._esc(g.name)}" style="cursor:pointer">${
-      g.icon && iconOk ? `<ha-icon icon="${this._esc(g.icon)}" style="--mdc-icon-size:1.25em;vertical-align:-0.25em"></ha-icon>` : this._esc(g.name)} ${small(g.w)}</span>`);
-    // small triangles instead of signs, pointing the way the power flows on screen (grid left, battery right);
-    // smaller than the number, so raised to its middle and the baseline restored after it (U+FE0E: no emoji)
-    const tri = (dir, size, text) => {
-      const up = (0.36 * (text - size) * sc).toFixed(1);
-      return `<tspan font-size="${fs(size)}" dy="-${up}">${dir > 0 ? "▶" : "◀"}\uFE0E</tspan><tspan dy="${up}"> </tspan>`;
-    };
-    const batArrow = (w, key, size = 9, text = 11) => (!this._on(key, w) ? "" : w > 0 ? tri(1, size, text) : tri(-1, size, text));
-    const half = Math.ceil(gText.length / 2);
-    const gH = 18 * sc, gTop = (27 - lift - 0.68 * gH).toFixed(1);
-    const gRow = (x, align, items) => `<foreignObject x="${x}" y="${gTop}" width="186" height="${gH.toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml"
-        style="display:flex;justify-content:${align};align-items:center;height:100%;gap:0 .3em;font-size:${fs(11)}px;color:${P.pvText};white-space:nowrap;line-height:1">${items.join("<span>·</span>")}</div></foreignObject>`;
-    const groups = gText.length ? `${gRow(0, "flex-end", gText.slice(0, half))}${gRow(222, "flex-start", gText.slice(half))}` : "";
-    const bats = v.bats.slice(0, 3).map((b, i) => `<text data-more="${this._esc(b.id)}" style="cursor:pointer" x="402" y="${subY(i).toFixed(1)}" text-anchor="end" font-size="${fs(11)}" fill="currentColor">${this._esc(b.name)} ${batArrow(b.w, `bat:${b.name}`)}${small(Math.abs(b.w))} · ${b.soc === null ? "–" : Math.round(b.soc)} %</text>`).join("");
-    const gridLabel = !this._on("n:grid", v.grid) ? fmtW(Math.abs(v.grid)) : v.grid > 0 ? `${tri(1, 11, 15)}${fmtW(v.grid)}` : `${tri(-1, 11, 15)}${fmtW(-v.grid)}`;
-    const c = this._config, icons = c.icons || {};
-    const more = (id) => (id ? ` data-more="${this._esc(id)}" style="cursor:pointer"` : "");
-    const g0 = (c.pv.groups || [])[0] || {}, pvId = g0.entity || (g0.entities || [])[0];
-    const batId = (v.bats[0] || {}).id;
-    const pvIcon = this._icon(icons.pv || "mdi:solar-power-variant", 204, 22 - lift, 24, P.pv);
-    const gridIcon = this._icon(icons.grid || "mdi:transmission-tower", 28, 84, 26, P.grid);
-    const batName = !icons.battery || icons.battery === "auto" ? this._batteryIcon(v.socAll, v.bat > 0 && this._on("n:bat", v.bat)) : icons.battery;
-    const batIcon = this._icon(batName, 374, 85, 30, P.bat);
-    const homeIcon = icons.home && icons.home !== "auto"
-      ? this._icon(icons.home, 204, 161, 28, srcs.length ? srcs.reduce((a, b) => (b[0] > a[0] ? b : a))[1] : P.home) : null;
-    f.labels.innerHTML = `
-      <g opacity="${op(v.pv)}"${more(pvId)}>
-        ${pvIcon || `<path transform="translate(0 ${(-lift).toFixed(1)})" d="M196 22l8-8l8 8M204 14v18M193 30h22" fill="none" stroke="${P.pv}" stroke-width="2" stroke-linecap="round"></path>`}
-        <text x="204" y="54" text-anchor="middle" font-size="${fs(17)}" font-weight="500" fill="${P.pvText}">${fmtW(v.pv)}</text>
-        ${groups}
-      </g>
-      <g opacity="${op(v.grid)}"${more(c.grid && c.grid.entity)}>
-        ${gridIcon || `<path d="M22 96l6-22l6 22M25 86h6M20 96h16" fill="none" stroke="${P.grid}" stroke-width="2" stroke-linecap="round"></path>`}
-        <text x="6" y="122" font-size="${fs(15)}" font-weight="500" fill="${P.grid}">${gridLabel}</text>
-      </g>
-      <g opacity="${op(v.bat)}"${more(batId)}>
-        ${batIcon || `<rect x="364" y="74" width="20" height="26" rx="3" fill="none" stroke="${P.bat}" stroke-width="2"></rect>
-        <rect x="369" y="70" width="10" height="4" rx="1" fill="${P.bat}"></rect>
-        <rect x="367" y="${97 - 20 * (v.socAll ?? 0) / 100}" width="14" height="${20 * (v.socAll ?? 0) / 100}" rx="1" fill="${P.bat}"></rect>`}
-        <text x="402" y="122" text-anchor="end" font-size="${fs(15)}" font-weight="500" fill="${P.bat}">${batArrow(v.bat, "n:bat", 11, 15)}${fmtW(Math.abs(v.bat))}${v.socAll === null ? "" : ` · ${Math.round(v.socAll)} %`}</text>
-      </g>
-      ${v.bats.length > 1 ? `<g color="var(--secondary-text-color)">${bats}</g>` : ""}
-      <g${more(c.home && c.home.entity)}>
-      ${homeIcon || `${homeGrad}
-      <path d="M190 160l14-12l14 12M193 158v16h22v-16" fill="none" stroke="${homeStroke}" stroke-width="2.5" stroke-linejoin="round"></path>`}
-      <text x="204" y="${homeY.toFixed(1)}" text-anchor="middle" font-size="${fs(15)}" font-weight="500" fill="var(--primary-text-color)">${fmtW(v.home)}</text></g>`;
-    this._animate();
+    if (el) this._renderCompact(el, this._live());
   }
 
-  // one row of figures instead of the flow diagram, in the order PV, battery, home, grid: then the power
+  // power now as one row of figures, in the order PV, battery, home, grid: then the power
   // between two neighbours is the net flow across that border. flow_style chain shows it as dots in the gaps,
   // bus as dots on a line below the figures with a stub to each. Built once per shape, so the dots never jump;
   // each figure opens its entity
@@ -741,17 +583,7 @@ class NoxcastCard extends HTMLElement {
       if (!reduced && time - last < 30) { this._frame = requestAnimationFrame(step); return; }
       const dt = Math.min(0.1, (time - last) / 1000);
       last = time;
-      if (f.tick) { if (f.tick(dt, reduced) && !reduced) this._frame = requestAnimationFrame(step); return; }
-      let moving = false;
-      for (const [k, line] of Object.entries(f.lines)) {
-        if (!line.speed || !line.len) continue;
-        moving = true;
-        if (!reduced) line.pos = (line.pos + line.dir * line.speed * dt + line.len) % line.len;
-        const pt = line.path.getPointAtLength(reduced ? line.len / 2 : line.pos);
-        f.dots[k].setAttribute("cx", pt.x.toFixed(1));
-        f.dots[k].setAttribute("cy", pt.y.toFixed(1));
-      }
-      if (moving && !reduced) this._frame = requestAnimationFrame(step);
+      if (f.tick(dt, reduced) && !reduced) this._frame = requestAnimationFrame(step);
     };
     this._frame = requestAnimationFrame(step);
   }
@@ -1022,14 +854,8 @@ class NoxcastCard extends HTMLElement {
     return `<div class="legend">${items.filter(([show]) => show).map(([, icon, text]) => `<span>${icon}${text}</span>`).join("")}</div>`;
   }
 
-  // arrays of today in the Noxcast order, with the display settings of their group
-  _arrays() {
-    const groups = this._config.pv.groups || [];
-    return this._data.today.arrays.map((a) => {
-      const g = groups.find((x) => x.name === a.name) || {};
-      return { ...a, label: g.label || a.name, icon: g.icon || "", hide: !!g.hide };
-    });
-  }
+  // arrays of today in the Noxcast order
+  _arrays() { return this._data.today.arrays; }
 
   // a battery limit: a number or the entity holding it, in percent
   _limit(value, fallback) {
@@ -1165,29 +991,20 @@ function line(p) {
 
 // Visual editor: display only. Sensors, batteries and feed-in come from the Noxcast configuration.
 const LEGACY_KEYS = ["pv", "grid", "home", "export"];
+// display settings of the flow diagram, which is gone; dropped when the editor saves
+const OBSOLETE_KEYS = ["flow", "icons", "groups", "battery_names"];
 
 class NoxcastCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._render(); }
   set hass(hass) {
-    const first = !this._hass;
     this._hass = hass;
-    if (first) this._loadSource();
     this._render();
   }
 
   get _de() { return (this._hass.language || "en").startsWith("de"); }
 
-  async _loadSource() {
-    try {
-      this._src = await ask(this._hass, { type: "noxcast/card_config" });
-    } catch (err) {
-      this._src = null;
-    }
-    this._shape = null;
-    this._render();
-  }
-
   _emit(c) {
+    for (const k of OBSOLETE_KEYS) if (!(k === "groups" && Array.isArray(c.groups))) delete c[k];
     this._config = c;
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
   }
@@ -1200,15 +1017,9 @@ class NoxcastCardEditor extends HTMLElement {
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
       range: de ? "Zeitraum des Verlaufs" : "Time range of the chart",
-      flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
-      flow_style: de ? "Fluss in der kompakten Zeile" : "Flow in the compact row", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
+      look: de ? "Aussehen" : "Look",
+      flow_style: de ? "Fluss zwischen den Werten" : "Flow between the figures", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
       flow_min_w: de ? "Fluss ab (W)" : "Flow from (W)",
-      icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
-      icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
-      icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
-      name: de ? "Anzeigename (leer = Name in Noxcast)" : "Display name (empty = name in Noxcast)",
-      icon: de ? "Symbol statt Name (optional)" : "Icon instead of the name (optional)",
-      hide: de ? "Nicht einzeln anzeigen" : "Do not list on its own",
     };
   }
 
@@ -1229,10 +1040,8 @@ class NoxcastCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config) return;
-    const c = this._config, src = this._src || {};
-    const groups = ((src.pv && src.pv.groups) || []).map((g) => g.name);
-    const bats = (src.batteries || []).map((b) => b.name).filter(Boolean);
-    const shape = `${groups.join("|")}/${bats.join("|")}/${this._legacy()}/${this._de}`;
+    const c = this._config;
+    const shape = `${this._legacy()}/${this._de}`;
     if (this._shape === shape) {                       // only refresh hass, keeps the focus while typing
       for (const f of this.querySelectorAll("ha-form")) f.hass = this._hass;
       return;
@@ -1241,8 +1050,6 @@ class NoxcastCardEditor extends HTMLElement {
     const de = this._de;
     this.innerHTML = `<style>
         .nx-sec { margin: 16px 0 4px; font-weight: 500; }
-        .nx-item { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
-        .nx-head { color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
         .nx-btn { background: none; border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 10px;
           color: var(--primary-color); font: inherit; cursor: pointer; }
         .nx-note { color: var(--secondary-text-color); font-size: 13px; margin: 4px 0 8px; }
@@ -1252,17 +1059,13 @@ class NoxcastCardEditor extends HTMLElement {
         ? "Diese Karte enthält Sensor-Einstellungen einer früheren Version. Sie werden ignoriert: Die Karte zeigt immer, was in Noxcast konfiguriert ist."
         : "This card has sensor settings of an earlier version. They are ignored: the card always shows what Noxcast is configured with."}
         <div style="margin-top:6px"><button class="nx-btn" id="clean">${de ? "Alte Sensor-Einstellungen entfernen" : "Remove old sensor settings"}</button></div></div>` : ""}
-      <div class="nx-sec">${de ? "Anzeige" : "Display"}</div><div id="main"></div>
-      <div class="nx-sec">${de ? "PV-Gruppen" : "PV groups"}</div>
       <div class="nx-note">${de ? "Sensoren, Akkus und Einspeisung kommen aus der Noxcast-Konfiguration. Hier nur, wie sie angezeigt werden."
         : "Sensors, batteries and feed-in come from the Noxcast configuration. Here only how they are shown."}</div>
-      <div id="groups">${groups.length ? "" : `<div class="nx-note">${de ? "Noxcast ist noch nicht geladen." : "Noxcast is not loaded yet."}</div>`}</div>
-      ${bats.length ? `<div class="nx-sec">${de ? "Akkus" : "Batteries"}</div><div id="bats"></div>` : ""}`;
+      <div id="main"></div>`;
 
     const shows = ["show_battery", "show_effects", "show_band", "show_load", "show_weather"];
     const opt = (pairs) => ({ select: { mode: "dropdown", options: pairs.map(([value, label]) => ({ value, label })) } });
     this.querySelector("#main").appendChild(this._form([
-      { name: "flow", selector: opt([["full", de ? "Flussdiagramm" : "Flow diagram"], ["compact", de ? "Kompakte Zeile" : "Compact row"]]) },
       { name: "flow_style", selector: opt([["chain", de ? "Kette: Punkte zwischen den Werten" : "Chain: dots between the figures"],
         ["bus", de ? "Bus: Linie unter den Werten" : "Bus: line below the figures"]]) },
       { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
@@ -1273,64 +1076,24 @@ class NoxcastCardEditor extends HTMLElement {
       ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
       { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
-      { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
-      { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
-      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain", range: c.range || "production",
+      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, look: c.look || "plain", range: c.range || "production",
       flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
-      ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
       const n = { ...this._config };
       n.font_scale = v.font_scale; n.legend = v.legend;
-      if (v.flow && v.flow !== "full") n.flow = v.flow; else delete n.flow;
       if (v.flow_style && v.flow_style !== "chain") n.flow_style = v.flow_style; else delete n.flow_style;
       if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
       if (v.flow_min_w !== undefined && v.flow_min_w !== "" && Number(v.flow_min_w) !== FLOW_MIN_W) n.flow_min_w = Number(v.flow_min_w); else delete n.flow_min_w;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;
       if (v.range === "day") n.range = "day"; else delete n.range;
       for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
-      const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
-      if (Object.keys(icons).length) n.icons = icons; else delete n.icons;
       if (n.legend !== false) delete n.legend;
       if (n.font_scale === 1) delete n.font_scale;
       this._emit(n);
     }));
 
-    const item = (box, title, form) => {
-      const el = document.createElement("div");
-      el.className = "nx-item";
-      el.innerHTML = `<div class="nx-head">${title.replace(/[&<>"']/g, "")}</div>`;
-      el.appendChild(form);
-      box.appendChild(el);
-    };
-    // per Noxcast group: display name, icon, hidden; only set values are kept
-    const shown = () => (this._config.groups && !Array.isArray(this._config.groups) ? this._config.groups : {});
-    const gBox = this.querySelector("#groups");
-    for (const name of groups) {
-      const d = shown()[name] || {};
-      item(gBox, name, this._form([
-        { name: "name", selector: { text: {} } }, { name: "icon", selector: { icon: {} } }, { name: "hide", selector: { boolean: {} } },
-      ], { name: d.name || "", icon: d.icon || "", hide: !!d.hide }, (v) => {
-        const next = { ...shown() };
-        const entry = Object.fromEntries(Object.entries({ name: v.name, icon: v.icon, hide: v.hide }).filter(([, x]) => x));
-        if (Object.keys(entry).length) next[name] = entry; else delete next[name];
-        const n = { ...this._config };
-        if (Object.keys(next).length) n.groups = next; else delete n.groups;
-        this._emit(n);
-      }));
-    }
-    const bBox = this.querySelector("#bats");
-    for (const name of bats) {
-      const names = this._config.battery_names || {};
-      item(bBox, name, this._form([{ name: "name", selector: { text: {} } }], { name: names[name] || "" }, (v) => {
-        const next = { ...(this._config.battery_names || {}) };
-        if (v.name) next[name] = v.name; else delete next[name];
-        const n = { ...this._config };
-        if (Object.keys(next).length) n.battery_names = next; else delete n.battery_names;
-        this._emit(n);
-      }));
-    }
     const clean = this.querySelector("#clean");
     if (clean) clean.addEventListener("click", () => {
       const n = { ...this._config };

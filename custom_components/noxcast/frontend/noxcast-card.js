@@ -8,6 +8,8 @@
 // show_weather: true                   # hourly weather above the chart, marked where it changes
 // weather_entity: weather.home         # source of that strip; default: the weather entity Noxcast uses
 // flow: full                           # full: power flow diagram; compact: one row of figures
+// flow_style: chain                    # compact row: chain (dots between the figures) or bus (a line below them)
+// flow_speed: normal                   # pace of the moving dots: calm, normal or lively
 // look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
 // groups:                              # per Noxcast PV group, by its name in Noxcast
 //   Balkon: { name: Süd, icon: mdi:balcony, hide: false }   # icon instead of the name; hide: not listed
@@ -250,6 +252,8 @@ class NoxcastCard extends HTMLElement {
   get _p() { return this._hass.themes && this._hass.themes.darkMode ? PALETTE.dark : PALETTE.light; }
   get _lang() { return this._hass.language || "en"; }
   get _tz() { return this._hass.config.time_zone; }
+  // pace of the moving dots: a factor on their travel times (calm = slower)
+  get _pace() { return { calm: 1.8, lively: 0.55 }[this._config.flow_speed] || 1; }
   get _scale() { return Math.min(1.6, Math.max(0.8, Number(this._config.font_scale) || 1)); }
 
   // ------------------------------------------------------------ live values (W, canonical signs)
@@ -365,6 +369,9 @@ class NoxcastCard extends HTMLElement {
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
       .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
+      .cf .gap { width: 100%; height: 20px; align-self: end; margin-bottom: .35em; overflow: visible; }
+      .cf.chain .f { padding: 0 2px; }
+      .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
       .wx { margin-bottom: -2px; }
       .muted { color: var(--secondary-text-color); }
       .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
@@ -466,7 +473,7 @@ class NoxcastCard extends HTMLElement {
       line.path.setAttribute("stroke", on ? color : P.rail);
       line.path.setAttribute("stroke-width", on ? "3.5" : "2");
       line.path.setAttribute("stroke-opacity", on ? "0.85" : "1");
-      line.speed = on ? Math.min(140, 18 + p / 8) : 0;         // px per second: the speed carries the power
+      line.speed = on ? Math.min(140, 18 + p / 8) / this._pace : 0;   // px per second: the speed carries the power
       line.dir = dir;
       dot.setAttribute("fill", "var(--card-background-color, #fff)");
       dot.setAttribute("stroke", color);
@@ -544,30 +551,123 @@ class NoxcastCard extends HTMLElement {
     this._animate();
   }
 
-  // one row of figures instead of the flow diagram: PV, home, grid, battery; each opens its entity
+  // one row of figures instead of the flow diagram, in the order PV, battery, home, grid: then the power
+  // between two neighbours is the net flow across that border. flow_style chain shows it as dots in the gaps,
+  // bus as dots on a line below the figures with a stub to each. Built once per shape, so the dots never jump;
+  // each figure opens its entity
   _renderCompact(el, v) {
-    const P = this._p, t = this._t, c = this._config;
-    this._flow = null;
+    const P = this._p, t = this._t, c = this._config, bus = c.flow_style === "bus";
     const num = (x) => (Math.abs(x) >= 1000
       ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
       : `${Math.round(x)} W`);
-    // fixed columns, centred, so a growing value does not push the others aside
-    const fig = (label, value, color, id, title) => `<div class="f"${id ? ` data-more="${this._esc(id)}"` : ""}${title ? ` title="${title}"` : ""}><span class="l">${label}</span>
-      <span class="v" style="color:${color}">${value}</span></div>`;
-    const pvId = (v.groups.find((g) => g.id) || {}).id;
-    const figs = [fig(t.pv, num(v.pv), P.pvText, pvId), fig(t.home, num(v.home), "var(--primary-text-color)", c.home && c.home.entity)];
-    if (c.grid && c.grid.entity) {
-      const dir = v.grid > ACTIVE_W ? "import" : v.grid < -ACTIVE_W ? "export" : null;
-      figs.push(fig(t.grid, `${dir === "import" ? "▲ " : dir === "export" ? "▼ " : ""}${num(Math.abs(v.grid))}`, P.grid, c.grid.entity,
-        dir && t[dir]));
+    // prod > 0: the figure supplies power, < 0: it takes power
+    const nodes = [{ key: "pv", label: t.pv, color: P.pvText, dot: P.pv, id: (v.groups.find((g) => g.id) || {}).id, prod: v.pv }];
+    if (v.bats.length) nodes.push({ key: "bat", label: t.battery, color: P.bat, dot: P.bat, id: (v.bats.find((b) => b.id) || {}).id, prod: -v.bat });
+    nodes.push({ key: "home", label: t.home, color: "var(--primary-text-color)", dot: P.home, id: c.home && c.home.entity, prod: -v.home });
+    if (c.grid && c.grid.entity) nodes.push({ key: "grid", label: t.grid, color: P.grid, dot: P.grid, id: c.grid.entity, prod: v.grid });
+    const shape = `${bus ? "bus" : "chain"}|${nodes.map((n) => n.key).join()}`;
+    if (!this._flow || this._flow.shape !== shape || !el.contains(this._flow.root)) this._buildCompact(el, nodes, bus, shape);
+    const f = this._flow;
+
+    // the arrows only on the bus, which leaves room for them; in the chain the dots show the direction
+    const arrow = (w) => (!bus ? "" : w > ACTIVE_W ? "▲ " : w < -ACTIVE_W ? "▼ " : "");
+    const text = {
+      pv: num(v.pv), home: num(v.home), grid: `${arrow(v.grid)}${num(Math.abs(v.grid))}`,
+      bat: `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow(v.bat)}${num(Math.abs(v.bat))}</small>`,
+    };
+    for (const n of nodes) {
+      f.values[n.key].innerHTML = text[n.key];
+      f.values[n.key].style.color = n.color;
     }
-    if (v.bats.length) {
-      const arrow = v.bat > ACTIVE_W ? "▲ " : v.bat < -ACTIVE_W ? "▼ " : "";
-      figs.push(fig(t.battery, `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow}${num(Math.abs(v.bat))}</small>`,
-        P.bat, (v.bats.find((b) => b.id) || {}).id));
+    const gridDir = v.grid > ACTIVE_W ? t.import : v.grid < -ACTIVE_W ? t.export : "";
+    if (f.cells.grid) f.cells.grid.title = gridDir;
+
+    // net flow across each border: the mean of what the left side gives and the right side takes, so sensors
+    // that do not add up exactly still give one value; made of the supplying figures on the sending side
+    const borders = f.segs.map((seg, i) => {
+      const left = nodes.slice(0, i + 1).reduce((a, n) => a + n.prod, 0), right = nodes.slice(i + 1).reduce((a, n) => a + n.prod, 0);
+      const p = (left - right) / 2, side = p >= 0 ? nodes.slice(0, i + 1) : nodes.slice(i + 1);
+      const srcs = side.filter((n) => n.prod >= ACTIVE_W).map((n) => [n.dot, n.prod]);
+      return { p, mix: srcs.length ? srcs : [[side[0].dot, 1]] };
+    });
+    const topP = Math.max(...borders.map((b) => Math.abs(b.p)), 1);
+    borders.forEach(({ p, mix }, i) => {
+      const seg = f.segs[i], on = Math.abs(p) >= ACTIVE_W;
+      const sum = mix.reduce((a, [, w]) => a + w, 0), main = mix.reduce((a, m) => (m[1] > a[1] ? m : a))[0];
+      // dots by the share of the largest flow of the moment, at least one per source (the short chain gaps hold
+      // three, the bus four); pace by the power itself
+      seg.n = on ? Math.min(seg.max, Math.max(1 + Math.round(((seg.max - 1) * Math.abs(p)) / topP), mix.filter(([, w]) => w / sum > 0.1).length)) : 0;
+      seg.dir = p >= 0 ? 1 : -1;
+      seg.dur = Math.max(0.7, 2.8 - 0.75 * Math.log10(Math.max(Math.abs(p), 10) / 10)) * this._pace;
+      seg.line.setAttribute("stroke", on ? main : P.rail);
+      seg.line.setAttribute("stroke-opacity", on ? "0.35" : "1");
+      // colours in proportion to the sources, interleaved: PV, battery, PV, ...
+      const left = mix.map(([, w]) => (w / sum) * seg.n), colors = [];
+      while (colors.length < seg.n) {
+        let k = 0;
+        for (let j = 1; j < left.length; j++) if (left[j] > left[k]) k = j;
+        colors.push(mix[k][0]);
+        left[k] -= 1;
+      }
+      seg.dots.forEach((d, j) => { d.setAttribute("fill", colors[j] || main); d.setAttribute("visibility", j < seg.n ? "visible" : "hidden"); });
+    });
+    if (bus) {
+      for (const n of nodes) {
+        const on = Math.abs(n.prod) >= ACTIVE_W;
+        f.stubs[n.key].setAttribute("stroke", on ? n.dot : P.rail);
+        f.stubs[n.key].setAttribute("stroke-opacity", on ? "0.8" : "1");
+        f.knots[n.key].setAttribute("fill", on ? n.dot : P.rail);
+      }
     }
-    el.innerHTML = `<div class="cf" style="grid-template-columns:repeat(${figs.length}, minmax(0, 1fr))">${figs.join("")}</div>`;
+    this._animate();
+  }
+
+  _buildCompact(el, nodes, bus, shape) {
+    const N = nodes.length, mid = (i) => ((i + 0.5) / N) * 100;
+    const cell = (n) => `<div class="f" data-cell="${n.key}"${n.id ? ` data-more="${this._esc(n.id)}"` : ""}><span class="l">${n.label}</span>
+      <span class="v" data-v="${n.key}"></span></div>`;
+    const dots = (y) => [0, 1, 2, 3].map(() => `<circle cy="${y}" r="2.8" visibility="hidden"></circle>`).join("");
+    let html;
+    if (!bus) {
+      const cols = nodes.map((n) => (n.key === "bat" ? "minmax(0, 1.25fr)" : "minmax(0, 1fr)")).join(" clamp(22px, 7vw, 40px) ");   // narrower gaps on a phone
+      html = `<div class="cf chain" style="grid-template-columns:${cols}">${nodes.map((n, i) => `${cell(n)}${i < N - 1
+        ? `<svg class="gap" data-seg="${i}" data-x0="10" data-x1="90"><line x1="6%" x2="94%" y1="10" y2="10" stroke-width="2" stroke-linecap="round"></line>${dots(10)}</svg>`
+        : ""}`).join("")}</div>`;
+    } else {
+      const segs = nodes.slice(1).map((_, i) => `<g data-seg="${i}" data-x0="${mid(i) + 3}" data-x1="${mid(i + 1) - 3}"><line x1="${mid(i) + 2}%" x2="${mid(i + 1) - 2}%" y1="16" y2="16" stroke-width="2"></line>${dots(16)}</g>`).join("");
+      const stubs = nodes.map((n, i) => `<line data-stub="${n.key}" x1="${mid(i)}%" x2="${mid(i)}%" y1="1" y2="16" stroke-width="2"></line>
+        <circle data-knot="${n.key}" cx="${mid(i)}%" cy="16" r="3.5"></circle>`).join("");
+      html = `<div class="cf" style="grid-template-columns:repeat(${N}, minmax(0, 1fr))">${nodes.map(cell).join("")}</div>
+        <svg class="bus" aria-hidden="true"><line x1="${mid(0)}%" x2="${mid(N - 1)}%" y1="16" y2="16" stroke="${this._p.rail}" stroke-width="2" stroke-linecap="round"></line>${segs}${stubs}</svg>`;
+    }
+    el.innerHTML = html;
     el.onclick = (ev) => this._moreInfo(ev);
+    const q = (sel) => [...el.querySelectorAll(sel)];
+    const segs = q("[data-seg]").map((g) => ({ line: g.querySelector("line"), dots: [...g.querySelectorAll("circle")],
+      x0: Number(g.dataset.x0), x1: Number(g.dataset.x1), max: bus ? 4 : 3, n: 0, dir: 1, dur: 1, phase: 0 }));
+    this._flow = {
+      shape, root: el.firstElementChild, segs,
+      values: Object.fromEntries(q("[data-v]").map((e) => [e.dataset.v, e])),
+      cells: Object.fromEntries(q("[data-cell]").map((e) => [e.dataset.cell, e])),
+      stubs: Object.fromEntries(q("[data-stub]").map((e) => [e.dataset.stub, e])),
+      knots: Object.fromEntries(q("[data-knot]").map((e) => [e.dataset.knot, e])),
+      // one step of the dots: each run of n dots moves as one phase, fading in and out at the ends
+      tick: (dt, reduced) => {
+        let moving = false;
+        for (const seg of segs) {
+          if (!seg.n) continue;
+          moving = true;
+          if (!reduced) seg.phase = (seg.phase + dt / seg.dur) % 1;
+          seg.dots.forEach((d, j) => {
+            if (j >= seg.n) return;
+            const f = reduced ? (j + 0.5) / seg.n : (seg.phase + j / seg.n) % 1, pos = seg.dir > 0 ? f : 1 - f;
+            d.setAttribute("cx", `${(seg.x0 + (seg.x1 - seg.x0) * pos).toFixed(2)}%`);
+            d.setAttribute("opacity", reduced ? "1" : Math.min(1, f / 0.2, (1 - f) / 0.2).toFixed(2));
+          });
+        }
+        return moving;
+      },
+    };
   }
 
   // hourly weather over [t0, t1): one mark where the condition class changes, runs under two hours merged
@@ -614,6 +714,7 @@ class NoxcastCard extends HTMLElement {
       if (!reduced && time - last < 30) { this._frame = requestAnimationFrame(step); return; }
       const dt = Math.min(0.1, (time - last) / 1000);
       last = time;
+      if (f.tick) { if (f.tick(dt, reduced) && !reduced) this._frame = requestAnimationFrame(step); return; }
       let moving = false;
       for (const [k, line] of Object.entries(f.lines)) {
         if (!line.speed || !line.len) continue;
@@ -1045,6 +1146,7 @@ class NoxcastCardEditor extends HTMLElement {
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
       flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
+      flow_style: de ? "Fluss in der kompakten Zeile" : "Flow in the compact row", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
       icon_pv: de ? "Symbol PV" : "PV icon", icon_grid: de ? "Symbol Netz" : "Grid icon",
       icon_battery: de ? "Symbol Akku (leer = nach Ladestand)" : "Battery icon (empty = by state of charge)",
       icon_home: de ? "Symbol Haus (leer = nach Quellen gefärbt)" : "Home icon (empty = coloured by its sources)",
@@ -1105,6 +1207,9 @@ class NoxcastCardEditor extends HTMLElement {
     const opt = (pairs) => ({ select: { mode: "dropdown", options: pairs.map(([value, label]) => ({ value, label })) } });
     this.querySelector("#main").appendChild(this._form([
       { name: "flow", selector: opt([["full", de ? "Flussdiagramm" : "Flow diagram"], ["compact", de ? "Kompakte Zeile" : "Compact row"]]) },
+      { name: "flow_style", selector: opt([["chain", de ? "Kette: Punkte zwischen den Werten" : "Chain: dots between the figures"],
+        ["bus", de ? "Bus: Linie unter den Werten" : "Bus: line below the figures"]]) },
+      { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
       { name: "look", selector: opt([["plain", "Home Assistant"], ["noxcast", "Noxcast"]]) },
       ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
@@ -1113,12 +1218,15 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain",
+      flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal",
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
       ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
     }, (v) => {
       const n = { ...this._config };
       n.font_scale = v.font_scale; n.legend = v.legend;
       if (v.flow && v.flow !== "full") n.flow = v.flow; else delete n.flow;
+      if (v.flow_style && v.flow_style !== "chain") n.flow_style = v.flow_style; else delete n.flow_style;
+      if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;
       for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
       const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));

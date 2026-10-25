@@ -1,4 +1,4 @@
-// Noxcast day card: power flow now, today's yield per array with significant effects, house load,
+// Noxcast day card: power flow now, today's yield with the loss to shade, house load,
 // battery and unused surplus. Plain custom element, no build step.
 //
 // type: custom:noxcast-card
@@ -20,30 +20,30 @@
 // Tapping PV, grid, home or battery opens the entity's more-info dialog.
 
 const TEXT = {
-  de: { upTo: "bis", clearSky: "bei klarem Himmel bis", pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
-    refl: "Reflexion", unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
+  de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
+    unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
     start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
     lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um", import: "Bezug", export: "Einspeisung",
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
-      loss: "Schattenverlust", shade: "Schatten", refl: "Reflexion", bat: "Akku", lost: "voll, Überschuss verfällt",
+      loss: "Schattenverlust", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
-  en: { upTo: "up to", clearSky: "clear sky up to", pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
-    refl: "reflection", unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
+  en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
+    unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
     lasts: "battery lasts until tomorrow", emptyAt: "battery empty at", import: "Import", export: "Export",
     lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV", band: "range P10–P90",
-      loss: "lost to shade", shade: "shade", refl: "reflection", bat: "battery", lost: "full, surplus lost",
+      loss: "lost to shade", bat: "battery", lost: "full, surplus lost",
       near: "almost full" } },
 };
 
 const PALETTE = {
   light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
-    shade: "#C0392B", refl: "#B07A00", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)",
+    shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)",
     warnText: "#8E2418", warnBg: "#FBE3DE", lost: "#D93025", near: "#F29900" },
   dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
-    shade: "#F07058", refl: "#E8B640", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)",
+    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)",
     warnText: "#FFB4A6", warnBg: "#4A2620", lost: "#F2635A", near: "#F5A524" },
 };
 
@@ -706,56 +706,13 @@ class NoxcastCard extends HTMLElement {
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
 
-    // one lane per array: shade always, reflection where it adds something. Hour by hour, the light band
-    // shows the share the effect would take from (or add to) what the array could give under a clear sky,
-    // the solid band the share it takes today; the full lane = all of it. Under clouds the solid band
-    // stays thin inside the light one. Thickness reads the same on light and dark themes
-    const shownArrays = arrays.filter((a) => !a.hide);
-    const Ly = Hp + 6, Lh = 9, laneN = this._show("effects") ? shownArrays.length : 0;
-    const half = (share) => 1 + (Lh / 2 - 1) * Math.min(1, Math.max(0, share));
-    // the array's name beside its lane, in the margin with the axis labels; long names are cut
-    const lane = (name) => (String(name).length > 7 ? `${String(name).slice(0, 6)}…` : String(name));
-    const lanes = shownArrays.slice(0, laneN).map((arr, i) => {
-      const ly = Ly + i * (Lh + 4);
-      const lossA = new Map(arr.loss || []), gainA = new Map(arr.gain || []);
-      const shadeC = new Map(arr.shade_clear || []), reflC = new Map(arr.refl_clear || []);
-      const fcA = new Map((arr.forecast && arr.forecast.length ? arr.forecast : arr.morning) || []);
-      const fx = arr.periods.filter((p) => p.end > t0 && p.start < t1).map((p, j) => {
-        const shade = p.type === "shade", color = shade ? P.shade : P.refl, eff = shade ? lossA : gainA;
-        const clear = shade ? shadeC : reflC;
-        const shares = [], potential = [];
-        for (let h = Math.floor(p.start / H) * H; h < p.end; h += H) {
-          const e = eff.get(h) || 0, base = (fcA.get(h) || 0) + (shade ? e : -e);
-          const c = clear.has(h) ? clear.get(h) : null, v = base > 1 ? e / base : 0;
-          potential.push([h, c === null ? v : c]);
-          shares.push([h, c === null ? v : Math.min(v, c)]);   // today never beyond the clear-sky share
-        }
-        const peak = shares.reduce((a, [, v]) => Math.max(a, v), 0);
-        const peakClear = potential.reduce((a, [, v]) => Math.max(a, v), 0);
-        const x0 = x(p.start), x1 = Math.max(x0 + 2, x(p.end)), cy = ly + Lh / 2;
-        // the outline through the hour middles, held flat to the period's edges
-        const outline = (series) => {
-          const pts = [[x0, series.length ? series[0][1] : 0],
-            ...series.map(([h, v]) => [Math.max(x0, Math.min(x1, x(h + H / 2))), v]),
-            [x1, series.length ? series[series.length - 1][1] : 0]];
-          return [...pts.map(([px, v]) => `${px.toFixed(1)},${(cy - half(v)).toFixed(1)}`),
-            ...pts.reverse().map(([px, v]) => `${px.toFixed(1)},${(cy + half(v)).toFixed(1)}`)].join(" ");
-        };
-        const title = `${shade ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${shade ? "−" : "+"}${this._kwh(p.wh)} ${t.kwh}${peak > 0 ? ` · ${t.upTo} ${Math.round(peak * 100)} %` : ""}${peakClear > peak ? ` · ${t.clearSky} ${Math.round(peakClear * 100)} %` : ""}`;
-        return `<g><title>${this._esc(title)}</title><rect x="${x0.toFixed(1)}" y="${ly}" width="${(x1 - x0).toFixed(1)}" height="${Lh}" fill="transparent"></rect>
-          <polygon points="${outline(potential)}" fill="${color}" fill-opacity=".22"></polygon>
-          <polygon points="${outline(shares)}" fill="${color}" stroke="${color}" stroke-width="0.5" stroke-linejoin="round"></polygon></g>`;
-      }).join("");
-      return `<line x1="${X0}" x2="${X1}" y1="${ly + Lh / 2}" y2="${ly + Lh / 2}" stroke="${P.rail}" stroke-width="2"></line>${fx}
-        ${(arr.icon && this._icon(arr.icon, X1 + 10, ly + Lh / 2, 12, "var(--secondary-text-color)"))
-          || `<text x="${X1 + 3}" y="${ly + Lh - 1}" class="ax">${this._esc(lane(arr.label))}</text>`}`;
-    }).join("");
+    const Ly = Hp + 6;
 
     // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
     // caps (B0, Bh) sit with their labels below the lanes, which keep the margins for their names;
     // the strip between them also uses the space above
-    const B0 = Ly + laneN * (Lh + 4) + 26, Bh = 22;
-    const S0 = Ly + laneN * (Lh + 4) + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
+    const B0 = Ly + 26, Bh = 22;
+    const S0 = Ly + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
     const bat = this._show("battery") ? m.battery : null;
     let batSvg = "", sim = null, chargeToday = null, chargeTom = null;
     const seenZones = new Set();
@@ -807,7 +764,7 @@ class NoxcastCard extends HTMLElement {
         ${cap(CAPW / 2, startF, chargeToday > now ? t.expected : t.start, this._hm(chargeToday), chargeToday > now, false)}
         ${cap(W - CAPW / 2, endF, t.tomorrow, endF === null ? this._hm(sim.empty) : this._hm(chargeTom), true, endF === null)}`;
     }
-    const bottom = bat ? B0 + Bh + 14 : Ly + laneN * (Lh + 4) + 14;
+    const bottom = bat ? B0 + Bh + 14 : Ly + 14;
     const tickStep = Math.max(1, Math.ceil((t1 - t0) / H / 6)) * H;
     const ticks = []; for (let h = Math.ceil(t0 / tickStep) * tickStep; h <= t1; h += tickStep) if (nowX === null || Math.abs(x(h) - nowX) > 16) ticks.push(h);
 
@@ -827,7 +784,7 @@ class NoxcastCard extends HTMLElement {
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
-      ${svgPv}${lanes}${batSvg}
+      ${svgPv}${batSvg}
       ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
         <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${this._hm(h).slice(0, 2)}</text>`).join("")}
@@ -862,8 +819,6 @@ class NoxcastCard extends HTMLElement {
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > t0, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
-        shade: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "shade")),
-        refl: laneN > 0 && arrays.some((a) => a.periods.some((p) => p.type === "reflection")),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
       ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
       <div class="row nums">${numbers}
@@ -907,7 +862,6 @@ class NoxcastCard extends HTMLElement {
       [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast], [on.band, box(P.pv, 0.2), l.band],
       [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
       [on.load, dash(P.home, false), l.load], [on.deficit, box(P.home, 0.16), l.deficit],
-      [on.shade, box(P.shade), l.shade], [on.refl, box(P.refl), l.refl],
       [on.bat, box(P.bat, 0.45), l.bat], [on.lost, box(P.lost, 0.85), l.lost], [on.near, box(P.near, 0.85), l.near],
     ];
     return `<div class="legend">${items.filter(([show]) => show).map(([, icon, text]) => `<span>${icon}${text}</span>`).join("")}</div>`;
@@ -1087,7 +1041,7 @@ class NoxcastCardEditor extends HTMLElement {
     const de = this._de;
     return {
       font_scale: de ? "Schriftgröße" : "Text size", legend: de ? "Legende anzeigen" : "Show legend",
-      show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Verschattung und Reflexion" : "Shade and reflection",
+      show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Schattenverlust" : "Lost to shade",
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
       flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
@@ -1223,4 +1177,4 @@ class NoxcastCardEditor extends HTMLElement {
 customElements.define("noxcast-card", NoxcastCard);
 customElements.define("noxcast-card-editor", NoxcastCardEditor);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield per array, effects and surplus", preview: false });
+window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield, shade loss and surplus", preview: false });

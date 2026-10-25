@@ -7,6 +7,7 @@
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
 // show_weather: true                   # hourly weather above the chart, marked where it changes
 // weather_entity: weather.home         # source of that strip; default: Noxcast's own weather entity
+// range: production                    # day chart: production (an hour either side) or day (0–24 h, night compressed)
 // flow: full                           # full: power flow diagram; compact: one row of figures
 // flow_style: chain                    # compact row: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
@@ -42,15 +43,17 @@ const TEXT = {
 };
 
 const PALETTE = {
-  light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
+  light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A", night: "#5B6BC0",
     shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)",
     warnText: "#8E2418", warnBg: "#FBE3DE", lost: "#D93025", near: "#F29900" },
-  dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
+  dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A", night: "#7D8FD6",
     shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)",
     warnText: "#FFB4A6", warnBg: "#4A2620", lost: "#F2635A", near: "#F5A524" },
 };
 
 const ACTIVE_W = 5;
+// with range "day" a night hour gets this share of a day hour's width in the day chart
+const NIGHT_W = 0.3;
 // a flow shows from flow_min_w (default FLOW_MIN_W) and stays until it falls below FLOW_OFF of that: sensors
 // drift by a few watts, so small mismatches show no flow, and a flow near the threshold does not flicker
 const FLOW_MIN_W = 10, FLOW_OFF = 0.6;
@@ -356,12 +359,16 @@ class NoxcastCard extends HTMLElement {
   }
 
   _localMidnight(d) {
-    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: this._tz, hourCycle: "h23",
-      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      .formatToParts(d).map((p) => [p.type, p.value]));
-    const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-    const offset = asUtc - Math.floor(d.getTime() / 1000) * 1000;       // the parts carry no milliseconds
-    return Date.UTC(+parts.year, +parts.month - 1, +parts.day) - offset;
+    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: this._tz, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const partsAt = (ms) => Object.fromEntries(fmt.formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+    const offsetAt = (ms) => {                                          // the parts carry no milliseconds
+      const p = partsAt(ms);
+      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000;
+    };
+    const p = partsAt(d.getTime()), day = Date.UTC(+p.year, +p.month - 1, +p.day);
+    // on the day the clocks change, the offset at midnight differs from the one now
+    return day - offsetAt(day - offsetAt(d.getTime()));
   }
 
   // ------------------------------------------------------------ rendering
@@ -765,13 +772,21 @@ class NoxcastCard extends HTMLElement {
     const pv = (h) => (expM.has(h) ? exp(h) : tomM.get(h)) || 0;
     const sunny = [...new Set([...expM.keys(), ...fcM.keys()])].filter((h) => exp(h) > 1 || fc(h) > 1).sort((a, b) => a - b);
     if (!sunny.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
-    const t0 = sunny[0], t1 = sunny[sunny.length - 1] + H;
+    // production with an hour of margin on either side, so the day does not end abruptly;
+    // range "day" shows the whole day from midnight to midnight, the night outside production compressed
+    const prodStart = sunny[0], prodEnd = sunny[sunny.length - 1] + H, pS = prodStart - H, pE = prodEnd + H;
+    const whole = this._config.range === "day";
+    const t0 = whole ? this._data.dayStart / 1000 : pS, t1 = whole ? this._localMidnight(new Date(this._data.dayStart + 30 * H * 1000)) / 1000 : pE;
     const dayH = []; for (let h = t0; h < t1; h += H) dayH.push(h);
+    const pvH = dayH.filter((h) => h >= prodStart && h < prodEnd);
 
     const m = this._model(now);
     const load = m.load;
     const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 104;
-    const x = (ts) => X0 + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (X1 - X0);
+    // time axis in segments [from, to, width of an hour]
+    const segs = whole ? [[t0, pS, NIGHT_W], [pS, pE, 1], [pE, t1, NIGHT_W]] : [[t0, t1, 1]];
+    const span = segs.reduce((a, [a0, a1, w]) => a + (a1 - a0) * w, 0);
+    const x = (ts) => X0 + segs.reduce((a, [a0, a1, w]) => a + (Math.max(a0, Math.min(a1, ts)) - a0) * w, 0) / span * (X1 - X0);
     // fixed scale: installed peak power, so a weak day shows as a low curve; the top 14 px stay free
     // for the value of a load cut off by the scale
     const peakW = arrays.reduce((a, arr) => a + (arr.peak_w || 0), 0);
@@ -779,7 +794,7 @@ class NoxcastCard extends HTMLElement {
     const step = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find((s) => top / s <= 4) || 20000;
     const ymax = peakW > 0 ? top : Math.ceil(top / step) * step;
     const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 16);
-    const pts = (f) => [[x(t0), y(0)], ...dayH.map((h) => [x(h + H / 2), y(f(h))]), [x(t1), y(0)]];
+    const pts = (f) => [[x(prodStart), y(0)], ...pvH.map((h) => [x(h + H / 2), y(f(h))]), [x(prodEnd), y(0)]];
     const fill = (p) => `${line(p)} L${p[p.length - 1][0].toFixed(1)},${(Hp - 2).toFixed(1)} L${p[0][0].toFixed(1)},${(Hp - 2).toFixed(1)} Z`;
     const between = (hi, lo) => { const a = pts(hi), b = pts(lo).reverse(); return `${line(a)} L${b[0][0].toFixed(1)},${b[0][1].toFixed(1)}${curve(b)} Z`; };
     const nowX = now > t0 && now < t1 ? x(now) : null;
@@ -825,7 +840,7 @@ class NoxcastCard extends HTMLElement {
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
       <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
       ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
-      ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 Z"></path></clipPath>
+      ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},${Hp} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 L${x(t0).toFixed(1)},${Hp} Z"></path></clipPath>
         <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
       ${hasLoad ? `${halo(loadLine)}${loadSvg}` : ""}
@@ -895,8 +910,18 @@ class NoxcastCard extends HTMLElement {
         ${cap(W - CAPW / 2, endF, t.tomorrow, endF === null ? this._hm(sim.empty) : this._hm(chargeTom), true, endF === null)}`;
     }
     const bottom = bat ? B0 + Bh + 14 : Ly + 14;
-    const tickStep = Math.max(1, Math.ceil((t1 - t0) / H / 6)) * H;
-    const ticks = []; for (let h = Math.ceil(t0 / tickStep) * tickStep; h <= t1; h += tickStep) if (nowX === null || Math.abs(x(h) - nowX) > 16) ticks.push(h);
+    const tickStep = Math.max(1, Math.ceil((pE - pS) / H / 6)) * H;
+    const ticks = [];
+    const tick = (h) => { if ((nowX === null || Math.abs(x(h) - nowX) > 16) && ticks.every((q) => Math.abs(x(q) - x(h)) > 14)) ticks.push(h); };
+    if (whole) { tick(t0); tick(t1); }
+    for (let h = Math.ceil(pS / tickStep) * tickStep; h <= pE; h += tickStep) tick(h);
+    // the compressed night: tinted, a line where the day begins and ends, a moon on top
+    const nightSvg = !whole ? "" : [[t0, pS], [pE, t1]].filter(([a, b]) => b > a).map(([a, b]) => {
+      const xa = x(a), xb = x(b), edge = a === t0 ? xb : xa;
+      return `<rect x="${xa.toFixed(1)}" y="0" width="${(xb - xa).toFixed(1)}" height="${bottom - 14}" fill="${P.night}" fill-opacity=".10"></rect>
+        <line x1="${edge.toFixed(1)}" x2="${edge.toFixed(1)}" y1="0" y2="${bottom - 14}" stroke="${P.night}" stroke-opacity=".45"></line>
+        ${xb - xa > 12 ? this._icon("mdi:weather-night", (xa + xb) / 2, 7, 10, P.night) || "" : ""}`;
+    }).join("");
 
     // values per hour for the tooltip: hovering or tapping an hour shows what the chart draws there
     const socAt = (ts) => (!bat ? null : ts <= now ? m.socAt(ts) : sim.at(ts));
@@ -914,16 +939,16 @@ class NoxcastCard extends HTMLElement {
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
-      ${svgPv}${batSvg}
+      ${nightSvg}${svgPv}${batSvg}
       ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
         <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
-      ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${this._hm(h).slice(0, 2)}</text>`).join("")}
+      ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${whole && h === t1 ? "24" : this._hm(h).slice(0, 2)}</text>`).join("")}
       <line id="nx-cursor" y1="0" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1" stroke-opacity=".35" visibility="hidden"></line>
       <g id="nx-hits">${hits}</g>
     </svg>`;
 
     // planning line and the three numbers
-    const after = now >= t1, before = now < t0;
+    const after = now >= prodEnd, before = now < prodStart;
     const ist = dayH.reduce((a, h) => a + (h + H <= now ? exp(h) : h < now ? exp(h) * (now - h) / H : 0), 0);
     const expected = dayH.reduce((a, h) => a + exp(h), 0);
     const morning = dayH.reduce((a, h) => a + (mornM.get(h) || 0), 0);
@@ -948,7 +973,7 @@ class NoxcastCard extends HTMLElement {
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
-        actual: now > t0, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
+        actual: now > prodStart, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
       ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
       <div class="row nums">${numbers}
@@ -1174,6 +1199,7 @@ class NoxcastCardEditor extends HTMLElement {
       show_battery: de ? "Akku-Ladestandsprognose" : "Battery forecast", show_effects: de ? "Schattenverlust" : "Lost to shade",
       show_band: de ? "Spanne P10–P90" : "Range P10–P90", show_load: de ? "Hauslast" : "House load",
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
+      range: de ? "Zeitraum des Verlaufs" : "Time range of the chart",
       flow: de ? "Leistung jetzt" : "Power now", look: de ? "Aussehen" : "Look",
       flow_style: de ? "Fluss in der kompakten Zeile" : "Flow in the compact row", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
       flow_min_w: de ? "Fluss ab (W)" : "Flow from (W)",
@@ -1242,13 +1268,15 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
       { name: "flow_min_w", selector: { number: { min: 0, max: 200, step: 1, mode: "box", unit_of_measurement: "W" } } },
       { name: "look", selector: opt([["plain", "Home Assistant"], ["noxcast", "Noxcast"]]) },
+      { name: "range", selector: opt([["production", de ? "Produktion, je 1 h Rand" : "Production, an hour either side"],
+        ["day", de ? "Ganzer Tag, Nacht gestaucht" : "Whole day, night compressed"]]) },
       ...shows.map((name) => ({ name, selector: { boolean: {} } })),
       { name: "legend", selector: { boolean: {} } },
       { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
       { name: "icon_pv", selector: { icon: {} } }, { name: "icon_grid", selector: { icon: {} } },
       { name: "icon_battery", selector: { icon: {} } }, { name: "icon_home", selector: { icon: {} } },
     ], {
-      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain",
+      font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, flow: c.flow || "full", look: c.look || "plain", range: c.range || "production",
       flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
       ...Object.fromEntries(["pv", "grid", "battery", "home"].map((k) => [`icon_${k}`, ((c.icons || {})[k] || "").replace(/^auto$/, "")])),
@@ -1260,6 +1288,7 @@ class NoxcastCardEditor extends HTMLElement {
       if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
       if (v.flow_min_w !== undefined && v.flow_min_w !== "" && Number(v.flow_min_w) !== FLOW_MIN_W) n.flow_min_w = Number(v.flow_min_w); else delete n.flow_min_w;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;
+      if (v.range === "day") n.range = "day"; else delete n.range;
       for (const k of shows) { if (v[k] === false) n[k] = false; else delete n[k]; }
       const icons = Object.fromEntries(["pv", "grid", "battery", "home"].filter((k) => v[`icon_${k}`]).map((k) => [k, v[`icon_${k}`]]));
       if (Object.keys(icons).length) n.icons = icons; else delete n.icons;

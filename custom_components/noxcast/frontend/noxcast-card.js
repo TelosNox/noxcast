@@ -912,7 +912,7 @@ class NoxcastCard extends HTMLElement {
     const bottom = bat ? B0 + Bh + 14 : Ly + 14;
     const tickStep = Math.max(1, Math.ceil((pE - pS) / H / 6)) * H;
     const ticks = [];
-    const tick = (h) => { if ((nowX === null || Math.abs(x(h) - nowX) > 16) && ticks.every((q) => Math.abs(x(q) - x(h)) > 14)) ticks.push(h); };
+    const tick = (h) => { if (ticks.every((q) => Math.abs(x(q) - x(h)) > 14)) ticks.push(h); };
     if (whole) { tick(t0); tick(t1); }
     for (let h = Math.ceil(pS / tickStep) * tickStep; h <= pE; h += tickStep) tick(h);
     // the compressed night: tinted, a line where the day begins and ends, a moon on top
@@ -940,8 +940,7 @@ class NoxcastCard extends HTMLElement {
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
       ${nightSvg}${svgPv}${batSvg}
-      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>
-        <text x="${nowX.toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax" style="fill:var(--primary-text-color)">${this._hm(now)}</text>` : ""}
+      ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>` : ""}
       ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${whole && h === t1 ? "24" : this._hm(h).slice(0, 2)}</text>`).join("")}
       <line id="nx-cursor" y1="0" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1" stroke-opacity=".35" visibility="hidden"></line>
       <g id="nx-hits">${hits}</g>

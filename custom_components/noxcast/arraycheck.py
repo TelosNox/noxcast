@@ -9,7 +9,7 @@ import math
 from datetime import datetime, timezone
 
 from .model import (
-    CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_hour, clearsky_profile,
+    CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_heating, clearsky_hour, clearsky_profile,
     temperature_factor, transmission,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
@@ -82,7 +82,9 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
             kt = min(g / cs_ghi, 1.2)
         if transmission(learned, az, el) < 0.95:
             continue
-        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": (air_temp or {}).get(t)})
+        temp = (air_temp or {}).get(t)
+        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp,
+                     "heating": clearsky_heating(site, geo, t, learned.sky_view) if temp is not None else geo.heating})
     if steady is not None:
         calm = [r for r in rows if r["t"] in steady]
         if len(calm) >= GEOMETRY_MIN_HOURS:
@@ -106,7 +108,7 @@ def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, s
     groups: dict[str, list[float]] = {}
     for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady):
         exp = geo.peak_w * r["poa"] / 1000 * (r["kt"] or 1.0)
-        f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"], geo.heating) if r["temp"] is not None else 1.0
+        f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"], r["heating"]) if r["temp"] is not None else 1.0
         ratio = r["p"] / (exp * f)
         if ratio <= 1.5:
             groups.setdefault(_month(r["t"]), []).append(ratio)
@@ -128,9 +130,11 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
     year; a wrong azimuth shows as mornings too high and afternoons too low. The spread (interquartile
     range over the median) is minimised on a coarse and then a fine grid. Only a diagnostic: the
     shading map was learned with the configured geometry, so nothing is applied automatically.
-    Needs the satellite filter, since cloudy hours would hide the signal.
+    Needs the satellite filter, since cloudy hours would hide the signal. Not done for an array with
+    several orientations: one best plane does not describe it, and moving one of its planes while
+    the others stay would mostly fit the learned shade and direction factor, so any advice would mislead.
     """
-    if satellite_ghi is None:
+    if satellite_ghi is None or geo.extra:
         return None
     rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)
     if len(rows) < GEOMETRY_MIN_HOURS:

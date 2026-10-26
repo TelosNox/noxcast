@@ -104,6 +104,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     assert msg["success"]
     arr = msg["result"]["arrays"][0]
     assert arr["name"] == "Roof" and arr["learned"]["efficiency"] > 0.8 and "cells" in arr["learned"]
+    assert arr["planes"] == [{"tilt": 30, "azimuth": 180, "peak_w": 1000}]
     await client.send_json_auto_id({"type": "noxcast/accuracy"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["arrays"][0]["name"] == "Roof"
@@ -249,3 +250,86 @@ async def test_stored_weather_stands_in_when_open_meteo_fails(hass: HomeAssistan
     assert coordinator.last_update_success and coordinator.data.weather_fetched == fetched
     stored = coordinator._store_data()["weather"]
     assert stored and len(stored["mean"]) == len(weather)
+
+
+async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
+    """Extra orientations are accepted, empty ones are not stored, incomplete or doubled ones are rejected."""
+    import voluptuous_serialize
+    from homeassistant.data_entry_flow import InvalidData
+    from homeassistant.helpers import config_validation as cv
+
+    from custom_components.noxcast.model import Plane
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+
+        async def configure(data: dict):
+            sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
+                                                                  context={"source": config_entries.SOURCE_USER})
+            return await hass.config_entries.subentries.async_configure(sub["flow_id"], data)
+
+        form = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
+                                                               context={"source": config_entries.SOURCE_USER})
+        fields = voluptuous_serialize.convert(form["data_schema"], custom_serializer=cv.custom_serializer)
+        sections = [f for f in fields if f["name"].startswith("orientation_")]
+        assert len(sections) == 3 and all(f["type"] == "expandable" and f["expanded"] is False for f in sections)
+        hass.config_entries.subentries.async_abort(form["flow_id"])
+
+        bad = await configure({**ARRAY, "orientation_2": {"tilt": 30, "azimuth": 90}})
+        assert bad["type"] is FlowResultType.FORM and bad["errors"] == {"base": "orientation_incomplete"}
+        bad = await configure({**ARRAY, "orientation_2": {"tilt": 30, "azimuth": 180, "peak_power": 400}})
+        assert bad["errors"] == {"base": "orientation_duplicate"}                # same as the main plane
+        with pytest.raises(InvalidData):
+            await configure({**ARRAY, "orientation_2": {"tilt": 95, "azimuth": 90, "peak_power": 400}})
+
+        sub = await configure({**ARRAY, "orientation_2": {"tilt": 30, "azimuth": 90, "peak_power": 400},
+                               "orientation_3": {}, "orientation_4": {"tilt": 30, "azimuth": 270, "peak_power": 500}})
+        assert sub["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+
+    subentry = next(s for s in hass.config_entries.async_get_entry(entry.entry_id).subentries.values())
+    assert "orientation_3" not in subentry.data and subentry.data["orientation_2"]["azimuth"] == 90
+    coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+    geo = coordinator.arrays[subentry.subentry_id].geometry
+    assert geo.extra == (Plane(30, 90, 400), Plane(30, 270, 500)) and geo.peak_w == 1900
+    assert [p["peak_w"] for p in geo.describe()] == [1000, 400, 500]
+    assert coordinator._geometry_key(subentry.subentry_id)[-1] == [[30, 90, 400], [30, 270, 500]]
+
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        form = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, "array"),
+            context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id})
+        fields = voluptuous_serialize.convert(form["data_schema"], custom_serializer=cv.custom_serializer)
+        expanded = {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"}
+        assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True}
+        done = await hass.config_entries.subentries.async_configure(form["flow_id"], {**ARRAY, "orientation_2": {}})
+        assert done["type"] is FlowResultType.ABORT
+        await hass.async_block_till_done()
+    data = hass.config_entries.async_get_entry(entry.entry_id).subentries[subentry.subentry_id].data
+    assert "orientation_2" not in data and "orientation_4" not in data          # removed again: one plane
+
+
+async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:
+    """An array stored before orientations existed keeps its geometry and geometry key (no relearning)."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
+                            data={"soc_full_pct": 95},
+                            subentries_data=[config_entries.ConfigSubentryData(
+                                data=ARRAY, subentry_type="array", title="Roof", unique_id=None)])
+    entry.add_to_hass(hass)
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    sub_id, arr = next(iter(coordinator.arrays.items()))
+    assert arr.geometry == model.ArrayGeometry(30.0, 180.0, 1000.0)
+    assert coordinator._geometry_key(sub_id) == [ARRAY["power_sensors"], 30.0, 180.0, 1000.0, None, None,
+                                                 True, False, model.HEATING_K]

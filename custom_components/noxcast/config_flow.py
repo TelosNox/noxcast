@@ -10,6 +10,7 @@ from homeassistant.config_entries import (
     ConfigEntry, ConfigFlow, ConfigFlowResult, ConfigSubentryFlow, OptionsFlow, SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
@@ -17,7 +18,7 @@ from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
     WEATHER_MODEL_OPTIONS,
-    CONF_AZIMUTH, CONF_HEATING, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
@@ -86,24 +87,51 @@ def _power_sensor_error(hass: HomeAssistant, entity_id: str | None) -> str | Non
     return None
 
 
+def _tilt_selector() -> selector.NumberSelector:
+    return selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=90, step=1, unit_of_measurement="°",
+                                                                 mode=selector.NumberSelectorMode.BOX))
+
+
+def _azimuth_selector() -> selector.NumberSelector:
+    return selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=359, step=1, unit_of_measurement="°",
+                                                                 mode=selector.NumberSelectorMode.BOX))
+
+
+def _peak_selector() -> selector.NumberSelector:
+    return selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="Wp",
+                                                                 mode=selector.NumberSelectorMode.BOX))
+
+
+def _orientation_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """A further orientation: all three fields or none (empty = not used)."""
+    return vol.Schema({
+        vol.Optional(key, description={"suggested_value": defaults.get(key)}): sel
+        for key, sel in ((CONF_TILT, _tilt_selector()), (CONF_AZIMUTH, _azimuth_selector()),
+                         (CONF_PEAK_POWER, _peak_selector()))
+    })
+
+
 def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
     number = selector.NumberSelectorMode.BOX
+    orientations = {
+        vol.Optional(key): section(_orientation_schema(defaults.get(key) or {}),
+                                   {"collapsed": not defaults.get(key)})
+        for key in CONF_ORIENTATIONS
+    }
     return vol.Schema({
         vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
         vol.Required(CONF_POWER_SENSORS, default=defaults.get(CONF_POWER_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
-        vol.Required(CONF_TILT, default=defaults.get(CONF_TILT, 30)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=90, step=1, unit_of_measurement="°", mode=number)),
-        vol.Required(CONF_AZIMUTH, default=defaults.get(CONF_AZIMUTH, 180)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=359, step=1, unit_of_measurement="°", mode=number)),
-        vol.Required(CONF_PEAK_POWER, default=defaults.get(CONF_PEAK_POWER, 800)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="Wp", mode=number)),
+        vol.Required(CONF_TILT, default=defaults.get(CONF_TILT, 30)): _tilt_selector(),
+        vol.Required(CONF_AZIMUTH, default=defaults.get(CONF_AZIMUTH, 180)): _azimuth_selector(),
+        vol.Required(CONF_PEAK_POWER, default=defaults.get(CONF_PEAK_POWER, 800)): _peak_selector(),
         vol.Optional(CONF_VALID_SINCE, description={"suggested_value": defaults.get(CONF_VALID_SINCE)}):
             selector.DateSelector(),
         vol.Optional(CONF_TEMP_COEFF, description={"suggested_value": defaults.get(CONF_TEMP_COEFF)}):
             selector.NumberSelector(selector.NumberSelectorConfig(min=-1, max=0, step=0.01, unit_of_measurement="%/K", mode=number)),
         vol.Optional(CONF_HEATING, description={"suggested_value": defaults.get(CONF_HEATING)}):
             selector.NumberSelector(selector.NumberSelectorConfig(min=15, max=80, step=1, unit_of_measurement="K", mode=number)),
+        **orientations,
     })
 
 
@@ -204,20 +232,30 @@ class ArraySubentryFlow(ConfigSubentryFlow):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errors = _validate_array(self.hass, user_input)
         if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
+            return self.async_create_entry(title=user_input[CONF_NAME], data=_array_data(user_input))
         return self.async_show_form(step_id="user", data_schema=_array_schema(user_input or {}), errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
         errors = _validate_array(self.hass, user_input)
         if user_input is not None and not errors:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME], data=user_input)
+            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
+                                               data=_array_data(user_input))
         return self.async_show_form(step_id="reconfigure", data_schema=_array_schema(user_input or dict(subentry.data)),
                                     errors=errors)
 
 
+def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Unused orientation sections (the form sends them empty) are not stored."""
+    return {k: v for k, v in user_input.items() if k not in CONF_ORIENTATIONS or any(x is not None for x in (v or {}).values())}
+
+
 def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> dict[str, str]:
-    """Power sensors must report W/kW as measurement (long-term statistics); date not in the future."""
+    """Power sensors must report W/kW as measurement (long-term statistics); date not in the future.
+
+    A further orientation needs tilt, azimuth and peak power together, and must differ from the
+    orientations before it (the same orientation twice is one plane with the summed peak power).
+    """
     if user_input is None:
         return {}
     sensors = user_input.get(CONF_POWER_SENSORS) or []
@@ -229,6 +267,18 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     valid = user_input.get(CONF_VALID_SINCE)
     if valid and (dt_util.parse_date(valid) is None or dt_util.parse_date(valid) > dt_util.now().date()):
         return {CONF_VALID_SINCE: "date_in_future"}
+    seen = [(float(user_input[CONF_TILT]), float(user_input[CONF_AZIMUTH]) % 360)] \
+        if user_input.get(CONF_TILT) is not None and user_input.get(CONF_AZIMUTH) is not None else []
+    for key in CONF_ORIENTATIONS:
+        values = [(user_input.get(key) or {}).get(k) for k in (CONF_TILT, CONF_AZIMUTH, CONF_PEAK_POWER)]
+        if all(v is None for v in values):
+            continue
+        if any(v is None for v in values):
+            return {"base": "orientation_incomplete"}
+        plane = (float(values[0]), float(values[1]) % 360)
+        if any(plane[0] == t and (plane[1] == a or plane[0] == 0) for t, a in seen):
+            return {"base": "orientation_duplicate"}
+        seen.append(plane)
     return {}
 
 

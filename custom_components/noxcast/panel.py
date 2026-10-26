@@ -100,7 +100,7 @@ def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
             learned = coordinator.learned.get(sub_id)
             arrays.append({
                 "id": sub_id, "name": arr.name, "tilt": arr.geometry.tilt, "azimuth": arr.geometry.azimuth,
-                "peak_w": arr.geometry.peak_w,
+                "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
                 "learned": learned.as_dict() if learned else None,
                 "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
             })

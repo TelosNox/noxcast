@@ -67,7 +67,7 @@
       "step": {
         "user": {
           "title": "PV array",
-          "description": "Modules with the same orientation. Power sensors are summed (e.g. two MPPT inputs).",
+          "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.",
           "data": {
             "name": "Name",
             "power_sensors": "Power sensors",
@@ -81,10 +81,46 @@
           "data_description": {
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
-            "peak_power": "Sum of module nameplate power.",
+            "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
             "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules.",
             "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
             "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
+          },
+          "sections": {
+            "orientation_2": {
+              "name": "Further orientation 2",
+              "description": "Only for modules on the same power sensors that face another way (e.g. east and west on one input). Tilt, azimuth and the peak power of these modules; leave empty if not needed.",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "orientation_3": {
+              "name": "Further orientation 3",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "orientation_4": {
+              "name": "Further orientation 4",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            }
           }
         },
         "reconfigure": {
@@ -100,8 +136,45 @@
             "heating": "Module heating"
           },
           "data_description": {
+            "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
             "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
             "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
+          },
+          "sections": {
+            "orientation_2": {
+              "name": "Further orientation 2",
+              "description": "Only for modules on the same power sensors that face another way (e.g. east and west on one input). Tilt, azimuth and the peak power of these modules; leave empty if not needed.",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "orientation_3": {
+              "name": "Further orientation 3",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "orientation_4": {
+              "name": "Further orientation 4",
+              "data": {
+                "tilt": "Tilt",
+                "azimuth": "Azimuth",
+                "peak_power": "Peak power"
+              },
+              "data_description": {
+                "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            }
           }
         }
       },
@@ -110,7 +183,9 @@
         "sensor_missing": "A selected sensor does not exist.",
         "sensor_unit": "Power sensors must report W or kW.",
         "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
-        "date_in_future": "The date must not be in the future."
+        "date_in_future": "The date must not be in the future.",
+        "orientation_incomplete": "A further orientation needs tilt, azimuth and peak power.",
+        "orientation_duplicate": "Two orientations are the same. Enter their modules once with the summed peak power."
       },
       "abort": {
         "reconfigure_successful": "PV array saved."

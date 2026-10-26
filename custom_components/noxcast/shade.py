@@ -1,8 +1,8 @@
 """Shading along the sun path of one day, from the learned shading map (pure Python).
 
 The day is sampled in steps from sunrise to sunset; each step gets the learned transmission of the
-cell the sun is in. Steps are classified as shaded, free, behind the modules (no direct light on the
-plane anyway) or unknown (nothing learned yet). Times are accurate to about a quarter of an hour
+cell the sun is in. Steps are classified as shaded, free, behind the modules (no direct light on
+any of the array's planes anyway) or unknown (nothing learned yet). Times are accurate to about a quarter of an hour
 because cells are 10° x 5° wide.
 """
 from __future__ import annotations
@@ -39,7 +39,8 @@ def day_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, da
         sun = sun_position(site, start + step_min * 30)
         if sun.elevation <= 0:
             continue
-        if angle_of_incidence(geo.tilt, geo.azimuth, 90.0 - sun.elevation, sun.azimuth) >= 90.0:
+        if all(angle_of_incidence(tilt, azimuth, 90.0 - sun.elevation, sun.azimuth) >= 90.0
+               for tilt, azimuth, _ in geo.planes):
             steps.append(Step(start, start + step_min * 60, None, BEHIND))
             continue
         value = display_value(cells, int(sun.azimuth // AZ_STEP), int(sun.elevation // EL_STEP))

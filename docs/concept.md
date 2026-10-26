@@ -221,6 +221,71 @@ south-west to west at low sun, where bright house walls opposite are lit while t
 grazing light; the roof array showed none. Together with learning against the measured irradiance
 the balcony's clear-day bias went from −4.5 % to −1.5 %.
 
+### Several orientations in one array
+
+An array is what is measured together: one or more power sensors whose sum is learned and
+forecast, typically one MPPT input. Sometimes the modules on such an input face different ways,
+for example 3 × 400 W at 30° tilt facing east, south and west in parallel, or vertical modules on
+both sides of a railing. Only their combined power can be measured. An array may therefore have
+up to three further orientations, each with tilt, azimuth and its own peak power; the main fields
+are then the first orientation, and the array's peak power is the sum.
+
+**Physics per plane.** Beam and diffuse are computed for each plane on its own and summed,
+weighted by each plane's share of the peak power. Each plane is clipped at zero by itself: when
+the sun is behind the west modules they get no beam, and they do not take any from the east
+modules. The rest of the chain (shading, direction factor, reflection, temperature, efficiency)
+works on that sum.
+
+**Why not one equivalent plane.** Summing the module normals (weighted by peak power) gives one
+plane with the same response as long as the sun is in front of every module: the projection of
+the sun direction onto a sum of normals is the sum of the projections. For east + south + west at
+30° the equivalent plane has 10.9° tilt facing south and a factor |Σn| / 3 = 0.882. From about
+30° sun elevation it is exact, but at low sun one of the real planes is behind the sun and
+contributes zero, not the negative share the vector sum subtracts. Real over equivalent (beam
+only, pure projection):
+
+| Sun elevation / azimuth | E + S + W, 30° | E + W, 30° |
+|---|---|---|
+| 10° / 90° | 1.76 | 2.14 |
+| 10° / 135° | 1.25 | 1.66 |
+| 20° / 90° | 1.20 | 1.29 |
+| from 30° (sun in front of all planes) | 1.00 | 1.00 |
+
+For east + west at 30° the equivalent plane is flat with a factor 0.87; for vertical east + west
+modules the normals cancel and no equivalent plane exists at all. Incidence-angle losses make the
+low-sun error larger still, since grazing light on the equivalent plane loses more than near-normal
+light on the plane the sun faces. Entering only one of the real orientations is worse in another
+way: the shading map would then learn the missing morning or afternoon light of the other modules
+as "shade" (a transmission of about 0.5 in a simulation of east + south + west), and the direction factor and the
+reflection would absorb the rest. Hiding a geometry error in learned parameters contradicts
+"physics first", so the planes are modelled.
+
+**Learning is unchanged.** Efficiency, sky view, temperature coefficient, shading map, direction
+factor and reflection stay per array and keep their structure. They depend on the sun position,
+and for a given sun position the split of beam between the planes is fixed (it depends only on
+the incidence angles), so the summed response is a unique function of the sun position just as
+for one plane. A shadow that reaches only the east modules is learned as the share of the array's
+direct light it removes at that sun position, which is exactly what the forecast needs. The
+reflection is learned where the summed beam on the modules is below 30 % of the direct normal
+irradiance, as before. The shading map is drawn as behind the modules only where the sun is behind
+every plane, and each plane's normal is marked on it.
+
+**Temperature per plane.** Each module heats with its own irradiance. Since the temperature
+factor is linear in the irradiance, Σ share · f(POA_i) · POA_i equals f(POA) · POA of the weighted
+mean irradiance when the heating is scaled by Σ share · POA_i² / POA² (at least 1). The planes'
+irradiance for this ratio comes from the model without shade, direction factor and reflection,
+which are learned per array, not per plane. One common cell temperature from the mean irradiance
+would overestimate a clear day by 1–2.6 % (hourly up to about 4 %) for east + south + west,
+east + west and vertical east + west at 50° N, with a time-of-day pattern the efficiency cannot absorb.
+
+**Geometry check.** The panel's tilt / azimuth search fits one best plane. For an array with
+several orientations it is skipped: one plane does not describe it, and shifting one of its planes
+would mostly fit learned shade or direction factor. The panel lists the configured planes instead.
+
+**Compatibility.** An array without further orientations is computed exactly as before (bit for
+bit), and its learned state and geometry key stay valid. Adding, changing or removing an
+orientation changes the geometry key and starts relearning.
+
 ## Requirements
 
 - **Primary measurement required:** power per array, preferably DC per MPPT. Systems whose

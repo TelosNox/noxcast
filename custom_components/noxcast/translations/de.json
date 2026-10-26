@@ -67,7 +67,7 @@
       "step": {
         "user": {
           "title": "PV-Gruppe",
-          "description": "Module mit gleicher Ausrichtung. Mehrere Leistungssensoren werden addiert (z. B. zwei MPPT-Eingänge).",
+          "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.",
           "data": {
             "name": "Name",
             "power_sensors": "Leistungssensoren",
@@ -81,10 +81,46 @@
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
-            "peak_power": "Summe der Modul-Nennleistung.",
+            "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
             "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung.",
             "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
             "heating": "Wie stark sich die Zellen bei 1000 W/m² über die Lufttemperatur erwärmen. Hängt von der Montage ab: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln 45–55 K, ins Dach integriert etwa 60 K. Leer = 30 K."
+          },
+          "sections": {
+            "orientation_2": {
+              "name": "Weitere Ausrichtung 2",
+              "description": "Nur für Module an denselben Leistungssensoren, die in eine andere Richtung zeigen (z. B. Ost und West an einem Eingang). Neigung, Azimut und Spitzenleistung dieser Module; leer lassen, wenn nicht gebraucht.",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "orientation_3": {
+              "name": "Weitere Ausrichtung 3",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "orientation_4": {
+              "name": "Weitere Ausrichtung 4",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            }
           }
         },
         "reconfigure": {
@@ -100,8 +136,45 @@
             "heating": "Erwärmung der Module"
           },
           "data_description": {
+            "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
             "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
             "heating": "Wie stark sich die Zellen bei 1000 W/m² über die Lufttemperatur erwärmen. Hängt von der Montage ab: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln 45–55 K, ins Dach integriert etwa 60 K. Leer = 30 K."
+          },
+          "sections": {
+            "orientation_2": {
+              "name": "Weitere Ausrichtung 2",
+              "description": "Nur für Module an denselben Leistungssensoren, die in eine andere Richtung zeigen (z. B. Ost und West an einem Eingang). Neigung, Azimut und Spitzenleistung dieser Module; leer lassen, wenn nicht gebraucht.",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "orientation_3": {
+              "name": "Weitere Ausrichtung 3",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "orientation_4": {
+              "name": "Weitere Ausrichtung 4",
+              "data": {
+                "tilt": "Neigung",
+                "azimuth": "Azimut",
+                "peak_power": "Spitzenleistung"
+              },
+              "data_description": {
+                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            }
           }
         }
       },
@@ -110,7 +183,9 @@
         "sensor_missing": "Ein gewählter Sensor existiert nicht.",
         "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
         "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
-        "date_in_future": "Das Datum darf nicht in der Zukunft liegen."
+        "date_in_future": "Das Datum darf nicht in der Zukunft liegen.",
+        "orientation_incomplete": "Eine weitere Ausrichtung braucht Neigung, Azimut und Spitzenleistung.",
+        "orientation_duplicate": "Zwei Ausrichtungen sind gleich. Ihre Module bitte einmal mit der summierten Spitzenleistung eintragen."
       },
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."

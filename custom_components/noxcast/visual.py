@@ -159,18 +159,20 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         out.append(f'<text x="{_x(a, rng):.1f}" y="{_y(e) - 5:.1f}" text-anchor="middle" class="p-{name}" fill="{color}">'
                    f'{t[name]}</text>')
 
-    # module orientation and the sun position perpendicular to the modules (highest irradiance)
+    # module orientation and the sun position perpendicular to the modules (highest irradiance), per plane
     if geo is not None:
-        az = geo.azimuth if a0 <= geo.azimuth <= a1 else geo.azimuth + 360
-        if a0 <= az <= a1:
+        for tilt, azimuth, _ in geo.planes:
+            az = azimuth if a0 <= azimuth <= a1 else azimuth + 360
+            if not a0 <= az <= a1:
+                continue
             x = _x(az, rng)
             out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{_y(0):.1f}" class="modules" stroke="#7a3db8" '
                        f'stroke-width="1.4" stroke-dasharray="8 3"/>')
-            out.append(f'<text x="{x + 4:.1f}" y="{TOP + 10}" class="modules" fill="#7a3db8">{t["modules"]} {geo.azimuth:.0f}°</text>')
-            normal_el = 90.0 - geo.tilt
+            out.append(f'<text x="{x + 4:.1f}" y="{TOP + 10}" class="modules" fill="#7a3db8">{t["modules"]} {azimuth:.0f}°</text>')
+            normal_el = 90.0 - tilt
             if 0 < normal_el <= EL_MAX:
                 out.append(f'<circle cx="{x:.1f}" cy="{_y(normal_el):.1f}" r="5" class="modules" fill="#7a3db8" stroke="#ffffff" '
-                           f'stroke-width="1.5"><title>{escape(t["normal"])}: {geo.azimuth:.0f}° / '
+                           f'stroke-width="1.5"><title>{escape(t["normal"])}: {azimuth:.0f}° / '
                            f'{normal_el:.0f}°</title></circle>')
 
     # key figures

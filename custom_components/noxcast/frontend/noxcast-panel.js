@@ -41,7 +41,7 @@ const TEXT = {
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
     notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
     sunPathOn: "Sonnenbahn am", jun: "21. Juni", equ: "März/Sept.", dec: "21. Dez.",
-    dayStrip: "Dieser Tag als Zeitleiste", selected: "Ausgewähltes Feld", sunHere: "Sonne steht hier",
+    dayStrip: "Dieser Tag als Zeitleiste", selected: "Ausgewähltes Feld", sunHere: "Sonne steht hier", normal: "Sonne senkrecht auf den Modulen",
     never: "nie im Lauf des Jahres", close: "Schließen", noData: "Noch keine Modulgruppe gelernt.",
     open: "Öffnen", months: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
     help: {
@@ -61,6 +61,7 @@ const TEXT = {
       geoOk: "Neigung und Ausrichtung passen zu den Messwerten.",
       geoHint: "Die Messwerte passen besser zu einer anderen Geometrie. Bitte Neigung und Ausrichtung prüfen; übernommen wird nichts automatisch, weil die Schattenkarte mit der eingetragenen Geometrie gelernt wurde.",
       geoNone: "Braucht den Satellitenfilter und mindestens 60 klare, unverschattete Stunden.",
+      geoPlanes: "Mehrere Ausrichtungen in einer Modulgruppe: Jede Fläche wird für sich gerechnet. Eine einzelne beste Ebene beschreibt sie nicht, deshalb gibt es hier keinen Geometrie-Vorschlag.",
       geoHelp: "Bei der richtigen Geometrie ist das Verhältnis von Messung zu Modell über Tag und Jahr gleich. Eine falsche Ausrichtung zeigt sich als zu hohe Vormittage und zu niedrige Nachmittage (oder umgekehrt).",
       badge: "Geometrie prüfen",
     },
@@ -73,7 +74,7 @@ const TEXT = {
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
     notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
     sunPathOn: "Sun path on", jun: "21 June", equ: "Mar/Sep", dec: "21 Dec",
-    dayStrip: "This day as a timeline", selected: "Selected cell", sunHere: "Sun is here",
+    dayStrip: "This day as a timeline", selected: "Selected cell", sunHere: "Sun is here", normal: "Sun perpendicular to the modules",
     never: "never during the year", close: "Close", noData: "No array learned yet.",
     open: "Open", months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     help: {
@@ -93,6 +94,7 @@ const TEXT = {
       geoOk: "Tilt and azimuth fit the measurements.",
       geoHint: "The measurements fit another geometry better. Please check tilt and azimuth; nothing is applied automatically, since the shading map was learned with the configured geometry.",
       geoNone: "Needs the satellite filter and at least 60 clear unshaded hours.",
+      geoPlanes: "Several orientations in one array: each plane is computed on its own. No single best plane describes them, so there is no geometry suggestion here.",
       geoHelp: "With the right geometry the ratio of measurement to model is the same over the day and the year. A wrong azimuth shows as mornings too high and afternoons too low (or the other way round).",
       badge: "Check geometry",
     },
@@ -145,6 +147,16 @@ function sunPosition(lat, lon, ts) {
 
 function cosIncidence(tilt, facing, az, el) {
   return Math.sin(el * RAD) * Math.cos(tilt * RAD) + Math.cos(el * RAD) * Math.sin(tilt * RAD) * Math.cos((az - facing) * RAD);
+}
+
+// every module plane of an array (several orientations measured together, else the one configured)
+function planes(arr) {
+  return arr.planes && arr.planes.length ? arr.planes : [{ tilt: arr.tilt, azimuth: arr.azimuth, peak_w: arr.peak_w }];
+}
+
+// the sun is behind the array only when it is behind every one of its planes
+function behind(arr, az, el) {
+  return planes(arr).every((p) => cosIncidence(p.tilt, p.azimuth, az, el) <= 0);
 }
 
 // ---------------------------------------------------------------- learned values (as model.py / visual.py)
@@ -306,7 +318,7 @@ class NoxcastPanel extends HTMLElement {
   // classification of one sun position for the current layer
   _cell(arr, ai, ei) {
     const az = ai * AZ_STEP + AZ_STEP / 2, el = ei * EL_STEP + EL_STEP / 2;
-    if (cosIncidence(arr.tilt, arr.azimuth, az, el) <= 0) return { kind: "behind" };
+    if (behind(arr, az, el)) return { kind: "behind" };
     const la = arr.learned || {};
     const shade = displayValue(la.cells || {}, ai, ei);
     if (shade === null) return { kind: "unlearned" };
@@ -320,7 +332,7 @@ class NoxcastPanel extends HTMLElement {
   _pos(arr, az, el) {
     const ai = Math.floor(((az % 360) + 360) % 360 / AZ_STEP), ei = Math.floor(el / EL_STEP);
     if (el <= 0) return { kind: "night" };
-    if (cosIncidence(arr.tilt, arr.azimuth, az, el) <= 0) return { kind: "behind" };
+    if (behind(arr, az, el)) return { kind: "behind" };
     const la = arr.learned || {};
     const shade = displayValue(la.cells || {}, ai, ei);
     if (shade === null) return { kind: "unlearned" };
@@ -514,9 +526,18 @@ class NoxcastPanel extends HTMLElement {
       for (let a = Math.ceil(g.az0 / 45) * 45; a <= g.az1; a += 45) axes += `<text x="${g.x(a).toFixed(0)}" y="${H + 18}" text-anchor="middle" class="ax">${names[a] || ""} ${a}°</text>`;
       for (let e = 10; e <= g.elMax; e += 10) axes += `<text x="-6" y="${(g.y(e) + 4).toFixed(0)}" text-anchor="end" class="ax">${e}°</text><line x1="0" x2="${W}" y1="${g.y(e).toFixed(1)}" y2="${g.y(e).toFixed(1)}" class="grid"></line>`;
     }
+    // sun position perpendicular to each module plane (highest irradiance on it)
+    let normals = "";
+    if (!mini) {
+      for (const p of planes(arr)) {
+        const el = 90 - p.tilt, az = p.azimuth >= g.az0 ? p.azimuth : p.azimuth + 360;
+        if (el <= 0 || el > g.elMax || az < g.az0 || az > g.az1) continue;
+        normals += `<circle cx="${g.x(az).toFixed(1)}" cy="${g.y(el).toFixed(1)}" r="6" class="normal"><title>${t.normal}: ${Math.round(p.azimuth)}° / ${Math.round(el)}°</title></circle>`;
+      }
+    }
     const hatch = `<defs><pattern id="nx-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${P.unlearned}"></rect><line x1="0" y1="0" x2="0" y2="6" stroke="${P.hatch}" stroke-width="2"></line></pattern></defs>`;
     const vb = mini ? `0 0 ${W} ${H}` : `-40 -8 ${W + 48} ${H + 34}`;
-    return `<svg viewBox="${vb}" class="${mini ? "minisvg" : "mapsvg"}" role="img" aria-label="${t[layer]}">${hatch}<rect width="${W}" height="${H}" fill="${P.mapBg}"></rect>${axes}${rects}${paths}</svg>`;
+    return `<svg viewBox="${vb}" class="${mini ? "minisvg" : "mapsvg"}" role="img" aria-label="${t[layer]}">${hatch}<rect width="${W}" height="${H}" fill="${P.mapBg}"></rect>${axes}${rects}${paths}${normals}</svg>`;
   }
 
   _gridSvg(arr, layer) {
@@ -696,6 +717,10 @@ class NoxcastPanel extends HTMLElement {
 
   _geometry(arr, la) {
     const c = this._t.checks, g = la.geometry_check;
+    if (planes(arr).length > 1) {
+      const list = planes(arr).map((p) => `<div class="tile"><span class="muted small">${Math.round(p.peak_w)} Wp</span><b>${Math.round(p.tilt)}° / ${Math.round(p.azimuth)}°</b></div>`).join("");
+      return `<section class="card pad"><h3>${c.geoTitle}</h3><div class="tiles2">${list}</div><p class="note">${c.geoPlanes}</p></section>`;
+    }
     if (!g) return `<section class="card pad"><h3>${c.geoTitle}</h3><p class="muted">${c.geoNone}</p><p class="help">${c.geoHelp}</p></section>`;
     const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
     const deg = (tilt, az) => `${Math.round(tilt)}° / ${Math.round(az)}°`;
@@ -835,6 +860,7 @@ class NoxcastPanel extends HTMLElement {
       .cell.sel { stroke: ${P.path}; stroke-width: 3; }
       .sp { fill: none; stroke: ${P.path}; stroke-opacity: 0.55; stroke-width: 1.5; }
       .sp-day { fill: none; stroke: var(--primary-color); stroke-width: 3; }
+      .normal { fill: #8B5CF6; stroke: var(--card-background-color, #fff); stroke-width: 2; }
       .ax { fill: var(--secondary-text-color); font-size: 12px; }
       .grid { stroke: var(--divider-color); stroke-width: 0.5; }
       .todayrow { stroke: var(--primary-color); stroke-width: 2; }

@@ -7,7 +7,10 @@ shading, and the irradiance forecast of your weather source – every number exp
 
 ## How it works
 
-- Each PV array is configured with its power sensors, tilt, azimuth and peak power.
+- Each PV array is configured with its power sensors, tilt, azimuth and peak power. Modules on the
+  same sensors that face different ways (e.g. east, south and west on one MPPT input, or vertical
+  east + west modules) are entered as further orientations of that array and computed plane by
+  plane, instead of being forced into one plane.
 - Noxcast learns from Home Assistant's long-term statistics (no own database, no daily sensors):
   - **system efficiency** from hours with strong expected output,
   - a **shading map** over sun azimuth × sun elevation – the share of direct light that reaches
@@ -47,7 +50,8 @@ HACS → Integrations → ⋮ → Custom repositories → `https://github.com/Te
 `custom_components/noxcast` into your `config/custom_components`.
 
 Then: Settings → Devices & services → Add integration → **Noxcast**, choose the weather source,
-and add one **PV array** per orientation. For the load forecast, set the house load sensor in the
+and add one **PV array** per group of power sensors (usually one per orientation; modules facing
+different ways on the same sensors go into one array as further orientations). For the load forecast, set the house load sensor in the
 entry and add a **Consumer** for each device with its own power sensor.
 
 ## Entities

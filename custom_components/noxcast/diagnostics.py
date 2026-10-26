@@ -25,7 +25,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         "arrays": {
             sid: {
                 "name": arr.name, "sensors": list(arr.sensors), "tilt": arr.geometry.tilt,
-                "azimuth": arr.geometry.azimuth, "peak_w": arr.geometry.peak_w, "valid_since": arr.valid_since,
+                "azimuth": arr.geometry.azimuth, "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
+                "valid_since": arr.valid_since,
                 "learned": coordinator.learned[sid].as_dict() if sid in coordinator.learned else None,
                 "forecast_wh": hours(data.arrays.get(sid, {})) if data else None,
             }

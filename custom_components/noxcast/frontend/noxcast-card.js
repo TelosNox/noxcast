@@ -5,7 +5,7 @@
 // The card shows what Noxcast is configured with: PV groups and their sensors, house load, grid,
 // batteries and whether surplus is fed in. The card config only changes the display:
 // show_battery: true / show_effects: true / show_band: true / show_load: true   # what the day chart shows
-// show_weather: true                   # hourly weather above the chart (Noxcast's weather), marked where it changes
+// show_weather: true                   # hourly weather above the chart (Noxcast's weather), a symbol at every change
 // range: production                    # day chart: production (an hour either side) or day (0–24 h, night compressed)
 // flow_style: chain                    # power now: chain (dots between the figures) or bus (a line below them)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
@@ -367,7 +367,7 @@ class NoxcastCard extends HTMLElement {
       .cf .gap { display: block; width: 100%; height: .72em; height: 1cap; overflow: visible; }
       .cf.chain .f { padding: 0 10px; }   /* room between a value and the lines beside it */
       .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
-      .wx { margin-bottom: -2px; }
+      .wx { margin-bottom: 6px; }       /* a little air, so the strip does not read as a lid on the chart */
       .muted { color: var(--secondary-text-color); }
       .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
       #band { container-type: inline-size; }
@@ -538,33 +538,31 @@ class NoxcastCard extends HTMLElement {
     };
   }
 
-  // hourly weather over [t0, t1): one mark where the condition class changes, runs under two hours merged
+  // hourly weather over [t0, t1): a symbol at every change of the condition class. A run under two hours, or
+  // too narrow for its symbol (in the compressed night), joins the run before it, so every change keeps its
+  // symbol; only a run reaching in from the day before may stay too narrow, it keeps its bar without a symbol
   _weatherStrip(t0, t1, x, X0, X1, W) {
     if (!this._show("weather") || !this._wx || !this._wx.length) return "";
-    const P = this._p, H = 3600;
-    const hours = this._wx.map((f) => ({ ts: Date.parse(f.datetime) / 1000, cond: f.condition, temp: f.temperature }))
+    const P = this._p, H = 3600, SIZE = 14, MIN = SIZE + 4;
+    const hours = this._wx.map((f) => ({ ts: Date.parse(f.datetime) / 1000, cond: f.condition }))
       .filter((f) => f.ts >= t0 - H && f.ts < t1 && f.cond);
     if (!hours.length) return "";
     const runs = [];
-    for (const f of hours) {
-      const cls = WX_CLASS[f.cond] || "cloud", last = runs[runs.length - 1];
-      if (last && last.cls === cls) last.end = f.ts + H;
-      else runs.push({ cls, cond: f.cond, temp: f.temp, start: f.ts, end: f.ts + H });
-    }
+    const add = (r) => { const last = runs[runs.length - 1]; if (last && last.cls === r.cls) last.end = r.end; else runs.push(r); };
+    for (const f of hours) add({ cls: WX_CLASS[f.cond] || "cloud", cond: f.cond, start: f.ts, end: f.ts + H });
+    const width = (r) => Math.min(X1, x(r.end)) - Math.max(X0, x(r.start));
     for (let i = runs.length - 1; i > 0; i--) {
-      if (runs[i].end - runs[i].start < 2 * H) { runs[i - 1].end = runs[i].end; runs.splice(i, 1); }
+      if (runs[i].end - runs[i].start >= 2 * H && width(runs[i]) >= MIN) continue;
+      runs[i - 1].end = runs[i].end;
+      runs.splice(i, 1);
+      if (runs[i] && runs[i].cls === runs[i - 1].cls) { runs[i - 1].end = runs[i].end; runs.splice(i, 1); }   // same class on both sides
     }
     const color = { sun: P.pv, part: P.pvDark, cloud: "var(--secondary-text-color)", rain: P.grid, snow: P.grid };
-    let lastX = -99;
     const marks = runs.map((r) => {
       const a = Math.max(X0, x(r.start)), b = Math.min(X1, x(r.end));
       if (b - a < 1) return "";
       const bar = `<line x1="${a.toFixed(1)}" x2="${b.toFixed(1)}" y1="19" y2="19" stroke="${color[r.cls]}" stroke-width="1.6" stroke-opacity=".6" stroke-linecap="round"></line>`;
-      if (a - lastX < 34) return bar;
-      lastX = a;
-      const icon = this._icon(WX_ICON[r.cond] || "mdi:weather-cloudy", a + 7, 8, 14, color[r.cls]) || "";
-      const temp = r.temp == null ? "" : `<text x="${(a + 16).toFixed(1)}" y="12" class="ax">${Math.round(r.temp)}°</text>`;
-      return `${bar}${icon}${temp}`;
+      return b - a < MIN ? bar : `${bar}${this._icon(WX_ICON[r.cond] || "mdi:weather-cloudy", a + SIZE / 2, 8, SIZE, color[r.cls]) || ""}`;
     }).join("");
     return `<svg class="wx" viewBox="0 0 ${W} 22" role="img" aria-label="weather">${marks}</svg>`;
   }

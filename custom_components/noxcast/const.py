@@ -53,6 +53,9 @@ CONF_PEAK_POWER = "peak_power"
 CONF_VALID_SINCE = "valid_since"
 CONF_TEMP_COEFF = "temp_coeff"           # datasheet Pmax temperature coefficient in %/K (optional)
 CONF_HEATING = "heating"                 # cell heating in K at 1000 W/m², depends on the mounting (optional)
+# further orientations of one array (modules facing different ways, measured together), each a section
+# with tilt, azimuth and its own peak power; the main fields above are then the first orientation
+CONF_ORIENTATIONS = ("orientation_2", "orientation_3", "orientation_4")
 
 # options (advanced): history archives used for learning
 CONF_ARCHIVE_TEMPERATURE = "archive_temperature"

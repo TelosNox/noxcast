@@ -31,6 +31,9 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   it is learned where the module itself gets little direct light; elsewhere it cannot be told
   apart from D. Only additive, never negative.
   D and R are learned against the measured irradiance split as in the forecast.
+- Several orientations in one array (modules facing different ways on the same power sensors):
+  beam_poa and diffuse_poa are the peak-weighted sums over the planes, each plane clipped at zero
+  on its own; T, D, R and S stay per array (see array_irradiance and docs/concept.md).
 - S: sky view, the share of the isotropic sky diffuse the plane sees (houses opposite, an overhang
   above). Learned from overcast hours, which carry almost only diffuse light; the other parameters
   are learned again with it, since clear hours contain diffuse light too.
@@ -41,7 +44,9 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .solar import Site, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position
+from .solar import (
+    Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
+)
 
 AZ_STEP = 10.0
 EL_STEP = 5.0
@@ -89,11 +94,35 @@ SKY_VIEW_ITERATIONS = 4
 
 
 @dataclass(frozen=True)
-class ArrayGeometry:
+class Plane:
+    """A further module orientation within one array (modules whose power is measured together)."""
     tilt: float
     azimuth: float
     peak_w: float
+
+
+@dataclass(frozen=True)
+class ArrayGeometry:
+    tilt: float                  # main plane
+    azimuth: float
+    peak_w: float                # the whole array, all planes together
     heating: float = HEATING_K   # cell heating in K at 1000 W/m², depends on the mounting
+    extra: tuple[Plane, ...] = ()  # further orientations; the main plane has peak_w minus their peak
+
+    @property
+    def planes(self) -> tuple[tuple[float, float, float], ...]:
+        """(tilt, azimuth, share of peak_w) per plane, the main plane first."""
+        if not self.extra:
+            return ((self.tilt, self.azimuth, 1.0),)
+        rest = sum(p.peak_w for p in self.extra)
+        return ((self.tilt, self.azimuth, (self.peak_w - rest) / self.peak_w),
+                *((p.tilt, p.azimuth, p.peak_w / self.peak_w) for p in self.extra))
+
+    def describe(self) -> list[dict]:
+        """Every plane with tilt, azimuth and peak power, the main plane first (panel, diagnostics)."""
+        main = self.peak_w - sum(p.peak_w for p in self.extra)
+        return [{"tilt": self.tilt, "azimuth": self.azimuth, "peak_w": main},
+                *({"tilt": p.tilt, "azimuth": p.azimuth, "peak_w": p.peak_w} for p in self.extra)]
 
 
 @dataclass(frozen=True)
@@ -215,6 +244,69 @@ def temperature_factor(temp_coeff: float, air_temp: float | None, poa_w: float, 
     return max(1.0 + temp_coeff * (t_cell - TEMP_REF), 0.5)
 
 
+def array_irradiance(geo: ArrayGeometry, sun: SunPosition, dni: float, dhi: float, ghi: float,
+                     dni_extra: float = 1367.0, sky_view: float = 1.0) -> tuple[float, float, float]:
+    """Effective (beam, diffuse) irradiance on the array's modules in W/m² of its peak power, and the heating.
+
+    With several orientations each plane is computed on its own and the results are weighted by
+    the plane's share of the peak power. Each plane clips at zero by itself: a sun behind one
+    module gives that module no beam, it does not take any from the others. This is what the
+    equivalent plane (normalised sum of module normals) cannot do, see docs/concept.md.
+
+    The heating (K at 1000 W/m²) is that of the mounting for one plane. With several planes each
+    module heats with its own irradiance, and since the temperature factor is linear in it, the sum
+    over planes of share · f(POA_i) · POA_i equals f(POA) · POA of the weighted mean POA when the
+    heating is scaled by Σ share · POA_i² / POA². The planes' shares of the irradiance come from
+    the model without shade, direction factor and reflection (learned per array, not per plane).
+    """
+    if not geo.extra:
+        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
+        return beam, diff, geo.heating
+    beam = diff = square = 0.0
+    for tilt, azimuth, share in geo.planes:
+        b, d = plane_of_array(tilt, azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
+        beam += share * b
+        diff += share * d
+        square += share * (b + d) ** 2
+    poa = beam + diff
+    return beam, diff, geo.heating * square / (poa * poa) if poa > 0 else geo.heating
+
+
+def clearsky_heating(site: Site, geo: ArrayGeometry, start: float, sky_view: float = 1.0) -> float:
+    """Heating (K at 1000 W/m²) for the hourly mean clear-sky irradiance, see array_irradiance."""
+    if not geo.extra:
+        return geo.heating
+    acc = _Heating(geo)
+    dni_extra = extra_radiation(start + 1800)
+    for i in range(SUBSTEPS):
+        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+        if sun.elevation <= 0:
+            continue
+        ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
+        acc.add(*array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view))
+    return acc.value
+
+
+class _Heating:
+    """Hourly heating from sub-steps: weighted by the squared irradiance, as its effect on the output."""
+
+    def __init__(self, geo: ArrayGeometry) -> None:
+        self.default = geo.heating
+        self.planes = bool(geo.extra)                    # one plane: the mounting's heating, unchanged
+        self.num = self.den = 0.0
+
+    def add(self, beam: float, diff: float, heating: float) -> None:
+        if not self.planes:
+            return
+        square = (beam + diff) ** 2
+        self.num += heating * square
+        self.den += square
+
+    @property
+    def value(self) -> float:
+        return self.num / self.den if self.den > 0 else self.default
+
+
 def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
                   sky_view: float = 1.0) -> tuple[float, float, float, float, float]:
     """Hourly means of clear-sky (beam, diffuse) on the plane, mean sun (azimuth, elevation) and GHI.
@@ -232,7 +324,7 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
         if sun.elevation <= 0:
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, pressure, dni_extra)
-        b, d = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
+        b, d, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
         beam += b
         diff += d
         ghi_sum += ghi
@@ -332,20 +424,23 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
             continue
         dni_extra = extra_radiation(t + 1800)
         rest = sky = 0.0
+        heat = _Heating(geo)
         for i in range(SUBSTEPS):
             sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
             if sun.elevation <= 0:
                 continue
             dni, dhi = erbs(ghi, sun.zenith, dni_extra)
-            beam, ground = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=0.0)
-            _, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+            beam, ground, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=0.0)
+            _, diff, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
+            if geo.extra:
+                heat.add(*array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view))
             rest += beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
                 learned, sun.azimuth, sun.elevation) + ground + reflection_factor(
                 learned, sun.azimuth, sun.elevation) * dni
             sky += diff - ground
         rest, sky = rest / SUBSTEPS, sky / SUBSTEPS
         temp = air_temp.get(t) if air_temp else None
-        f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view, geo.heating) \
+        f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view, heat.value) \
             if temp is not None else 1.0
         seen += p * 1000 / (geo.peak_w * learned.efficiency * f) - rest
         free += sky
@@ -369,7 +464,8 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         if satellite_ghi is not None and satellite_ghi.get(t) is not None and cs_ghi > 50:
             kt = satellite_ghi[t] / cs_ghi
         temp = air_temp.get(t) if air_temp else None
-        rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp))
+        heating = clearsky_heating(site, geo, t, sky_view) if temp is not None else geo.heating
+        rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating))
     if not rows:
         return LearnedArray(sky_view=sky_view, learned_at=now)
 
@@ -397,7 +493,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     strong = [r for r in basis if exp[r[0]] > limit and r[1] / exp[r[0]] <= 1.5]
 
     # temperature coefficient from the upper envelope per cell-temperature bin
-    temp_rows = [(r[9] + geo.heating * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6])
+    temp_rows = [(r[9] + r[10] * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6])
                  for r in strong if r[9] is not None]
     if datasheet_temp_coeff is not None:
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
@@ -411,7 +507,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         temp_coeff, temp_source = 0.0, "none"
 
     def f_temp(r) -> float:
-        return temperature_factor(temp_coeff, r[9], r[2] + r[3], geo.heating) if r[9] is not None else 1.0
+        return temperature_factor(temp_coeff, r[9], r[2] + r[3], r[10]) if r[9] is not None else 1.0
 
     # efficiency at 25 °C from strong expected hours
     def eff_quantile(source, q: float) -> float:
@@ -477,10 +573,10 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             t, p, _, _, az, el = r[:6]
             if transmission(probe, az, el) < 0.999:
                 continue
-            beam, diff, dni = _measured_parts(site, geo, probe, t, satellite_ghi[t])
+            beam, diff, dni, heating = _measured_parts(site, geo, probe, t, satellite_ghi[t])
             if dni < REFLECTION_MIN_DNI:
                 continue
-            f = temperature_factor(temp_coeff, r[9], beam + diff, geo.heating) if r[9] is not None else 1.0
+            f = temperature_factor(temp_coeff, r[9], beam + diff, heating) if r[9] is not None else 1.0
             observed = p * 1000 / (geo.peak_w * efficiency * f)
             parts.append(((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), observed, beam, diff, dni))
 
@@ -562,7 +658,7 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
             if sun.elevation <= 0:
                 continue
             ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-            beam, _ = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra)
+            beam, _, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
             for cell, w in _bilinear(sun.azimuth, sun.elevation):
                 coef[cell] = coef.get(cell, 0.0) + beam * k / SUBSTEPS * w
         beam = sum(coef.values())
@@ -613,20 +709,22 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
 
 
 def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float,
-                    ghi: float) -> tuple[float, float, float]:
-    """Hourly means of shaded beam and diffuse on the plane and of DNI, from measured GHI (Erbs split)."""
+                    ghi: float) -> tuple[float, float, float, float]:
+    """Hourly means of shaded beam and diffuse on the plane and of DNI, from measured GHI (Erbs split), and the heating."""
     dni_extra = extra_radiation(start + 1800)
     beam_sum = diff_sum = dni_sum = 0.0
+    heat = _Heating(geo)
     for i in range(SUBSTEPS):
         sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
         if sun.elevation <= 0 or ghi <= 0:
             continue
         dni, dhi = erbs(ghi, sun.zenith, dni_extra)
-        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
+        beam, diff, heating = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
         beam_sum += beam * transmission(learned, sun.azimuth, sun.elevation)
         diff_sum += diff
         dni_sum += dni
-    return beam_sum / SUBSTEPS, diff_sum / SUBSTEPS, dni_sum / SUBSTEPS
+        heat.add(beam, diff, heating)
+    return beam_sum / SUBSTEPS, diff_sum / SUBSTEPS, dni_sum / SUBSTEPS, heat.value
 
 
 def _isotonic(values: list[float], increasing: bool = True) -> list[float]:
@@ -773,10 +871,10 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
             out.append(0.0)
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-        beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
+        beam, diff, heating = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
         poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
             learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
-        out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa, geo.heating)
+        out.append(geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, temp, poa, heating)
                    * poa / 1000)
     return out
 
@@ -795,11 +893,11 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                 dni, dhi = erbs(wh.ghi, sun.zenith, dni_extra)
             else:
                 dni, dhi = wh.dni, wh.dhi
-            beam, diff = plane_of_array(geo.tilt, geo.azimuth, sun, dni, dhi, wh.ghi, dni_extra,
-                                        sky_view=learned.sky_view)
+            beam, diff, heating = array_irradiance(geo, sun, dni, dhi, wh.ghi, dni_extra,
+                                                   sky_view=learned.sky_view)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
                 learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
             total += geo.peak_w * learned.efficiency * temperature_factor(
-                learned.temp_coeff, wh.temp, poa, geo.heating) * poa / 1000
+                learned.temp_coeff, wh.temp, poa, heating) * poa / 1000
         out[wh.start] = total / SUBSTEPS
     return out

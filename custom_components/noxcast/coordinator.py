@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -36,7 +36,7 @@ from . import load as lf
 from . import plan as pl
 from .effects import hourly_effects, significant_periods
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
-from .model import (HEATING_K, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast,
+from .model import (HEATING_K, ArrayGeometry, LearnedArray, Plane, WeatherHour, clearsky_profile, clearsky_weather, forecast,
                     learn, steady_hours, usable_samples)
 from .solar import Site
 from .sources import (
@@ -133,10 +133,15 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
             continue
         d = sub.data
         valid = dt_util.parse_date(d[CONF_VALID_SINCE]) if d.get(CONF_VALID_SINCE) else None
+        # further orientations: complete sections only (the config flow accepts no others)
+        extra = tuple(Plane(float(o[CONF_TILT]), float(o[CONF_AZIMUTH]), float(o[CONF_PEAK_POWER]))
+                      for o in (d.get(key) or {} for key in CONF_ORIENTATIONS)
+                      if all(o.get(k) is not None for k in (CONF_TILT, CONF_AZIMUTH, CONF_PEAK_POWER)))
         configs[sub_id] = ArrayConfig(
             subentry_id=sub_id, name=d[CONF_NAME], sensors=tuple(d[CONF_POWER_SENSORS]),
-            geometry=ArrayGeometry(float(d[CONF_TILT]), float(d[CONF_AZIMUTH]), float(d[CONF_PEAK_POWER]),
-                                   float(d[CONF_HEATING]) if d.get(CONF_HEATING) is not None else HEATING_K),
+            geometry=ArrayGeometry(float(d[CONF_TILT]), float(d[CONF_AZIMUTH]),
+                                   float(d[CONF_PEAK_POWER]) + sum(p.peak_w for p in extra),
+                                   float(d[CONF_HEATING]) if d.get(CONF_HEATING) is not None else HEATING_K, extra),
             valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None,
             temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None)
     return configs
@@ -253,9 +258,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]
-        return [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since, a.temp_coeff,
-                bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False)),
-                a.geometry.heating]
+        key = [list(a.sensors), a.geometry.tilt, a.geometry.azimuth, a.geometry.peak_w, a.valid_since, a.temp_coeff,
+               bool(self._option(CONF_ARCHIVE_TEMPERATURE, True)), bool(self._option(CONF_SATELLITE, False)),
+               a.geometry.heating]
+        # further orientations only when there are any, so the key of a single-plane array stays as it was
+        if a.geometry.extra:
+            key.append([[p.tilt, p.azimuth, p.peak_w] for p in a.geometry.extra])
+        return key
 
     def _load_key(self) -> list:
         return [self.house_load, sorted([c.subentry_id, c.series_id] for c in self.consumers.values())]

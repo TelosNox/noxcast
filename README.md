@@ -128,8 +128,10 @@ display.
   flows. Tapping a figure opens its entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
   load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
-  band, a lane per array with shade and reflection periods, hourly weather symbols on top. End caps
-  show the battery level at today's and tomorrow's charge start. Hover or tap an hour for its values.
+  band, a lane per array with shade and reflection periods, hourly weather symbols on top. The chart
+  uses the full card width, the scale sits inside it. Hover or tap an hour for its values.
+- **Numbers of the day** below the chart: actual, expected, the morning forecast, shade loss and
+  tomorrow's forecast.
 
 | Option | Default | |
 |---|---|---|

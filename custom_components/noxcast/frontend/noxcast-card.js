@@ -17,18 +17,16 @@
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
-    unused: "ungenutzt", full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
+    full: "voll", load: "Hauslast", soc: "Akku-Ladestand", lost: "Schattenverlust",
     noData: "Noch keine Noxcast-Daten", kwh: "kWh", actual: "Ist", expected: "erwartet", morning: "Prognose",
-    start: "Start", empty: "leer", freeUntil: "frei bis", noSurplus: "kein Überschuss mehr", fullAt: "Akku voll",
-    lasts: "Akku reicht bis morgen", emptyAt: "Akku leer um", import: "Bezug", export: "Einspeisung",
+    import: "Bezug", export: "Einspeisung",
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", bat: "Akku", lost: "voll, Überschuss verfällt",
       near: "fast voll" } },
   en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
-    unused: "unused", full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
+    full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
-    start: "start", empty: "empty", freeUntil: "surplus until", noSurplus: "no more surplus", fullAt: "battery full",
-    lasts: "battery lasts until tomorrow", emptyAt: "battery empty at", import: "Import", export: "Export",
+    import: "Import", export: "Export",
     lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV", band: "range P10–P90",
       loss: "lost to shade", bat: "battery", lost: "full, surplus lost",
       near: "almost full" } },
@@ -36,11 +34,9 @@ const TEXT = {
 
 const PALETTE = {
   light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
-    shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)",
-    warnText: "#8E2418", warnBg: "#FBE3DE", lost: "#D93025", near: "#F29900" },
+    shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)", lost: "#D93025", near: "#F29900" },
   dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
-    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)",
-    warnText: "#FFB4A6", warnBg: "#4A2620", lost: "#F2635A", near: "#F5A524" },
+    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)", lost: "#F2635A", near: "#F5A524" },
 };
 
 // with range "day" a night hour gets this share of a day hour's width in the day chart
@@ -374,12 +370,12 @@ class NoxcastCard extends HTMLElement {
       .nums { flex-wrap: nowrap; gap: 4px 8px; font-size: clamp(10px, 3.2cqw, 13px); white-space: nowrap; }
       .nums .big { font-size: clamp(13px, 4cqw, 16px); }
       .big { font-size: 16px; font-weight: 500; }
-      .warn { font-size: 12px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
       .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--secondary-text-color); }
       .legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
       .legend svg { width: 16px; height: 10px; display: inline-block; }
-      .ax { font-size: calc(9px * min(var(--nx-scale, 1), 1.2)); fill: var(--secondary-text-color); font-family: var(--code-font-family, monospace); }
+      .ax { font-size: calc(8px * min(var(--nx-scale, 1), 1.2)); fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+      .ax.in { paint-order: stroke; stroke: var(--card-background-color, #fff); stroke-width: 3px; stroke-opacity: .8; stroke-linejoin: round; }
       .divider { border-top: 1px solid var(--divider-color); padding-top: 8px; }
       .chart { position: relative; touch-action: pan-y; }
       .tip { position: absolute; top: 2px; display: grid; grid-template-columns: auto auto; gap: 1px 10px; padding: 6px 8px;
@@ -595,10 +591,9 @@ class NoxcastCard extends HTMLElement {
 
     const now = Date.now() / 1000, H = 3600;
     const sum = (key) => { const m = new Map(); for (const a of arrays) for (const [h, v] of a[key] || []) m.set(h, (m.get(h) || 0) + v); return m; };
-    const expM = sum("expected"), fcM = sum("forecast"), mornM = sum("morning"), lossM = sum("loss"), tomM = sum("tomorrow");
+    const expM = sum("expected"), fcM = sum("forecast"), mornM = sum("morning"), lossM = sum("loss");
     const exp = (h) => expM.get(h) || 0, loss = (h) => lossM.get(h) || 0;
     const fc = (h) => (fcM.has(h) ? fcM.get(h) : mornM.get(h)) || 0;
-    const pv = (h) => (expM.has(h) ? exp(h) : tomM.get(h)) || 0;
     const sunny = [...new Set([...expM.keys(), ...fcM.keys()])].filter((h) => exp(h) > 1 || fc(h) > 1).sort((a, b) => a - b);
     if (!sunny.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
     // production with an hour of margin on either side, so the day does not end abruptly;
@@ -611,7 +606,8 @@ class NoxcastCard extends HTMLElement {
 
     const m = this._model(now);
     const load = m.load;
-    const W = 408, CAPW = 46, X0 = CAPW + 6, X1 = W - CAPW - 6, Hp = 104;
+    // the chart takes the full width; the axis labels sit inside it
+    const W = 408, X0 = 0, X1 = W, Hp = 104;
     // time axis in segments [from, to, width of an hour]
     const segs = whole ? [[t0, pS, NIGHT_W], [pS, pE, 1], [pE, t1, NIGHT_W]] : [[t0, t1, 1]];
     const span = segs.reduce((a, [a0, a1, w]) => a + (a1 - a0) * w, 0);
@@ -662,8 +658,9 @@ class NoxcastCard extends HTMLElement {
       const hi = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[1])]), lo = bandH.map((h) => [x(h + H / 2), y(bandM.get(h)[0])]).reverse();
       bandPath = `${line(hi)} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${curve(lo)} Z`;
     }
-    let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>
-        <text x="${X1 + 3}" y="${(y(v) + 3).toFixed(1)}" class="ax">${kw(v)}${v === grid[grid.length - 1] ? " kW" : ""}</text>`).join("")}
+    // scale labels inside the right edge, just below their line, on top of everything (also the night veil)
+    const yLabels = grid.map((v) => `<text x="${X1 - 2}" y="${(y(v) + 8.5).toFixed(1)}" text-anchor="end" class="ax in">${kw(v)}${v === grid[grid.length - 1] ? " kW" : ""}</text>`).join("");
+    let svgPv = `${grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${P.rail}"></line>`).join("")}
       ${lossTotal > 1 ? `<path d="${between(potential, fc)}" fill="url(#nx-shade)"></path>
         <path d="${line(pts(potential))}" fill="none" stroke="${P.shade}" stroke-width="1" stroke-opacity=".6"></path>` : ""}
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
@@ -679,34 +676,27 @@ class NoxcastCard extends HTMLElement {
 
     const Ly = Hp + 6;
 
-    // battery: measured level so far, simulated with expected PV and load until the next charge tomorrow
-    // caps (B0, Bh) sit with their labels below the lanes, which keep the margins for their names;
-    // the strip between them also uses the space above
-    const B0 = Ly + 26, Bh = 22;
-    const S0 = Ly + 4, Sh = B0 + Bh - S0, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
+    // battery: measured level so far, simulated with expected PV and load until the end of the chart
+    const S0 = Ly + 4, Sh = 44, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
     const bat = this._show("battery") ? m.battery : null;
-    let batSvg = "", sim = null, chargeToday = null, chargeTom = null;
+    let batSvg = "", sim = null;
     const seenZones = new Set();
     if (bat) {
-      chargeToday = dayH.find((h) => load(h) !== null && pv(h) > lv(h)) ?? t0;
-      const tomH = [...tomM.keys()].sort((a, b) => a - b);
-      chargeTom = tomH.find((h) => pv(h) > (load(h) ?? 0)) ?? (tomH.length ? tomH[0] : t1 + 12 * H);
       const srv = this._data.today && this._data.today.battery;
       if (srv) {                                   // Noxcast's simulation (batteries configured in the integration)
-        chargeTom = srv.charge_start;
         bat.max = srv.max; bat.min = srv.min;
         const pts = srv.points;
-        sim = { points: pts, full: srv.full, empty: srv.empty, unused: srv.lost_today, at: (ts) => {
+        sim = { points: pts, full: srv.full, at: (ts) => {
           if (!pts.length) return null;
           if (ts <= pts[0][0]) return pts[0][1];
           for (let i = 1; i < pts.length; i++) if (pts[i][0] >= ts) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (ts - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0] || 1);
           return pts[pts.length - 1][1];
         } };
-      } else sim = this._simulate(bat, now, chargeTom, pv, load);
+      } else sim = this._simulate(bat, now, t1, exp, load);
       const zone = (h) => {                       // red: at the limit with surplus (lost), orange: within 5 % of it
         const f = h + H <= now ? m.socAt(h + H / 2) : sim.at(h + H / 2);
         if (f === null) return null;
-        if (f >= bat.max - 0.01 && pv(h) > lv(h)) return P.lost;
+        if (f >= bat.max - 0.01 && exp(h) > lv(h)) return P.lost;
         return f >= bat.max - 0.05 ? P.near : null;
       };
       // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable
@@ -720,25 +710,12 @@ class NoxcastCard extends HTMLElement {
       const futStart = Math.max(now, t0), fStart = futStart === pastEnd && f1 !== null ? f1 : sim.at(futStart);
       const fut = [...(fStart === null ? [] : [[futStart, fStart]]), ...sim.points.filter(([ts]) => ts > futStart && ts <= t1)]
         .map(([ts, f]) => [x(ts), ys(f)]);
-      const startF = chargeToday <= now ? m.socAt(chargeToday) : sim.at(chargeToday);
-      const endF = sim.empty !== null && sim.empty < chargeTom ? null : sim.at(chargeTom);
-      const cap = (cx, f, label, time, future, empty) => {
-        const bw = 12, bx = cx - bw / 2, h = Bh, by = B0, fh = (f ?? 0) * (h - 4);
-        const color = empty ? P.grid : P.bat;
-        return `<rect x="${bx}" y="${by}" width="${bw}" height="${h}" rx="2" fill="none" stroke="${color}" stroke-width="1.4"${future ? ` stroke-dasharray="2 2"` : ""}></rect>
-          <rect x="${bx + 2}" y="${(by + h - 2 - fh).toFixed(1)}" width="${bw - 4}" height="${fh.toFixed(1)}" fill="${P.bat}" fill-opacity="${future ? 0.45 : 0.85}"></rect>
-          <text x="${cx}" y="${by - 13}" text-anchor="middle" font-size="11" font-weight="500" fill="${color}">${empty ? t.empty : f === null ? "–" : `${Math.round(f * 100)} %`}</text>
-          <text x="${cx}" y="${by - 3}" text-anchor="middle" class="ax">${label}</text>
-          <text x="${cx}" y="${B0 + Bh + 11}" text-anchor="middle" class="ax">${time}</text>`;
-      };
       batSvg = `<rect x="${X0}" y="${S0}" width="${X1 - X0}" height="${Sh}" rx="3" fill="${P.rail}"></rect>
         ${past.length > 1 ? `<path d="${line(past)} L${past[past.length - 1][0].toFixed(1)},${S0 + Sh} L${past[0][0].toFixed(1)},${S0 + Sh} Z" fill="${P.bat}" fill-opacity=".45"></path>` : ""}${zones}
         ${fut.length > 1 ? `<path d="${line(fut)}" fill="none" stroke="${P.bat}" stroke-width="1.8" stroke-dasharray="3 3"></path>` : ""}
-        ${sim.full !== null && sim.full < t1 ? `<circle cx="${x(sim.full).toFixed(1)}" cy="${ys(bat.max).toFixed(1)}" r="3" fill="var(--card-background-color, #fff)" stroke="${P.bat}" stroke-width="1.6"></circle>` : ""}
-        ${cap(CAPW / 2, startF, chargeToday > now ? t.expected : t.start, this._hm(chargeToday), chargeToday > now, false)}
-        ${cap(W - CAPW / 2, endF, t.tomorrow, endF === null ? this._hm(sim.empty) : this._hm(chargeTom), true, endF === null)}`;
+        ${sim.full !== null && sim.full < t1 ? `<circle cx="${x(sim.full).toFixed(1)}" cy="${ys(bat.max).toFixed(1)}" r="3" fill="var(--card-background-color, #fff)" stroke="${P.bat}" stroke-width="1.6"></circle>` : ""}`;
     }
-    const bottom = bat ? B0 + Bh + 14 : Ly + 14;
+    const bottom = bat ? S0 + Sh + 14 : Ly + 14;
     const tickStep = Math.max(1, Math.ceil((pE - pS) / H / 6)) * H;
     const ticks = [];
     const tick = (h) => { if (ticks.every((q) => Math.abs(x(q) - x(h)) > 14)) ticks.push(h); };
@@ -769,31 +746,20 @@ class NoxcastCard extends HTMLElement {
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
-      ${svgPv}${batSvg}${nightSvg}
+      ${svgPv}${batSvg}${nightSvg}${yLabels}
       ${nowX !== null ? `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${bottom - 14}" stroke="var(--secondary-text-color)" stroke-width="1" stroke-opacity=".6" stroke-dasharray="2 2"></line>` : ""}
-      ${ticks.map((h) => `<text x="${x(h).toFixed(1)}" y="${bottom - 3}" text-anchor="middle" class="ax">${whole && h === t1 ? "24" : this._hm(h).slice(0, 2)}</text>`).join("")}
+      ${ticks.map((h) => { const tx = x(h), anchor = tx < 8 ? "start" : tx > W - 8 ? "end" : "middle";
+        return `<text x="${tx.toFixed(1)}" y="${bottom - 3}" text-anchor="${anchor}" class="ax">${whole && h === t1 ? "24" : this._hm(h).slice(0, 2)}</text>`; }).join("")}
       <line id="nx-cursor" y1="0" y2="${bottom - 14}" stroke="var(--primary-text-color)" stroke-width="1" stroke-opacity=".35" visibility="hidden"></line>
       <g id="nx-hits">${hits}</g>
     </svg>`;
 
-    // planning line and the three numbers
-    const after = now >= prodEnd, before = now < prodStart;
+    // the numbers of the day
+    const after = now >= prodEnd;
     const ist = dayH.reduce((a, h) => a + (h + H <= now ? exp(h) : h < now ? exp(h) * (now - h) / H : 0), 0);
     const expected = dayH.reduce((a, h) => a + exp(h), 0);
     const morning = dayH.reduce((a, h) => a + (mornM.get(h) || 0), 0);
     const tomorrow = arrays.reduce((a, arr) => a + arr.tomorrow_wh, 0);
-    const plan = [];
-    if (!after && !before) {
-      const free = dayH.filter((h) => h + H > now && load(h) !== null && exp(h) - lv(h) > 300);
-      plan.push(free.length ? `${t.freeUntil} ${this._hm(free[free.length - 1] + H)}` : t.noSurplus);
-    }
-    if (sim && !after && sim.full !== null && sim.full < t1) plan.push(`${t.fullAt} ${this._hm(sim.full)}`);
-    // best windows of flexible consumers, planned by Noxcast
-    for (const p of (!after && this._data.today && this._data.today.plan) || []) {
-      if (p.start !== null && p.pv >= 0.5 && p.end > now) plan.push(`${this._esc(p.name)} ${this._hm(Math.max(p.start, now))}–${this._hm(p.end)} (${Math.round(p.pv * 100)} %)`);
-    }
-    if (sim && !after && !this._config.export && sim.unused >= 50) plan.push(`<span class="warn" style="color:${P.warnText};background:${P.warnBg}">${this._kwh(sim.unused)} ${t.kwh} ${t.unused}</span>`);
-    if (sim && after) plan.push(sim.empty !== null && sim.empty < chargeTom ? `${t.emptyAt} ${this._hm(sim.empty)}` : `${t.lasts} ${this._hm(chargeTom)}`);
     const dev = morning > 0 ? Math.round((ist / morning - 1) * 100) : null;
     const numbers = after
       ? `<span><span class="big">${this._kwh(ist)}</span> ${t.kwh}</span>
@@ -804,7 +770,6 @@ class NoxcastCard extends HTMLElement {
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > prodStart, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
         bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
-      ${plan.length ? `<div class="row">${plan.map((p) => `<span>${p}</span>`).join("")}</div>` : ""}
       <div class="row nums">${numbers}
         ${lossTotal >= 50 ? `<span style="color:${P.shade}">${t.shade} −${this._kwh(lossTotal)}</span>` : ""}
         <span class="muted">${t.tomorrow} <b style="color:var(--primary-text-color);font-weight:500">${this._kwh(tomorrow)}</b></span>
@@ -914,10 +879,10 @@ class NoxcastCard extends HTMLElement {
     return { load, battery, socPast, socAt };
   }
 
-  // battery from now until `end`: level points, when it is full or empty, and surplus it cannot take
+  // battery from now until `end`: level points and when it is full
   _simulate(bat, now, end, pv, load) {
     const H = 3600, points = [];
-    let e = (bat.now ?? bat.min) * bat.cap, full = null, empty = null, unused = 0;
+    let e = (bat.now ?? bat.min) * bat.cap, full = null;
     const eMax = bat.max * bat.cap, eMin = bat.min * bat.cap;
     points.push([now, e / bat.cap]);
     for (let h = Math.floor(now / H) * H; h < end; h += H) {
@@ -928,12 +893,7 @@ class NoxcastCard extends HTMLElement {
         const add = Math.min(Math.max(eMax - e, 0), net);
         if (full === null && add < net && e + add >= eMax - 1) full = from + (add / net) * (h + H - from);
         e += add;
-        unused += net - add;
-      } else if (net < 0) {
-        const take = Math.min(Math.max(e - eMin, 0), -net);
-        if (empty === null && take < -net) empty = from + (take / -net) * (h + H - from);
-        e -= take;
-      }
+      } else if (net < 0) e -= Math.min(Math.max(e - eMin, 0), -net);
       points.push([h + H, e / bat.cap]);
     }
     const at = (ts) => {
@@ -944,7 +904,7 @@ class NoxcastCard extends HTMLElement {
       }
       return points[points.length - 1][1];
     };
-    return { points, full, empty, unused, at };
+    return { points, full, at };
   }
 
   _hm(ts) {

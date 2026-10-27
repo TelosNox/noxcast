@@ -21,8 +21,9 @@ def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: l
     """Per hour start: Wh of the clear-sky start and of each step, plus the resulting forecast."""
     if not weather:
         return {}
-    bare = LearnedArray(**{**learned.__dict__, "cells": {}, "reflection": {}, "direction": {}, "temp_coeff": 0.0})
-    shaded = LearnedArray(**{**bare.__dict__, "cells": learned.cells})
+    bare = LearnedArray(**{**learned.__dict__, "cells": {}, "contour": {}, "reflection": {}, "direction": {},
+                           "temp_coeff": 0.0})
+    shaded = LearnedArray(**{**bare.__dict__, "cells": learned.cells, "contour": learned.contour})
     reflected = LearnedArray(**{**shaded.__dict__, "reflection": learned.reflection})
     directed = LearnedArray(**{**reflected.__dict__, "direction": learned.direction})
     runs = [

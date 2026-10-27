@@ -18,13 +18,17 @@ TEXT = {
            "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data",
            "elevation": "Sun elevation", "not_learned": "not learned yet", "modules": "modules",
            "normal": "sun perpendicular to the modules",
-           "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules"},
+           "edge_low": "obstacle below", "edge_high": "overhang above", "transmission": "transmission",
+           "legend": ("green = free · red = shaded · grey = no data yet · light = sun behind the modules · "
+                      "line = learned obstacle edge")},
     "de": {"efficiency": "Wirkungsgrad", "direction": "Richtungsfaktor", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
            "datasheet": "Datenblatt", "learned": "gelernt", "default": "typisch", "none": "aus",
            "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten",
            "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt", "modules": "Module",
            "normal": "Sonne senkrecht auf den Modulen",
-           "legend": "grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen"},
+           "edge_low": "Hindernis darunter", "edge_high": "Überstand darüber", "transmission": "Durchlass",
+           "legend": ("grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen · "
+                      "Linie = gelernte Hinderniskante")},
 }
 COMPASS = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW", 360: "N"}
 COMPASS_DE = {"NE": "NO", "E": "O", "SE": "SO"}
@@ -129,6 +133,19 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         tip = f"{az:.0f}–{az + AZ_STEP:.0f}° / {el:.0f}–{el + EL_STEP:.0f}°: {label}"
         out.append(f'<rect class="{cls}" x="{_x(az, rng):.1f}" y="{_y(el + EL_STEP):.1f}" width="{w:.1f}" height="{h:.1f}" '
                    f'fill="{fill}" stroke="#ffffff" stroke-width="0.5"><title>{escape(tip)}</title></rect>')
+
+    # learned obstacle edges (contour): a line across each azimuth column, at the edge elevation
+    for key, column in sorted((learned.contour if learned else {}).items(), key=lambda kv: int(kv[0])):
+        az = int(key) * AZ_STEP
+        if az < a0 or az + AZ_STEP > a1:
+            continue
+        for kind in ("low", "high"):
+            el = column.get(kind)
+            if el is None or not 0 <= el <= EL_MAX:
+                continue
+            tip = f'{az:.0f}–{az + AZ_STEP:.0f}°: {t["edge_" + kind]} {el:.1f}°, {t["transmission"]} {column["t_" + kind]:.2f}'
+            out.append(f'<line class="ink edge" x1="{_x(az, rng):.1f}" y1="{_y(el):.1f}" x2="{_x(az + AZ_STEP, rng):.1f}" '
+                       f'y2="{_y(el):.1f}" stroke="#000000" stroke-width="2"><title>{escape(tip)}</title></line>')
 
     # axes and grid
     for el in range(0, int(EL_MAX) + 1, 10):

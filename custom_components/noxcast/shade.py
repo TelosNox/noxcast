@@ -1,16 +1,18 @@
 """Shading along the sun path of one day, from the learned shading map (pure Python).
 
-The day is sampled in steps from sunrise to sunset; each step gets the learned transmission of the
-cell the sun is in. Steps are classified as shaded, free, behind the modules (no direct light on
-any of the array's planes anyway) or unknown (nothing learned yet). Times are accurate to about a quarter of an hour
-because cells are 10° x 5° wide.
+The day is sampled in steps from sunrise to sunset; each step gets the learned transmission at the
+sun's position. Steps are classified as shaded, free, behind the modules (no direct light on any of
+the array's planes anyway) or unknown (nothing learned yet). With the contour (learned edges per
+10° azimuth column) a shadow rising or setting at an edge is placed to a few minutes; a side edge
+(across azimuth) only to about a quarter of an hour, the width of a column. A map stored before the
+contours uses its 10° x 5° cells until the next learning run.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
-from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray
+from .model import AZ_STEP, EL_STEP, SHADING_VERSION, ArrayGeometry, LearnedArray, known_transmission
 from .solar import Site, angle_of_incidence, sun_position
 from .visual import DARK_STYLE, display_value, transmission_color
 
@@ -43,7 +45,10 @@ def day_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, da
                for tilt, azimuth, _ in geo.planes):
             steps.append(Step(start, start + step_min * 60, None, BEHIND))
             continue
-        value = display_value(cells, int(sun.azimuth // AZ_STEP), int(sun.elevation // EL_STEP))
+        if learned and learned.shading_version >= SHADING_VERSION:
+            value = known_transmission(learned, sun.azimuth, sun.elevation)
+        else:
+            value = display_value(cells, int(sun.azimuth // AZ_STEP), int(sun.elevation // EL_STEP))
         if value is None:
             state = UNKNOWN
         else:

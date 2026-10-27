@@ -11,11 +11,14 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   The heating at 1000 W/m² depends on the mounting (free behind about 30 K, close to a roof
   clearly more) and is configured per array; hourly data do not separate it reliably from
   seasonal effects.
-- T: beam transmission (1 = unshaded) per sun-position cell, learned from hours where direct
-  light is geometrically possible. The 90th percentile per cell represents clear conditions;
-  clouds and occasional curtailment fall below it. Optionally, satellite irradiance pre-selects
-  clear hours. The map holds shade only: per azimuth it rises with elevation to a free band and may
-  fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
+- T: beam transmission (1 = unshaded), a contour per 10° azimuth column: a lower edge (ground
+  obstacles, shaded below) and an upper edge (overhang, shaded above), each with the transmission
+  of its shaded segment; learned from hours where direct light is geometrically possible. A free
+  value per cell cannot be separated from hourly means (one hour spans ~15° of azimuth at noon)
+  and produced zigzag artefacts; an edge has the shape of a real obstacle, and is only introduced
+  where it clearly beats free sky. Per-cell estimates (90th percentile, or the clear-hour median
+  with the satellite filter) remain for the efficiency and as data for the contour without steady
+  hours.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
   positions on clear hours: geometry and model errors that are not shade.
   Efficiency, D, R and the clear-hour refinement of T use only steady hours when the power
@@ -23,7 +26,7 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   clouds pass over the installation, and such hours (cloud-edge peaks cut at the inverter limit,
   restarts, dropouts) only add noise. With several sensors per array one steady sensor is enough
   (a cloud reaches all of them, a shadow edge not), and sensors far apart mark a partial shadow.
-  On steady clear hours T is finally fitted so that the forecast, integrated over the sub-steps
+  On steady clear hours the contour is fitted so that the forecast, integrated over the sub-steps
   of each hour, meets the hourly means: an edge crossed within the hour is then placed by the
   shifting sun path over many days instead of being smeared over the hour.
 - R: reflected light per coarse sun-position bin, relative to the direct normal irradiance: sunlit
@@ -42,7 +45,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .solar import (
     Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
@@ -76,9 +79,16 @@ MIN_STEADY_HOURS = 30            # steady clear hours needed to learn efficiency
 SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
 SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
 SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a core within this many cells
-SHADE_FIT_PRIOR = 0.01           # shading fit: pull towards the per-cell estimate, relative to a typical cell's weight
 SHADE_FIT_BEAM_SHARE = 0.7       # ... hours whose expected light is mostly direct (else diffuse-model errors enter)
-SHADE_FIT_SWEEPS = 400
+CONTOUR_SOFT = 1.0               # half width (°) of a contour edge: keeps the sub-step integration smooth
+CONTOUR_STEP = 0.5               # search step (°) of an edge elevation
+CONTOUR_MIN_HOURS = 6            # hours with a real share of their beam in a column, to decide on it
+CONTOUR_PENALTY = 25.0           # an edge must lower the robust squared error by this many noise variances ...
+CONTOUR_MIN_GAIN = 0.2           # ... and by this share of the column's error without it
+CONTOUR_MIN_FREE = 0.05          # beam share in the free band needed for an edge of 0.7-0.9 (else: not shade)
+CONTOUR_SWEEPS = 6
+CONTOUR_ROUNDS = 3               # robust reweighting rounds
+SHADING_VERSION = 2              # 1: free cells (stored before the contours), 2: contour per azimuth column
 DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
 DIRECTION_EL_STEP = 15.0
 DIRECTION_MIN_SAMPLES = 8
@@ -149,11 +159,13 @@ class LearnedArray:
     temp_coeff: float = DEFAULT_TEMP_COEFF                     # per K
     temp_learned: bool = False
     temp_source: str = "default"                               # datasheet | learned | default | none
-    cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
+    cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission (version 2: display)
+    contour: dict[str, dict] = field(default_factory=dict)     # "az_idx" -> edges of the column, see transmission()
+    shading_version: int = 1                                   # 1: cells are the shading map, 2: the contour is
     direction: dict[str, float] = field(default_factory=dict)  # coarse "az_idx,el_idx" -> beam factor (non-shade)
     sky_view: float = 1.0                                      # share of the isotropic sky diffuse seen
     reflection: dict[str, float] = field(default_factory=dict) # coarse "az_idx,el_idx" -> plane W/m² per W/m² DNI
-    coverage: float = 0.0                                      # share of reachable cells learned
+    coverage: float = 0.0                                      # share of reachable cells with an edge decision
     samples: int = 0
     clear_filter: bool = False                                 # satellite pre-filter was applied
     steady_filter: bool = False                                # only steady hours for efficiency, D and R
@@ -467,7 +479,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         heating = clearsky_heating(site, geo, t, sky_view) if temp is not None else geo.heating
         rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating))
     if not rows:
-        return LearnedArray(sky_view=sky_view, learned_at=now)
+        return LearnedArray(sky_view=sky_view, learned_at=now, shading_version=SHADING_VERSION)
 
     # optional satellite pre-filter: only clear hours are used for efficiency and shading
     with_kt = [r for r in rows if r[8] is not None]
@@ -558,16 +570,22 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             efficiency = eff_quantile(source, 0.5)
             cells = cell_values(observe(rows, scaled=False), 0.9)
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
-        if steady_filter:
-            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale)
 
-    cells = shape_cells(cells)
+    # The contour: on steady clear hours fitted so that the forecast, integrated over the sub-steps,
+    # meets the hourly means; otherwise fitted to the shaped cell estimates
+    eqs = _contour_equations(site, geo, calm, lambda r: efficiency * f_temp(r), satellite_ghi, sky_view) \
+        if steady_filter else []
+    if len(eqs) >= MIN_STEADY_HOURS:
+        contour = _fit_contour(eqs, CONTOUR_MIN_HOURS)
+    else:
+        contour = _fit_contour(_cell_equations(shape_cells(cells)), 2)
+    shading = LearnedArray(contour=contour, shading_version=SHADING_VERSION, sky_view=sky_view)
     direction: dict[str, float] = {}
     reflection: dict[str, float] = {}
     if clear_filter:
         # what remains at unshaded positions on clear hours is not shade; kept apart from the shading
         # map, smooth and coarse. Modelled with the measured irradiance split as in the forecast.
-        probe = LearnedArray(cells=cells, sky_view=sky_view)
+        probe = shading
         parts = []                                       # (bin, plane-equivalent observed, beam, diffuse, dni)
         for r in calm:
             t, p, _, _, az, el = r[:6]
@@ -597,9 +615,12 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             dir_obs.setdefault(b, []).append((observed - diff - refl_bins.get(b, 0.0) * dni) / beam)
         direction = {_key(*b): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
                      for b, v in dir_obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
+    reachable = reachable_cells(site, geo)
+    cells = display_cells(shading, reachable)
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
-                           cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
+                           cells=cells, contour=contour, shading_version=SHADING_VERSION,
+                           direction=direction, reflection=reflection, sky_view=sky_view,
                            samples=len(rows), clear_filter=clear_filter, steady_filter=steady_filter,
                            first_sample=rows[0][0], learned_at=now)
 
@@ -616,96 +637,293 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         corr = _correlation(xs, ys)
         learned.agreement = round(corr, 3) if corr is not None else None
 
-    reachable = reachable_cells(site, geo)
-    learned.coverage = round(len(reachable & {tuple(map(int, k.split(","))) for k in cells}) / len(reachable), 3) \
-        if reachable else 0.0
+    learned.coverage = contour_coverage(contour, reachable)
     return learned
 
 
-def _bilinear(azimuth: float, elevation: float) -> list[tuple[tuple[int, int], float]]:
-    """Cells and weights of the bilinear interpolation in transmission()."""
-    fa, fe = azimuth / AZ_STEP - 0.5, elevation / EL_STEP - 0.5
-    a0, e0 = math.floor(fa), math.floor(fe)
-    da, de = fa - a0, fe - e0
-    return [((ai % 36, ei), wa * we) for ai, wa in ((a0, 1 - da), (a0 + 1, da))
-            for ei, we in ((e0, 1 - de), (e0 + 1, de)) if wa * we > 0 and ei >= 0]
+def _column_weights(azimuth: float) -> list[tuple[int, float]]:
+    """Azimuth columns and weights of the linear interpolation between column centres in transmission()."""
+    fa = azimuth / AZ_STEP - 0.5
+    a0 = math.floor(fa)
+    da = fa - a0
+    return [(ai % 36, w) for ai, w in ((a0, 1 - da), (a0 + 1, da)) if w > 0]
 
 
-def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[str, float],
-               factor: Callable[[tuple], float], scale: Callable[[tuple], float]) -> dict[str, float]:
-    """Shading cells such that the forecast, integrated over the sub-steps of each hour, meets the hourly means.
+def _ramp(x: float) -> float:
+    """Shaded share x degrees inside an edge, soft over ±CONTOUR_SOFT."""
+    return min(max((x + CONTOUR_SOFT) / (2 * CONTOUR_SOFT), 0.0), 1.0)
 
-    The per-cell estimate gives each hour to the cell of its mid-hour sun position, so a shadow
-    edge crossed during the hour is smeared over about one and a half cells, and the forecast,
-    which integrates over sub-steps, smears it again. Here every hour is an equation over the cells
-    its sun path crossed (bilinear weights as in transmission()); over many days the path of a
-    given clock hour shifts across the edge, which places it within the hour. Least squares with
-    bounds 0..1 and a weak pull towards the per-cell estimate (cells the hours barely touch),
-    solved by projected Gauss-Seidel; one reweighting damps hours that do not fit
-    (a cloud the steady test missed). Only hours whose expected light on the plane is mostly
+
+def column_transmission(column: dict, elevation: float) -> float:
+    """One azimuth column: its segment's transmission below the lower or above the upper edge, else 1."""
+    value = 1.0
+    if "low" in column:
+        value -= (1 - column["t_low"]) * _ramp(column["low"] - elevation)
+    if "high" in column:
+        value -= (1 - column["t_high"]) * _ramp(elevation - column["high"])
+    return value
+
+
+def _has_edge(column: dict | None) -> bool:
+    return bool(column) and ("low" in column or "high" in column)
+
+
+def _contour_value(contour: dict[str, dict], ai: int, elevation: float) -> float | None:
+    """A column's transmission; a column without a decision between two with an edge takes their mean, else None."""
+    column = contour.get(str(ai))
+    if column is not None:
+        return column_transmission(column, elevation)
+    left, right = contour.get(str((ai - 1) % 36)), contour.get(str((ai + 1) % 36))
+    if _has_edge(left) and _has_edge(right):
+        return (column_transmission(left, elevation) + column_transmission(right, elevation)) / 2
+    return None
+
+
+def _contour_equations(site: Site, geo: ArrayGeometry, rows: list[tuple], factor: Callable[[tuple], float],
+                       measured_ghi: dict[float, float], sky_view: float) -> list[tuple[float, dict[int, list], float]]:
+    """Steady clear hours as equations over the azimuth columns their sun path crossed.
+
+    Per hour: (observed beam on the plane, {column: [(elevation, beam coefficient)] per sub-step},
+    weight). The forecast integrates the sub-steps, so an hour's mean is the sum of the
+    coefficients times the transmission at each sub-step (columns weighted as in transmission()).
+    Beam and diffuse come from the measured irradiance split exactly as in the forecast, so the
+    contour corrects the forecast's own chain: a clear-sky estimate of the beam that is too high at
+    low sun would otherwise turn into a shadow there. Only hours whose expected light is mostly
     direct take part; otherwise errors of the diffuse model (sun nearly behind the plane) would
-    darken the cells. rows: steady clear hours; factor(row): efficiency x temperature factor;
-    scale(row): satellite clearness.
+    darken the map. factor(row): efficiency x temperature factor.
     """
     eqs = []
     for r in rows:
-        t, p, _, diff = r[:4]
-        k = scale(r)
+        t, p = r[:2]
         dni_extra = extra_radiation(t + 1800)
-        coef: dict[tuple[int, int], float] = {}
-        for i in range(SUBSTEPS):
-            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
-            if sun.elevation <= 0:
+        columns: dict[int, list[tuple[float, float]]] = {}
+        beam = diff = 0.0
+        suns = [sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS) for i in range(SUBSTEPS)]
+        clear = [clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)[0] if sun.elevation > 0 else 0.0
+                 for sun in suns]
+        kt = measured_ghi[t] * SUBSTEPS / sum(clear) if sum(clear) > 0 else 0.0
+        for sun, cs in zip(suns, clear):
+            ghi = cs * kt
+            if ghi <= 0:
                 continue
-            ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-            beam, _, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
-            for cell, w in _bilinear(sun.azimuth, sun.elevation):
-                coef[cell] = coef.get(cell, 0.0) + beam * k / SUBSTEPS * w
-        beam = sum(coef.values())
-        if geo.peak_w * beam / 1000 <= MIN_BEAM_W or beam < SHADE_FIT_BEAM_SHARE * (beam + diff * k):
+            dni, dhi = erbs(ghi, sun.zenith, dni_extra)
+            b, d, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=sky_view)
+            b, d = b / SUBSTEPS, d / SUBSTEPS
+            diff += d
+            if b <= 0:
+                continue
+            beam += b
+            for ai, w in _column_weights(sun.azimuth):
+                columns.setdefault(ai, []).append((sun.elevation, b * w))
+        if geo.peak_w * beam / 1000 <= MIN_BEAM_W or beam < SHADE_FIT_BEAM_SHARE * (beam + diff):
             continue
-        eqs.append((p * 1000 / (geo.peak_w * factor(r)) - diff * k, coef, r[6]))
-    if len(eqs) < MIN_STEADY_HOURS:
-        return cells
-    probe = LearnedArray(cells=cells)                     # cells without an estimate start from their neighbours
-    prior = {c: cells[_key(*c)] if _key(*c) in cells else transmission(probe, (c[0] + 0.5) * AZ_STEP,
-                                                                       (c[1] + 0.5) * EL_STEP)
-             for _, coef, _ in eqs for c in coef}
+        eqs.append((p * 1000 / (geo.peak_w * factor(r)) - diff, columns, r[6]))
+    return eqs
 
-    def solve(weights: list[float]) -> dict[tuple[int, int], float]:
-        normal: dict[tuple[int, int], dict[tuple[int, int], float]] = {c: {} for c in prior}
-        rhs = dict.fromkeys(prior, 0.0)
-        for (y, coef, w), extra in zip(eqs, weights):
-            for c, a in coef.items():
-                rhs[c] += w * extra * a * y
-                row = normal[c]
-                for c2, a2 in coef.items():
-                    row[c2] = row.get(c2, 0.0) + w * extra * a * a2
-        pull = SHADE_FIT_PRIOR * _quantile([row[c] for c, row in normal.items()], 0.5)
-        for c, row in normal.items():
-            row[c] += pull
-            rhs[c] += pull * prior[c]
-        value = dict(prior)
-        for _ in range(SHADE_FIT_SWEEPS):
-            change = 0.0
-            for c, row in normal.items():
-                v = (rhs[c] - sum(a * value[c2] for c2, a in row.items() if c2 != c)) / row[c]
-                v = min(max(v, 0.0), 1.0)
-                change = max(change, abs(v - value[c]))
-                value[c] = v
-            if change < 1e-4:
+
+def _cell_equations(cells: dict[str, float]) -> list[tuple[float, dict[int, list], float]]:
+    """Cell estimates as equations: a cell's value is the mean transmission over its elevation span."""
+    return [(v, {ai: [((ei + (m + 0.5) / 10) * EL_STEP, 0.1) for m in range(10)]}, 1.0)
+            for ai, ei, v in ((*map(int, k.split(",")), v) for k, v in cells.items())]
+
+
+def _edge_scan(items: list[tuple[float, float, list]], sign: int,
+               limit: float | None = None) -> tuple[float, float, float] | None:
+    """Best single edge of a column: (squared error, edge elevation, transmission of the shaded segment).
+
+    items: (excess, weight, points) per hour; excess: how far the hour falls short of the prediction
+    without this edge, points: (elevation, beam coefficient) of its sub-steps in this column.
+    sign +1: lower edge (shaded below), -1: upper edge (elevations mirrored). For every candidate
+    elevation (CONTOUR_STEP apart) the segment's transmission is least squares within 0..1. The
+    sums are updated as the scan passes the sub-steps: only those within the soft edge are
+    recomputed. limit: highest mirrored edge (keeps a lower edge below an upper one).
+    """
+    pts = sorted((sign * el, a, j) for j, (_, _, points) in enumerate(items) for el, a in points)
+    if not pts:
+        return None
+    excess = [e for e, _, _ in items]
+    weight = [w for _, w, _ in items]
+    see = sum(w * e * e for e, w in zip(excess, weight))
+    full = [0.0] * len(items)                           # beam coefficient entirely on the shaded side
+    shaded = [0.0] * len(items)
+    s_el = s_ll = 0.0
+    end = pts[-1][0] + CONTOUR_SOFT if limit is None else min(pts[-1][0] + CONTOUR_SOFT, limit)
+    i_in = i_full = 0
+    touched: set[int] = set()
+    best = None
+    g = math.floor((pts[0][0] - CONTOUR_SOFT) / CONTOUR_STEP) * CONTOUR_STEP
+    while g <= end + 1e-9:
+        while i_full < len(pts) and pts[i_full][0] + CONTOUR_SOFT <= g:
+            full[pts[i_full][2]] += pts[i_full][1]
+            touched.add(pts[i_full][2])
+            i_full += 1
+        while i_in < len(pts) and pts[i_in][0] - CONTOUR_SOFT < g:
+            i_in += 1
+        part: dict[int, float] = {}
+        for x, a, j in pts[i_full:i_in]:                 # within the soft edge: _ramp without its limits
+            part[j] = part.get(j, 0.0) + a * (g - x + CONTOUR_SOFT) / (2 * CONTOUR_SOFT)
+        for j in touched | part.keys():
+            new = full[j] + part.get(j, 0.0)
+            s_el += weight[j] * excess[j] * (new - shaded[j])
+            s_ll += weight[j] * (new * new - shaded[j] * shaded[j])
+            shaded[j] = new
+        touched = set(part)
+        if s_ll > 1e-12:
+            u = min(max(s_el / s_ll, 0.0), 1.0)
+            sse = see - 2 * u * s_el + u * u * s_ll
+            if best is None or sse < best[0] - 1e-9 * see:
+                best = (sse, g, u)
+        g += CONTOUR_STEP
+    return (best[0], sign * best[1], 1 - best[2]) if best else None
+
+
+def _fit_column(items: list[tuple[float, float, list]], penalty: float) -> dict:
+    """Edges of one azimuth column: none, lower, upper or both, chosen by the penalised robust error.
+
+    An edge must lower the weighted squared error by penalty (noise variances) and by
+    CONTOUR_MIN_GAIN of the error without it, so noise does not create shadows. Most of the hours
+    entirely on its shaded side must be dark (closer to the segment's transmission than to free
+    sky): a lone dark spot with free sky below it cannot pass as a lower edge whose transmission is a
+    compromise between the spot and the free sky. Transmissions from SHADE_FREE count as free; one
+    between SHADE_CORE and SHADE_FREE needs free sky observed on the other side of the edge – a whole
+    column a little darker is no shade but model error (direction factor).
+    """
+    def loss(column: dict, pts: list) -> float:
+        return sum(a * (1 - column_transmission(column, el)) for el, a in pts)
+
+    def sse(column: dict) -> float:
+        return sum(w * (e - loss(column, pts)) ** 2 for e, w, pts in items)
+
+    beam = sum(w * a for _, w, pts in items for _, a in pts)
+
+    def dark(column: dict, kind: str) -> bool:
+        """Most of the hours entirely inside the segment are closer to its transmission than to free sky."""
+        t, edge = column["t_" + kind], column[kind]
+        inside = total = 0.0
+        for e, w, pts in items:
+            a = sum(a for _, a in pts)
+            if a > 0 and all(el <= edge - CONTOUR_SOFT if kind == "low" else el >= edge + CONTOUR_SOFT for el, _ in pts):
+                total += w * a
+                inside += w * a if 1 - e / a < (1 + t) / 2 else 0.0
+        return total > 0 and inside >= 0.5 * total
+
+    def plausible(column: dict) -> bool:
+        kinds = [k for k in ("low", "high") if k in column]
+        if any(column["t_" + k] >= SHADE_FREE or not dark(column, k) for k in kinds):
+            return False
+        free = sum(w * a for _, w, pts in items for el, a in pts if column_transmission(column, el) >= 1.0)
+        if len(kinds) == 2 or any(column["t_" + k] >= SHADE_CORE for k in kinds):
+            return free >= CONTOUR_MIN_FREE * beam
+        return True
+
+    def edge(kind: str, scan: tuple[float, float, float]) -> dict:
+        return {kind: round(scan[1], 1), "t_" + kind: round(scan[2], 3)}
+
+    singles = []
+    for kind, sign in (("low", 1), ("high", -1)):
+        scan = _edge_scan(items, sign)
+        if scan is not None:
+            column = edge(kind, scan)
+            singles.append((sse(column), column))
+    none = sse({})
+    best_sse, best, edges = none, {}, 0
+    for value, column in sorted(singles, key=lambda c: c[0]):
+        if value + penalty < none and value < (1 - CONTOUR_MIN_GAIN) * none and plausible(column):
+            best_sse, best, edges = value, column, 1
+            break
+    if len(singles) == 2 and all(value + penalty < none for value, _ in singles):    # each edge helps on its own
+        column = dict(min(singles, key=lambda c: c[0])[1])
+        for _ in range(2):                       # alternate: each edge fitted with the other one fixed
+            for kind, sign in (("high", -1), ("low", 1)) if "low" in column else (("low", 1), ("high", -1)):
+                other = {k: v for k, v in column.items() if not k.endswith(kind)}
+                bound = other.get("low" if kind == "high" else "high")
+                limit = None if bound is None else -(bound + 2 * CONTOUR_SOFT) if kind == "high" \
+                    else bound - 2 * CONTOUR_SOFT
+                scan = _edge_scan([(e - loss(other, pts), w, pts) for e, w, pts in items], sign, limit)
+                if scan is None:
+                    break
+                column = {**other, **edge(kind, scan)}
+        if "low" in column and "high" in column and column["low"] + 2 * CONTOUR_SOFT <= column["high"]:
+            value = sse(column)
+            if (value + (2 - edges) * penalty < best_sse and value < (1 - CONTOUR_MIN_GAIN) * best_sse
+                    and plausible(column)):
+                best = column
+    return best
+
+
+def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int) -> dict[str, dict]:
+    """Contour per azimuth column such that the predicted equations meet the observed values.
+
+    eqs: (observed, {column: [(elevation, coefficient)]}, weight); prediction: sum of the
+    coefficients times the transmission. Columns are fitted one after the other with the others
+    fixed (a few sweeps until nothing changes); a robust reweighting damps hours that do not fit
+    (a cloud or haze the filters missed), as in two further rounds. Columns with fewer than
+    min_hours equations carrying a real share (30 %) of their light get no decision. Each column
+    also keeps the elevation range its data covers ("seen"): edges outside it are extrapolated.
+    """
+    free = [sum(a for pts in columns.values() for _, a in pts) for _, columns, _ in eqs]
+    by_column: dict[int, list[int]] = {}
+    seen: dict[int, list[float]] = {}
+    for j, (_, columns, _) in enumerate(eqs):
+        for c, pts in columns.items():
+            by_column.setdefault(c, []).append(j)
+            if sum(a for _, a in pts) >= 0.3 * free[j]:
+                els = [el for el, _ in pts]
+                lo, hi = seen.get(c, [min(els), max(els), 0])[:2]
+                seen[c] = [min(lo, *els), max(hi, *els), seen.get(c, [0, 0, 0])[2] + 1]
+    decided = sorted(c for c, (_, _, n) in seen.items() if n >= min_hours)
+    if not decided:
+        return {}
+    contour: dict[int, dict] = {c: {} for c in decided}
+    loss: list[dict[int, float]] = [{} for _ in eqs]
+    total = [0.0] * len(eqs)
+    robust = [1.0] * len(eqs)
+    floor = 0.01 * _quantile(free, 0.5)
+    for rnd in range(CONTOUR_ROUNDS):
+        residuals = [y - (f - lost) for (y, _, _), f, lost in zip(eqs, free, total)]
+        centre = _quantile(residuals, 0.5)
+        spread = 1.4826 * _quantile([abs(x - centre) for x in residuals], 0.5)
+        if rnd and spread > 0:
+            robust = [min(1.0, 2 * spread / max(abs(x), 1e-9)) for x in residuals]
+        penalty = CONTOUR_PENALTY * max(spread, floor) ** 2
+        for _ in range(CONTOUR_SWEEPS):
+            changed = False
+            for c in decided:
+                items = [(free[j] - eqs[j][0] - (total[j] - loss[j].get(c, 0.0)), eqs[j][2] * robust[j], eqs[j][1][c])
+                         for j in by_column[c]]
+                column = _fit_column(items, penalty)
+                changed |= column != contour[c]
+                contour[c] = column
+                for j, (_, _, pts) in zip(by_column[c], items):
+                    new = sum(a * (1 - column_transmission(column, el)) for el, a in pts)
+                    total[j] += new - loss[j].get(c, 0.0)
+                    loss[j][c] = new
+            if not changed:
                 break
-        return value
+    return {str(c): {**contour[c], "seen": [round(seen[c][0], 1), round(seen[c][1], 1)]} for c in decided}
 
-    value = solve([1.0] * len(eqs))
-    residuals = [y - sum(a * value[c] for c, a in coef.items()) for y, coef, _ in eqs]
-    centre = _quantile(residuals, 0.5)
-    spread = 1.4826 * _quantile([abs(x - centre) for x in residuals], 0.5)
-    if spread > 0:
-        value = solve([min(1.0, 2 * spread / max(abs(x), 1e-9)) for x in residuals])
-    out = dict(cells)
-    out.update({_key(*c): round(v, 3) for c, v in value.items()})
+
+def display_cells(learned: LearnedArray, reachable: set[tuple[int, int]]) -> dict[str, float]:
+    """Cell grid for display (panel, image) from the contour: mean transmission over each reachable cell."""
+    out = {}
+    for ai, ei in reachable:
+        values = [_contour_value(learned.contour, ai, (ei + (m + 0.5) / 10) * EL_STEP) for m in range(10)]
+        if values[0] is not None:
+            out[_key(ai, ei)] = round(sum(values) / len(values), 3)
     return out
+
+
+def contour_coverage(contour: dict[str, dict], reachable: set[tuple[int, int]]) -> float:
+    """Share of reachable cells in a column with an edge decision, within the elevations its data covers."""
+    def covered(ai: int, ei: int) -> bool:
+        column = contour.get(str(ai))
+        return column is not None and column["seen"][0] - EL_STEP <= (ei + 0.5) * EL_STEP <= column["seen"][1] + EL_STEP
+    return round(sum(covered(*c) for c in reachable) / len(reachable), 3) if reachable else 0.0
+
+
+def without_shade(learned: LearnedArray) -> LearnedArray:
+    """The same learned state without any shading (effects, explanations)."""
+    return replace(learned, cells={}, contour={})
 
 
 def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float,
@@ -804,7 +1022,21 @@ def reachable_cells(site: Site, geo: ArrayGeometry, year_start: float = 17672256
 # ---------------------------------------------------------------------------- forecasting
 
 def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> float:
-    """Bilinear interpolation between cell centres; missing cells fall back to neighbours, then 1."""
+    """Learned beam transmission at a sun position (1 = unshaded).
+
+    Version 2: per azimuth column (10°) a lower edge (ground obstacles: shaded below it) and an upper
+    edge (overhang: shaded above it), each with the transmission of its shaded segment (0 = wall,
+    above 0 = tree or railing), soft over ±1° so the sub-step integration stays smooth. Linear
+    between column centres; a column without a decision counts as free, unless both neighbours
+    have an edge (their mean). Version 1 (cells stored before the contours, until the next learning
+    run): bilinear interpolation between cell centres; missing cells fall back to neighbours, then 1.
+    """
+    if learned.shading_version >= SHADING_VERSION:
+        value = 0.0
+        for ai, w in _column_weights(azimuth):
+            v = _contour_value(learned.contour, ai, elevation)
+            value += w * (1.0 if v is None else v)
+        return value
     fa = azimuth / AZ_STEP - 0.5
     fe = elevation / EL_STEP - 0.5
     a0, e0 = math.floor(fa), math.floor(fe)
@@ -822,6 +1054,14 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
     near = [learned.cells[k] for k in (_key((ai + x) % 36, ei + y) for x in (-1, 0, 1) for y in (-1, 0, 1))
             if k in learned.cells]
     return sum(near) / len(near) if near else 1.0
+
+
+def known_transmission(learned: LearnedArray, azimuth: float, elevation: float) -> float | None:
+    """Contour (version 2) only: transmission(), or None where no column nearby has a decision yet."""
+    parts = [(w, _contour_value(learned.contour, ai, elevation)) for ai, w in _column_weights(azimuth)]
+    if all(v is None for _, v in parts):
+        return None
+    return sum(w * (1.0 if v is None else v) for w, v in parts)
 
 
 def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:

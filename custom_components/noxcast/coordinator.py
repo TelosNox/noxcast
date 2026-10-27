@@ -385,9 +385,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 await self.hass.async_add_executor_job(
                     fc_archive.add_measured, self.forecast_archive, sub_id, satellite_ghi, air_temp, predict,
                     now.timestamp())
-            _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
+            _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading edges, "
                          "coverage %.0f %%, %d samples, clear filter %s, steady filter %s, agreement %s",
-                         arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
+                         arr.name, result.efficiency, result.temp_coeff * 100,
+                         sum(k in c for c in result.contour.values() for k in ("low", "high")),
                          result.coverage * 100, result.samples, result.clear_filter, result.steady_filter,
                          result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop

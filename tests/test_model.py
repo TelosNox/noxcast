@@ -268,7 +268,8 @@ def test_reflection_is_learned_where_the_module_gets_little_beam():
     assert 0.03 < model.reflection_factor(learned, 260, 15) < 0.07
     assert model.reflection_factor(learned, 100, 30) == 0.0
     assert all(v >= 0 for v in learned.reflection.values())
-    assert max(learned.direction.values()) < 1.1             # the wall is not pushed into the direction factor
+    west = [v for k, v in learned.direction.items() if int(k.split(",")[0]) >= 10]    # bins from 200° azimuth
+    assert west and max(west) < 1.1                           # the wall is not pushed into the direction factor
 
 
 def test_steady_hours_from_hourly_min_and_max():

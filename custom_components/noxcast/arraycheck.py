@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from .model import (
     CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_heating, clearsky_hour, clearsky_profile,
-    temperature_factor, transmission,
+    temperature_factor, transmission, without_shade,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
 
@@ -47,7 +47,7 @@ def month_balance(site: Site, geo: ArrayGeometry, learned: LearnedArray, year: i
 
         cool = LearnedArray(**{**learned.__dict__, "temp_coeff": 0.0})
         full = energy(cool, None)
-        no_shade = energy(LearnedArray(**{**cool.__dict__, "cells": {}}), None)
+        no_shade = energy(without_shade(cool), None)
         no_refl = energy(LearnedArray(**{**cool.__dict__, "reflection": {}}), None)
         no_dir = energy(LearnedArray(**{**cool.__dict__, "direction": {}}), None)
         heat = energy(learned, temp) if temp is not None and learned.temp_coeff else None

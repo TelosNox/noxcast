@@ -17,7 +17,7 @@ The forecast is built from four independently learned parts:
 | Part | Learned from | Changes |
 |---|---|---|
 | Geometry and efficiency per array | clear-sky hours | almost never (soiling, ageing) |
-| Shading map (sun azimuth × sun elevation) | clear-sky hours, only where direct light is geometrically possible | rarely (tree, new building) |
+| Shading contour (obstacle edges per sun azimuth) | clear-sky hours, only where direct light is geometrically possible | rarely (tree, new building) |
 | Direction factor (non-shade effects on beam) | clear-sky hours at unshaded positions | rarely |
 | Reflected light (sunlit surroundings) | clear-sky hours where the module gets little beam | rarely |
 | Sky view (share of the sky diffuse the array sees) | overcast hours with satellite irradiance | rarely |
@@ -120,20 +120,19 @@ Consequences:
   (balcony 5.4 → 5.5 %, roof 5.7 %): these hours carry little energy. Hours with the sun behind
   the plane are still too high on that roof (diffuse light from the bright side of the sky is
   blocked by the house behind the wall); the isotropic diffuse model cannot show that.
-- **Shadow edges within the hour.** The per-cell estimate gives each hour to the cell of its
+- **Shadow edges within the hour.** A per-cell estimate gives each hour to the cell of its
   mid-hour sun position; an edge crossed during the hour is smeared over about one and a half
   cells, and the forecast, which integrates over 10-minute sub-steps, smears it again. On steady
-  clear hours the cells are therefore finally fitted so that the forecast integrated over the
-  sub-steps meets the hourly means (bounded least squares, a weak pull towards the per-cell
-  estimate, one reweighting against outliers). The sun path of a clock hour shifts across the
+  clear hours the shading is therefore fitted so that the forecast integrated over the sub-steps
+  meets the hourly means (see the contour below). The sun path of a clock hour shifts across the
   edge from day to day, which places it within the hour – from the hourly history, no finer data
   needed. Only hours whose expected light is at least 70 % direct take part: with the sun nearly
-  behind the plane, errors of the diffuse model would otherwise darken the cells (balcony
-  afternoon bias went from 0 to −14 % without that limit). Result on the installation above:
-  roof at sun azimuth 90–120° from +14 % to 0 % bias (error 23 → 15 %), held up when fitting on
-  even and checking on odd days and vice versa; balcony daily error 5.5 → 5.4 %. A smoothing
-  term between neighbouring cells was tried and dropped: it blurred a sharp synthetic wall edge
-  and did not help on real data.
+  behind the plane, errors of the diffuse model would otherwise darken the map (balcony
+  afternoon bias went from 0 to −14 % without that limit). With free cells instead of the contour
+  this gave, on the installation above, roof at sun azimuth 90–120° from +14 % to 0 % bias (error
+  23 → 15 %), held up when fitting on even and checking on odd days and vice versa; balcony daily
+  error 5.5 → 5.4 %. A smoothing term between neighbouring cells was tried and dropped: it blurred
+  a sharp synthetic wall edge and did not help on real data.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.
@@ -155,17 +154,59 @@ behind the module plane, physics already expects zero direct light and the shadi
 undetectable and irrelevant. The shading map is therefore learned and applied only where the
 expected beam irradiance is significant.
 
-### Shade and other effects are kept apart
+### Shade and other effects are kept apart: the contour
 
 A real obstacle has a shape: a building or the terrain shades low sun, an overhang high sun, and
 the edge moves smoothly across the sky from day to day. Temperature, haze and model errors lower
-values without such a shape. The shading map therefore follows physical rules after learning:
+values without such a shape.
 
-- Per azimuth the transmission rises with elevation to a free band and may fall again above it
-  (overhang); dips in between are raised, a clear core (below 0.7) is never changed.
-- Values from 0.9 count as free (dead band).
-- Values between 0.7 and 0.9 are shade only within two cells of a core, in any direction: side
-  walls give edges across azimuth.
+**Why not free cells.** The first map had one free transmission per cell (10° azimuth × 5°
+elevation). Near noon one hour covers about 15° of azimuth, so neighbouring cells are not
+separable from hourly means, and the fit produced zigzag artefacts: on a steep south-east array
+(tilt 60°, azimuth 135°) the sun path at 25–30° elevation was learned as 1.00 / 0.57 / 0.85 /
+0.39 / 0.89 from 160° to 200°, while the cells below (20–25°) were free. There is no obstacle
+there; midday output was 1.35–1.55 × the forecast. A ground obstacle cannot shade 25–30° and leave
+20–25° free. Smoothing between neighbouring cells blurred a real roof shadow in cross-validation,
+and a finer grid does not help, since the information limit is the hourly mean.
+
+**The contour.** Per azimuth column (10°) the map holds at most two edges:
+
+- a **lower edge** – ground obstacles (wall, house, tree, terrain): shaded below it, free above;
+- an **upper edge** – an overhang (balcony roof, the floor above): shaded above it.
+
+Each shaded segment has a transmission between 0 (wall) and 1 (above 0: tree, railing), so partial
+shade stays possible. Without an edge the column is free. The forecast interpolates linearly
+between column centres; an edge is soft over ±1°, so the sub-step integration stays smooth.
+Elevations never visited follow the edge (below a lower edge shaded, above it free). A column
+without enough data has no decision and counts as free – unless both neighbours have an edge, then
+it takes their mean.
+
+**Fit.** The same equations as before: every steady clear hour is the sun path over its 10-minute
+sub-steps, with the measured satellite irradiance, efficiency and temperature factor. The beam and
+diffuse light are split exactly as in the forecast (Erbs, from the measured GHI distributed over the
+sub-steps with the clear-sky shape), so the contour corrects the forecast's own chain like the
+direction factor does: a clear-sky beam that is too high at low sun would otherwise appear as a
+shadow there (in a synthetic year with this mismatch, a fit on the clear-sky split marked 17–25 %
+of the free sun positions as shade, with cells as well as with the contour; on the forecast's
+split the contour marked none). The unknowns are the edges and transmissions per column:
+columns are fitted one after the other with the others fixed (a few sweeps), each by a search over
+the edge elevation in 0.5° steps with a least-squares transmission per step; a robust reweighting
+damps hours that do not fit (haze or a cloud the filters missed). Pure Python, no dependencies.
+
+**Model selection per column.** An edge is introduced only when it lowers the robust squared error
+clearly against "free": by 25 noise variances and by 20 % of the column's error, so noise does not
+create shadows. Most of the hours entirely on the shaded side must be dark (closer to the segment's
+transmission than to free sky): a lone dark spot with free sky below it cannot pass as a lower edge
+whose transmission is a compromise between the spot and the free sky. Transmissions from 0.9 count
+as free (dead band); a segment of 0.7–0.9 needs free sky observed on the other side of its edge,
+since a whole column slightly darker is model error, not shade. Without steady clear hours (no
+satellite data or power statistics) the contour is fitted the same way to the per-cell estimates.
+
+**What the contour cannot represent.** Objects with free sky below them, such as a tree crown above
+a bare trunk or a cable, a gap between two houses narrower than a column, more than one shaded
+band per column (a railing below and an overhang above are fine, a railing with a gap in it is
+not), and side edges sharper than the 10° column width. Such shade is approximated by the nearest
+contour or not learned; what remains at unshaded positions goes to the direction factor.
 
 What remains at unshaded positions on clear hours goes into a separate, coarse direction factor on
 the beam part (20° × 15° bins, median, 0.8–1.2). It may exceed 1 and covers geometry and model
@@ -334,10 +375,11 @@ orientation changes the geometry key and starts relearning.
 - **Forecast:** on every new weather dataset (hourly), milliseconds.
 - **Intraday correction:** hourly or every 15 minutes; the deviation of the last hours
   (actual vs. forecast) corrects the rest of the day with decaying weight.
-- **Ageing:** per shading-map cell, the most recent clear observations dominate (half-life
-  around one year) to follow slow changes such as a growing tree.
-- **Change detection:** if several new clear observations in a cell deviate consistently,
-  the cell is replaced rather than averaged (a felled tree disappears within days).
+- **Ageing:** recent clear hours weigh more in the shading fit (half-life around one year) to
+  follow slow changes such as a growing tree.
+- **Change detection:** if several new clear observations in a cell deviate consistently, the
+  per-cell estimate is replaced rather than averaged (a felled tree disappears within days); this
+  applies where the contour is fitted to the cell estimates (no steady clear hours).
 - **Efficiency drift** raises a hint (soiling / degradation) instead of being absorbed silently.
 
 ## Data filters
@@ -376,7 +418,10 @@ orientation changes the geometry key and starts relearning.
   mean (no extra request: Open-Meteo returns all models in one answer), so each model can be
   compared with the mean on the same days.
 - Energy dashboard solar forecast.
-- Diagnostics: shading-map coverage, last learning run, excluded hours with reason,
+- Diagnostics: shading-map coverage (share of the cells the sun reaches within a year that lie in
+  a column with an edge decision, within the elevations the column's data covers; the attribute
+  `shading_cells` counts the cells derived from the contour for display), last learning run,
+  excluded hours with reason,
   forecast error of the last 30 days.
 - Sidebar panel "Noxcast" (no dashboard setup needed): what the system has learned, to check
   whether it can be right. An overview with all arrays (shade, reflection, direction factor as
@@ -480,11 +525,14 @@ orientation changes the geometry key and starts relearning.
     visible again and after midnight.
   Data from the websocket command `noxcast/today`, live values from the configured entities.
 - Shading map per array as image entity (SVG): learned transmission over sun azimuth and
-  elevation, sun paths (solstices, equinox, today) and key figures; usable in any dashboard.
+  elevation, the learned edges as lines, sun paths (solstices, equinox, today) and key figures;
+  usable in any dashboard. The cells shown (and those of the panel) are derived from the contour:
+  the mean transmission over each cell.
 - Shade today per array: today's sun path through the shading map in 10-minute steps. A sensor
   reports the shaded minutes (transmission below 0.8) with the shaded periods (start, end, lowest
   transmission) and the periods not learned yet as attributes; an image entity shows the day as a
-  timeline with the current time. Times are accurate to about a quarter of an hour (cell size).
+  timeline with the current time. A shadow rising or setting at an edge is placed to a few minutes;
+  a side edge (across azimuth) only to about a quarter of an hour (column width).
 - Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast

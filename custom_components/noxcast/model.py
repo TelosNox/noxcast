@@ -543,7 +543,16 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             out[_key(ai, ei)] = round(min(max(value, 0.0), 1.0), 3)
         return out
 
-    cells = cell_values(observe(rows, scaled=False), 0.9)
+    def envelope() -> dict[str, float]:
+        """P90 over all hours; with the satellite only in cells that also have clear hours, since
+        in a cell with hardly any clear hour (winter noon) the P90 is a cloud, not a shadow."""
+        out = cell_values(observe(rows, scaled=False), 0.9)
+        if not clear_filter:
+            return out
+        seen = {_key(*c) for c, items in observe(basis, scaled=False).items() if len(items) >= MIN_CELL_SAMPLES}
+        return {k: v for k, v in out.items() if k in seen}
+
+    cells = envelope()
     if clear_filter:
         # median over clear hours whose sun position is unshaded; the median does not ignore shadows.
         # With little data (new installation) all clear hours: shadows pull it slightly low, the safe side,
@@ -556,7 +565,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         source = unshaded if len(unshaded) >= MIN_UNSHADED_HOURS else strong
         if source:
             efficiency = eff_quantile(source, 0.5)
-            cells = cell_values(observe(rows, scaled=False), 0.9)
+            cells = envelope()
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
         if steady_filter:
             cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale)

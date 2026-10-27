@@ -29,6 +29,7 @@ for split in ("solis", "erbs"):
     CASES[f"{split}:free_60_135"] = ("free", (60, 135), split)
     for mask in ("free", "wall", "overhang", "tree"):
         CASES[f"{split}:{mask}"] = (mask, (35, 180), split)
+    CASES[f"{split}:morning_90_180"] = ("morning", (90, 180), split)
 
 for case in sys.argv[2].split(",") if len(sys.argv) > 2 else CASES:
     mask_name, (tilt, azimuth), split = CASES[case]

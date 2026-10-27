@@ -398,3 +398,24 @@ def test_shadow_edge_placed_within_the_hour():
     behind = [v for k, v in fitted.cells.items()                                         # 80-100°, 15-35°
               if int(k.split(",")[0]) in (8, 9) and 3 <= int(k.split(",")[1]) <= 6]
     assert behind and max(behind) < 0.05
+
+
+def test_cells_without_clear_hours_are_not_shade():
+    """Winter noon: the sun crosses 25-30° elevation in the south only in February and November.
+    If those weeks are all overcast, the P90 over all hours there is a cloud, not a shadow."""
+    rng = random.Random(3)
+    samples, sat = [], {}
+    for d in range(365):
+        grey = 31 <= d < 52 or 297 <= d < 315
+        cloud = rng.uniform(0.0, 0.7) if grey or rng.random() >= 0.35 else 1.0
+        for h in range(24):
+            t = START + d * 86400 + h * 3600
+            *_, cs_ghi = model.clearsky_hour(SITE, GEO, t)
+            sat[t] = cs_ghi * (1.0 if cloud == 1.0 else 0.3 + 0.5 * cloud)
+            samples.append((t, synthetic_power(t, cloud)))
+    learned = model.learn(SITE, GEO, samples, now=START + 365 * 86400, satellite_ghi=sat)
+    assert learned.clear_filter
+    noon = {k: v for k, v in learned.cells.items() if k in {f"{a},5" for a in range(16, 20)}}
+    assert all(v >= model.SHADE_FREE for v in noon.values()), noon
+    shaded = [v for k, v in learned.cells.items() if (lambda a, e: a * 10 + 10 <= 100 and e * 5 + 5 <= 15)(*map(int, k.split(",")))]
+    assert shaded and max(shaded) < 0.2                   # the real mask stays

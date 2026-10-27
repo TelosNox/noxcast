@@ -95,8 +95,14 @@ Consequences:
 - **Satellite irradiance is used as a pre-filter for clear hours.** Expectations are scaled to
   the measured clearness and the median is used for efficiency (over unshaded positions) and per
   shading cell: clouds are already removed, so a high percentile would only pick satellite errors
-  (it gave 100 % system efficiency in a first test). Cells with too few clear hours keep the
-  90th percentile over all hours, so coverage does not drop.
+  (it gave 100 % system efficiency in a first test). Cells with too few clear hours for the
+  median keep the 90th percentile over all hours, but only if they have at least a few clear
+  hours at all: where the sun passes only a few weeks a year (noon at 25–30° elevation in
+  February and November), those weeks may be all overcast, and the 90th percentile is then a
+  cloud, not a shadow. On a balcony array, a single frosty clear day had made two such cells
+  look shaded (0.58 / 0.39); cross-validated on its real data, without them the error on noon
+  hours in February and October fell from 9.6 to 9.0 % per day, at +0.1 points per day overall
+  (cells at a shadow edge with few clear hours now take their neighbours' value).
 - **Regressions over many hours** (sky view, temperature loss) may use satellite irradiance
   directly, because hourly errors are random and average out.
 - **Steady hours only** for efficiency, direction factor, reflection and the clear-hour median per

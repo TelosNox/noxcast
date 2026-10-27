@@ -15,7 +15,7 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   light is geometrically possible. The 90th percentile per cell represents clear conditions;
   clouds and occasional curtailment fall below it. Optionally, satellite irradiance pre-selects
   clear hours. The map holds shade only: per azimuth it rises with elevation to a free band and may
-  fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
+  fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a confirmed core.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
   positions on clear hours: geometry and model errors that are not shade.
   Efficiency, D, R and the clear-hour refinement of T use only steady hours when the power
@@ -75,8 +75,12 @@ SPLIT_MIN_SHARE = 0.05           # ... above this share of the sensor's peak (lo
 MIN_STEADY_HOURS = 30            # steady clear hours needed to learn efficiency, D and R from them alone
 SHADE_CORE = 0.7                 # below: shade (temperature, haze and model errors do not reach this far)
 SHADE_FREE = 0.9                 # from here: free (dead band for temperature, haze and model errors)
-SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a core within this many cells
+SHADE_NEAR_CELLS = 2             # 0.7-0.9 is shade only with a confirmed core within this many cells
+SHADE_MONOTONE_TOL = 0.05        # a core the column shape raises by more than this is not part of a monotone column
 SHADE_FIT_PRIOR = 0.01           # shading fit: pull towards the per-cell estimate, relative to a typical cell's weight
+SHADE_FIT_SMOOTH = 0.1           # ... penalty on differences between neighbouring cells, same scale
+SHADE_FIT_EDGE = 0.1             # ... differences beyond this cost linearly, not quadratically (an edge stays sharp)
+SHADE_FIT_ROUNDS = 3             # ... reweightings of these differences (iteratively reweighted least squares)
 SHADE_FIT_BEAM_SHARE = 0.7       # ... hours whose expected light is mostly direct (else diffuse-model errors enter)
 SHADE_FIT_SWEEPS = 400
 DIRECTION_AZ_STEP = 20.0         # coarse bins of the direction factor
@@ -642,7 +646,11 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
     given clock hour shifts across the edge, which places it within the hour. Least squares with
     bounds 0..1 and a weak pull towards the per-cell estimate (cells the hours barely touch),
     solved by projected Gauss-Seidel; one reweighting damps hours that do not fit
-    (a cloud the steady test missed). Only hours whose expected light on the plane is mostly
+    (a cloud the steady test missed). Near noon one hour covers about two cells along azimuth, so
+    "both 0.7" and "0.4 / 1.0 alternating" fit equally well; a penalty on differences between
+    neighbouring cells picks the smooth one. It is quadratic for small differences and linear for
+    large ones (Huber, by reweighting), so a real edge supported by many hours stays sharp, which
+    a purely quadratic penalty would blur. Only hours whose expected light on the plane is mostly
     direct take part; otherwise errors of the diffuse model (sun nearly behind the plane) would
     darken the cells. rows: steady clear hours; factor(row): efficiency x temperature factor;
     scale(row): satellite clearness.
@@ -672,7 +680,9 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
                                                                        (c[1] + 0.5) * EL_STEP)
              for _, coef, _ in eqs for c in coef}
 
-    def solve(weights: list[float]) -> dict[tuple[int, int], float]:
+    pairs = [(c, n) for c in prior for n in (((c[0] + 1) % 36, c[1]), (c[0], c[1] + 1)) if n in prior]
+
+    def solve(weights: list[float], smooth: list[float]) -> dict[tuple[int, int], float]:
         normal: dict[tuple[int, int], dict[tuple[int, int], float]] = {c: {} for c in prior}
         rhs = dict.fromkeys(prior, 0.0)
         for (y, coef, w), extra in zip(eqs, weights):
@@ -681,10 +691,16 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
                 row = normal[c]
                 for c2, a2 in coef.items():
                     row[c2] = row.get(c2, 0.0) + w * extra * a * a2
-        pull = SHADE_FIT_PRIOR * _quantile([row[c] for c, row in normal.items()], 0.5)
+        typical = _quantile([row[c] for c, row in normal.items()], 0.5)
         for c, row in normal.items():
-            row[c] += pull
-            rhs[c] += pull * prior[c]
+            row[c] += SHADE_FIT_PRIOR * typical
+            rhs[c] += SHADE_FIT_PRIOR * typical * prior[c]
+        for (c, n), extra in zip(pairs, smooth):
+            s = SHADE_FIT_SMOOTH * typical * extra
+            normal[c][c] += s
+            normal[n][n] += s
+            normal[c][n] = normal[c].get(n, 0.0) - s
+            normal[n][c] = normal[n].get(c, 0.0) - s
         value = dict(prior)
         for _ in range(SHADE_FIT_SWEEPS):
             change = 0.0
@@ -697,12 +713,13 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
                 break
         return value
 
-    value = solve([1.0] * len(eqs))
+    value = solve([1.0] * len(eqs), [1.0] * len(pairs))
     residuals = [y - sum(a * value[c] for c, a in coef.items()) for y, coef, _ in eqs]
     centre = _quantile(residuals, 0.5)
     spread = 1.4826 * _quantile([abs(x - centre) for x in residuals], 0.5)
-    if spread > 0:
-        value = solve([min(1.0, 2 * spread / max(abs(x), 1e-9)) for x in residuals])
+    weights = [min(1.0, 2 * spread / max(abs(x), 1e-9)) for x in residuals] if spread > 0 else [1.0] * len(eqs)
+    for _ in range(SHADE_FIT_ROUNDS):
+        value = solve(weights, [min(1.0, SHADE_FIT_EDGE / max(abs(value[c] - value[n]), 1e-9)) for c, n in pairs])
     out = dict(cells)
     out.update({_key(*c): round(v, 3) for c, v in value.items()})
     return out
@@ -759,34 +776,45 @@ def shape_cells(cells: dict[str, float]) -> dict[str, float]:
 
     Obstacles on the ground shade low sun, overhangs shade high sun: per azimuth column the
     transmission rises with elevation to a free band and may fall again above it, never up and down
-    in between. Dips in such a column are raised, a clear shadow core is never changed. Values from
-    SHADE_FREE count as free (temperature, haze and model errors); values between SHADE_CORE and
-    SHADE_FREE are shade only next to a core, in any direction, since side walls give edges across
-    azimuth. A core without any shaded neighbour is noise.
+    in between. Dips in such a column are raised. A shadow core is real when another core touches it
+    (also diagonally) or when it is the dark end of a monotone shadow profile in its column; a real
+    core is never changed. Any other core is noise (a few hours of haze on a rarely visited cell, or
+    the fit trading two cells along the sun path against each other) and is raised to its
+    neighbours' level. Values from SHADE_FREE count as free (temperature, haze and model errors);
+    values between SHADE_CORE and SHADE_FREE are shade only next to a real core, in any direction,
+    since side walls give edges across azimuth.
     """
+    value = {tuple(map(int, key.split(","))): v for key, v in cells.items()}
     columns: dict[int, list[tuple[int, float]]] = {}
-    for key, v in cells.items():
-        ai, ei = map(int, key.split(","))
+    for (ai, ei), v in value.items():
         columns.setdefault(ai, []).append((ei, v))
-    raised: dict[tuple[int, int], float] = {}
+    fit: dict[tuple[int, int], float] = {}
     for ai, items in columns.items():
         items.sort()
-        fit = _rise_fall([v for _, v in items])
-        for (ei, v), f in zip(items, fit):
-            raised[(ai, ei)] = v if v < SHADE_CORE else max(v, f)
+        fit.update({(ai, ei): f for (ei, _), f in zip(items, _rise_fall([v for _, v in items]))})
 
-    def near(ai: int, ei: int, radius: int) -> list[float]:
-        return [raised[n] for x in range(-radius, radius + 1) for y in range(-radius, radius + 1)
-                if (x, y) != (0, 0) and (n := ((ai + x) % 36, ei + y)) in raised]
+    def near(ai: int, ei: int, radius: int) -> list[tuple[int, int]]:
+        return [n for x in range(-radius, radius + 1) for y in range(-radius, radius + 1)
+                if (x, y) != (0, 0) and (n := ((ai + x) % 36, ei + y)) in value]
 
+    def confirmed(ai: int, ei: int) -> bool:
+        if any(value[n] < SHADE_CORE for n in near(ai, ei, 1)):
+            return True
+        profile = any(value.get((ai, ei + y), 1.0) < SHADE_FREE for y in (-1, 1))
+        return profile and fit[(ai, ei)] <= value[(ai, ei)] + SHADE_MONOTONE_TOL
+
+    real = {c for c, v in value.items() if v < SHADE_CORE and confirmed(*c)}
+    raised = {c: max(v, fit[c]) for c, v in value.items() if v >= SHADE_CORE}
+    for c in value.keys() - real - raised.keys():        # noise cores: no core next to them
+        around = sorted(raised[n] for n in near(*c, 1))
+        raised[c] = max(fit[c], around[len(around) // 2]) if around else 1.0
     out = {}
-    for (ai, ei), v in raised.items():
-        if v >= SHADE_FREE:
-            v = 1.0
-        elif v >= SHADE_CORE:
-            if not any(n < SHADE_CORE for n in near(ai, ei, SHADE_NEAR_CELLS)):
+    for c, v in value.items():
+        if c not in real:
+            v = raised[c]
+            if v >= SHADE_FREE or not any(n in real for n in near(*c, SHADE_NEAR_CELLS)):
                 v = 1.0
-        out[_key(ai, ei)] = round(v, 3)
+        out[_key(*c)] = round(v, 3)
     return out
 
 

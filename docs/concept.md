@@ -131,9 +131,19 @@ Consequences:
   behind the plane, errors of the diffuse model would otherwise darken the cells (balcony
   afternoon bias went from 0 to −14 % without that limit). Result on the installation above:
   roof at sun azimuth 90–120° from +14 % to 0 % bias (error 23 → 15 %), held up when fitting on
-  even and checking on odd days and vice versa; balcony daily error 5.5 → 5.4 %. A smoothing
-  term between neighbouring cells was tried and dropped: it blurred a sharp synthetic wall edge
-  and did not help on real data.
+  even and checking on odd days and vice versa; balcony daily error 5.5 → 5.4 %.
+- **Smoothness in that fit.** Near noon one hour crosses about two 10° cells, so along the sun
+  path "both 0.7" and "0.4 / 1.0 alternating" explain the hourly means equally well; on cells
+  visited only a few weeks a year (the noon sun at 25–30° in February and October) a few hazy
+  hours then produce a zigzag of dark and light cells where there is no obstacle. The fit
+  therefore penalises differences between neighbouring cells (along azimuth and elevation, 0.1
+  of a typical cell's weight). The penalty is quadratic only for small differences (up to 0.1)
+  and linear beyond (Huber, three reweightings): a zigzag costs much more than a flat solution,
+  while a real edge, a drop over one or two cells supported by many hours, costs little and stays
+  sharp. A purely quadratic term had been tried before and dropped, because it blurred a sharp
+  synthetic wall edge. On the synthetic site of tests/test_shading_map.py (51° N, 60° tilt, 135°
+  azimuth) the spurious cores disappear while a low wall and a one-cell pole keep their edges;
+  on the wall edge of tests/test_model.py the error of the edge hours went from 17.8 to 17.1 %.
 - **Temperature and wind** come from the reanalysis archive; spatial resolution is sufficient.
 - The feature is **optional** (off by default). When the archive is unreachable, learning falls
   back to the percentile method and the diagnostics say so; the forecast never fails because of it.
@@ -162,9 +172,13 @@ the edge moves smoothly across the sky from day to day. Temperature, haze and mo
 values without such a shape. The shading map therefore follows physical rules after learning:
 
 - Per azimuth the transmission rises with elevation to a free band and may fall again above it
-  (overhang); dips in between are raised, a clear core (below 0.7) is never changed.
+  (overhang); dips in between are raised.
+- A core (below 0.7) is real when another core touches it (also diagonally) or when it is the
+  dark end of a monotone shadow profile in its column (a shaded cell above or below it, and the
+  column shape does not need to raise it). A real core is never changed. A lone core between
+  free cells is noise and is raised to the level of its neighbours.
 - Values from 0.9 count as free (dead band).
-- Values between 0.7 and 0.9 are shade only within two cells of a core, in any direction: side
+- Values between 0.7 and 0.9 are shade only within two cells of a real core, in any direction: side
   walls give edges across azimuth.
 
 What remains at unshaded positions on clear hours goes into a separate, coarse direction factor on

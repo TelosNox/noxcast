@@ -571,14 +571,14 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             cells = cell_values(observe(rows, scaled=False), 0.9)
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
 
-    # The contour: on steady clear hours fitted so that the forecast, integrated over the sub-steps,
-    # meets the hourly means; otherwise fitted to the shaped cell estimates
+    # The contour: fitted to the shaped cell estimates; with steady clear hours fitted so that the
+    # forecast, integrated over the sub-steps, meets the hourly means, the cell estimates completing
+    # it where the hours cannot tell (sun nearly behind the plane)
     eqs = _contour_equations(site, geo, calm, lambda r: efficiency * f_temp(r), satellite_ghi, sky_view) \
         if steady_filter else []
+    contour = _fit_contour(_cell_equations(shape_cells(cells)), 2)
     if len(eqs) >= MIN_STEADY_HOURS:
-        contour = _fit_contour(eqs, CONTOUR_MIN_HOURS)
-    else:
-        contour = _fit_contour(_cell_equations(shape_cells(cells)), 2)
+        contour = _fit_contour(eqs, CONTOUR_MIN_HOURS, contour)
     shading = LearnedArray(contour=contour, shading_version=SHADING_VERSION, sky_view=sky_view)
     direction: dict[str, float] = {}
     reflection: dict[str, float] = {}
@@ -777,7 +777,7 @@ def _edge_scan(items: list[tuple[float, float, list]], sign: int,
     return (best[0], sign * best[1], 1 - best[2]) if best else None
 
 
-def _fit_column(items: list[tuple[float, float, list]], penalty: float) -> dict:
+def _fit_column(items: list[tuple[float, float, list]], penalty: float, fallback: dict | None = None) -> dict:
     """Edges of one azimuth column: none, lower, upper or both, chosen by the penalised robust error.
 
     An edge must lower the weighted squared error by penalty (noise variances) and by
@@ -787,6 +787,8 @@ def _fit_column(items: list[tuple[float, float, list]], penalty: float) -> dict:
     compromise between the spot and the free sky. Transmissions from SHADE_FREE count as free; one
     between SHADE_CORE and SHADE_FREE needs free sky observed on the other side of the edge – a whole
     column a little darker is no shade but model error (direction factor).
+    fallback: a column from other data whose lower or upper edge is taken where this column has
+    none, unless it raises the error by more than the penalty (the hours contradict it).
     """
     def loss(column: dict, pts: list) -> float:
         return sum(a * (1 - column_transmission(column, el)) for el, a in pts)
@@ -847,11 +849,20 @@ def _fit_column(items: list[tuple[float, float, list]], penalty: float) -> dict:
             value = sse(column)
             if (value + (2 - edges) * penalty < best_sse and value < (1 - CONTOUR_MIN_GAIN) * best_sse
                     and plausible(column)):
-                best = column
+                best, best_sse = column, value
+    for kind in ("low", "high"):
+        if fallback and kind in fallback and kind not in best:
+            column = {**best, kind: fallback[kind], "t_" + kind: fallback["t_" + kind]}
+            if "low" in column and "high" in column and column["low"] + 2 * CONTOUR_SOFT > column["high"]:
+                continue
+            value = sse(column)
+            if value <= best_sse + penalty:
+                best, best_sse = column, value
     return best
 
 
-def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int) -> dict[str, dict]:
+def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int,
+                 fallback: dict[str, dict] | None = None) -> dict[str, dict]:
     """Contour per azimuth column such that the predicted equations meet the observed values.
 
     eqs: (observed, {column: [(elevation, coefficient)]}, weight); prediction: sum of the
@@ -860,7 +871,15 @@ def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int
     (a cloud or haze the filters missed), as in two further rounds. Columns with fewer than
     min_hours equations carrying a real share (30 %) of their light get no decision. Each column
     also keeps the elevation range its data covers ("seen"): edges outside it are extrapolated.
+
+    fallback: a contour from other data (the cell estimates), for where these equations cannot
+    tell. A column without a decision here takes its fallback column unchanged; a decided column
+    without a lower (upper) edge takes the fallback's edge unless the equations contradict it, i.e.
+    unless it raises their error by more than the penalty of an edge (see _fit_column). Where the
+    sun is nearly behind the plane the hours carry little direct light and would otherwise leave a
+    real shadow there free – and extrapolate it free below the elevations they saw.
     """
+    fallback = fallback or {}
     free = [sum(a for pts in columns.values() for _, a in pts) for _, columns, _ in eqs]
     by_column: dict[int, list[int]] = {}
     seen: dict[int, list[float]] = {}
@@ -872,11 +891,16 @@ def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int
                 lo, hi = seen.get(c, [min(els), max(els), 0])[:2]
                 seen[c] = [min(lo, *els), max(hi, *els), seen.get(c, [0, 0, 0])[2] + 1]
     decided = sorted(c for c, (_, _, n) in seen.items() if n >= min_hours)
+    fixed = {int(k): v for k, v in fallback.items() if int(k) not in decided}
     if not decided:
-        return {}
+        return dict(fallback)
     contour: dict[int, dict] = {c: {} for c in decided}
     loss: list[dict[int, float]] = [{} for _ in eqs]
     total = [0.0] * len(eqs)
+    for c, column in fixed.items():                     # columns taken from the fallback stay as they are
+        for j in by_column.get(c, []):
+            loss[j][c] = sum(a * (1 - column_transmission(column, el)) for el, a in eqs[j][1][c])
+            total[j] += loss[j][c]
     robust = [1.0] * len(eqs)
     floor = 0.01 * _quantile(free, 0.5)
     for rnd in range(CONTOUR_ROUNDS):
@@ -891,7 +915,7 @@ def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int
             for c in decided:
                 items = [(free[j] - eqs[j][0] - (total[j] - loss[j].get(c, 0.0)), eqs[j][2] * robust[j], eqs[j][1][c])
                          for j in by_column[c]]
-                column = _fit_column(items, penalty)
+                column = _fit_column(items, penalty, fallback.get(str(c)))
                 changed |= column != contour[c]
                 contour[c] = column
                 for j, (_, _, pts) in zip(by_column[c], items):
@@ -900,7 +924,13 @@ def _fit_contour(eqs: list[tuple[float, dict[int, list], float]], min_hours: int
                     loss[j][c] = new
             if not changed:
                 break
-    return {str(c): {**contour[c], "seen": [round(seen[c][0], 1), round(seen[c][1], 1)]} for c in decided}
+    out = {c: dict(column) for c, column in fixed.items()}
+    for c in decided:
+        lo, hi = seen[c][:2]
+        if str(c) in fallback:
+            lo, hi = min(lo, fallback[str(c)]["seen"][0]), max(hi, fallback[str(c)]["seen"][1])
+        out[c] = {**contour[c], "seen": [round(lo, 1), round(hi, 1)]}
+    return {str(c): out[c] for c in sorted(out)}
 
 
 def display_cells(learned: LearnedArray, reachable: set[tuple[int, int]]) -> dict[str, float]:

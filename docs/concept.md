@@ -199,8 +199,22 @@ create shadows. Most of the hours entirely on the shaded side must be dark (clos
 transmission than to free sky): a lone dark spot with free sky below it cannot pass as a lower edge
 whose transmission is a compromise between the spot and the free sky. Transmissions from 0.9 count
 as free (dead band); a segment of 0.7–0.9 needs free sky observed on the other side of its edge,
-since a whole column slightly darker is model error, not shade. Without steady clear hours (no
-satellite data or power statistics) the contour is fitted the same way to the per-cell estimates.
+since a whole column slightly darker is model error, not shade.
+
+**Where the hours cannot tell, the cell estimates decide.** The contour is also fitted the same way
+to the per-cell estimates, which take every clear hour with enough beam at its mid-hour position.
+Without steady clear hours (no satellite data or power statistics) that is the contour. Otherwise it
+completes the hourly fit per column: a column without enough hours takes it unchanged, and a column
+without a lower (upper) edge takes the estimated one unless its hours contradict it (the edge raises
+their error by more than the penalty of an edge). The reason is the limit of 70 % direct light:
+where the sun is nearly behind the plane, the hours there are dropped or carry little beam, and a
+real shadow came out free and was extrapolated free below the elevations the hours saw. In a
+cross-validation on a balcony array (60°/135°, Dec–Oct) the morning shadow of a house at sun
+azimuth 60–120° below 20° was lost that way: forecast +200–300 % there, hourly error 12.3 → 17.5 %,
+daily 5.0 → 8.8 % against free cells. The price: the cell estimates use the clear-sky split, so in a
+synthetic year with the Erbs split they add weak low-sun edges (below 12°, transmission 0.4–0.6) the
+hours cannot contradict, 4–6 % of the free sun positions, at almost no energy (+0.04 percentage
+points hourly error).
 
 **What the contour cannot represent.** Objects with free sky below them, such as a tree crown above
 a bare trunk or a cable, a gap between two houses narrower than a column, more than one shaded

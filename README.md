@@ -217,7 +217,9 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
   still arrives (0 = wall, more for a tree or railing), learned only where direct light is
   possible. Fitted to the steady clear hours so that the forecast over 10-minute steps meets the
   hourly means. An edge is only learned where it clearly beats free sky, so haze or a cloud the
-  filters missed does not become a shadow; a dark spot with free sky below it is no edge.
+  filters missed does not become a shadow; a dark spot with free sky below it is no edge. Where
+  the sun is nearly behind the modules the hours carry too little direct light to tell; there the
+  edge comes from the per-cell estimates, unless the hours contradict it.
   Shadows with free sky below them (a tree crown above a bare trunk) cannot be represented.
   Recent observations weigh more. The map image and the panel show the cells derived from the
   contour, with the edges as lines in the image; *shading map coverage* is the share of reachable

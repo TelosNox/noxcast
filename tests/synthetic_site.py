@@ -17,6 +17,7 @@ MASKS = {
     "wall": lambda az, el: 0.0 if 90 <= az <= 150 and el < 15 else 1.0,          # low wall, east to south-east
     "overhang": lambda az, el: 0.0 if 100 <= az <= 200 and el > 45 else 1.0,     # balcony roof above
     "tree": lambda az, el: 0.4 if 200 <= az <= 240 and el < 25 else 1.0,         # tree, partly transparent
+    "morning": lambda az, el: 0.0 if 70 <= az <= 130 and el < 20 else 1.0,       # house east, sun nearly behind
 }
 
 

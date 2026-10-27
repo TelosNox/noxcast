@@ -74,6 +74,23 @@ def test_tree_keeps_its_partial_transmission():
     assert improves(GEO, learned, data, data["clear"])
 
 
+def test_shadow_where_the_sun_is_nearly_behind_the_plane():
+    """A vertical south facade: morning sun from 100-110° at low elevation carries little direct
+    light, so its hours are mostly left out of the hourly fit. The cell estimates still see the
+    house; the column must not come out free (and be extrapolated free below what the hours saw)."""
+    facade = model.ArrayGeometry(tilt=90, azimuth=180, peak_w=1000)
+    data, learned = case("morning", facade)
+    low = edges(learned, "low")
+    for c in (10, 11, 12):                                                      # 100-130°
+        assert abs(low[c][0] - 20) <= 1.5 and low[c][1] < 0.1, low
+    site = data["site"]
+    morning = [t for t in data["clear"] if 100 <= solar.sun_position(site, t + 1800).azimuth <= 110
+               and solar.sun_position(site, t + 1800).elevation < 18]
+    assert len(morning) >= 10
+    assert ss.forecast_error(model, facade, learned, data, morning) < \
+        0.5 * ss.forecast_error(model, facade, model.without_shade(learned), data, morning)
+
+
 def _column(ai: int, values: dict[int, float]) -> dict[str, float]:
     return {f"{ai},{ei}": v for ei, v in values.items()}
 

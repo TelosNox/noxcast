@@ -361,7 +361,14 @@ PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca4190
           'f2c51ee26fa14305']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
-WS_PINNED: dict = {}
+WS_PINNED = {
+    "midday": {"learned": "09ae5c2244396037", "today": "e0fdd96041ccf9f9", "accuracy": "81deb7aaac621a2a",
+               "load": "ec97ba3b1fe8c395", "diagnostics": "171796093529a473", "battery": "8bc7c7b4d61dd060",
+               "card_config": "7fc203106dc53066", "day": "cf0b44a4baf5708c"},
+    "morning": {"learned": "7afc3bed685d9132", "today": "d6f63ae4c0482d42", "accuracy": "5a2a75e0783e3060",
+                "load": "11b668dbdefbb77f", "diagnostics": "3fd9df274e887b65", "battery": "70d663a4fd624a66",
+                "card_config": "7fc203106dc53066", "day": "28ab113943986b20"},
+}
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config")
 
 

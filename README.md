@@ -124,8 +124,10 @@ Registered automatically; add it via *Add card* → *Noxcast*. It always shows w
 configured with (arrays, house load, grid, batteries, feed-in); the card settings only change the
 display.
 
-- **Power now** as a row of figures: PV, grid, home, battery, with moving dots for the
-  flows. Tapping a figure opens its entity.
+- **Power now** as a row of figures: PV, battery, home, grid, with moving dots for the
+  flows. The battery shows as an icon filled to its state of charge; the edge of the fill points
+  right while charging and left while discharging (or, as an option, percentage and battery power).
+  Tapping a figure opens its entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
   load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
   band, a lane per array with shade and reflection periods, hourly weather symbols on top. The chart

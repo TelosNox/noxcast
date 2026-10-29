@@ -8,6 +8,8 @@
 // show_weather: true                   # hourly weather above the chart (Noxcast's weather), a symbol at every change
 // range: production                    # day chart: production (an hour either side) or day (0–24 h, night compressed)
 // flow_style: chain                    # power now: chain (dots between the figures) or bus (a line below them)
+// battery_style: icon                  # battery in that row: icon (filled to the state of charge, the edge
+//                                      # points the way the power flows) or power (percentage and battery power)
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
 // flow_min_w: 10                       # a flow shows from this many watts (sensors drift by a few watts)
 // look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
@@ -361,6 +363,8 @@ class NoxcastCard extends HTMLElement {
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
       .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
+      .cf .v .soc { display: inline-block; height: .72em; height: 1cap; width: auto; aspect-ratio: 46 / 20; margin-right: .3em; vertical-align: baseline; }
+      .cf .v .pct { font-size: .8em; }
       .cf .v { line-height: 1.2; }
       /* chain: the row aligns on the baseline of the values; a gap has no baseline of its own, so its bottom
          edge sits on it. It is one cap height tall (digits are cap height), so its middle is the middle of
@@ -440,7 +444,9 @@ class NoxcastCard extends HTMLElement {
     const arrow = (w, key) => (!bus || !this._on(key, w) ? "" : w > 0 ? "▲ " : "▼ ");
     const text = {
       pv: num(v.pv), home: num(v.home), grid: `${arrow(v.grid, "n:grid")}${num(Math.abs(v.grid))}`,
-      bat: `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow(v.bat, "n:bat")}${num(Math.abs(v.bat))}</small>`,
+      bat: v.socAll === null ? "–" : c.battery_style === "power"
+        ? `${Math.round(v.socAll)} % <small>${arrow(v.bat, "n:bat")}${num(Math.abs(v.bat))}</small>`
+        : `${this._socIcon(v.socAll, !this._on("n:bat", v.bat) ? 0 : v.bat > 0 ? 1 : -1)}<span class="pct">${Math.round(v.socAll)} %</span>`,
     };
     for (const n of nodes) {
       f.values[n.key].innerHTML = text[n.key];
@@ -488,6 +494,18 @@ class NoxcastCard extends HTMLElement {
       }
     }
     this._animate();
+  }
+
+  // battery as high as the digits beside it, filled to the state of charge; the edge of the fill points
+  // right while charging and left while discharging (the course of the level is in the day chart)
+  _socIcon(soc, dir) {
+    const P = this._p, ix = 4, iy = 4, iw = 34, ih = 12, fx = ix + iw * Math.max(0, Math.min(100, soc)) / 100, a = ih * 0.28;
+    const edge = dir > 0 ? `${fx - a},${iy} ${fx + a},${iy + ih / 2} ${fx - a},${iy + ih}`
+      : dir < 0 ? `${fx + a},${iy} ${fx - a},${iy + ih / 2} ${fx + a},${iy + ih}` : `${fx},${iy} ${fx},${iy + ih}`;
+    return `<svg class="soc" viewBox="0 0 46 20" aria-hidden="true"><defs><clipPath id="nx-soc"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="1.5"></rect></clipPath></defs>
+      <rect x="1" y="1" width="40" height="18" rx="3.5" fill="none" stroke="var(--secondary-text-color)" stroke-width="2"></rect>
+      <rect x="41.5" y="6" width="3.5" height="8" rx="1" fill="var(--secondary-text-color)"></rect>
+      <polygon points="${ix - 1},${iy} ${edge} ${ix - 1},${iy + ih}" fill="${P.bat}" clip-path="url(#nx-soc)"></polygon></svg>`;
   }
 
   _buildCompact(el, nodes, bus, shape) {
@@ -984,7 +1002,8 @@ class NoxcastCardEditor extends HTMLElement {
       show_weather: de ? "Stundenwetter über dem Verlauf" : "Hourly weather above the chart",
       range: de ? "Zeitraum des Verlaufs" : "Time range of the chart",
       look: de ? "Aussehen" : "Look",
-      flow_style: de ? "Fluss zwischen den Werten" : "Flow between the figures", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
+      flow_style: de ? "Fluss zwischen den Werten" : "Flow between the figures",
+      battery_style: de ? "Akku in der Zeile" : "Battery in the row", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
       flow_min_w: de ? "Fluss ab (W)" : "Flow from (W)",
     };
   }
@@ -1034,6 +1053,8 @@ class NoxcastCardEditor extends HTMLElement {
     this.querySelector("#main").appendChild(this._form([
       { name: "flow_style", selector: opt([["chain", de ? "Kette: Punkte zwischen den Werten" : "Chain: dots between the figures"],
         ["bus", de ? "Bus: Linie unter den Werten" : "Bus: line below the figures"]]) },
+      { name: "battery_style", selector: opt([["icon", de ? "Symbol mit Ladestand" : "Icon with state of charge"],
+        ["power", de ? "Prozent und Leistung" : "Percentage and power"]]) },
       { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
       { name: "flow_min_w", selector: { number: { min: 0, max: 200, step: 1, mode: "box", unit_of_measurement: "W" } } },
       { name: "look", selector: opt([["plain", "Home Assistant"], ["noxcast", "Noxcast"]]) },
@@ -1044,12 +1065,13 @@ class NoxcastCardEditor extends HTMLElement {
       { name: "font_scale", selector: { number: { min: 0.8, max: 1.6, step: 0.1, mode: "slider" } } },
     ], {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, look: c.look || "plain", range: c.range || "production",
-      flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
+      flow_style: c.flow_style || "chain", battery_style: c.battery_style || "icon", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
     }, (v) => {
       const n = { ...this._config };
       n.font_scale = v.font_scale; n.legend = v.legend;
       if (v.flow_style && v.flow_style !== "chain") n.flow_style = v.flow_style; else delete n.flow_style;
+      if (v.battery_style === "power") n.battery_style = "power"; else delete n.battery_style;
       if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
       if (v.flow_min_w !== undefined && v.flow_min_w !== "" && Number(v.flow_min_w) !== FLOW_MIN_W) n.flow_min_w = Number(v.flow_min_w); else delete n.flow_min_w;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;

@@ -125,8 +125,10 @@ configured with (arrays, house load, grid, batteries, feed-in); the card setting
 display.
 
 - **Power now** as a row of figures: PV, battery, home, grid, with moving dots for the
-  flows. The battery shows as an icon filled to its state of charge; the edge of the fill points
-  right while charging and left while discharging (or, as an option, percentage and battery power).
+  flows. Icons above the figures show their state: the sun grows with the share of peak power, the
+  battery is filled to its state of charge, a window of the house lights up per step of load, and
+  the pylon gets a lightning bolt per step (blue while drawing, yellow while feeding in). The steps
+  are 3 and 8 times the base load, the quietest tenth of the hourly house load over the last 7 days.
   Tapping a figure opens its entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
   load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
@@ -140,6 +142,9 @@ display.
 | `show_battery`, `show_effects`, `show_band`, `show_load` | `true` | Battery level, shade/reflection lanes, P10–P90, house load in the chart |
 | `show_weather` | `true` | Weather symbols above the chart |
 | `range` | `production` | `production` (an hour around sunrise and sunset) or `day` (0–24 h, night compressed) |
+| `labels` | `icons` | `icons` (icons that show the state) or `text` (names, battery percentage and power) |
+| `sun_glow` | `false` | The sun icon glows by the share of peak power |
+| `battery_arrows` | `false` | Up and down arrows beside the battery icon, the one of the flow lit |
 | `flow_style` | `chain` | `chain` (dots between the figures) or `bus` (a line below them) |
 | `flow_speed` | `normal` | `calm`, `normal`, `lively` |
 | `flow_min_w` | `10` | Smallest flow shown, in W |
@@ -147,7 +152,7 @@ display.
 | `legend` | `true` | Legend below the chart |
 | `font_scale` | `1` | 0.8–1.6 |
 
-All options are also in the visual editor.
+All options are also in the visual editor, grouped into power now, day chart and look.
 
 ### Weather card `custom:noxcast-weather-card`
 

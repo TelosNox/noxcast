@@ -10,7 +10,10 @@
 // flow_style: chain                    # power now: chain (dots between the figures) or bus (a line below them)
 // labels: icons                       # above the figures: icons that show the state (sun by the share of peak
 //                                      # power, battery filled to its level, lit windows and lightning bolts in
-//                                      # steps of the base load) or text (names, battery percentage and power)
+//                                      # steps) or text (names, battery percentage and power)
+// home_steps: [100, 300, 1000]         # icons: a window of the house lights from each of these watts
+// grid_steps: [300, 1000]              # icons: the second and third lightning bolt of the grid (the first one
+//                                      # comes with the flow, from flow_min_w); in either direction
 // sun_glow: false                      # icons: the sun glows by the share of peak power
 // battery_arrows: false                # icons: up and down arrows beside the battery, the active one lit
 // flow_speed: normal                   # pace of the moving dots: calm, normal or lively
@@ -49,8 +52,10 @@ const NIGHT_W = 0.3;
 // a flow shows from flow_min_w (default FLOW_MIN_W) and stays until it falls below FLOW_OFF of that: sensors
 // drift by a few watts, so small mismatches show no flow, and a flow near the threshold does not flicker
 const FLOW_MIN_W = 10, FLOW_OFF = 0.6;
-// base load until 7 days of house load are known; the house and grid icons step at multiples of it
-const BASE_LOAD_W = 300;
+// icons: a window of the house lights from each of HOME_STEPS watts, the pylon gets a lightning bolt from
+// flow_min_w and from each of GRID_STEPS (home_steps / grid_steps in the card config). A step goes up at once;
+// it goes down at once below STEP_OFF of its limit, otherwise after STEP_HOLD_MS below it
+const HOME_STEPS = [100, 300, 1000], GRID_STEPS = [300, 1000], STEP_OFF = 0.6, STEP_HOLD_MS = 30000, STEP_MAX_W = 1e6;
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const LAG_RETRY_MS = 15000;                     // Noxcast still has the day before (its midnight run is not done)
@@ -196,6 +201,8 @@ class NoxcastCard extends HTMLElement {
     this._frame = null;
     clearInterval(this._timer);
     clearTimeout(this._midnight);
+    clearTimeout(this._stepTimer);
+    this._stepTimer = null;
     this._timer = null;
     if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
     this._onVisible = null;
@@ -238,9 +245,14 @@ class NoxcastCard extends HTMLElement {
   // whether the flow `key` with `w` watts counts as running, with hysteresis (see FLOW_MIN_W)
   _on(key, w) {
     const st = this._onState || (this._onState = {});
-    const min = Number(this._config.flow_min_w) >= 0 && this._config.flow_min_w !== "" ? Number(this._config.flow_min_w) : FLOW_MIN_W;
+    const min = this._flowMin;
     st[key] = Math.abs(w) >= Math.max(1, st[key] ? min * FLOW_OFF : min);
     return st[key];
+  }
+
+  get _flowMin() {
+    const c = this._config;
+    return Number(c.flow_min_w) >= 0 && c.flow_min_w !== "" && c.flow_min_w !== undefined ? Number(c.flow_min_w) : FLOW_MIN_W;
   }
 
   // pace of the moving dots: a factor on their travel times (calm = slower)
@@ -505,51 +517,60 @@ class NoxcastCard extends HTMLElement {
   // icons instead of names above the figures (labels: icons; battery_style: power of earlier versions keeps the names)
   get _icons() { return (this._config.labels || (this._config.battery_style === "power" ? "text" : "icons")) !== "text"; }
 
-  // base load: the quietest tenth of the hourly house load over the last 7 days; the steps of the house and grid
-  // icons are multiples of it, so they read the same in a small flat and in a large house
-  _baseLoad() {
-    const id = this._config.home && this._config.home.entity, rows = (this._data && this._data.stats && this._data.stats[id]) || [];
-    const st = id && this._hass.states[id], k = st && (st.attributes.unit_of_measurement || "").toLowerCase() === "kw" ? 1000 : 1;
-    const means = rows.map((r) => r.mean).filter((m) => m > 0).map((m) => m * k).sort((x, y) => x - y);
-    return means.length >= 24 ? Math.max(50, means[Math.floor(means.length * 0.1)]) : BASE_LOAD_W;
+  // the limits of the steps: ascending watts above 0 (the grid's above flow_min_w), else the defaults
+  _limits(key) {
+    const min = this._flowMin, conf = this._config[`${key}_steps`], def = key === "home" ? HOME_STEPS : GRID_STEPS;
+    const ok = Array.isArray(conf) && conf.length === def.length && conf.every((w, i) => Number.isFinite(w) && w > (i ? conf[i - 1] : 0)
+      && w <= STEP_MAX_W) && (key === "home" || conf[0] > min);
+    return key === "home" ? (ok ? conf : def) : [min, ...(ok ? conf : def)];
   }
 
-  // 0 while the figure is idle, then 1 to 3: from 3 and from 8 times the base load
-  _step(key, w, base) {
-    if (!this._on(key, w)) return 0;
-    return Math.abs(w) >= 8 * base ? 3 : Math.abs(w) >= 3 * base ? 2 : 1;
+  // the step of icon `key` at `w` watts: up at once, down at once below STEP_OFF of the limit, otherwise only
+  // after STEP_HOLD_MS; a timer then redraws, so the step also falls while the sensor keeps its value
+  _level(key, w) {
+    const st = this._steps || (this._steps = {}), s = st[key] || (st[key] = { lvl: 0, since: 0 });
+    const limits = this._limits(key), a = Math.abs(w), now = Date.now();
+    const up = limits.filter((l) => a >= l).length, keep = limits.filter((l) => a >= l * STEP_OFF).length;
+    s.lvl = Math.min(s.lvl, keep);
+    if (up >= s.lvl) { s.lvl = up; s.since = 0; }
+    else if (!s.since) s.since = now;
+    else if (now - s.since >= STEP_HOLD_MS) { s.lvl = up; s.since = 0; }
+    if (s.since && !this._stepTimer) {
+      this._stepTimer = setTimeout(() => { this._stepTimer = null; this._renderFlow(); }, Math.max(1000, s.since + STEP_HOLD_MS - now));
+    }
+    return s.lvl;
   }
 
   // the icons above the figures; each shows the state of its figure in its own way
   _stateIcons(v) {
-    const P = this._p, c = this._config, off = "var(--secondary-text-color)", base = this._baseLoad();
+    const P = this._p, c = this._config, off = "var(--secondary-text-color)";
     const peak = this._data ? this._arrays().reduce((a, arr) => a + (arr.peak_w || 0), 0) : 0;
     const svg = (w, body, style) => `<svg viewBox="0 0 ${w} 24" aria-hidden="true"${style ? ` style="${style}"` : ""}>${body}</svg>`;
-    // sun: the core fills and the rays grow with the share of peak power
-    const pvOn = this._on("n:pv", v.pv), share = !pvOn ? 0 : peak > 0 ? Math.min(1, v.pv / peak) : 1;
+    // sun: the core fills and the rays grow with the share of peak power; without PV the smallest sun in grey
+    const pvOn = this._on("n:pv", v.pv), share = !pvOn ? 0 : peak > 0 ? Math.min(1, v.pv / peak) : 1, sc = pvOn ? P.pv : off;
     let rays = "";
-    for (let i = 0; pvOn && i < 8; i++) {
+    for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4, len = 2.2 + 3.8 * share, p = (r) => `${(12 + r * Math.cos(a)).toFixed(2)} ${(12 + r * Math.sin(a)).toFixed(2)}`;
       rays += `M${p(6.5)}L${p(6.5 + len)}`;
     }
     const glow = pvOn && c.sun_glow ? `filter:drop-shadow(0 0 ${(1.5 + 5 * share).toFixed(1)}px ${P.pv})` : "";
     const pv = svg(24, `<circle cx="12" cy="12" r="4.4" fill="${pvOn ? P.pv : "none"}" fill-opacity="${(0.35 + 0.65 * share).toFixed(2)}"
-      stroke="${pvOn ? P.pv : off}" stroke-width="1.8"></circle>${rays ? `<path d="${rays}" stroke="${P.pv}" stroke-width="1.8" stroke-linecap="round"></path>` : ""}`, glow);
+      stroke="${sc}" stroke-width="1.8"></circle><path d="${rays}" stroke="${sc}" stroke-width="1.8" stroke-linecap="round"></path>`, glow);
     // battery: filled to the state of charge; with battery_arrows the arrow of the flow lights up beside it. A bit
     // lower than the other icons: its closed body looks larger than their open shapes
     const soc = v.socAll === null ? 0 : Math.max(0, Math.min(100, v.socAll)), dir = !this._on("n:bat", v.bat) ? 0 : v.bat > 0 ? 1 : -1;
-    const arrows = !c.battery_arrows ? "" : `<path d="M41 4 L45 10.5 H37 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
-      <path d="M41 20 L45 13.5 H37 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
-    const bat = svg(c.battery_arrows ? 46 : 36, `<rect x="1.5" y="4" width="29" height="16" rx="3" fill="none" stroke="${off}" stroke-width="1.6"></rect>
-      <rect x="31" y="9" width="3.5" height="6" rx="1" fill="${off}"></rect>
-      <rect x="3.5" y="6" width="${((25 * soc) / 100).toFixed(2)}" height="12" rx="1.4" fill="${P.bat}"></rect>${arrows}`);
-    // house: a window lights per step
-    const hs = this._step("n:home", v.home, base);
-    const win = (x, i) => `<rect x="${x}" y="13" width="4" height="4" fill="${i < hs ? P.pv : "none"}" stroke="${i < hs ? P.pv : off}" stroke-width="1"></rect>`;
-    const home = svg(40, `<path d="M3 11 L20 3 L37 11 M5.5 9.8 V21.5 H34.5 V9.8" fill="none" stroke="${off}" stroke-width="1.7"
+    const arrows = !c.battery_arrows ? "" : `<path d="M39 4.5 L43 10.5 H35 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
+      <path d="M39 19.5 L43 13.5 H35 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
+    const bat = svg(c.battery_arrows ? 44 : 34, `<rect x="1.5" y="4.5" width="27" height="15" rx="3" fill="none" stroke="${off}" stroke-width="1.6"></rect>
+      <rect x="29" y="9" width="3.5" height="6" rx="1" fill="${off}"></rect>
+      <rect x="3.5" y="6.5" width="${((23 * soc) / 100).toFixed(2)}" height="11" rx="1.3" fill="${P.bat}"></rect>${arrows}`);
+    // house: a window lights per step; the house itself is never idle
+    const hs = this._level("home", v.home), hc = "var(--primary-text-color)";
+    const win = (x, i) => `<rect x="${x}" y="13" width="4" height="4" fill="${i < hs ? P.pv : "none"}" stroke="${i < hs ? P.pv : hc}" stroke-width="1"></rect>`;
+    const home = svg(40, `<path d="M3 11 L20 3 L37 11 M5.5 9.8 V21.5 H34.5 V9.8" fill="none" stroke="${hc}" stroke-width="1.7"
       stroke-linejoin="round" stroke-linecap="round"></path>${win(9, 0)}${win(18, 1)}${win(27, 2)}`);
     // grid: a pylon and a lightning bolt per step, blue while drawing, PV yellow while feeding in
-    const gs = this._step("n:grid", v.grid, base), gc = !gs ? off : v.grid > 0 ? P.grid : P.pv;
+    const gs = this._level("grid", v.grid), gc = !gs ? off : v.grid > 0 ? P.grid : P.pv;
     const bolt = (x, i) => `<path d="M${x + 2} 6 L${x - 2} 13 H${x + 1} L${x - 1} 19 L${x + 4} 11 H${x + 1} Z" fill="${i < gs ? gc : "none"}"
       stroke="${i < gs ? gc : off}" stroke-opacity="${i < gs ? 1 : 0.35}" stroke-width="1" stroke-linejoin="round"></path>`;
     const grid = svg(44, `<path d="M7 3 L3 22 M7 3 L11 22 M2 6.5 H12 M3 11 H11 M4.4 11 L10 17 M9.6 11 L4 17" fill="none" stroke="${gc}"
@@ -1057,6 +1078,9 @@ class NoxcastCardEditor extends HTMLElement {
       labels: de ? "Über den Werten" : "Above the figures", sun_glow: de ? "Sonne leuchtet nach Leistung" : "Sun glows by power",
       battery_arrows: de ? "Pfeile am Akku" : "Arrows at the battery", flow_speed: de ? "Tempo der Punkte" : "Pace of the dots",
       flow_min_w: de ? "Fluss ab (W)" : "Flow from (W)",
+      home_1: de ? "Haus: 1. Fenster ab (W)" : "Home: 1st window from (W)", home_2: de ? "Haus: 2. Fenster ab (W)" : "Home: 2nd window from (W)",
+      home_3: de ? "Haus: 3. Fenster ab (W)" : "Home: 3rd window from (W)", grid_2: de ? "Netz: 2. Blitz ab (W)" : "Grid: 2nd bolt from (W)",
+      grid_3: de ? "Netz: 3. Blitz ab (W)" : "Grid: 3rd bolt from (W)",
     };
   }
 
@@ -1098,18 +1122,23 @@ class NoxcastCardEditor extends HTMLElement {
         <div style="margin-top:6px"><button class="nx-btn" id="clean">${de ? "Alte Sensor-Einstellungen entfernen" : "Remove old sensor settings"}</button></div></div>` : ""}
       <div class="nx-note">${de ? "Sensoren, Akkus und Einspeisung kommen aus der Noxcast-Konfiguration. Hier nur, wie sie angezeigt werden."
         : "Sensors, batteries and feed-in come from the Noxcast configuration. Here only how they are shown."}</div>
-      <div id="main"></div>`;
+      <div id="main"></div>
+      <div class="nx-warn" id="steps" hidden>${de
+        ? "Die Stufen müssen aufsteigen, die erste beim Netz über „Fluss ab“. Bis dahin gelten die Standardwerte (100, 300, 1000 W; Netz 300, 1000 W)."
+        : "The steps must rise, the grid's first above “Flow from”. Until then the defaults apply (100, 300, 1000 W; grid 300, 1000 W)."}</div>`;
 
     const shows = ["show_battery", "show_effects", "show_band", "show_load", "show_weather"];
     const opt = (pairs) => ({ select: { mode: "dropdown", options: pairs.map(([value, label]) => ({ value, label })) } });
     // grouped by the part of the card they change; flatten keeps the config keys at the top level
     const group = (title, schema, expanded) => ({ type: "expandable", name: "", flatten: true, title, expanded, schema });
     const bool = (name) => ({ name, selector: { boolean: {} } });
+    const watts = (name) => ({ name, selector: { number: { min: 1, max: STEP_MAX_W, step: 1, mode: "box", unit_of_measurement: "W" } } });
+    const hs = Array.isArray(c.home_steps) ? c.home_steps : HOME_STEPS, gs = Array.isArray(c.grid_steps) ? c.grid_steps : GRID_STEPS;
     this.querySelector("#main").appendChild(this._form([
       group(de ? "Leistung jetzt" : "Power now", [
         { name: "labels", selector: opt([["icons", de ? "Symbole, die den Zustand zeigen" : "Icons that show the state"],
           ["text", de ? "Namen, Akku mit Leistung" : "Names, battery with power"]]) },
-        bool("sun_glow"), bool("battery_arrows"),
+        bool("sun_glow"), bool("battery_arrows"), ...["home_1", "home_2", "home_3", "grid_2", "grid_3"].map(watts),
         { name: "flow_style", selector: opt([["chain", de ? "Kette: Punkte zwischen den Werten" : "Chain: dots between the figures"],
           ["bus", de ? "Bus: Linie unter den Werten" : "Bus: line below the figures"]]) },
         { name: "flow_speed", selector: opt([["calm", de ? "ruhig" : "calm"], ["normal", "normal"], ["lively", de ? "lebhaft" : "lively"]]) },
@@ -1128,6 +1157,7 @@ class NoxcastCardEditor extends HTMLElement {
       font_scale: Number(c.font_scale) || 1, legend: c.legend !== false, look: c.look || "plain", range: c.range || "production",
       flow_style: c.flow_style || "chain", flow_speed: c.flow_speed || "normal", flow_min_w: c.flow_min_w ?? FLOW_MIN_W,
       labels: c.labels || (c.battery_style === "power" ? "text" : "icons"), sun_glow: !!c.sun_glow, battery_arrows: !!c.battery_arrows,
+      home_1: hs[0], home_2: hs[1], home_3: hs[2], grid_2: gs[0], grid_3: gs[1],
       ...Object.fromEntries(shows.map((k) => [k, c[k] !== false])),
     }, (v) => {
       const n = { ...this._config };
@@ -1136,6 +1166,16 @@ class NoxcastCardEditor extends HTMLElement {
       delete n.battery_style;
       if (v.labels === "text") n.labels = "text"; else delete n.labels;
       for (const k of ["sun_glow", "battery_arrows"]) { if (v[k]) n[k] = true; else delete n[k]; }
+      const steps = { home_steps: [[v.home_1, v.home_2, v.home_3], HOME_STEPS], grid_steps: [[v.grid_2, v.grid_3], GRID_STEPS] };
+      for (const [k, [w, def]] of Object.entries(steps)) {
+        const ws = w.map(Number);
+        if (ws.every((x, i) => x === def[i])) delete n[k]; else n[k] = ws;
+      }
+      // the card falls back to the defaults for limits out of order; say so here
+      const min = Number(v.flow_min_w) >= 0 ? Number(v.flow_min_w) : FLOW_MIN_W;
+      const rising = (ws, floor) => ws.every((x, i) => x > (i ? ws[i - 1] : floor) && x <= STEP_MAX_W);
+      const warn = this.querySelector("#steps");
+      if (warn) warn.hidden = rising(steps.home_steps[0].map(Number), 0) && rising(steps.grid_steps[0].map(Number), min);
       if (v.flow_speed && v.flow_speed !== "normal") n.flow_speed = v.flow_speed; else delete n.flow_speed;
       if (v.flow_min_w !== undefined && v.flow_min_w !== "" && Number(v.flow_min_w) !== FLOW_MIN_W) n.flow_min_w = Number(v.flow_min_w); else delete n.flow_min_w;
       if (v.look && v.look !== "plain") n.look = v.look; else delete n.look;

@@ -468,7 +468,8 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                             data={"soc_sensors": ["sensor.soc"], "soc_full_pct": 95, "house_load": "sensor.house"},
                             options={"archive_temperature": True, "satellite": True}, subentries_data=subentries)
     entry.add_to_hass(hass)
-    ids = {s.data["name"]: sid for sid, s in entry.subentries.items() if s.subentry_type == "array"}
+    short = {"South": "S", "EastWest": "EW"}
+    ids = {short[s.data["name"]]: sid for sid, s in entry.subentries.items() if s.subentry_type == "array"}
     past = {}                                       # day-ahead forecasts of the last weeks, for the band
     for back in range(1, 30):
         d = date(2026, 6, 10) - timedelta(days=back)

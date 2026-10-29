@@ -37,6 +37,7 @@ const TEXT = {
     title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster",
     shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor",
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
+    facade: "Häuserkante (Höhe · Richtung · Bereich)", fromFacade: "aus der Häuserkante",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
     notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
@@ -70,6 +71,7 @@ const TEXT = {
     title: "Learned", overview: "Overview", map: "Map", grid: "Year grid",
     shade: "Shade", refl: "Reflection", dir: "Direction factor",
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
+    facade: "Building edge (height · direction · range)", fromFacade: "from the building edge",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
     notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
@@ -170,6 +172,11 @@ function displayValue(cells, ai, ei) {
     if (k in cells) near.push(cells[k]);
   }
   return near.length >= 2 ? near.reduce((a, b) => a + b, 0) / near.length : null;
+}
+
+// learned cells; cells without a learned value take the learned building edge where there is one
+function cellsOf(arr) {
+  return { ...(arr.facade_cells || {}), ...((arr.learned || {}).cells || {}) };
 }
 
 function coarse(values, az, el, dflt) {
@@ -320,10 +327,10 @@ class NoxcastPanel extends HTMLElement {
     const az = ai * AZ_STEP + AZ_STEP / 2, el = ei * EL_STEP + EL_STEP / 2;
     if (behind(arr, az, el)) return { kind: "behind" };
     const la = arr.learned || {};
-    const shade = displayValue(la.cells || {}, ai, ei);
+    const shade = displayValue(cellsOf(arr), ai, ei);
     if (shade === null) return { kind: "unlearned" };
     return {
-      kind: "value", shade,
+      kind: "value", shade, facade: !(`${ai},${ei}` in (la.cells || {})) && `${ai},${ei}` in (arr.facade_cells || {}),
       refl: coarse(la.reflection, az, el, 0),
       dir: coarse(la.direction, az, el, 1),
     };
@@ -334,7 +341,7 @@ class NoxcastPanel extends HTMLElement {
     if (el <= 0) return { kind: "night" };
     if (behind(arr, az, el)) return { kind: "behind" };
     const la = arr.learned || {};
-    const shade = displayValue(la.cells || {}, ai, ei);
+    const shade = displayValue(cellsOf(arr), ai, ei);
     if (shade === null) return { kind: "unlearned" };
     return { kind: "value", shade, refl: coarse(la.reflection, az, el, 0), dir: coarse(la.direction, az, el, 1) };
   }
@@ -437,6 +444,7 @@ class NoxcastPanel extends HTMLElement {
       [t.skyView, pct(la.sky_view ?? 1, 0)],
       [t.tempCoeff, `${num(la.temp_coeff * 100)} %/K`],
       [t.coverage, pct(la.coverage, 0)],
+      [t.facade, la.facade ? `${num(la.facade.height, 1)}° · ${Math.round(la.facade.direction)}° · ${Math.round(la.facade.start)}–${Math.round(la.facade.end)}°` : "–"],
       [t.dirRange, dir.length ? `${num(Math.min(...dir))}–${num(Math.max(...dir))}` : "–"],
       [t.reflMax, refl.length ? `+${pct(Math.max(...refl))}` : "–"],
       [t.samples, (la.samples || 0).toLocaleString(this._lang)],
@@ -630,7 +638,7 @@ class NoxcastPanel extends HTMLElement {
     else {
       const label = c.shade >= 0.9 ? t.free : c.shade >= 0.7 ? t.partial : t.shaded;
       rows = `<div class="tiles">
-        <div class="tile"><span class="muted small">${t.shade}</span><b class="mono">${num(c.shade)}</b><span class="small">${label}</span></div>
+        <div class="tile"><span class="muted small">${t.shade}</span><b class="mono">${num(c.shade)}</b><span class="small">${label}${c.facade ? ` · ${t.fromFacade}` : ""}</span></div>
         <div class="tile"><span class="muted small">${t.refl}</span><b class="mono">${c.refl > 0.004 ? `+${num(c.refl * 100, 1)} %` : "–"}</b></div>
         <div class="tile"><span class="muted small">${t.dir}</span><b class="mono">${num(c.dir)}</b></div>
       </div>`;

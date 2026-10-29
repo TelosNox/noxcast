@@ -22,7 +22,7 @@ def hourly_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray,
                    weather: list[WeatherHour]) -> tuple[dict[float, float], dict[float, float]]:
     """(shade loss, reflection gain) in Wh per hour under the given weather."""
     base = forecast(site, geo, learned, weather)
-    free = forecast(site, geo, replace(learned, cells={}), weather)
+    free = forecast(site, geo, replace(learned, cells={}, facade=None), weather)
     plain = forecast(site, geo, replace(learned, reflection={}), weather)
     loss = {t: max(free.get(t, 0.0) - v, 0.0) for t, v in base.items()}
     gain = {t: max(v - plain.get(t, 0.0), 0.0) for t, v in base.items()}

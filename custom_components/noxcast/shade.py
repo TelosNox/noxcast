@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
-from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray
+from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray, facade_cells
 from .solar import Site, angle_of_incidence, sun_position
 from .visual import DARK_STYLE, display_value, transmission_color
 
@@ -32,7 +32,7 @@ class Step:
 def day_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, day_start: float,
                 step_min: int = STEP_MIN) -> list[Step]:
     """Steps between sunrise and sunset of the day starting at day_start (local midnight)."""
-    cells = learned.cells if learned else {}
+    cells = {**facade_cells(learned), **learned.cells} if learned else {}
     steps = []
     for k in range(0, 24 * 60, step_min):
         start = day_start + k * 60

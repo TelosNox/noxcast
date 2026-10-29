@@ -419,3 +419,58 @@ def test_cells_without_clear_hours_are_not_shade():
     assert all(v >= model.SHADE_FREE for v in noon.values()), noon
     shaded = [v for k, v in learned.cells.items() if (lambda a, e: a * 10 + 10 <= 100 and e * 5 + 5 <= 15)(*map(int, k.split(",")))]
     assert shaded and max(shaded) < 0.2                   # the real mask stays
+
+
+def _facade_mask(az: float, el: float) -> float:
+    """A row of houses opposite: 24° high at right angles (130°), from 60° to 200°."""
+    if not 60 <= az <= 200:
+        return 1.0
+    edge = math.degrees(math.atan(math.tan(math.radians(24)) * max(math.cos(math.radians(az - 130)), 0)))
+    return 0.0 if el < edge else 1.0
+
+
+def _clear_year(mask, days: int = 365):
+    rng = random.Random(5)
+    samples, sat = [], {}
+    for d in range(days):
+        clear = rng.random() < 0.4
+        for h in range(24):
+            t = START + d * 86400 + h * 3600
+            dni_extra = solar.extra_radiation(t + 1800)
+            total = ghi_sum = 0.0
+            for i in range(model.SUBSTEPS):
+                sun = solar.sun_position(SITE, t + (i + 0.5) * 3600 / model.SUBSTEPS)
+                if sun.elevation <= 0:
+                    continue
+                ghi, dni, dhi = solar.clearsky_simplified_solis(sun.elevation, SITE.pressure, dni_extra)
+                k = 1.0 if clear else 0.3
+                beam, diff = solar.plane_of_array(GEO.tilt, GEO.azimuth, sun, dni * k, dhi, ghi, dni_extra)
+                total += GEO.peak_w * EFF * (beam * mask(sun.azimuth, sun.elevation) + diff) / 1000
+                ghi_sum += ghi * (1.0 if clear else 0.45)
+            samples.append((t, total / model.SUBSTEPS))
+            sat[t] = ghi_sum / model.SUBSTEPS
+    return samples, sat
+
+
+def test_facade_is_learned_and_fills_cells_without_a_learned_value():
+    samples, sat = _clear_year(_facade_mask)
+    learned = model.learn(SITE, GEO, samples, now=START + 365 * 86400, satellite_ghi=sat)
+    f = learned.facade
+    assert f is not None and abs(f["direction"] - 130) <= 10 and abs(f["height"] - 24) <= 3
+    assert f["start"] <= 70 and f["end"] >= 170       # drawn on along the row as far as the sun can get behind it
+    gap = model.LearnedArray(cells={}, facade=f)                       # nothing learned: the facade decides
+    assert model.transmission(gap, 130, 8) < 0.1 and model.transmission(gap, 130, 40) == 1.0
+    own = model.LearnedArray(cells={"12,1": 1.0, "13,1": 1.0, "12,2": 1.0, "13,2": 1.0}, facade=f)
+    assert model.transmission(own, 130, 10) == 1.0                     # learned cells stay as they are
+    assert model.facade_cells(gap) and not set(model.facade_cells(own)) & set(own.cells)
+
+
+def test_no_facade_without_shade():
+    samples, sat = _clear_year(lambda az, el: 1.0)
+    learned = model.learn(SITE, GEO, samples, now=START + 365 * 86400, satellite_ghi=sat)
+    assert learned.facade is None
+
+
+def test_facade_sector_may_cross_north():
+    f = {"direction": 330.0, "height": 20.0, "start": 280.0, "end": 400.0, "gain": 0.5}
+    assert model.facade_transmission(f, 20, 2) == 0.0 and model.facade_transmission(f, 60, 2) is None

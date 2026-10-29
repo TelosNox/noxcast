@@ -114,7 +114,11 @@ def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
 @callback
 def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Today per array for the day card: expected, held and morning forecast per hour, effects and tomorrow."""
-    tomorrow_start = dt_util.start_of_local_day(dt_util.now().date() + timedelta(days=1)).timestamp()
+    # the day the data was computed for: just after midnight the new computation may still be running
+    day_start = next((e.runtime_data.data.day_start for e in hass.config_entries.async_loaded_entries(DOMAIN)
+                      if e.runtime_data.data is not None and e.runtime_data.data.day_start), None)
+    day = dt_util.as_local(dt_util.utc_from_timestamp(day_start)).date() if day_start else dt_util.now().date()
+    tomorrow_start = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
     tomorrow_end = tomorrow_start + 86400
 
     def series(hours: dict[float, float]) -> list[list[float]]:
@@ -142,7 +146,7 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
                                          if tomorrow_start <= t < tomorrow_end)),
                 "updated": data.updated.isoformat() if data.updated else None,
             })
-    result = {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone, "arrays": arrays, "days": []}
+    result = {"now": dt_util.utcnow().timestamp(), "day_start": day_start, "time_zone": hass.config.time_zone, "arrays": arrays, "days": []}
     # with a load forecast and batteries the card shows what Noxcast computed instead of its own estimate
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         data = entry.runtime_data.data

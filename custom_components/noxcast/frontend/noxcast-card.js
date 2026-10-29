@@ -46,6 +46,7 @@ const NIGHT_W = 0.3;
 const FLOW_MIN_W = 10, FLOW_OFF = 0.6;
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
+const LAG_RETRY_MS = 15000;                     // Noxcast still has the day before (its midnight run is not done)
 const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
 
 // weather conditions in classes; the strip marks where the class changes
@@ -207,11 +208,11 @@ class NoxcastCard extends HTMLElement {
     this._readyConn = conn;
   }
 
-  // data older than `seconds`, or from another day
+  // data older than `seconds`, or from another day (asked again every LAG_RETRY_MS until Noxcast has the new one)
   _stale(seconds = REFRESH_MS / 1000) {
     if (!this._hass || this._loading) return false;
     if (!this._data) return !this._error;
-    if (this._localMidnight(new Date()) !== this._data.dayStart) return true;
+    if (this._localMidnight(new Date()) !== this._data.dayStart) return Date.now() - this._data.loaded > LAG_RETRY_MS;
     return Date.now() - this._data.loaded > seconds * 1000;
   }
 
@@ -294,9 +295,14 @@ class NoxcastCard extends HTMLElement {
     try {
       const today = await ask(this._hass, { type: "noxcast/today" });
       const stats = await this._history();
-      this._data = { today, ...stats, loaded: Date.now() };
+      // the day comes from Noxcast: just after midnight its new computation may still be running, then the
+      // card keeps showing the day before and asks again shortly
+      const dayStart = today.day_start ? today.day_start * 1000 : stats.dayStart;
+      this._data = { today, ...stats, dayStart, loaded: Date.now() };
       this._error = null;
       this._tries = 0;
+      clearTimeout(this._retry);
+      if (dayStart !== this._localMidnight(new Date()) && this.isConnected) this._retry = setTimeout(() => this._refresh(), LAG_RETRY_MS);
       if (this._srcPending) this._loadSource();
     } catch (err) {
       this._error = String((err && err.message) || err);
@@ -594,13 +600,16 @@ class NoxcastCard extends HTMLElement {
     const expM = sum("expected"), fcM = sum("forecast"), mornM = sum("morning"), lossM = sum("loss");
     const exp = (h) => expM.get(h) || 0, loss = (h) => lossM.get(h) || 0;
     const fc = (h) => (fcM.has(h) ? fcM.get(h) : mornM.get(h)) || 0;
-    const sunny = [...new Set([...expM.keys(), ...fcM.keys()])].filter((h) => exp(h) > 1 || fc(h) > 1).sort((a, b) => a - b);
+    // only hours of the chart's day, so data of another day can never tip the time axis
+    const dayT0 = this._data.dayStart / 1000, dayT1 = this._localMidnight(new Date(this._data.dayStart + 30 * H * 1000)) / 1000;
+    const sunny = [...new Set([...expM.keys(), ...fcM.keys()])].filter((h) => h >= dayT0 && h < dayT1 && (exp(h) > 1 || fc(h) > 1))
+      .sort((a, b) => a - b);
     if (!sunny.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
     // production with an hour of margin on either side, so the day does not end abruptly;
     // range "day" shows the whole day from midnight to midnight, the night outside production compressed
     const prodStart = sunny[0], prodEnd = sunny[sunny.length - 1] + H, pS = prodStart - H, pE = prodEnd + H;
     const whole = this._config.range === "day";
-    const t0 = whole ? this._data.dayStart / 1000 : pS, t1 = whole ? this._localMidnight(new Date(this._data.dayStart + 30 * H * 1000)) / 1000 : pE;
+    const t0 = whole ? dayT0 : pS, t1 = whole ? dayT1 : pE;
     const dayH = []; for (let h = t0; h < t1; h += H) dayH.push(h);
     const pvH = dayH.filter((h) => h >= prodStart && h < prodEnd);
 

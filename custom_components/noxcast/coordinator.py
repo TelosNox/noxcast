@@ -105,6 +105,7 @@ class NoxcastData:
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
     updated: datetime | None = None
+    day_start: float | None = None            # local midnight of the day these values were computed for
     weather_fetched: datetime | None = None                                # last successful Open-Meteo answer
     load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
     battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
@@ -813,7 +814,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         models = {m: [w for w in hours if tomorrow[0] <= w.start < tomorrow[1]]
                   for m, hours in per_model.items()} if len(per_model) > 1 else {}
 
-        result = NoxcastData(updated=dt_util.utcnow(), weather_fetched=dt_util.utc_from_timestamp(fetched), outlook=outlook)
+        result = NoxcastData(updated=dt_util.utcnow(), day_start=day_start,
+                             weather_fetched=dt_util.utc_from_timestamp(fetched), outlook=outlook)
         alt_forecasts: dict[str, dict[str, dict[float, float]]] = {m: {} for m in models}
         for sub_id, arr in self.arrays.items():
             learned = self.learned.get(sub_id, LearnedArray())

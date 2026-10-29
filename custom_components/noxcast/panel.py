@@ -366,6 +366,7 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
             "archive": {"days": len(archive),
                         "complete": sum(1 for d in archive.values()
                                         if d.get("hours") and all("actual" in h for h in d["hours"].values()))},
+            "fine": {"days": sum(1 for d in coordinator.fine.values() if any(d.values()))},
             "sensors": sensors,
         })
     connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})

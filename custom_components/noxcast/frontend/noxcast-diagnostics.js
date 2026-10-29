@@ -4,7 +4,7 @@
 
 const DIAG_TEXT = {
   de: {
-    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv",
+    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv", fine: "10-Minuten-Archiv", fineSub: "für schärfere Schatten, max. 400 Tage",
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
     days: "Tage", complete: "vollständig", hours: "Stunden", samples: "Stunden gelernt", mapCoverage: "Karte", efficiency: "Wirkungsgrad",
@@ -18,7 +18,7 @@ const DIAG_TEXT = {
       weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf" },
   },
   en: {
-    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive",
+    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive", fine: "10-minute archive", fineSub: "for sharper shading, at most 400 days",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
     days: "days", complete: "complete", hours: "hours", samples: "hours learned", mapCoverage: "Map", efficiency: "Efficiency",
@@ -102,6 +102,7 @@ class NoxcastDiagnostics extends HTMLElement {
       [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `Open-Meteo ${this._esc((e.weather.models || []).join(" + "))} · ${e.weather.hours} ${t.hours}`],
       [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._dt(e.learning.last) : ""],
       [t.archive, `${e.archive.days} ${t.days}`, `${e.archive.complete} ${t.complete}`],
+      [t.fine, `${(e.fine || {}).days || 0} ${t.days}`, t.fineSub],
     ].map(([k, v, sub]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span><span class="muted small">${sub}</span></div>`).join("");
     const list = issues.length
       ? `<ul class="issues">${issues.map(([lvl, text]) => `<li class="${lvl}"><span class="dot"></span><span>${text}</span></li>`).join("")}</ul>`

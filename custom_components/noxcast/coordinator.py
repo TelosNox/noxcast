@@ -1,10 +1,12 @@
-"""Coordinator: learns from history, fetches weather and computes the forecast."""
+"""Coordinator: schedules learning and updates, fetches from Home Assistant and the web, keeps the state.
+
+The computations live in pure modules (learning.py, forecasting.py and below); this is the shell
+around them: statistics, weather, current states, stores, and turning the config into dataclasses.
+"""
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +20,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, MORNING_HOUR, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -32,13 +34,13 @@ from . import fine as fn
 from . import events as ev
 from . import flows as fl
 from . import battery as bt
-from . import arraycheck as ac
+from . import forecasting as fc
+from . import learning as ln
 from . import load as lf
 from . import plan as pl
-from .effects import hourly_effects, significant_periods
-from .intraday import Partial, clearness_shift, expected_hours, held_forecast
-from .model import (HEATING_K, ArrayGeometry, LearnedArray, Plane, WeatherHour, clearsky_profile, clearsky_weather, forecast,
-                    learn, steady_hours, usable_samples)
+from .forecasting import NoxcastData
+from .learning import ArrayConfig, ConsumerConfig
+from .model import HEATING_K, ArrayGeometry, LearnedArray, Plane, WeatherHour
 from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
@@ -47,33 +49,7 @@ from .sources import async_open_meteo, async_power_factors
 
 _LOGGER = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class ArrayConfig:
-    subentry_id: str
-    name: str
-    sensors: tuple[str, ...]
-    geometry: ArrayGeometry
-    valid_since: float | None
-    temp_coeff: float | None = None          # per K, from the datasheet
-
-
-@dataclass(frozen=True)
-class ConsumerConfig:
-    subentry_id: str
-    name: str
-    sensor: str | None                   # power (W)
-    timing: str
-    energy: str | None = None            # energy (kWh); history from its hourly change when there is no power sensor
-    remaining: str | None = None         # minutes a running program still needs
-    elapsed: str | None = None           # minutes it has run
-    run_power: float | None = None       # flexible: a run's power and duration, None = learned
-    run_minutes: float | None = None
-    kind: str = "profile"                # fixed: profile, program or session
-
-    @property
-    def series_id(self) -> str:
-        return self.sensor or self.energy
+__all__ = ["ArrayConfig", "ConsumerConfig", "NoxcastConfigEntry", "NoxcastCoordinator", "NoxcastData"]
 
 
 def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
@@ -91,38 +67,6 @@ def _models_from_dict(d: dict) -> dict:
     return {"program": lf.ProgramModel.from_dict(d["program"]) if d.get("program") else None,
             "session": lf.SessionModel.from_dict(d["session"]) if d.get("session") else None,
             "regulated": lf.RegulatedModel.from_dict(d["regulated"]) if d.get("regulated") else None}
-
-
-@dataclass
-class NoxcastData:
-    """Hourly Wh per array (subentry_id) and as total (key None)."""
-
-    forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
-    morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
-    expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
-    clear: dict[str | None, dict[float, float]] = field(default_factory=dict)      # clear-sky output over the horizon
-    held: dict[str, dict[float, float]] = field(default_factory=dict)  # today: latest forecast, held once the hour began
-    correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
-    effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
-    morning_fixed: datetime | None = None
-    updated: datetime | None = None
-    day_start: float | None = None            # local midnight of the day these values were computed for
-    weather_fetched: datetime | None = None                                # last successful Open-Meteo answer
-    load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
-    battery: dict | None = None               # simulation until tomorrow's charge start (see _battery)
-    plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
-    band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see _band)
-    actual: dict[str, dict[float, float]] = field(default_factory=dict)   # today's measured hours per array
-    weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
-    outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
-
-    @property
-    def arrays(self) -> dict[str, dict[float, float]]:
-        return {k: v for k, v in self.forecast.items() if k is not None}
-
-    @property
-    def total(self) -> dict[float, float]:
-        return self.forecast.get(None, {})
 
 
 type NoxcastConfigEntry = ConfigEntry[NoxcastCoordinator]
@@ -179,10 +123,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.last_learning: datetime | None = None
         self.last_learning_error: str | None = None
         self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
-        self._hours: dict[str, dict[float, float]] = {}
-        self._morning: dict[str, dict[float, float]] = {}
-        self._held: dict[str, dict[float, float]] = {}
-        self._morning_fixed: datetime | None = None
+        self._today = fc.Today()                  # today's hours, morning fix and held values between updates
         self._factors: dict[str, float] | None = None
         # last Open-Meteo answer: (fetched at, mean of the models, each model); stands in during outages
         self._weather: tuple[float, list[WeatherHour], dict[str, list[WeatherHour]]] | None = None
@@ -224,18 +165,18 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             day_start = dt_util.start_of_local_day().timestamp()
             for sub_id, hours in stored.get("hours", {}).items():
                 if sub_id in self.arrays:
-                    self._hours[sub_id] = {float(t): float(v) for t, v in hours.items() if float(t) >= day_start}
+                    self._today.hours[sub_id] = {float(t): float(v) for t, v in hours.items() if float(t) >= day_start}
             if cached := stored.get("weather"):
                 self._weather = (float(cached["fetched"]), [_weather_hour(r) for r in cached["mean"]], {})
             morning = stored.get("morning") or {}
             fixed = dt_util.parse_datetime(morning.get("fixed") or "")
             if fixed and dt_util.as_local(fixed).date() == dt_util.now().date():
-                self._morning_fixed = fixed
-                self._morning = {sid: {float(t): float(v) for t, v in hours.items()}
-                                 for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
+                self._today.morning_fixed = fixed
+                self._today.morning = {sid: {float(t): float(v) for t, v in hours.items()}
+                                       for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
-            self.learned, self._hours = {}, {}
+            self.learned, self._today.hours = {}, {}
         try:
             self.forecast_archive = fc_archive.from_store(await self._archive_store.async_load())
         except Exception:  # noqa: BLE001
@@ -341,6 +282,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return temp, sat
 
     def _store_data(self) -> dict:
+        today = self._today
         return {
             "band": self.band,
             "battery_log": self.battery_log,
@@ -349,7 +291,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
                        for sid, la in self.learned.items() if sid in self.arrays},
             # today's hours survive a restart even if the weather source no longer reports past hours
-            "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in self._hours.items()},
+            "hours": {sid: {str(t): v for t, v in hours.items()} for sid, hours in today.hours.items()},
             "load": {"key": self._load_key(), "base": self.load_profile.as_dict(),
                      "floor": self.floor_profile.as_dict() if self.floor_profile else None,
                      "consumers": {sid: p.as_dict() for sid, p in self.consumer_profiles.items()},
@@ -357,8 +299,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      "models": {sid: {k: m.as_dict() for k, m in ms.items() if m} for sid, ms in self.consumer_models.items()},
                      "events": self.load_events}
             if self.load_profile else None,
-            "morning": {"fixed": self._morning_fixed.isoformat() if self._morning_fixed else None,
-                        "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in self._morning.items()}},
+            "morning": {"fixed": today.morning_fixed.isoformat() if today.morning_fixed else None,
+                        "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in today.morning.items()}},
             # only the mean: the single models serve the archive, which can skip an outage
             "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,
@@ -393,55 +335,26 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # hourly minimum and maximum tell steady hours from hours with passing clouds or dropouts
         power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
         power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
-        soc_series = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
-        soc: dict[float, float] = {}
-        for series in soc_series.values():
-            for ts, value in series.items():
-                if value is not None:
-                    soc[ts] = max(value, soc.get(ts, value))
-        exclusions = [(e["start"], e["end"]) for e in self.exclusions]
-        soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
+        soc = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
         air_temp, satellite_ghi = await self._async_archives(start, now)
-
-        learned = {}
-        for sub_id, arr in self.arrays.items():
-            missing = [s for s in arr.sensors if not power.get(s)]
-            if missing:
-                _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
-                                arr.name, ", ".join(missing))
-            summed = _sum_series([{t: v * factors.get(s, 1.0) for t, v in power.get(s, {}).items() if v is not None}
-                                  for s in arr.sensors])
-            samples = usable_samples(summed, soc=soc, soc_full=soc_full, exclusions=exclusions,
-                                     valid_since=arr.valid_since)
-            steady = steady_hours([(power.get(s, {}), power_min.get(s, {}), power_max.get(s, {})) for s in arr.sensors])
-            result = await self.hass.async_add_executor_job(functools.partial(
-                learn, self.site, arr.geometry, samples, now.timestamp(), air_temp=air_temp, satellite_ghi=satellite_ghi,
-                datasheet_temp_coeff=arr.temp_coeff, steady=steady))
-            if result.samples and not 0.5 <= result.efficiency <= 1.2:
-                _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
-                                arr.name, result.efficiency)
-            if result.samples:
-                await self.hass.async_add_executor_job(
-                    _explain, self.site, arr.geometry, result, samples, air_temp, satellite_ghi, now.year, steady)
-            learned[sub_id] = result
-            fc_archive.add_actuals(self.forecast_archive, sub_id, summed, now.timestamp(),
-                                   {t for t, v in soc.items() if v >= soc_full})
-            if satellite_ghi:
-                predict = functools.partial(_measured_forecast, self.site, arr.geometry, result)
-                await self.hass.async_add_executor_job(
-                    fc_archive.add_measured, self.forecast_archive, sub_id, satellite_ghi, air_temp, predict,
-                    now.timestamp())
-            _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
-                         "coverage %.0f %%, %d samples, clear filter %s, steady filter %s, agreement %s",
-                         arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),
-                         result.coverage * 100, result.samples, result.clear_filter, result.steady_filter,
-                         result.agreement)
+        history = ln.PvHistory(power, power_min, power_max, factors, ln.highest(soc), air_temp, satellite_ghi)
+        soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
+        exclusions = [(e["start"], e["end"]) for e in self.exclusions]
+        learned = await self.hass.async_add_executor_job(
+            ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
+        await self.hass.async_add_executor_job(
+            ln.record_archive, self.forecast_archive, self.site, self.arrays, learned, history, now.timestamp(), soc_full)
         self.learned.update(learned)          # applied in one step on the event loop
         self.band = await self.hass.async_add_executor_job(self._learn_band)
         if self.house_load:
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
+
+    def _learn_band(self) -> dict:
+        """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
+        return bd.from_archive(self.forecast_archive, self.site, {sid: a.geometry for sid, a in self.arrays.items()},
+                               self.learned)
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, dict[float, float]]:
         """House load and consumer power in W: {sensor: {hour start: mean W}}.
@@ -459,12 +372,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                       for t, v in stats.get(sid, {}).items() if v is not None}
                 for sid in ids + energy}
 
-    async def _async_floor_series(self, start: datetime, series: dict[str, dict[float, float]]) -> dict[float, float]:
-        """Base load from the hourly minimum of the house load (consumers subtracted by their mean)."""
+    async def _async_load_floor(self, start: datetime) -> dict[float, float]:
+        """Hourly minimum of the house load in W (the base-load floor before consumers are subtracted)."""
         factor = (await async_power_factors(self.hass, [self.house_load])).get(self.house_load, 1.0)
         stats = await async_hourly_statistics(self.hass, [self.house_load], start, "min")
-        floor = {t: v * factor for t, v in stats.get(self.house_load, {}).items() if v is not None}
-        return lf.base_series(floor, [series.get(c.series_id, {}) for c in self.consumers.values()])
+        return {t: v * factor for t, v in stats.get(self.house_load, {}).items() if v is not None}
 
     async def async_day_flows(self, start: float, end: float, pv: dict[float, float]) -> dict | None:
         """Where the energy of [start, end) went (see flows.py); None without house load and batteries."""
@@ -496,59 +408,32 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""
         days = lf.PROFILE_DAYS + lf.BACKTEST_DAYS + 1
         series = await self._async_load_series(now - timedelta(days=days))
-        tz = dt_util.get_default_time_zone()
-        until = dt_util.start_of_local_day().timestamp()
-        load = series.get(self.house_load, {})
-        if not load:
+        if not series.get(self.house_load):
             _LOGGER.warning("No long-term statistics for the house load %s; load forecast disabled", self.house_load)
             return
-        consumers = {sid: series.get(c.series_id, {}) for sid, c in self.consumers.items()}
+        tz = zone = dt_util.get_default_time_zone()
         if self.day_type_entity:
             self.day_types = await self._async_day_types(now - timedelta(days=days), now)
-            tz = lf.DayTypeZone(tz, self.day_types)
-        base = lf.base_series(load, list(consumers.values()))
-        profile = await self.hass.async_add_executor_job(lf.learn_profile, base, tz, until)
-        floor = await self._async_floor_series(now - timedelta(days=days), series)
-        self.floor_profile = await self.hass.async_add_executor_job(lf.learn_profile, floor, tz, until)
-        cons = {sid: await self.hass.async_add_executor_job(lf.learn_profile, s, tz, until)
-                for sid, s in consumers.items()}
-        models = {}
-        for sid, s in consumers.items():
-            models[sid] = {"program": await self.hass.async_add_executor_job(lf.learn_program, s, tz, until),
-                           "session": await self.hass.async_add_executor_job(lf.learn_session, s, tz, until)}
+            zone = lf.DayTypeZone(tz, self.day_types)
+        floor = await self._async_load_floor(now - timedelta(days=days))
         # regulated consumers: a year of history, so the relation to the temperature spans the seasons
-        regulated = [sid for sid, c in self.consumers.items() if c.kind == lf.KIND_REGULATED and c.timing == lf.TIMING_FIXED]
-        if regulated and air_temp:
+        year = None
+        if air_temp and any(c.kind == lf.KIND_REGULATED and c.timing == lf.TIMING_FIXED for c in self.consumers.values()):
             year = await self._async_load_series(now - timedelta(days=lf.REGULATED_DAYS))
-            for sid in regulated:
-                models[sid]["regulated"] = await self.hass.async_add_executor_job(
-                    lf.learn_regulated, year.get(self.consumers[sid].series_id, {}), air_temp, tz, until)
-        backtest = await self.hass.async_add_executor_job(
-            lf.backtest, load, consumers, {sid: c.timing for sid, c in self.consumers.items()}, tz, now.timestamp(),
-            lf.BACKTEST_DAYS, {sid: c.kind for sid, c in self.consumers.items()}, air_temp)
-        self.consumer_models = models
-        self.load_profile, self.consumer_profiles, self.load_backtest = profile, cons, backtest
-        runs = {}
-        for sid, c in self.consumers.items():
-            if c.timing == lf.TIMING_FLEXIBLE and (run := pl.learn_run(c.name, consumers.get(sid, {}))):
-                runs[sid] = {"power_w": run.power_w, "minutes": run.minutes}
-        self.run_profiles = runs
-        _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
-        await self._async_learn_events(now)
-
-    async def _async_learn_events(self, now: datetime) -> None:
-        """Recurring device runs in the 5-minute house load (the recorder keeps about ten days)."""
         try:
-            series = await self._async_load_series(now - timedelta(days=ev.DAYS), "5minute")
+            fine = await self._async_load_series(now - timedelta(days=ev.DAYS), "5minute")
         except Exception as err:  # noqa: BLE001 – only the suggestions are missing
             _LOGGER.debug("5-minute statistics unavailable: %s", err)
-            return
-        load = series.get(self.house_load, {})
-        # energy sensors give Wh per 5 minutes, not mean W
-        consumers = [{t: v * (3600 / ev.SLOT if not c.sensor else 1.0) for t, v in series.get(c.series_id, {}).items()}
-                     for c in self.consumers.values()]
-        tz = dt_util.get_default_time_zone()
-        self.load_events = await self.hass.async_add_executor_job(ev.suggestions, load, consumers, tz) if load else None
+            fine = None
+        history = ln.LoadHistory(series, floor, year, fine)
+        learned = await self.hass.async_add_executor_job(
+            ln.learn_load, self.house_load, self.consumers, history, zone, tz, dt_util.start_of_local_day().timestamp(),
+            now.timestamp(), air_temp)
+        self.load_profile, self.floor_profile = learned.profile, learned.floor
+        self.consumer_profiles, self.consumer_models = learned.consumers, learned.models
+        self.load_backtest, self.run_profiles = learned.backtest, learned.runs
+        if fine is not None:                  # unavailable: the last suggestions stay
+            self.load_events = learned.events
 
     async def _async_day_types(self, start: datetime, end: datetime) -> dict:
         """Day type per local date from the history of the day-type entity; empty if there is none."""
@@ -580,7 +465,6 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Load forecast with the correction from the last hours and the consumers running now."""
         if not self.house_load or self.load_profile is None:
             return None
-        tz = self._zone(now)
         try:
             # from midnight on, so today's program runs can be counted
             start = min(now - (lf.K_HOURS + 2) * 3600, dt_util.start_of_local_day().timestamp())
@@ -588,33 +472,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – without recent values the profile alone is used
             _LOGGER.debug("Recent load statistics unavailable: %s", err)
             series = {}
-        base = lf.base_series(series.get(self.house_load, {}),
-                              [series.get(c.series_id, {}) for c in self.consumers.values()])
-        sustained = (0.0, None)
+        floor = None
         if self.floor_profile is not None and series:
             try:
-                floor = await self._async_floor_series(dt_util.utc_from_timestamp(start), series)
-                sustained = lf.sustained(floor, self.floor_profile, tz, now)
+                floor = await self._async_load_floor(dt_util.utc_from_timestamp(start))
             except Exception as err:  # noqa: BLE001 – without the floor only the correction factor applies
                 _LOGGER.debug("Load floor statistics unavailable: %s", err)
-        # the correction factor follows the events on top of a sustained load
-        k = lf.correction({t: max(0.0, v - sustained[0]) for t, v in base.items()}, self.load_profile, tz, now)
         running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
-        day_start = dt_util.start_of_local_day().timestamp()
-        # mean forecast temperature per local day, for regulated consumers (partial days count with what they have)
-        by_day: dict = {}
-        for t, v in (temps or {}).items():
-            if v is not None:
-                by_day.setdefault(dt_util.as_local(dt_util.utc_from_timestamp(t)).date(), []).append(v)
-        day_temp = {d: sum(v) / len(v) for d, v in by_day.items()}
-        consumers = []
-        for sid, c in self.consumers.items():
-            m = self.consumer_models.get(sid, {})
-            consumers.append(lf.Consumer(sid, c.timing, self.consumer_profiles.get(sid, lf.Profile()), c.kind,
-                                         m.get("program"), m.get("session"),
-                                         lf.runs_since(series.get(c.series_id, {}), day_start, now, sid in running),
-                                         m.get("regulated"), day_temp))
-        return lf.forecast(self.load_profile, consumers, tz, now, end, k, running, sustained)
+        return fc.load(self.house_load, self.consumers, self.load_profile, self.floor_profile, self.consumer_profiles,
+                       self.consumer_models, series, floor, running, self._zone(now), dt_util.get_default_time_zone(),
+                       now, end, dt_util.start_of_local_day().timestamp(), temps)
 
     def _limit(self, number, entity: str | None, default: float) -> float:
         """A limit in percent: the entity's current value if set and readable, else the number."""
@@ -624,10 +491,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except (AttributeError, TypeError, ValueError):
             return float(number) if number is not None else default
 
-    def _battery(self, result: NoxcastData, now: float, day_end: float) -> dict | None:
-        """All batteries as one storage, simulated with expected PV against the load forecast."""
-        if not self.batteries or result.load is None:
-            return None
+    def _battery_units(self) -> list[bt.Battery]:
+        """The configured batteries with their current state of charge and limits."""
         units = []
         for d in self.batteries.values():
             state = self.hass.states.get(d.get(CONF_SOC_SENSOR) or "")
@@ -644,103 +509,20 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 efficiency=float(eff) / 100 if eff else bt.DEFAULT_EFFICIENCY.get(coupling, 0.95),
                 max_charge_w=float(d[CONF_MAX_CHARGE]) if d.get(CONF_MAX_CHARGE) else None,
                 max_discharge_w=float(d[CONF_MAX_DISCHARGE]) if d.get(CONF_MAX_DISCHARGE) else None))
-        storage = bt.combine(units)
-        if storage is None:
-            return None
-        pv = dict(result.forecast.get(None, {}))
-        pv.update(result.expected.get(None, {}))          # today: actual so far and the corrected rest
-        load = result.load.hours
-        tomorrow_end = day_end + 86400
-        start = bt.charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
-        sim = bt.simulate(storage, pv, load, now, start)
-        out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
-        hours = (result.band or {}).get("hours")
-        if hours:
-            # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
-            sims = [bt.simulate(storage, {**pv, **{t: lh[i] for t, lh in hours.items()}}, load, now, start) for i in (0, 1)]
-            out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
-                                          for s in sims],
-                           "full_at": [s.full_at for s in sims]}
-        return out
+        return units
 
-    def _log_battery(self, battery: dict | None, local_now: datetime, now: float, day_end: float) -> None:
+    def _log_battery(self, battery: dict | None, local_now: datetime, now: float) -> None:
         """Keep the first battery prediction after the morning fix, to compare it with what happens."""
-        key = local_now.date().isoformat()
-        if battery is None or self._morning_fixed is None or key in self.battery_log:
+        if battery is None or self._today.morning_fixed is None:
             return
-        self.battery_log[key] = bt.prediction(battery["sim"], battery["storage"], now, day_end, battery["charge_start"])
-        oldest = (local_now.date() - timedelta(days=bt.PREDICTION_DAYS)).isoformat()
-        self.battery_log = {k: v for k, v in self.battery_log.items() if k >= oldest}
-        self._store.async_delay_save(self._store_data, 60)
+        if (log := bt.remember(self.battery_log, local_now.date(), battery, now)) is not None:
+            self.battery_log = log
+            self._store.async_delay_save(self._store_data, 60)
 
     def run_profile(self, sid: str) -> pl.RunProfile | None:
         """A flexible consumer's run: configured values first, learned ones otherwise."""
-        c, learned = self.consumers[sid], self.run_profiles.get(sid) or {}
-        power, minutes = c.run_power or learned.get("power_w"), c.run_minutes or learned.get("minutes")
-        return pl.RunProfile(sid, float(power), float(minutes)) if power and minutes else None
-
-    def _plan(self, result: NoxcastData, now: float, day_end: float) -> dict[str, dict]:
-        """Best windows for flexible consumers in the surplus of today and of tomorrow (in subentry order)."""
-        if result.load is None:
-            return {}
-        runs = [r for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE and (r := self.run_profile(sid))]
-        if not runs:
-            return {}
-        pv = dict(result.forecast.get(None, {}))
-        pv.update(result.expected.get(None, {}))
-        load = result.load.hours
-        surplus = {t: max(pv.get(t, 0.0) - w, 0.0) for t, w in load.items()}
-        lost = {t: h["lost"] for t, h in result.battery["sim"].hours.items()} if result.battery else {}
-        today = pl.plan(runs, {t: v for t, v in surplus.items() if t < day_end}, lost, now, day_end)
-        tomorrow = pl.plan(runs, {t: v for t, v in surplus.items() if day_end <= t}, {}, day_end, day_end + 86400)
-        return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
-                         "tomorrow": tomorrow[r.name]["best"]} for r in runs}
-
-    def _learn_band(self) -> dict:
-        """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
-        def clear_wh(ts: float, ids: list[str]) -> float:
-            sky = [clearsky_weather(self.site, ts)]
-            return sum(forecast(self.site, self.arrays[sid].geometry, self.learned.get(sid, LearnedArray()), sky).get(ts, 0.0)
-                       for sid in ids if sid in self.arrays)
-        return bd.learn_band(self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi, clear_wh)
-
-    def _band(self, result: NoxcastData, weather: list[WeatherHour], now: float, day_end: float) -> dict | None:
-        """P10 / P90 of the total forecast: per hour from now on, per day, and for the rest of today.
-
-        Today's measured part is certain; only the rest gets a band. Runs in the executor.
-        """
-        if not self.band:
-            return None
-        clear = {w.start: clearsky_weather(self.site, w.start).ghi for w in weather}
-        kt = {w.start: w.ghi / clear[w.start] for w in weather if clear[w.start] > 0}
-        total = dict(result.forecast.get(None, {}))
-        total.update(result.expected.get(None, {}))
-        sky = result.clear.get(None, {})                  # clear-sky output: the band never goes above it
-        hour = now - now % 3600
-        hours = bd.hour_band(self.band, {t: v for t, v in total.items() if t >= hour}, sky, kt)
-
-        def clearness(ts: list[float]) -> float:
-            c = sum(clear.get(t, 0.0) for t in ts)
-            return sum(kt.get(t, 0.0) * clear.get(t, 0.0) for t in ts) / c if c > 0 else 0.0
-
-        days = {}
-        for offset in (1, 2):
-            a, b = day_end + (offset - 1) * 86400, day_end + offset * 86400
-            ts = [t for t in total if a <= t < b]
-            if len(ts) >= 20 and (r := bd.day_band(self.band, sum(total[t] for t in ts),
-                                                   sum(sky.get(t, total[t]) for t in ts), clearness(ts))):
-                days[offset] = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)]
-        today = result.expected.get(None, {})
-        rest_ts = [t for t in today if t + 3600 > now and t < day_end]
-        rest = sum(today[t] * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
-        done = sum(today[t] for t in today if t < day_end) - sum(today[t] for t in rest_ts) + \
-            sum(today[t] * (1 - min(1.0, (t + 3600 - now) / 3600)) for t in rest_ts)
-        rest_sky = sum(sky.get(t, today[t]) * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
-        r = bd.day_band(self.band, rest, rest_sky, clearness(rest_ts)) if rest > 0 else (0.0, 0.0)
-        rest_band = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)] if r else None
-        if rest_band:
-            days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]
-        return {"hours": hours, "days": days, "rest": rest_band}
+        c = self.consumers[sid]
+        return pl.run_profile(sid, c.run_power, c.run_minutes, self.run_profiles.get(sid))
 
     def _value(self, entity_id: str | None, table: dict[str, float]) -> float | None:
         state = self.hass.states.get(entity_id) if entity_id else None
@@ -751,16 +533,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _run(self, c: ConsumerConfig) -> lf.Run | None:
         """The consumer's run now: power from its sensor or energy / elapsed time, minutes still to go."""
-        power = self._value(c.sensor, POWER_UNIT_FACTORS)
-        minutes = self._value(c.remaining, MINUTE_FACTORS)
-        minutes = minutes if minutes and minutes > 0 else None
-        if power is None and c.energy and c.elapsed:
-            energy, elapsed = self._value(c.energy, ENERGY_UNIT_FACTORS), self._value(c.elapsed, MINUTE_FACTORS)
-            if energy is not None and elapsed and elapsed > 0:
-                power = energy / (elapsed / 60)            # mean power of the program so far
-        if power is None or (power < RUNNING_W and minutes is None):
-            return None
-        return lf.Run(power, minutes)
+        return lf.current_run(self._value(c.sensor, POWER_UNIT_FACTORS), self._value(c.remaining, MINUTE_FACTORS),
+                              self._value(c.energy, ENERGY_UNIT_FACTORS), self._value(c.elapsed, MINUTE_FACTORS))
 
     def _archive_data(self) -> dict:
         return fc_archive.to_store(self.forecast_archive)
@@ -812,12 +586,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_today_actual(self, day_start: float, now: float
                                   ) -> tuple[dict[str, dict[float, float]], dict[str, tuple[float, float, float]]]:
-        """Measured mean power (W = Wh) of today's hours per array, and the running hour.
-
-        Hourly statistics are compiled a few minutes after each hour; the hour just ended and the
-        running hour therefore come from 5-minute statistics. Returns (hours, running) with
-        running = (hour start, mean power of the measured part, measured share).
-        """
+        """Today's measured hours per array and the running hour (see forecasting.today_actual)."""
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         hour_now = now - now % 3600
         try:
@@ -830,25 +599,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – without measurements there is simply no correction
             _LOGGER.debug("Today's statistics unavailable: %s", err)
             return {}, {}
-
-        def scaled(stats: dict[str, dict[float, float | None]], sensors: list[str]) -> dict[float, float]:
-            return _sum_series([{t: v * self._factors.get(s, 1.0) for t, v in stats.get(s, {}).items()
-                                 if v is not None} for s in sensors])
-
-        hours: dict[str, dict[float, float]] = {}
-        running: dict[str, tuple[float, float, float]] = {}
-        for sub_id, arr in self.arrays.items():
-            hourly = scaled(power, arr.sensors)
-            slots = scaled(recent, arr.sensors)
-            prev = hour_now - 3600
-            done = [v for t, v in slots.items() if prev <= t < hour_now]
-            if prev >= day_start and prev not in hourly and len(done) >= RECENT_MIN_SLOTS_HOUR:
-                hourly[prev] = sum(done) / len(done)
-            part = [v for t, v in slots.items() if hour_now <= t < now]
-            if len(part) >= RECENT_MIN_SLOTS_RUNNING:
-                running[sub_id] = (hour_now, sum(part) / len(part), len(part) / 12)
-            hours[sub_id] = hourly
-        return hours, running
+        return fc.today_actual(self.arrays, power, recent, self._factors, day_start, now)
 
     async def _async_update_data(self) -> NoxcastData:
         try:
@@ -856,7 +607,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – any source failure keeps the last forecast
             raise UpdateFailed(f"Weather source failed: {err}") from err
 
-        local_now = dt_util.now()
+        utc_now = dt_util.utcnow()
+        local_now = dt_util.as_local(utc_now)
         day_start = dt_util.start_of_local_day().timestamp()
         day_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=1)).timestamp()
         horizon = dt_util.start_of_local_day(local_now.date() + timedelta(days=self.forecast_days)).timestamp()
@@ -869,68 +621,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         models = {m: [w for w in hours if tomorrow[0] <= w.start < tomorrow[1]]
                   for m, hours in per_model.items()} if len(per_model) > 1 else {}
 
-        result = NoxcastData(updated=dt_util.utcnow(), day_start=day_start,
-                             weather_fetched=dt_util.utc_from_timestamp(fetched), outlook=outlook)
-        alt_forecasts: dict[str, dict[str, dict[float, float]]] = {m: {} for m in models}
-        for sub_id, arr in self.arrays.items():
-            learned = self.learned.get(sub_id, LearnedArray())
-            fresh = await self.hass.async_add_executor_job(forecast, self.site, arr.geometry, learned, weather)
-            # keep earlier values for past hours the source no longer reports
-            merged = {t: v for t, v in self._hours.get(sub_id, {}).items() if t >= day_start}
-            merged.update(fresh)
-            self._hours[sub_id] = merged
-            result.forecast[sub_id] = dict(sorted(merged.items()))
-            for m, hours in models.items():
-                alt_forecasts[m][sub_id] = await self.hass.async_add_executor_job(
-                    forecast, self.site, arr.geometry, learned, hours)
-
-        # today's forecast is fixed in the morning; before that it follows the weather source
-        if self._morning_fixed is None or dt_util.as_local(self._morning_fixed).date() != local_now.date():
-            self._morning_fixed = None
-            self._morning = {}
-        if self._morning_fixed is None and local_now.hour >= MORNING_HOUR:
-            self._morning_fixed = dt_util.utcnow()
-            self._morning = {sid: {t: v for t, v in h.items() if t < day_end} for sid, h in result.arrays.items()}
-        result.morning_fixed = self._morning_fixed
-
-        now = dt_util.utcnow().timestamp()
+        now = utc_now.timestamp()
         actual, running = await self._async_today_actual(day_start, now)
-        result.actual, result.weather = actual, weather
-        temps = {w.start: w.temp for w in weather}
-        clear_weather = [clearsky_weather(self.site, t, temps.get(t))
-                         for t in sorted(result.forecast.get(next(iter(self.arrays), None), {}))]
-        for sub_id, arr in self.arrays.items():
-            today = {t: v for t, v in result.forecast[sub_id].items() if t < day_end}
-            result.morning[sub_id] = self._morning.get(sub_id) or today
-            result.clear[sub_id] = await self.hass.async_add_executor_job(
-                forecast, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), clear_weather)
-            clear = {t: v for t, v in result.clear[sub_id].items() if t < day_end}
-            partial = None
-            if sub_id in running:
-                start, power, share = running[sub_id]
-                profile = await self.hass.async_add_executor_job(
-                    clearsky_profile, self.site, arr.geometry, self.learned.get(sub_id, LearnedArray()), start,
-                    temps.get(start))
-                measured = profile[:round(share * len(profile))]
-                if measured and sum(profile) > 0:
-                    partial = Partial(start, power, share,
-                                      (sum(measured) / len(measured)) / (sum(profile) / len(profile)))
-            shift = clearness_shift(today, actual.get(sub_id, {}), clear, now, arr.geometry.peak_w, partial)
-            result.correction[sub_id] = None if shift is None else round(shift, 3)
-            result.expected[sub_id] = expected_hours(today, actual.get(sub_id, {}), clear, now, shift)
-            corrected = {t: v for t, v in result.expected[sub_id].items() if t > now}
-            self._held[sub_id] = held_forecast(self._held.get(sub_id) or result.morning[sub_id], corrected, now,
-                                               day_start)
-            result.held[sub_id] = self._held[sub_id]
-            result.effects[sub_id] = await self._async_effects(sub_id, arr, weather, today,
-                                                               result.expected[sub_id],
-                                                               day_start, day_end)
-        for series in (result.forecast, result.morning, result.expected, result.clear):
-            total: dict[float, float] = {}
-            for hours in list(series.values()):
-                for t, wh in hours.items():
-                    total[t] = total.get(t, 0.0) + wh
-            series[None] = dict(sorted(total.items()))
+        result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
+            fc.pv, self.site, self.arrays, self.learned, weather, models, self._today, actual, running, utc_now,
+            local_now, day_start, day_end)
+        result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
+        result.outlook = outlook
 
         if local_now.hour in fc_archive.HISTORY_HOURS and fc_archive.add_history(
                 self.forecast_archive, local_now.date(), local_now.replace(minute=0, second=0, microsecond=0).timestamp(),
@@ -938,45 +635,23 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self._archive_store.async_delay_save(self._archive_data, 300)
 
         result.load = await self._async_load_forecast(
-            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(), temps)
-        result.band = await self.hass.async_add_executor_job(self._band, result, weather, now, day_end)
-        result.battery = self._battery(result, now, day_end)
-        self._log_battery(result.battery, local_now, now, day_end)
-        result.plan = self._plan(result, now, day_end)
+            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(),
+            {w.start: w.temp for w in weather})
+        runs = [r for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE and (r := self.run_profile(sid))]
+        await self.hass.async_add_executor_job(
+            fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end)
+        self._log_battery(result.battery, local_now, now)
 
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}
         self._archive_forecast(weather, result, alt, models)
         self._store.async_delay_save(self._store_data, 60)
         return result
 
-    async def _async_effects(self, sub_id: str, arr: ArrayConfig, weather: list[WeatherHour],
-                             today: dict[float, float], expected: dict[float, float],
-                             day_start: float, day_end: float) -> dict:
-        """Shade loss and reflection gain of today, scaled like the expected output, with significant periods."""
-        learned = self.learned.get(sub_id)
-        if learned is None:
-            return {"loss": {}, "gain": {}, "periods": []}
-        hours = [w for w in weather if day_start <= w.start < day_end]
-        loss, gain = await self.hass.async_add_executor_job(hourly_effects, self.site, arr.geometry, learned, hours)
-
-        def scaled(series: dict[float, float]) -> dict[float, float]:
-            return {t: v * (expected.get(t, 0.0) / today[t] if today.get(t) else 1.0) for t, v in series.items()}
-
-        loss, gain = scaled(loss), scaled(gain)
-        periods = await self.hass.async_add_executor_job(
-            significant_periods, self.site, arr.geometry, learned, day_start, loss, gain, sum(expected.values()))
-        return {"loss": loss, "gain": gain, "periods": periods}
-
     @property
     def forecast_available(self) -> bool:
         """A forecast exists and is recent enough; short weather outages do not blank the sensors."""
         data = self.data
         return bool(data and data.updated and dt_util.utcnow() - data.updated < STALE_AFTER)
-
-
-RECENT_MIN_SLOTS_HOUR = 10       # 5-minute values needed to stand in for a just-ended hour
-RECENT_MIN_SLOTS_RUNNING = 3     # 5-minute values (15 minutes) before the running hour counts
-RUNNING_W = 20                   # a consumer drawing at least this much counts as running
 
 
 _WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity")
@@ -988,29 +663,3 @@ def _weather_row(w: WeatherHour) -> list:
 
 def _weather_hour(row: list) -> WeatherHour:
     return WeatherHour(**dict(zip(_WEATHER_FIELDS, row)))
-
-
-def _sum_series(series: list[dict[float, float]]) -> dict[float, float]:
-    """Sum several sensors per hour; hours where any sensor is missing are dropped."""
-    if not series or not all(series):
-        return {}
-    common = set(series[0])
-    for s in series[1:]:
-        common &= set(s)
-    return {t: sum(s[t] for s in series) for t in common}
-
-
-def _measured_forecast(site, geo, learned: LearnedArray, hours: list[tuple[float, float, float | None]]) -> dict[float, float]:
-    """The model on measured weather: what the forecast would have been with a perfect weather forecast."""
-    return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])
-
-
-def _explain(site, geo, learned: LearnedArray, samples, air_temp, satellite_ghi, year: int,
-             steady: set[float] | None = None) -> None:
-    """Panel explanations of a learned array; a failure never stops the learning."""
-    try:
-        learned.months = ac.month_balance(site, geo, learned, year, air_temp)
-        learned.efficiency_months = ac.efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady)
-        learned.geometry_check = ac.check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady)
-    except Exception:  # noqa: BLE001
-        _LOGGER.exception("Array check failed")

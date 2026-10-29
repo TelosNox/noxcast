@@ -1038,3 +1038,9 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                 learned.temp_coeff, wh.temp, poa, heating) * poa / 1000
         out[wh.start] = total / SUBSTEPS
     return out
+
+
+def measured_forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray,
+                      hours: list[tuple[float, float, float | None]]) -> dict[float, float]:
+    """The model on measured weather: what the forecast would have been with a perfect weather forecast."""
+    return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])

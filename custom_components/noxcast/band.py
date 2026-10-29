@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from . import archive as fc_archive
+from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
+from .solar import Site
 
 VERSION = 2                  # 1: ratios actual / forecast (unbounded), 2: clearness shifts
 CLASSES = ((0.35, "overcast"), (0.7, "mixed"), (float("inf"), "clear"))
@@ -51,11 +53,12 @@ def _summary(groups: dict[str, list[float]], minimum: int) -> dict:
 
 
 def learn_band(archive: dict, clear_ghi: Callable[[float], float],
-               clear_wh: Callable[[float, list[str]], float]) -> dict:
+               clear_wh: Callable[[float, list[str]], float], keep: Callable[[float], bool] | None = None) -> dict:
     """{"version", "daily": {class: [q10, q90, n]}, "hourly": {...}} of clearness shifts.
 
     clear_wh(hour_start, array ids): clear-sky output of these arrays in that hour (Wh), from the
-    current learned model. Classes with too little data are left out.
+    current learned model. Classes with too little data are left out. keep(hour_start): only these
+    hours count (meant to select whole days, see learning.py).
     """
     daily: dict[str, list[float]] = {}
     hourly: dict[str, list[float]] = {}
@@ -64,7 +67,7 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
             continue
         f_sum = a_sum = c_sum = ghi_sum = clear_sum = 0.0
         for h in day.hours:
-            if h.curtailed:
+            if h.curtailed or (keep is not None and not keep(h.ts)):
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())
@@ -113,3 +116,50 @@ def hour_band(band: dict | None, hours: dict[float, float], clear: dict[float, f
         if r:
             out[t] = _bounded(wh, clear.get(t, wh), r)
     return out
+
+
+def from_archive(archive: dict, site: Site, geometries: dict[str, ArrayGeometry], learned: dict[str, LearnedArray],
+                 keep: Callable[[float], bool] | None = None) -> dict:
+    """The band of the current learned model: clear-sky output of the arrays still configured."""
+    def clear_wh(ts: float, ids: list[str]) -> float:
+        sky = [clearsky_weather(site, ts)]
+        return sum(forecast(site, geometries[sid], learned.get(sid, LearnedArray()), sky).get(ts, 0.0)
+                   for sid in ids if sid in geometries)
+    return learn_band(archive, lambda ts: clearsky_weather(site, ts).ghi, clear_wh, keep)
+
+
+def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], total: dict[float, float],
+                  today: dict[float, float], sky: dict[float, float], now: float, day_end: float) -> dict | None:
+    """P10 / P90 of the total forecast: per hour from now on, per day, and for the rest of today.
+
+    total: forecast with today's expected hours; today: today's expected hours (measured part certain,
+    only the rest gets a band); sky: clear-sky output, which the band never exceeds.
+    """
+    if not band:
+        return None
+    clear = {w.start: clearsky_weather(site, w.start).ghi for w in weather}
+    kt = {w.start: w.ghi / clear[w.start] for w in weather if clear[w.start] > 0}
+    hour = now - now % 3600
+    hours = hour_band(band, {t: v for t, v in total.items() if t >= hour}, sky, kt)
+
+    def clearness(ts: list[float]) -> float:
+        c = sum(clear.get(t, 0.0) for t in ts)
+        return sum(kt.get(t, 0.0) * clear.get(t, 0.0) for t in ts) / c if c > 0 else 0.0
+
+    days = {}
+    for offset in (1, 2):
+        a, b = day_end + (offset - 1) * 86400, day_end + offset * 86400
+        ts = [t for t in total if a <= t < b]
+        if len(ts) >= 20 and (r := day_band(band, sum(total[t] for t in ts),
+                                            sum(sky.get(t, total[t]) for t in ts), clearness(ts))):
+            days[offset] = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)]
+    rest_ts = [t for t in today if t + 3600 > now and t < day_end]
+    rest = sum(today[t] * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
+    done = sum(today[t] for t in today if t < day_end) - sum(today[t] for t in rest_ts) + \
+        sum(today[t] * (1 - min(1.0, (t + 3600 - now) / 3600)) for t in rest_ts)
+    rest_sky = sum(sky.get(t, today[t]) * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
+    r = day_band(band, rest, rest_sky, clearness(rest_ts)) if rest > 0 else (0.0, 0.0)
+    rest_band = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)] if r else None
+    if rest_band:
+        days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]
+    return {"hours": hours, "days": days, "rest": rest_band}

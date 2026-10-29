@@ -400,6 +400,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
 
     times = [local(2026, 6, 10, 5, 30), local(2026, 6, 10, 12, 5), local(2026, 6, 10, 13, 40),
              local(2026, 6, 11, 1, 30), local(2026, 6, 11, 9, 10)]
+    client = await hass_ws_client(hass)               # before the clock moves back: the access token stays valid
     freezer.move_to(times[0])
     rng = random.Random(7)
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
@@ -532,7 +533,6 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
             freezer.move_to(when)
             await c.async_refresh()
             prints.append(_fingerprint(c))
-        client = await hass_ws_client(hass)
         ws_prints["midday"] = await _ws_prints(client)
         freezer.move_to(times[3])
         await c._async_nightly(times[3])

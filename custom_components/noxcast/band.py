@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from . import archive as fc_archive
+
 VERSION = 2                  # 1: ratios actual / forecast (unbounded), 2: clearness shifts
 CLASSES = ((0.35, "overcast"), (0.7, "mixed"), (float("inf"), "clear"))
 Q_LOW, Q_HIGH = 0.1, 0.9
@@ -57,25 +59,24 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
     """
     daily: dict[str, list[float]] = {}
     hourly: dict[str, list[float]] = {}
-    for day in archive.values():
-        hours = day.get("hours", {})
-        if not hours or any("actual" not in h for h in hours.values()):
+    for day in fc_archive.days(archive):
+        if not day.complete:
             continue
         f_sum = a_sum = c_sum = ghi_sum = clear_sum = 0.0
-        for key, h in hours.items():
-            if h.get("curtailed"):
+        for h in day.hours:
+            if h.curtailed:
                 continue
-            ids = list(h.get("forecast", {}))
-            f = sum(h.get("forecast", {}).values())
-            a = sum(h["actual"].get(sid, 0.0) for sid in ids)
-            cs = clear_ghi(float(key))
+            ids = list(h.forecast)
+            f = sum(h.forecast.values())
+            a = sum(h.actual.get(sid, 0.0) for sid in ids)
+            cs = clear_ghi(h.ts)
             if cs <= 0:
                 continue
-            c = clear_wh(float(key), ids)
+            c = clear_wh(h.ts, ids)
             f_sum, a_sum, c_sum = f_sum + f, a_sum + a, c_sum + c
-            ghi_sum, clear_sum = ghi_sum + (h.get("ghi") or 0.0), clear_sum + cs
+            ghi_sum, clear_sum = ghi_sum + (h.ghi or 0.0), clear_sum + cs
             if c >= MIN_HOUR_WH:
-                hourly.setdefault(weather_class((h.get("ghi") or 0.0) / cs), []).append((a - f) / c)
+                hourly.setdefault(weather_class((h.ghi or 0.0) / cs), []).append((a - f) / c)
         if c_sum >= MIN_DAY_WH and clear_sum > 0:
             daily.setdefault(weather_class(ghi_sum / clear_sum), []).append((a_sum - f_sum) / c_sum)
     return {"version": VERSION, "daily": _summary(daily, MIN_DAYS), "hourly": _summary(hourly, MIN_HOURS)}

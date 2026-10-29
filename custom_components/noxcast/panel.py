@@ -12,6 +12,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
+from . import archive as fc_archive
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -204,19 +205,16 @@ def accuracy_days(archive: dict, site) -> list[dict]:
     from .model import clearsky_weather
 
     days = []
-    for key in sorted(archive):
-        day = archive[key]
+    for day in fc_archive.days(archive):
         hours = []
-        for ts_key, h in sorted(day.get("hours", {}).items(), key=lambda kv: float(kv[0])):
-            ts = float(ts_key)
+        for h in day.hours:
             hours.append({
-                "t": ts, "ghi": h.get("ghi"), "clear": round(clearsky_weather(site, ts).ghi, 1),
-                "forecast": h.get("forecast", {}), "actual": h.get("actual"),
-                "alt": {name: a.get("forecast", {}) for name, a in h.get("alt", {}).items()},
-                "curtailed": bool(h.get("curtailed")),
-                "sat_ghi": h.get("sat_ghi"), "measured": h.get("measured"),
+                "t": h.ts, "ghi": h.ghi, "clear": round(clearsky_weather(site, h.ts).ghi, 1),
+                "forecast": h.forecast, "actual": h.actual,
+                "alt": {name: s.forecast for name, s in h.alt.items()},
+                "curtailed": h.curtailed, "sat_ghi": h.sat_ghi, "measured": h.measured,
             })
-        days.append({"date": key, "issued": day.get("issued"), "hours": hours})
+        days.append({"date": day.date, "issued": day.issued, "hours": hours})
     return days
 
 
@@ -364,8 +362,7 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
                             "end": dt_util.utc_from_timestamp(e["end"]).isoformat(), "note": e.get("note", "")}
                            for e in coordinator.exclusions],
             "archive": {"days": len(archive),
-                        "complete": sum(1 for d in archive.values()
-                                        if d.get("hours") and all("actual" in h for h in d["hours"].values()))},
+                        "complete": sum(1 for d in fc_archive.days(archive) if d.complete)},
             "fine": {"days": sum(1 for d in coordinator.fine.values() if any(d.values()))},
             "sensors": sensors,
         })
@@ -486,7 +483,8 @@ def _series(hours: dict[float, float], a: float, b: float) -> list[list[float]]:
     return [[t, round(v, 1)] for t, v in sorted(hours.items()) if a <= t < b]
 
 
-def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, a: float, b: float, now: float) -> dict:
+def day_view(site, arrays: dict, learned: dict, archive_day: fc_archive.Day | None, data, a: float, b: float,
+             now: float) -> dict:
     """One day for the panel: per array the forecasts, actual, steps of each hour; weather; band.
 
     Past days come from the day-ahead archive (forecast, actual, weather of the forecast). Today and
@@ -496,9 +494,8 @@ def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, 
     from . import explain
     from .model import LearnedArray, WeatherHour
 
-    weather: dict[float, WeatherHour] = {}
-    for key, h in ((archive_day or {}).get("hours") or {}).items():
-        weather[float(key)] = WeatherHour(float(key), h.get("ghi") or 0.0, None, None, h.get("temp"))
+    arch = archive_day.hours if archive_day else []
+    weather: dict[float, WeatherHour] = {h.ts: WeatherHour(h.ts, h.ghi or 0.0, None, None, h.temp) for h in arch}
     if data is not None and b > now:                     # today and the coming days
         weather.update({w.start: w for w in data.weather if a <= w.start < b})
     hours = [weather[t] for t in sorted(weather) if a <= t < b]
@@ -508,9 +505,8 @@ def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, 
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
                  "steps": {str(int(t)): s for t, s in explain.hour_steps(site, arr.geometry, la, hours).items()},
                  "efficiency": la.efficiency}
-        arch = {float(k): h for k, h in ((archive_day or {}).get("hours") or {}).items()}
-        entry["day_ahead"] = [[t, h["forecast"][sid]] for t, h in sorted(arch.items()) if sid in h.get("forecast", {})]
-        entry["actual"] = [[t, h["actual"][sid]] for t, h in sorted(arch.items()) if sid in h.get("actual", {})]
+        entry["day_ahead"] = [[h.ts, h.forecast[sid]] for h in arch if sid in h.forecast]
+        entry["actual"] = [[h.ts, h.actual[sid]] for h in arch if sid in (h.actual or {})]
         if data is not None and b > now:
             entry["forecast"] = _series(data.forecast.get(sid, {}), a, b)
             if a <= now < b:
@@ -525,8 +521,7 @@ def day_view(site, arrays: dict, learned: dict, archive_day: dict | None, data, 
     if data is not None and data.band:
         band = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items()) if a <= t < b]
     sky = explain.clearness(site, hours)
-    history = [[float(k), [[float(t), v] for t, v in sorted(h.items(), key=lambda kv: float(kv[0]))]]
-               for k, h in sorted(((archive_day or {}).get("history") or {}).items(), key=lambda kv: float(kv[0]))]
+    history = [[s, [[t, v] for t, v in snap]] for s, snap in (archive_day.history if archive_day else [])]
     return {"arrays": out, "band": band, "history": history,
             "weather": [[t, round(g, 1), round(c, 1), weather[t].temp] for t, (g, c) in sorted(sky.items())]}
 
@@ -544,8 +539,8 @@ async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         c = entry.runtime_data
         view = await hass.async_add_executor_job(day_view, c.site, c.arrays, dict(c.learned),
-                                                 c.forecast_archive.get(day.isoformat()), c.data, a, b, now)
-        view["archive_days"] = sorted(c.forecast_archive)[:1]
+                                                 fc_archive.day(c.forecast_archive, day), c.data, a, b, now)
+        view["archive_days"] = fc_archive.dates(c.forecast_archive)[:1]
         view["flows"] = None
         if a < now:
             pv: dict[float, float] = {}

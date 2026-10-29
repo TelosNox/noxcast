@@ -1,4 +1,8 @@
-"""Sidebar panel "Noxcast" and the day card, both fed by websocket commands."""
+"""Sidebar panel "Noxcast" and the day card, both fed by websocket commands.
+
+A thin adapter: each command gathers its inputs from the coordinators (and the recorder), lets a pure
+function of views.py build the payload and sends it.
+"""
 from __future__ import annotations
 
 import logging
@@ -9,11 +13,15 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.statistics import get_metadata, statistics_during_period
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from .const import DOMAIN
+from . import views
+from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +35,8 @@ WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
 WS_DAY = f"{DOMAIN}/day"
 WS_CARD = f"{DOMAIN}/card_config"
+DIAG_DAYS = 30
+REVIEW_DAYS = 30
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -41,6 +51,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_card_config)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
+    # after_dependencies only: imported where they are loaded
     from homeassistant.components import panel_custom
     from homeassistant.components.http import StaticPathConfig
 
@@ -90,23 +101,28 @@ def _version(*names: str) -> str:
     return str(int(max((Path(__file__).parent / "frontend" / n).stat().st_mtime for n in names)))
 
 
+def _coordinators(hass: HomeAssistant) -> list:
+    return [e.runtime_data for e in hass.config_entries.async_loaded_entries(DOMAIN)]
+
+
+def _battery_names(entry) -> dict[str, str]:
+    """Battery subentry id -> its title."""
+    return {sid: entry.subentries[sid].title for sid in entry.runtime_data.batteries if sid in entry.subentries}
+
+
+def _day_start(day: date) -> float:
+    return dt_util.start_of_local_day(day).timestamp()
+
+
+def _local_date(ts: float) -> str:
+    return dt_util.as_local(dt_util.utc_from_timestamp(ts)).date().isoformat()
+
+
 @websocket_api.websocket_command({vol.Required("type"): WS_LEARNED})
 @callback
 def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Learned state of all arrays of all Noxcast entries (the site is the Home Assistant location)."""
-    from .model import facade_cells
-    arrays = []
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        for sub_id, arr in coordinator.arrays.items():
-            learned = coordinator.learned.get(sub_id)
-            arrays.append({
-                "id": sub_id, "name": arr.name, "tilt": arr.geometry.tilt, "azimuth": arr.geometry.azimuth,
-                "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
-                "learned": learned.as_dict() if learned else None,
-                "facade_cells": facade_cells(learned) if learned else {},
-                "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
-            })
+    arrays = [a for c in _coordinators(hass) for a in views.learned_arrays(c.arrays, c.learned, c.last_learning)]
     connection.send_result(msg["id"], {
         "latitude": hass.config.latitude, "longitude": hass.config.longitude,
         "time_zone": hass.config.time_zone, "arrays": arrays,
@@ -117,105 +133,18 @@ def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
 @callback
 def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Today per array for the day card: expected, held and morning forecast per hour, effects and tomorrow."""
+    coordinators = [c for c in _coordinators(hass) if c.data is not None]
     # the day the data was computed for: just after midnight the new computation may still be running
-    day_start = next((e.runtime_data.data.day_start for e in hass.config_entries.async_loaded_entries(DOMAIN)
-                      if e.runtime_data.data is not None and e.runtime_data.data.day_start), None)
+    day_start = next((c.data.day_start for c in coordinators if c.data.day_start), None)
     day = dt_util.as_local(dt_util.utc_from_timestamp(day_start)).date() if day_start else dt_util.now().date()
-    tomorrow_start = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
-    tomorrow_end = tomorrow_start + 86400
-
-    def series(hours: dict[float, float]) -> list[list[float]]:
-        return [[t, round(v, 1)] for t, v in sorted(hours.items())]
-
-    arrays = []
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        data = coordinator.data
-        if data is None:
-            continue
-        for sub_id, arr in coordinator.arrays.items():
-            effects = data.effects.get(sub_id, {})
-            arrays.append({
-                "id": sub_id, "name": arr.name, "peak_w": arr.geometry.peak_w,
-                "expected": series(data.expected.get(sub_id, {})),
-                "morning": series(data.morning.get(sub_id, {})),
-                "forecast": series(data.held.get(sub_id, {})),
-                "tomorrow": series({t: v for t, v in data.forecast.get(sub_id, {}).items()
-                                    if tomorrow_start <= t < tomorrow_end}),
-                "loss": series(effects.get("loss", {})),
-                "gain": series(effects.get("gain", {})),
-                "periods": effects.get("periods", []),
-                "tomorrow_wh": round(sum(v for t, v in data.forecast.get(sub_id, {}).items()
-                                         if tomorrow_start <= t < tomorrow_end)),
-                "updated": data.updated.isoformat() if data.updated else None,
-            })
+    tomorrow_start = _day_start(day + timedelta(days=1))
+    arrays = [a for c in coordinators for a in views.today_arrays(c.arrays, c.data, tomorrow_start, tomorrow_start + 86400)]
     result = {"now": dt_util.utcnow().timestamp(), "day_start": day_start, "time_zone": hass.config.time_zone, "arrays": arrays, "days": []}
     # with a load forecast and batteries the card shows what Noxcast computed instead of its own estimate
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        data = entry.runtime_data.data
-        if data is None:
-            continue
-        result["days"] = day_totals(data, entry.runtime_data.forecast_days)
-        if data.load is not None:
-            result["load"] = series(data.load.hours)
-        if data.band:
-            result["band"] = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items())]
-        b = data.battery
-        if b:
-            sim, storage = b["sim"], b["storage"]
-            result["battery"] = {
-                "points": [[t, round(f, 4)] for t, f in sim.points], "full": sim.full_at, "empty": sim.empty_at,
-                "lost_today": round(sum(h["lost"] for t, h in sim.hours.items() if t < b["day_end"]), 1),
-                "charge_start": b["charge_start"], "max": storage.max_soc, "min": storage.min_soc,
-            }
-        names = {sid: c.name for sid, c in entry.runtime_data.consumers.items()}
-        result["plan"] = [{"name": names.get(sid, sid), "now": round(p["now"].pv_share, 3),
-                           "start": p["today"].start if p["today"] else None, "end": p["today"].end if p["today"] else None,
-                           "pv": round(p["today"].pv_share, 3) if p["today"] else None}
-                          for sid, p in (getattr(data, "plan", None) or {}).items()]
-        break
+    if coordinators:
+        c = coordinators[0]
+        result.update(views.today_totals(c.data, c.consumers, c.forecast_days, dt_util.now().date(), _day_start))
     connection.send_result(msg["id"], result)
-
-
-def day_totals(data, days: int) -> list[dict]:
-    """Forecast PV energy per local day over the horizon, with clear-sky energy and the P10-P90 band where known.
-
-    Today counts its forecast too (past hours as they were forecast), not the expected curve, so the days
-    stay comparable. A day needs almost all of its hours, so a horizon cut off mid-day does not show as a bad day.
-    """
-    out = []
-    today = dt_util.now().date()
-    band = (data.band or {}).get("days", {})
-    for offset in range(days):
-        day = today + timedelta(days=offset)
-        a = dt_util.start_of_local_day(day).timestamp()
-        b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
-        values = [v for t, v in data.forecast.get(None, {}).items() if a <= t < b]
-        if len(values) < 20:
-            continue
-        clear = sum(v for t, v in data.clear.get(None, {}).items() if a <= t < b)
-        p = band.get(offset) or band.get(str(offset))
-        out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)), "clear_wh": round(clear) or None,
-                    "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None})
-    return out
-
-
-def accuracy_days(archive: dict, site) -> list[dict]:
-    """Archived day-ahead forecasts with actuals, hour by hour, plus clear-sky irradiance for the weather class."""
-    from .model import clearsky_weather
-
-    days = []
-    for day in fc_archive.days(archive):
-        hours = []
-        for h in day.hours:
-            hours.append({
-                "t": h.ts, "ghi": h.ghi, "clear": round(clearsky_weather(site, h.ts).ghi, 1),
-                "forecast": h.forecast, "actual": h.actual,
-                "alt": {name: s.forecast for name, s in h.alt.items()},
-                "curtailed": h.curtailed, "sat_ghi": h.sat_ghi, "measured": h.measured,
-            })
-        days.append({"date": day.date, "issued": day.issued, "hours": hours})
-    return days
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_ACCURACY})
@@ -223,11 +152,9 @@ def accuracy_days(archive: dict, site) -> list[dict]:
 async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Day-ahead forecast archive for the accuracy view of the panel."""
     entries = []
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        days = await hass.async_add_executor_job(accuracy_days, coordinator.forecast_archive, coordinator.site)
-        entries.append({"arrays": [{"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w}
-                                   for sid, arr in coordinator.arrays.items()], "days": days})
+    for c in _coordinators(hass):
+        days = await hass.async_add_executor_job(views.accuracy_days, c.forecast_archive, c.site)
+        entries.append({"arrays": views.array_names(c.arrays), "days": days})
     connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "entries": entries})
 
 
@@ -235,93 +162,25 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
 @callback
 def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Load forecast for the panel: profiles, consumers, the forecast by part and the backtest."""
-    entries = []
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        if not coordinator.house_load:
-            continue
-        data = coordinator.data
-        fc = data.load if data is not None else None
-        profile = coordinator.load_profile
-        entries.append({
-            "house_load": coordinator.house_load,
-            "profile": profile.as_dict() if profile else None,
-            "consumers": [{"id": sid, "name": c.name, "timing": c.timing, "sensor": c.sensor or getattr(c, "energy", None),
-                           "kind": getattr(c, "kind", "profile"),
-                           "model": _model_summary(coordinator, sid, getattr(c, "kind", "profile")),
-                           "profile": coordinator.consumer_profiles[sid].as_dict()
-                           if sid in coordinator.consumer_profiles else None}
-                          for sid, c in coordinator.consumers.items()],
-            "forecast": None if fc is None else {
-                "k": fc.k,
-                "sustained": fc.sustained,
-                "sustained_since": fc.sustained_since,
-                "base": [[t, v] for t, v in sorted(fc.base.items())],
-                "consumers": {sid: [[t, v] for t, v in sorted(series.items())] for sid, series in fc.consumers.items()},
-            },
-            "backtest": coordinator.load_backtest,
-            "events": getattr(coordinator, "load_events", None),
-            "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
-        })
+    entries = [views.load_entry(c.house_load, c.load_profile, c.consumers, c.consumer_profiles, c.consumer_models,
+                                c.data.load if c.data is not None else None, c.load_backtest, c.load_events,
+                                c.last_learning)
+               for c in _coordinators(hass) if c.house_load]
     connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
                                        "entries": entries})
-
-
-def _model_summary(coordinator, sid: str, kind: str) -> dict | None:
-    """The learned figures of a fixed program or session for the panel."""
-    m = (getattr(coordinator, "consumer_models", {}) or {}).get(sid, {}).get(kind)
-    if m is None:
-        return None
-    if kind == "program":
-        per_day = {k: round(sum(v), 2) for k, v in m.starts.items()}
-        # expected mean W per local hour on a workday: start rates folded with the run's power curve
-        expected = [round(sum(m.starts["workday"][(h - i) % 24] * w for i, w in enumerate(m.shape)), 1) for h in range(24)]
-        return {"runs": m.runs, "per_day": per_day, "runs_max": m.runs_max, "energy_wh": round(sum(m.shape)),
-                "hours": len(m.shape), "expected": expected}
-    if kind == "regulated":
-        return {"mode": m.mode, "threshold": m.threshold, "base_wh": m.base_wh, "slope_wh": m.slope_wh,
-                "r2": m.r2, "days": m.days}
-    return {"power": m.power, "p_on": m.p_on, "remaining": m.remaining,
-            "expected": [round((p or 0) * m.power, 1) for p in m.p_on["workday"]]}
-
-
-DIAG_DAYS = 30
-
-
-def _sensor_roles(entry, coordinator) -> list[tuple[str, str, str]]:
-    """(entity, role, owner) for every sensor Noxcast reads."""
-    from .const import CONF_SOC_SENSORS
-
-    roles = [(s, "pv", arr.name) for arr in coordinator.arrays.values() for s in arr.sensors]
-    roles += [(s, "curtailment_soc", "Noxcast") for s in entry.data.get(CONF_SOC_SENSORS) or []]
-    if getattr(coordinator, "house_load", None):
-        roles.append((coordinator.house_load, "house_load", "Noxcast"))
-    for c in getattr(coordinator, "consumers", {}).values():
-        for attr, role in (("sensor", "consumer_power"), ("energy", "consumer_energy"),
-                           ("remaining", "remaining_time"), ("elapsed", "elapsed_time")):
-            if getattr(c, attr, None):
-                roles.append((getattr(c, attr), role, c.name))
-    for sid, d in getattr(coordinator, "batteries", {}).items():
-        for key, role in (("soc_sensor", "battery_soc"), ("max_soc_entity", "battery_max"), ("min_soc_entity", "battery_min")):
-            if d.get(key):
-                roles.append((d[key], role, entry.subentries[sid].title if sid in entry.subentries else ""))
-    return roles
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_DIAGNOSTICS})
 @websocket_api.async_response
 async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Data quality for the panel: every sensor with unit, state and statistics coverage, learning runs, exclusions."""
-    from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.statistics import get_metadata, statistics_during_period
-
     now = dt_util.utcnow()
     start = now - timedelta(days=DIAG_DAYS)
-    expected_hours = DIAG_DAYS * 24
     entries = []
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        roles = _sensor_roles(entry, coordinator)
+        c = entry.runtime_data
+        roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers, c.batteries,
+                                   _battery_names(entry))
         ids = sorted({e for e, _, _ in roles})
         try:
             meta = await get_instance(hass).async_add_executor_job(lambda: get_metadata(hass, statistic_ids=set(ids)))
@@ -330,87 +189,28 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
         except Exception as err:  # noqa: BLE001 – the view still shows states without statistics
             _LOGGER.debug("Statistics for diagnostics unavailable: %s", err)
             meta, stats = {}, {}
-        sensors = []
-        for entity_id, role, owner in roles:
-            state = hass.states.get(entity_id)
-            rows = stats.get(entity_id, [])
-            first = rows[0]["start"] if rows else None
-            sensors.append({
-                "entity_id": entity_id, "role": role, "owner": owner,
-                "state": state.state if state else None,
-                "unit": state.attributes.get("unit_of_measurement") if state else None,
-                "state_class": state.attributes.get("state_class") if state else None,
-                "statistics": entity_id in meta,
-                "coverage": round(len(rows) / expected_hours, 3) if entity_id in meta else None,
-                "first": (first.isoformat() if hasattr(first, "isoformat") else dt_util.utc_from_timestamp(first).isoformat()) if first else None,
-                "updated": state.last_updated.isoformat() if state else None,
-            })
-        archive = coordinator.forecast_archive
-        data = coordinator.data
-        entries.append({
-            "title": entry.title,
-            "weather": {"source": "open_meteo", "models": coordinator.weather_models,
-                        "updated": data.weather_fetched.isoformat() if data and data.weather_fetched else None,
-                        "hours": len((data.forecast or {}).get(None, {})) if data else 0},
-            "learning": {"last": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
-                         "error": coordinator.last_learning_error, "archive_errors": coordinator.archive_errors},
-            "arrays": [{"name": arr.name, "samples": coordinator.learned[sid].samples if sid in coordinator.learned else 0,
-                        "coverage": coordinator.learned[sid].coverage if sid in coordinator.learned else None,
-                        "efficiency": coordinator.learned[sid].efficiency if sid in coordinator.learned else None}
-                       for sid, arr in coordinator.arrays.items()],
-            "exclusions": [{"start": dt_util.utc_from_timestamp(e["start"]).isoformat(),
-                            "end": dt_util.utc_from_timestamp(e["end"]).isoformat(), "note": e.get("note", "")}
-                           for e in coordinator.exclusions],
-            "archive": {"days": len(archive),
-                        "complete": sum(1 for d in fc_archive.days(archive) if d.complete)},
-            "fine": {"days": sum(1 for d in coordinator.fine.values() if any(d.values()))},
-            "sensors": sensors,
-        })
+        sensors = [views.sensor_row(entity_id, role, owner, hass.states.get(entity_id), stats.get(entity_id, []),
+                                    entity_id in meta, DIAG_DAYS * 24) for entity_id, role, owner in roles]
+        entries.append(views.diagnostics_entry(
+            entry.title, weather_models=c.weather_models, data=c.data, last_learning=c.last_learning,
+            learning_error=c.last_learning_error, archive_errors=c.archive_errors, arrays=c.arrays, learned=c.learned,
+            exclusions=c.exclusions, archive=c.forecast_archive, fine=c.fine, sensors=sensors))
     connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
-
-
-REVIEW_DAYS = 30
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_BATTERY})
 @websocket_api.async_response
 async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Battery and surplus for the panel: the storage, PV and load per hour for what-if runs, the last 30 days."""
-    from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.statistics import statistics_during_period
-
-    from . import battery as bt
-    from .const import CONF_CAPACITY, CONF_SOC_SENSOR
-
     now = dt_util.utcnow()
     entries = []
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        coordinator = entry.runtime_data
-        if not coordinator.batteries:
+        c = entry.runtime_data
+        if not c.batteries:
             continue
-        data = coordinator.data
-        b = data.battery if data is not None else None
-        result: dict[str, Any] = {"batteries": [{"name": entry.subentries[sid].title if sid in entry.subentries else "",
-                                                 "capacity_kwh": d.get(CONF_CAPACITY), "soc_sensor": d.get(CONF_SOC_SENSOR)}
-                                                for sid, d in coordinator.batteries.items()]}
-        if b:
-            st, sim = b["storage"], b["sim"]
-            pv = dict(data.forecast.get(None, {}))
-            pv.update(data.expected.get(None, {}))
-            load = data.load.hours
-            hours = sorted(t for t in load if t + 3600 > now.timestamp())
-            result.update({
-                "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
-                            "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
-                            "max_discharge_w": st.max_discharge_w},
-                "hours": [[t, round(pv.get(t, 0.0), 1), round(load[t], 1)] for t in hours],
-                "day_end": b["day_end"], "charge_start": b["charge_start"],
-                "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
-                        "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh)},
-            })
+        result = views.battery_entry(c.batteries, _battery_names(entry), c.data, now.timestamp())
         # review: lowest and highest state of charge per day from the long-term statistics
-        socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
-                for d in coordinator.batteries.values() if d.get(CONF_SOC_SENSOR)}
+        socs = views.soc_capacities(c.batteries)
         try:
             stats = await get_instance(hass).async_add_executor_job(
                 statistics_during_period, hass, now - timedelta(days=REVIEW_DAYS), None, set(socs), "hour", None,
@@ -418,18 +218,11 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         except Exception as err:  # noqa: BLE001 – the what-if part works without statistics
             _LOGGER.debug("Statistics for the battery review unavailable: %s", err)
             stats = {}
-
-        def ts(v) -> float:
-            return v.timestamp() if hasattr(v, "timestamp") else float(v)
-
-        series = [(cap, [(ts(r["start"]), r["min"] / 100, r["max"] / 100) for r in stats.get(eid, [])
-                         if r.get("min") is not None and r.get("max") is not None])
-                  for eid, cap in socs.items()]
-        result["days"] = bt.soc_days(series, lambda t: dt_util.as_local(dt_util.utc_from_timestamp(t)).date().isoformat())
+        result["days"] = views.soc_review(stats, socs, _local_date)
         # the morning predictions against what happened, from the 5-minute statistics (kept about ten days)
         result["predictions"] = []
-        if coordinator.battery_log and socs:
-            first = min(coordinator.battery_log)
+        if c.battery_log and socs:
+            first = min(c.battery_log)
             try:
                 short = await get_instance(hass).async_add_executor_job(
                     statistics_during_period, hass, dt_util.start_of_local_day(date.fromisoformat(first)), None,
@@ -437,11 +230,8 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Short-term statistics for the battery predictions unavailable: %s", err)
                 short = {}
-            soc = bt.combined_soc([(cap, {ts(r["start"]): r["mean"] / 100 for r in short.get(eid, []) if r.get("mean") is not None})
-                                   for eid, cap in socs.items()])
-            result["predictions"] = bt.prediction_review(
-                coordinator.battery_log, soc,
-                lambda key: dt_util.start_of_local_day(date.fromisoformat(key) + timedelta(days=1)).timestamp())
+            result["predictions"] = views.prediction_review(
+                c.battery_log, short, socs, lambda key: _day_start(date.fromisoformat(key) + timedelta(days=1)))
         entries.append(result)
     connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
                                        "review_days": REVIEW_DAYS, "entries": entries})
@@ -451,79 +241,15 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 @callback
 def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The sensors the day card shows, as configured in the integration; the card only changes the display."""
-    from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_FEED_IN, CONF_GRID_INVERT, CONF_MAX_SOC,
-                        CONF_MAX_SOC_ENTITY, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
-    from homeassistant.helpers import entity_registry as er
-
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
         connection.send_result(msg["id"], None)
         return
     entry = entries[0]
     c = entry.runtime_data
-    batteries = []
-    for sid, d in c.batteries.items():
-        batteries.append({k: v for k, v in {
-            "name": entry.subentries[sid].title if sid in entry.subentries else None,
-            "entity": d.get(CONF_BATTERY_POWER), "invert": bool(d.get(CONF_BATTERY_INVERT)), "soc": d.get(CONF_SOC_SENSOR),
-            "capacity": d.get(CONF_CAPACITY), "max_soc": d.get(CONF_MAX_SOC_ENTITY) or d.get(CONF_MAX_SOC),
-            "min_soc": d.get(CONF_MIN_SOC_ENTITY) or d.get(CONF_MIN_SOC), "reserve": d.get(CONF_RESERVE),
-        }.items() if v not in (None, "")})
-    connection.send_result(msg["id"], {
-        "pv": {"groups": [{"entities": list(arr.sensors), "name": arr.name, "array": arr.name} for arr in c.arrays.values()]},
-        "home": {"entity": c.house_load} if c.house_load else {},
-        "grid": {"entity": c.grid, "invert": bool(entry.data.get(CONF_GRID_INVERT))} if c.grid else {},
-        "batteries": batteries,
-        "export": bool(entry.data.get(CONF_FEED_IN)),
-        "weather": er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather"),
-    })
-
-
-def _series(hours: dict[float, float], a: float, b: float) -> list[list[float]]:
-    return [[t, round(v, 1)] for t, v in sorted(hours.items()) if a <= t < b]
-
-
-def day_view(site, arrays: dict, learned: dict, archive_day: fc_archive.Day | None, data, a: float, b: float,
-             now: float) -> dict:
-    """One day for the panel: per array the forecasts, actual, steps of each hour; weather; band.
-
-    Past days come from the day-ahead archive (forecast, actual, weather of the forecast). Today and
-    the coming days come from the current data; today's past hours fall back to the archived weather,
-    since a weather source may no longer report them. Runs in the executor.
-    """
-    from . import explain
-    from .model import LearnedArray, WeatherHour
-
-    arch = archive_day.hours if archive_day else []
-    weather: dict[float, WeatherHour] = {h.ts: WeatherHour(h.ts, h.ghi or 0.0, None, None, h.temp) for h in arch}
-    if data is not None and b > now:                     # today and the coming days
-        weather.update({w.start: w for w in data.weather if a <= w.start < b})
-    hours = [weather[t] for t in sorted(weather) if a <= t < b]
-    out = []
-    for sid, arr in arrays.items():
-        la = learned.get(sid) or LearnedArray()
-        entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
-                 "steps": {str(int(t)): s for t, s in explain.hour_steps(site, arr.geometry, la, hours).items()},
-                 "efficiency": la.efficiency}
-        entry["day_ahead"] = [[h.ts, h.forecast[sid]] for h in arch if sid in h.forecast]
-        entry["actual"] = [[h.ts, h.actual[sid]] for h in arch if sid in (h.actual or {})]
-        if data is not None and b > now:
-            entry["forecast"] = _series(data.forecast.get(sid, {}), a, b)
-            if a <= now < b:
-                entry["morning"] = _series(data.morning.get(sid, {}), a, b)
-                entry["held"] = _series(data.held.get(sid, {}), a, b)
-                entry["expected"] = _series(data.expected.get(sid, {}), a, b)
-                entry["actual"] = _series(data.actual.get(sid, {}), a, b)
-                entry["correction"] = data.correction.get(sid)
-                entry["periods"] = (data.effects.get(sid) or {}).get("periods", [])
-        out.append(entry)
-    band = []
-    if data is not None and data.band:
-        band = [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted(data.band["hours"].items()) if a <= t < b]
-    sky = explain.clearness(site, hours)
-    history = [[s, [[t, v] for t, v in snap]] for s, snap in (archive_day.history if archive_day else [])]
-    return {"arrays": out, "band": band, "history": history,
-            "weather": [[t, round(g, 1), round(c, 1), weather[t].temp] for t, (g, c) in sorted(sky.items())]}
+    connection.send_result(msg["id"], views.card_config(
+        c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), entry.data.get(CONF_FEED_IN), c.batteries,
+        _battery_names(entry), er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather")))
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_DAY, vol.Optional("offset", default=0): vol.All(int, vol.Range(-120, 2))})
@@ -531,24 +257,18 @@ def day_view(site, arrays: dict, learned: dict, archive_day: fc_archive.Day | No
 async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """A day in detail: offset 0 = today, negative = past days from the archive, up to 2 days ahead."""
     day = dt_util.now().date() + timedelta(days=msg["offset"])
-    a = dt_util.start_of_local_day(day).timestamp()
-    b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
+    a, b = _day_start(day), _day_start(day + timedelta(days=1))
     now = dt_util.utcnow().timestamp()
     result: dict[str, Any] = {"now": now, "time_zone": hass.config.time_zone, "date": day.isoformat(),
                               "offset": msg["offset"], "start": a, "end": b, "entries": []}
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        c = entry.runtime_data
-        view = await hass.async_add_executor_job(day_view, c.site, c.arrays, dict(c.learned),
+    for c in _coordinators(hass):
+        view = await hass.async_add_executor_job(views.day_view, c.site, c.arrays, dict(c.learned),
                                                  fc_archive.day(c.forecast_archive, day), c.data, a, b, now)
         view["archive_days"] = fc_archive.dates(c.forecast_archive)[:1]
         view["flows"] = None
         if a < now:
-            pv: dict[float, float] = {}
-            for arr in view["arrays"]:
-                for t, v in arr.get("actual", []):
-                    pv[t] = pv.get(t, 0.0) + v
             try:
-                view["flows"] = await c.async_day_flows(a, b, pv)
+                view["flows"] = await c.async_day_flows(a, b, views.day_pv(view))
             except Exception:  # noqa: BLE001 – the day view works without the energy paths
                 _LOGGER.exception("Energy paths of %s failed", day)
         result["entries"].append(view)

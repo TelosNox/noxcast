@@ -546,7 +546,9 @@ orientation changes the geometry key and starts relearning.
   models from fetched history (optionally only from selected days, for backtests);
   `forecasting.py` turns learned state, weather and today's measurements into the hourly result
   (PV, intraday correction, load, band, battery, plan). The coordinator only schedules, fetches
-  (statistics, weather, states), stores and publishes.
+  (statistics, weather, states), stores and publishes. Likewise `panel.py` only adapts the
+  websocket commands: it gathers the inputs and sends what `views.py` builds from them; the steps
+  of an archived day under the current learned model come from `explain.replay`.
 - Stable public interface: versioned entity IDs and attribute schema.
 - Transparent storage: learned parameters as readable, versioned files; diagnostic export.
 - Backtesting harness: replay history as if forecasting at that time. Every model change must

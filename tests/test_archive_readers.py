@@ -1,24 +1,15 @@
 """Readers of the day-ahead archive (band, panel views, error) on a stored archive with every field."""
 import json
-import sys
 from datetime import date, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 from conftest import load
-
-for _name in ("voluptuous", "homeassistant", "homeassistant.components", "homeassistant.components.websocket_api",
-              "homeassistant.core", "homeassistant.util", "homeassistant.util.dt"):
-    try:                                     # the panel imports Home Assistant; only its pure functions are tested
-        __import__(_name)
-    except ImportError:
-        sys.modules[_name] = MagicMock()
 
 archive = load("archive")
 bd = load("band")
 model = load("model")
 solar = load("solar")
-panel = load("panel")
+views = load("views")
 
 SITE = solar.Site(48.97, 8.45, 113)
 GEO = model.ArrayGeometry(tilt=35, azimuth=180, peak_w=1000)
@@ -68,7 +59,7 @@ def test_band_from_stored_archive():
 
 
 def test_accuracy_days_from_stored_archive():
-    days = panel.accuracy_days(stored(), SITE)
+    days = views.accuracy_days(stored(), SITE)
     assert len(days) == DAYS and days[0]["date"] == "2026-06-22" and days[0]["issued"] == "2026-06-21T22:00:00+00:00"
     h = days[0]["hours"][9]
     assert h == {"t": 1782133200.0, "ghi": 210.0, "clear": 831.3, "forecast": {"roof": 131.2, "balcony": 43.75},
@@ -83,7 +74,7 @@ def test_day_view_of_a_past_day():
     a = stored()
     key = "2026-07-01"
     start = DAY0 + 9 * 86400
-    view = panel.day_view(SITE, {"roof": SimpleNamespace(name="Roof", geometry=GEO)},
+    view = views.day_view(SITE, {"roof": SimpleNamespace(name="Roof", geometry=GEO)},
                           {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(a, key), None, start, start + 86400, start + 5 * 86400)
     assert view["history"] == [[1782889200.0, [[1782907200.0, 350]]],
                                [1782896400.0, [[1782900000.0, 300], [1782907200.0, 400]]]]
@@ -92,7 +83,7 @@ def test_day_view_of_a_past_day():
     assert roof["actual"][-2:] == [[1782925200.0, 61.8], [1782928800.0, 41.2]]
     assert len(roof["day_ahead"]) == 16 and len(roof["actual"]) == 15 and len(roof["steps"]) == 16
     assert view["weather"][:2] == [[1782878400.0, 0.0, 94.4, None], [1782882000.0, 30.0, 243.3, 15.0]]
-    assert panel.day_view(SITE, {}, {}, None, None, start, start + 86400, start + 5 * 86400) == \
+    assert views.day_view(SITE, {}, {}, None, None, start, start + 86400, start + 5 * 86400) == \
         {"arrays": [], "band": [], "history": [], "weather": []}
 
 

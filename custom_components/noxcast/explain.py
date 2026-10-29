@@ -11,6 +11,7 @@ reflection is learned where the module itself gets little direct light.
 """
 from __future__ import annotations
 
+from .archive import Day
 from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
 from .solar import Site
 
@@ -44,6 +45,21 @@ def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: l
         step["result"] = round(values[-1], 1)
         out[w.start] = step
     return out
+
+
+def archived_weather(day: Day | None) -> list[WeatherHour]:
+    """The weather a day-ahead forecast was made from (irradiance and temperature), by hour."""
+    return [WeatherHour(h.ts, h.ghi or 0.0, None, None, h.temp) for h in day.hours] if day else []
+
+
+def replay(site: Site, geometries: dict[str, ArrayGeometry], learned: dict[str, LearnedArray],
+           weather: list[WeatherHour]) -> dict[str, dict[float, dict]]:
+    """Per array the steps of each hour (hour_steps) under the given weather; "result" is the forecast in Wh.
+
+    With archived_weather() this replays a past day with the current learned model, as the day view
+    does and a backtest can. An array without learned state runs with the defaults.
+    """
+    return {sid: hour_steps(site, geo, learned.get(sid) or LearnedArray(), weather) for sid, geo in geometries.items()}
 
 
 def clearness(site: Site, weather: list[WeatherHour]) -> dict[float, tuple[float, float]]:

@@ -191,7 +191,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # separate file: larger and written less often than the learned state
         self._archive_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.archive")
         self.forecast_archive: dict = {}
-        # 10-minute means per array for sharper shading later (fine.py); bounded to a year
+        # 5-minute means per power sensor for sharper shading later (fine.py); bounded to three years
         self._fine_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.fine")
         self.fine: dict = {}
         self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
@@ -244,7 +244,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         try:
             self.fine = (await self._fine_store.async_load() or {}).get("days", {})
         except Exception:  # noqa: BLE001
-            _LOGGER.warning("Noxcast 10-minute archive could not be read; starting a new one", exc_info=True)
+            _LOGGER.warning("Noxcast 5-minute archive could not be read; starting a new one", exc_info=True)
             self.fine = {}
         if self.band is None and self.forecast_archive and self.learned:     # stored in an older form
             self.band = await self.hass.async_add_executor_job(self._learn_band)
@@ -264,19 +264,19 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _async_started(self, _hass: HomeAssistant) -> None:
         if set(self.learned) != set(self.arrays) or (self.house_load and self.load_profile is None):
             self.config_entry.async_create_background_task(self.hass, self.async_learn(), "noxcast initial learning")
-        self.config_entry.async_create_background_task(self.hass, self._async_record_fine(), "noxcast 10-minute archive")
+        self.config_entry.async_create_background_task(self.hass, self._async_record_fine(), "noxcast 5-minute archive")
 
     async def _async_nightly(self, _now: datetime) -> None:
         await self._async_record_fine()
         await self.async_learn()
 
     async def _async_record_fine(self) -> None:
-        """Keep yesterday's (and any missed day's) 10-minute means per array while 5-minute statistics exist."""
+        """Keep yesterday's (and any missed day's) 5-minute means per power sensor while the statistics exist."""
         today = dt_util.now().date()
-        days = fn.missing_days(self.fine, set(self.arrays), today)
+        sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
+        days = fn.missing_days(self.fine, set(sensor_ids), today)
         if not days:
             return
-        sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         try:
             if self._factors is None:
                 self._factors = await async_power_factors(self.hass, sensor_ids)
@@ -285,9 +285,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – the archive simply misses these days
             _LOGGER.debug("5-minute statistics unavailable: %s", err)
             return
-        for sub_id, arr in self.arrays.items():
-            series = _sum_series([{t: v * self._factors.get(s, 1.0) for t, v in stats.get(s, {}).items() if v is not None}
-                                  for s in arr.sensors])
+        for arr in self.arrays.values():
             planes = arr.geometry.planes
 
             def useful(ts: float, planes=planes) -> bool:
@@ -295,11 +293,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 return sun.elevation > 0 and any(
                     angle_of_incidence(tilt, azimuth, 90.0 - sun.elevation, sun.azimuth) < 90.0 for tilt, azimuth, _ in planes)
 
-            for day in days:
-                a = dt_util.start_of_local_day(day).timestamp()
-                b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
-                fn.add_day(self.fine, day, sub_id, fn.day_steps(series, a, b, useful))
-        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(self.arrays))
+            for sensor in arr.sensors:
+                series = {t: v * self._factors.get(sensor, 1.0) for t, v in stats.get(sensor, {}).items() if v is not None}
+                for day in days:
+                    a = dt_util.start_of_local_day(day).timestamp()
+                    b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
+                    fn.add_day(self.fine, day, sensor, fn.day_steps(series, a, b, useful))
+        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids))
         self._fine_store.async_delay_save(lambda: {"days": self.fine}, 60)
 
     def _geometry_key(self, sub_id: str) -> list:

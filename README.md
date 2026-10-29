@@ -255,10 +255,12 @@ total is recorded at every full hour (05–21). With the satellite filter the sa
 the measured irradiance of each past hour: forecast − that = weather error, that − actual = model
 error.
 
-A second archive keeps 10-minute means of each array's output, taken every night from Home
-Assistant's 5-minute statistics (which are kept only about ten days), for sharper shading later.
-Only steps with the sun in front of the modules, in whole watts, for at most 400 days: some
-100–150 kB per array, however long Noxcast runs. Not used for the forecast yet.
+A second archive keeps the 5-minute means of every power sensor, taken every night from Home
+Assistant's 5-minute statistics (which are kept only about ten days), for sharper shading later:
+5 minutes cover about 1.25° of sun azimuth, and two modules of one array that differ at the same
+moment show partial shade. Only periods with the sun in front of the modules, in whole watts, for
+at most three years: about 0.5 MB per sensor, however long Noxcast runs. Not used for the forecast
+yet.
 
 ### Load forecast
 

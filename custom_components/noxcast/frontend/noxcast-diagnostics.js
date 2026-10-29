@@ -4,7 +4,7 @@
 
 const DIAG_TEXT = {
   de: {
-    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv", fine: "10-Minuten-Archiv", fineSub: "für schärfere Schatten, max. 400 Tage",
+    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
     days: "Tage", complete: "vollständig", hours: "Stunden", samples: "Stunden gelernt", mapCoverage: "Karte", efficiency: "Wirkungsgrad",
@@ -18,7 +18,7 @@ const DIAG_TEXT = {
       weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf" },
   },
   en: {
-    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive", fine: "10-minute archive", fineSub: "for sharper shading, at most 400 days",
+    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
     days: "days", complete: "complete", hours: "hours", samples: "hours learned", mapCoverage: "Map", efficiency: "Efficiency",

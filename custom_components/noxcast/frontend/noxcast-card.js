@@ -535,13 +535,14 @@ class NoxcastCard extends HTMLElement {
     const glow = pvOn && c.sun_glow ? `filter:drop-shadow(0 0 ${(1.5 + 5 * share).toFixed(1)}px ${P.pv})` : "";
     const pv = svg(24, `<circle cx="12" cy="12" r="4.4" fill="${pvOn ? P.pv : "none"}" fill-opacity="${(0.35 + 0.65 * share).toFixed(2)}"
       stroke="${pvOn ? P.pv : off}" stroke-width="1.8"></circle>${rays ? `<path d="${rays}" stroke="${P.pv}" stroke-width="1.8" stroke-linecap="round"></path>` : ""}`, glow);
-    // battery: filled to the state of charge; with battery_arrows the arrow of the flow lights up beside it
+    // battery: as high as the other icons, filled to the state of charge; with battery_arrows the arrow of the flow
+    // lights up beside it
     const soc = v.socAll === null ? 0 : Math.max(0, Math.min(100, v.socAll)), dir = !this._on("n:bat", v.bat) ? 0 : v.bat > 0 ? 1 : -1;
-    const arrows = !c.battery_arrows ? "" : `<path d="M28 4.5 L31.5 10 H24.5 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
-      <path d="M28 19.5 L31.5 14 H24.5 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
-    const bat = svg(c.battery_arrows ? 32 : 24, `<rect x="1.5" y="7" width="19" height="10" rx="2" fill="none" stroke="${off}" stroke-width="1.6"></rect>
-      <rect x="21" y="10" width="2" height="4" rx=".6" fill="${off}"></rect>
-      <rect x="3" y="8.5" width="${((16 * soc) / 100).toFixed(2)}" height="7" rx="1" fill="${P.bat}"></rect>${arrows}`);
+    const arrows = !c.battery_arrows ? "" : `<path d="M42 3.5 L46 10.5 H38 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
+      <path d="M42 20.5 L46 13.5 H38 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
+    const bat = svg(c.battery_arrows ? 47 : 37, `<rect x="1.5" y="3.5" width="30" height="17" rx="3" fill="none" stroke="${off}" stroke-width="1.6"></rect>
+      <rect x="32" y="8.5" width="3.5" height="7" rx="1" fill="${off}"></rect>
+      <rect x="4" y="6" width="${((25 * soc) / 100).toFixed(2)}" height="12" rx="1.5" fill="${P.bat}"></rect>${arrows}`);
     // house: a window lights per step
     const hs = this._step("n:home", v.home, base);
     const win = (x, i) => `<rect x="${x}" y="13" width="4" height="4" fill="${i < hs ? P.pv : "none"}" stroke="${i < hs ? P.pv : off}" stroke-width="1"></rect>`;

@@ -186,6 +186,35 @@ shades one module more than the other, while the reduced output at high south-we
 on both modules and is therefore no shade – it turned out to be module heat (see Temperature).
 Using per-module sensors as shade evidence is a later step.
 
+### Building edge for cells without data
+
+Low winter sun crosses positions that only a few clear days a year reach; many such cells stay
+without a learned value and used to take their neighbours' mean, or count as free. In a town the
+obstacle there is usually a row of houses, and its edge follows from geometry: for a straight
+row with height H above the modules at a distance d at right angles,
+tan(edge) = H / d · cos(azimuth − row direction), the row being further away towards the sides.
+Two numbers (row direction, H / d as an angle) and an azimuth range describe it.
+
+- Fitted to clear hours (satellite clearness ≥ 0.8) with the learned efficiency, sky view,
+  direction and reflection; only hours with the sun below 44° take part.
+- The range grows from the row direction in 10° steps as long as the edge explains the hours of
+  that azimuth at least as well as a free sky. Azimuths without such hours do not stop it: the row
+  is drawn on into positions only winter reaches.
+- Kept only if it removes 20 % of the error in its range against no shade, over at least 30°.
+- The edge is soft over 8°: the sun's bright aureole still shines over a roof the sun itself is
+  just behind, and roofs are not straight lines.
+- Learned cells stay as they are; the edge only fills cells without a learned value (also as
+  corners of the bilinear interpolation).
+
+On the balcony (60° tilt, 135° azimuth) it found the row at 131°, 24.5° high, 50–220°; a map
+gave 132° at right angles and a row from 69° to 210°. Learned on March to October and checked on
+November to February, the hourly error went from 26.9 to 26.7 % and the bias from +4.5 to
++4.0 %; with only 23 clear winter hours the effect cannot be measured better. In the parity
+cross-validation over the whole year it is neutral, as it should be where cells are learned. A
+height per 10° section along the row (gables) and the edge in place of learned cells were tried
+and dropped: a few hours per gable do not carry a height, and replacing learned cells lost at
+noon in February and October.
+
 ### Sky view
 
 Diffuse light reaches the module from the whole half-space in front of it, weighted by the cosine

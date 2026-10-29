@@ -215,6 +215,11 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
 - **Shading map** (10° azimuth × 5° elevation): the share of direct light that arrives, only where
   direct light is possible. It follows the shape of real obstacles; values ≥ 0.9 count as free.
   Recent observations weigh more; consistent new observations replace old ones (a tree cut down).
+- **Building edge:** a row of houses opposite, as one straight edge (height at right angles, row
+  direction, azimuth range), fitted to clear hours. Towards the sides the row is further away, so
+  the edge sinks. It fills only the cells without a learned value, mostly winter positions a few
+  clear days cannot reach, and is drawn on along the row as long as the data do not contradict it.
+  Kept only if it clearly explains the shade in its range; shown under Learned and in the map.
 - **Direction factor** (coarse bins, 0.8–1.2): what remains at unshaded positions – geometry and
   model errors.
 - **Reflection:** light from bright surfaces where the module itself gets little direct light.

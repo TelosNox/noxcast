@@ -5,7 +5,7 @@ import math
 from datetime import date, datetime, timezone
 from xml.sax.saxutils import escape
 
-from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray
+from .model import AZ_STEP, EL_STEP, ArrayGeometry, LearnedArray, facade_cells
 from .solar import Site, sun_position
 
 WIDTH, HEIGHT = 720, 400
@@ -15,13 +15,13 @@ EL_MAX = 70.0
 TEXT = {
     "en": {"efficiency": "Efficiency", "direction": "Direction factor", "temp": "Temp. coeff.", "coverage": "Coverage", "agreement": "Satellite",
            "datasheet": "datasheet", "learned": "learned", "default": "typical", "none": "off",
-           "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data",
+           "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data", "facade": "from the building edge",
            "elevation": "Sun elevation", "not_learned": "not learned yet", "modules": "modules",
            "normal": "sun perpendicular to the modules",
            "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules"},
     "de": {"efficiency": "Wirkungsgrad", "direction": "Richtungsfaktor", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
            "datasheet": "Datenblatt", "learned": "gelernt", "default": "typisch", "none": "aus",
-           "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten",
+           "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten", "facade": "aus der Häuserkante",
            "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt", "modules": "Module",
            "normal": "Sonne senkrecht auf den Modulen",
            "legend": "grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen"},
@@ -101,7 +101,8 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
     a0 = math.floor(min(azs) / 45) * 45 if azs else 45
     a1 = math.ceil(max(azs) / 45) * 45 if azs else 315
     rng = (a0, a1)
-    cells = learned.cells if learned else {}
+    cells = {**facade_cells(learned), **learned.cells} if learned else {}
+    derived = set(cells) - set(learned.cells) if learned else set()
 
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}" '
            'font-family="sans-serif" font-size="12">',
@@ -122,6 +123,8 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         inside = sum((ai + x, ei + y) in learned_keys for x in (-1, 0, 1) for y in (-1, 0, 1)) >= 3
         if value is not None and ((ai, ei) in reachable or (ai, ei) in learned_keys or inside):
             fill, label, cls = transmission_color(value), f"{value:.2f}", "gap"
+            if f"{ai},{ei}" in derived:
+                label += f" ({t['facade']})"
         elif (ai, ei) in reachable:
             fill, label, cls = "#c8c8c8", t["no_data"], "gap nodata"
         else:

@@ -16,6 +16,12 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
   clouds and occasional curtailment fall below it. Optionally, satellite irradiance pre-selects
   clear hours. The map holds shade only: per azimuth it rises with elevation to a free band and may
   fall again (overhang); values from 0.9 count as free, 0.7-0.9 only next to a clear core.
+- Facade: a row of buildings opposite the array, as one straight edge: its height seen at right
+  angles to the row (an angle) and the row's direction; towards the sides the row is further away,
+  tan(edge) = tan(height angle) · cos(azimuth − row direction). Fitted to clear hours, kept only if
+  it clearly explains the shade in its sector, and drawn on along the row as long as the data do
+  not contradict it. Learned cells stay as they are; the facade fills the cells without a learned
+  value, sun positions a few clear winter days cannot reach.
 - D: direction factor (may exceed 1) on coarse bins, the median of what remains at unshaded
   positions on clear hours: geometry and model errors that are not shade.
   Efficiency, D, R and the clear-hour refinement of T use only steady hours when the power
@@ -91,6 +97,11 @@ SKY_VIEW_MIN_CLEARSKY = 100.0    # W/m² clear-sky GHI, so that overcast hours c
 SKY_VIEW_MIN_HOURS = 30
 SKY_VIEW_LIMITS = (0.2, 1.0)
 SKY_VIEW_ITERATIONS = 4
+FACADE_WIDTH = 8.0               # soft facade edge (°): the sun's bright aureole and an uneven roofline
+FACADE_MAX_ANGLE = 85.0          # the row is drawn on at most this far from its direction
+FACADE_MIN_GAIN = 0.2            # the facade must remove this share of the error in its sector against no shade
+FACADE_MIN_SPAN = 30.0           # ... over at least this many degrees of azimuth
+FACADE_MAX_EL = FACADE_WIDTH / 2 + 40.0   # sun positions above can not be behind a facade
 
 
 @dataclass(frozen=True)
@@ -164,6 +175,8 @@ class LearnedArray:
     months: list[dict] = field(default_factory=list)           # clear-sky balance per month
     efficiency_months: dict[str, list] = field(default_factory=dict)   # "YYYY-MM" -> [efficiency, hours]
     geometry_check: dict | None = None                         # best fitting tilt / azimuth
+    # a row of buildings opposite: {"direction", "height", "start", "end", "gain"}, see learn_facade
+    facade: dict | None = None
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)
@@ -405,6 +418,7 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
         if sky is None or abs(sky - learned.sky_view) < 0.01:
             break
         learned = _learn(site, geo, samples, now, sky_view=sky, **args)
+    learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp)
     return learned
 
 
@@ -812,8 +826,120 @@ def reachable_cells(site: Site, geo: ArrayGeometry, year_start: float = 17672256
 
 # ---------------------------------------------------------------------------- forecasting
 
+def facade_transmission(facade: dict | None, azimuth: float, elevation: float) -> float | None:
+    """Transmission behind the facade's edge (soft over FACADE_WIDTH), None outside its sector."""
+    if not facade or (azimuth - facade["start"]) % 360 > facade["end"] - facade["start"]:
+        return None
+    c = max(math.cos(math.radians(azimuth - facade["direction"])), 0.0)
+    edge = math.degrees(math.atan(math.tan(math.radians(facade["height"])) * c))
+    return min(max((elevation - edge) / FACADE_WIDTH + 0.5, 0.0), 1.0)
+
+
+def facade_cells(learned: LearnedArray) -> dict[str, float]:
+    """Cells without a learned value that the facade fills (values at the cell centres), for display."""
+    f = learned.facade
+    if not f:
+        return {}
+    out = {}
+    for ai in range(int(f["start"] // AZ_STEP), int(f["end"] // AZ_STEP) + 1):
+        for ei in range(int(FACADE_MAX_EL // EL_STEP) + 1):
+            key = _key(ai % 36, ei)
+            v = facade_transmission(f, (ai + 0.5) * AZ_STEP, (ei + 0.5) * EL_STEP)
+            if key not in learned.cells and v is not None:
+                out[key] = round(v, 3)
+    return out
+
+
+def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
+                 satellite_ghi: dict[float, float] | None, air_temp: dict[float, float] | None = None) -> dict | None:
+    """A row of buildings opposite, fitted to clear hours with the learned parameters, or None.
+
+    Per row direction and height the clear hours are forecast with the facade and without any shade.
+    The facade's sector grows from its direction to both sides, 10° at a time, as long as the facade
+    explains those hours at least as well as a free sky; azimuths without such hours do not stop it,
+    which draws the row on into sun positions only winter reaches. Only a facade that removes
+    FACADE_MIN_GAIN of the error in its sector over FACADE_MIN_SPAN degrees is kept.
+    """
+    if not satellite_ghi:
+        return None
+    hours = []                                            # (azimuth column, actual, [(az, el, beam, rest, heat, temp)])
+    for t, p in samples:
+        ghi = satellite_ghi.get(t)
+        cs = clearsky_weather(site, t).ghi
+        if ghi is None or cs <= 50 or ghi / cs < CLEAR_KT:
+            continue
+        dni_extra = extra_radiation(t + 1800)
+        temp = air_temp.get(t) if air_temp else None
+        steps, low = [], False
+        for i in range(SUBSTEPS):
+            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+            if sun.elevation <= 0:
+                continue
+            dni, dhi = erbs(ghi, sun.zenith, dni_extra)
+            beam, diff, heating = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra, sky_view=learned.sky_view)
+            steps.append((sun.azimuth, sun.elevation, beam * direction_factor(learned, sun.azimuth, sun.elevation),
+                          diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni, heating, temp))
+            low = low or (sun.elevation < FACADE_MAX_EL and beam > 0)
+        if low:                                           # only hours a facade could shade tell facades apart
+            hours.append((int(sun_position(site, t + 1800).azimuth // AZ_STEP), p, steps))
+    if not hours:
+        return None
+
+    def energy(steps, shade) -> float:
+        total = 0.0
+        for az, el, beam, rest, heating, temp in steps:
+            poa = beam * shade(az, el) + rest
+            total += poa * temperature_factor(learned.temp_coeff, temp, poa, heating)
+        return geo.peak_w * learned.efficiency * total / 1000 / SUBSTEPS
+
+    free: dict[int, float] = {}
+    for col, p, steps in hours:
+        free[col] = free.get(col, 0.0) + (energy(steps, lambda az, el: 1.0) - p) ** 2
+
+    def evaluate(direction: float, height: float) -> tuple[float, dict] | None:
+        f = {"direction": direction, "height": height, "start": 0.0, "end": 360.0}
+        err: dict[int, float] = {}
+        for col, p, steps in hours:
+            if abs((col + 0.5) * AZ_STEP - direction) < FACADE_MAX_ANGLE:
+                err[col] = err.get(col, 0.0) + (energy(steps, lambda az, el: facade_transmission(f, az, el)) - p) ** 2
+        centre = int(direction // AZ_STEP)
+        if err.get(centre, 0.0) > free.get(centre, 0.0):
+            return None
+        cols = [centre]
+        for step in (-1, 1):
+            c = centre + step
+            while abs((c + 0.5) * AZ_STEP - direction) < FACADE_MAX_ANGLE and err.get(c, 0.0) <= free.get(c, 0.0):
+                cols.append(c)
+                c += step
+        shaded, open_ = sum(err.get(c, 0.0) for c in cols), sum(free.get(c, 0.0) for c in cols)
+        if open_ <= 0 or (max(cols) - min(cols) + 1) * AZ_STEP < FACADE_MIN_SPAN:
+            return None
+        f.update(start=min(cols) * AZ_STEP, end=(max(cols) + 1) * AZ_STEP, gain=1 - shaded / open_)
+        return sum(free.values()) - open_ + shaded, f
+
+    best = None
+    for direction in range(int(geo.azimuth) - 80, int(geo.azimuth) + 81, 10):
+        for height in range(4, 41, 3):
+            r = evaluate(float(direction), float(height))
+            if r and (best is None or r[0] < best[0]):
+                best = r
+    if best is None:
+        return None
+    d0, h0 = best[1]["direction"], best[1]["height"]
+    for direction in range(int(d0) - 6, int(d0) + 7, 2):
+        for height in (h0 + x / 2 for x in range(-4, 5)):
+            r = evaluate(float(direction), height)
+            if r and r[0] < best[0]:
+                best = r
+    f = best[1]
+    if f["gain"] < FACADE_MIN_GAIN:
+        return None
+    return {k: round(v, 3) if k == "gain" else round(v, 1) for k, v in f.items()}
+
+
 def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> float:
-    """Bilinear interpolation between cell centres; missing cells fall back to neighbours, then 1."""
+    """Bilinear interpolation between cell centres; a missing cell takes the facade there if one is
+    learned, else missing cells fall back to neighbours, then 1."""
     fa = azimuth / AZ_STEP - 0.5
     fe = elevation / EL_STEP - 0.5
     a0, e0 = math.floor(fa), math.floor(fe)
@@ -822,6 +948,8 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
     for ai, wa in ((a0, 1 - da), (a0 + 1, da)):
         for ei, we in ((e0, 1 - de), (e0 + 1, de)):
             v = learned.cells.get(_key(ai % 36, ei))
+            if v is None and ei >= 0 and learned.facade:
+                v = facade_transmission(learned.facade, (ai + 0.5) * AZ_STEP, (ei + 0.5) * EL_STEP)
             if v is not None and wa * we > 0:
                 num += v * wa * we
                 den += wa * we

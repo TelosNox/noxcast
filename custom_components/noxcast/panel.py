@@ -93,6 +93,7 @@ def _version(*names: str) -> str:
 @callback
 def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Learned state of all arrays of all Noxcast entries (the site is the Home Assistant location)."""
+    from .model import facade_cells
     arrays = []
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         coordinator = entry.runtime_data
@@ -102,6 +103,7 @@ def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
                 "id": sub_id, "name": arr.name, "tilt": arr.geometry.tilt, "azimuth": arr.geometry.azimuth,
                 "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
                 "learned": learned.as_dict() if learned else None,
+                "facade_cells": facade_cells(learned) if learned else {},
                 "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
             })
     connection.send_result(msg["id"], {

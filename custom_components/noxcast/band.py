@@ -1,21 +1,26 @@
 """Uncertainty band of the PV forecast, learned from the day-ahead archive.
 
-Pure functions, no Home Assistant imports. The band is empirical: for past days (and hours) the
-ratio actual / forecast is collected per weather class of the forecast (clearness = forecast GHI
-relative to clear-sky GHI). The 10th and 90th percentile of that ratio, applied to a new forecast of
-the same class, give P10 and P90. A clear forecast is rarely far off, an overcast one often by half;
-the classes keep that apart. Hours with possible curtailment are left out, since their actual value
-does not show what the sun gave.
+Pure functions, no Home Assistant imports. The band varies the clouds, not the output: for past
+days (and hours) the shift in clearness is collected, (actual - forecast) / clear-sky output, where
+the clear-sky output comes from the same learned model (efficiency, shading) with a clear sky. The
+shifts are grouped per weather class of the forecast (clearness = forecast GHI relative to clear-sky
+GHI). The 10th and 90th percentile of the shift, added to a new forecast's clearness, give P10 and
+P90; the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
+geometry or a wrongly learned shadow, cloud enhancement). A clear forecast can therefore hardly
+rise, an overcast one can rise up to a clear sky. Hours with possible curtailment are left out,
+since their actual value does not show what the sun gave.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
 
+VERSION = 2                  # 1: ratios actual / forecast (unbounded), 2: clearness shifts
 CLASSES = ((0.35, "overcast"), (0.7, "mixed"), (float("inf"), "clear"))
 Q_LOW, Q_HIGH = 0.1, 0.9
+CLEARNESS_MAX = 1.05         # a clear sky plus a few percent for model errors; no more output than that
 MIN_DAYS = 8                 # days a class needs; otherwise all days together
 MIN_HOURS = 40               # hours a class needs; otherwise all hours together
-MIN_DAY_WH = 200.0           # smaller day forecasts give no usable ratio
+MIN_DAY_WH = 200.0           # smaller clear-sky days give no usable shift
 MIN_HOUR_WH = 50.0
 
 
@@ -43,47 +48,67 @@ def _summary(groups: dict[str, list[float]], minimum: int) -> dict:
     return out
 
 
-def learn_band(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
-    """{"daily": {class: [q10, q90, n]}, "hourly": {...}}; classes with too little data are left out."""
+def learn_band(archive: dict, clear_ghi: Callable[[float], float],
+               clear_wh: Callable[[float, list[str]], float]) -> dict:
+    """{"version", "daily": {class: [q10, q90, n]}, "hourly": {...}} of clearness shifts.
+
+    clear_wh(hour_start, array ids): clear-sky output of these arrays in that hour (Wh), from the
+    current learned model. Classes with too little data are left out.
+    """
     daily: dict[str, list[float]] = {}
     hourly: dict[str, list[float]] = {}
     for day in archive.values():
         hours = day.get("hours", {})
         if not hours or any("actual" not in h for h in hours.values()):
             continue
-        f_sum = a_sum = ghi_sum = clear_sum = 0.0
+        f_sum = a_sum = c_sum = ghi_sum = clear_sum = 0.0
         for key, h in hours.items():
             if h.get("curtailed"):
                 continue
+            ids = list(h.get("forecast", {}))
             f = sum(h.get("forecast", {}).values())
-            a = sum(h["actual"].get(sid, 0.0) for sid in h.get("forecast", {}))
+            a = sum(h["actual"].get(sid, 0.0) for sid in ids)
             cs = clear_ghi(float(key))
-            f_sum, a_sum = f_sum + f, a_sum + a
-            if cs > 0:
-                ghi_sum, clear_sum = ghi_sum + (h.get("ghi") or 0.0), clear_sum + cs
-                if f >= MIN_HOUR_WH:
-                    hourly.setdefault(weather_class((h.get("ghi") or 0.0) / cs), []).append(a / f)
-        if f_sum >= MIN_DAY_WH and clear_sum > 0:
-            daily.setdefault(weather_class(ghi_sum / clear_sum), []).append(a_sum / f_sum)
-    return {"daily": _summary(daily, MIN_DAYS), "hourly": _summary(hourly, MIN_HOURS)}
+            if cs <= 0:
+                continue
+            c = clear_wh(float(key), ids)
+            f_sum, a_sum, c_sum = f_sum + f, a_sum + a, c_sum + c
+            ghi_sum, clear_sum = ghi_sum + (h.get("ghi") or 0.0), clear_sum + cs
+            if c >= MIN_HOUR_WH:
+                hourly.setdefault(weather_class((h.get("ghi") or 0.0) / cs), []).append((a - f) / c)
+        if c_sum >= MIN_DAY_WH and clear_sum > 0:
+            daily.setdefault(weather_class(ghi_sum / clear_sum), []).append((a_sum - f_sum) / c_sum)
+    return {"version": VERSION, "daily": _summary(daily, MIN_DAYS), "hourly": _summary(hourly, MIN_HOURS)}
 
 
-def ratios(band: dict | None, kind: str, clearness: float) -> tuple[float, float] | None:
-    """(low, high) factor for a forecast of this clearness; the class if known, else all together."""
+def valid(band: dict | None) -> dict | None:
+    """The band if it has the current form; an older stored band is dropped until it is relearned."""
+    return band if band and band.get("version") == VERSION else None
+
+
+def shifts(band: dict | None, kind: str, clearness: float) -> tuple[float, float] | None:
+    """(low, high) clearness shift for a forecast of this weather clearness; the class if known, else all."""
     table = (band or {}).get(kind) or {}
     row = table.get(weather_class(clearness)) or table.get("all")
     return (row[0], row[1]) if row else None
 
 
-def day_band(band: dict | None, forecast_wh: float, clearness: float) -> tuple[float, float] | None:
-    r = ratios(band, "daily", clearness)
-    return (forecast_wh * r[0], forecast_wh * r[1]) if r else None
+def _bounded(forecast_wh: float, clear_wh: float, shift: tuple[float, float]) -> tuple[float, float]:
+    """Forecast with the clearness shifted, between no sun and a clear sky (plus the tolerance)."""
+    top = max(clear_wh * CLEARNESS_MAX, forecast_wh)
+    return tuple(min(max(forecast_wh + s * clear_wh, 0.0), top) for s in shift)
 
 
-def hour_band(band: dict | None, hours: dict[float, float], clearness: dict[float, float]) -> dict[float, tuple[float, float]]:
+def day_band(band: dict | None, forecast_wh: float, clear_wh: float, clearness: float) -> tuple[float, float] | None:
+    r = shifts(band, "daily", clearness)
+    return _bounded(forecast_wh, clear_wh, r) if r else None
+
+
+def hour_band(band: dict | None, hours: dict[float, float], clear: dict[float, float],
+              clearness: dict[float, float]) -> dict[float, tuple[float, float]]:
     out = {}
     for t, wh in hours.items():
-        r = ratios(band, "hourly", clearness.get(t, 0.0))
+        r = shifts(band, "hourly", clearness.get(t, 0.0))
         if r:
-            out[t] = (wh * r[0], wh * r[1])
+            out[t] = _bounded(wh, clear.get(t, wh), r)
     return out

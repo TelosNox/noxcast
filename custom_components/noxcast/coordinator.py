@@ -202,7 +202,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             for sub_id, data in stored.get("arrays", {}).items():
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
-            self.band = stored.get("band")
+            self.band = bd.valid(stored.get("band"))
             self.battery_log = dict(stored.get("battery_log") or {})
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
@@ -237,6 +237,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Noxcast forecast archive could not be read; starting a new one", exc_info=True)
             self.forecast_archive = {}
+        if self.band is None and self.forecast_archive and self.learned:     # stored in an older form
+            self.band = await self.hass.async_add_executor_job(self._learn_band)
 
         entry = self.config_entry
         entry.async_on_unload(async_track_time_change(
@@ -392,8 +394,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                          result.coverage * 100, result.samples, result.clear_filter, result.steady_filter,
                          result.agreement)
         self.learned.update(learned)          # applied in one step on the event loop
-        self.band = await self.hass.async_add_executor_job(
-            bd.learn_band, self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi)
+        self.band = await self.hass.async_add_executor_job(self._learn_band)
         if self.house_load:
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
@@ -652,6 +653,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
                          "tomorrow": tomorrow[r.name]["best"]} for r in runs}
 
+    def _learn_band(self) -> dict:
+        """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
+        def clear_wh(ts: float, ids: list[str]) -> float:
+            sky = [clearsky_weather(self.site, ts)]
+            return sum(forecast(self.site, self.arrays[sid].geometry, self.learned.get(sid, LearnedArray()), sky).get(ts, 0.0)
+                       for sid in ids if sid in self.arrays)
+        return bd.learn_band(self.forecast_archive, lambda ts: clearsky_weather(self.site, ts).ghi, clear_wh)
+
     def _band(self, result: NoxcastData, weather: list[WeatherHour], now: float, day_end: float) -> dict | None:
         """P10 / P90 of the total forecast: per hour from now on, per day, and for the rest of today.
 
@@ -663,8 +672,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         kt = {w.start: w.ghi / clear[w.start] for w in weather if clear[w.start] > 0}
         total = dict(result.forecast.get(None, {}))
         total.update(result.expected.get(None, {}))
+        sky = result.clear.get(None, {})                  # clear-sky output: the band never goes above it
         hour = now - now % 3600
-        hours = bd.hour_band(self.band, {t: v for t, v in total.items() if t >= hour}, kt)
+        hours = bd.hour_band(self.band, {t: v for t, v in total.items() if t >= hour}, sky, kt)
 
         def clearness(ts: list[float]) -> float:
             c = sum(clear.get(t, 0.0) for t in ts)
@@ -674,14 +684,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for offset in (1, 2):
             a, b = day_end + (offset - 1) * 86400, day_end + offset * 86400
             ts = [t for t in total if a <= t < b]
-            if len(ts) >= 20 and (r := bd.day_band(self.band, sum(total[t] for t in ts), clearness(ts))):
+            if len(ts) >= 20 and (r := bd.day_band(self.band, sum(total[t] for t in ts),
+                                                   sum(sky.get(t, total[t]) for t in ts), clearness(ts))):
                 days[offset] = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)]
         today = result.expected.get(None, {})
         rest_ts = [t for t in today if t + 3600 > now and t < day_end]
         rest = sum(today[t] * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
         done = sum(today[t] for t in today if t < day_end) - sum(today[t] for t in rest_ts) + \
             sum(today[t] * (1 - min(1.0, (t + 3600 - now) / 3600)) for t in rest_ts)
-        r = bd.day_band(self.band, rest, clearness(rest_ts)) if rest > 0 else (0.0, 0.0)
+        rest_sky = sum(sky.get(t, today[t]) * min(1.0, (t + 3600 - now) / 3600) for t in rest_ts)
+        r = bd.day_band(self.band, rest, rest_sky, clearness(rest_ts)) if rest > 0 else (0.0, 0.0)
         rest_band = [round(r[0] / 1000, 3), round(r[1] / 1000, 3)] if r else None
         if rest_band:
             days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]

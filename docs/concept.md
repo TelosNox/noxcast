@@ -362,10 +362,14 @@ orientation changes the geometry key and starts relearning.
 
 - Per array and total, 15-minute and hourly resolution, today / tomorrow / day after.
 - Remaining energy today, peak time, P10 / P50 / P90. The band is empirical (`band.py`): from the
-  day-ahead archive, the ratio actual / forecast per day and per hour, grouped by the clearness of
-  the forecast (overcast below 0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI),
-  gives the 10th and 90th percentile; a class with fewer than 8 days (40 hours) falls back to all
-  days together, and hours with possible curtailment are left out. Applied to today's rest,
+  day-ahead archive, the shift in clearness per day and per hour, (actual - forecast) / clear-sky
+  output of the current learned model, grouped by the clearness of the forecast (overcast below
+  0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI), gives the 10th and 90th
+  percentile; a class with fewer than 8 days (40 hours) falls back to all days together, and hours
+  with possible curtailment are left out. The band varies the clouds, not the output: P10 and P90
+  stay between no sun and a clear sky plus 5 % (geometry and shading errors, cloud enhancement).
+  A first version used the ratio actual / forecast; on a mixed day it put P90 at 2.2 times the
+  forecast, 10.1 kWh against 8.3 kWh with a clear sky. Applied to today's rest,
   tomorrow and the day after (attributes `p10` / `p90` of the total sensors), per hour in the day
   card, and to the battery simulation (lost surplus and full time with PV at P10 and at P90).
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total

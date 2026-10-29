@@ -360,7 +360,8 @@ class NoxcastCard extends HTMLElement {
       .cf .l { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--secondary-text-color); }
       .cf .v { font-size: calc(22px * var(--nx-scale, 1)); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .cf .v { font-size: min(calc(22px * var(--nx-scale, 1)), 5.5cqw); }
-      .cf .v small { font-size: .6em; color: var(--secondary-text-color); font-weight: 400; }
+      .cf .v .soc { display: inline-block; height: .72em; height: 1cap; width: auto; aspect-ratio: 46 / 20; margin-right: .3em; vertical-align: baseline; }
+      .cf .v .pct { font-size: .8em; }
       .cf .v { line-height: 1.2; }
       /* chain: the row aligns on the baseline of the values; a gap has no baseline of its own, so its bottom
          edge sits on it. It is one cap height tall (digits are cap height), so its middle is the middle of
@@ -440,7 +441,7 @@ class NoxcastCard extends HTMLElement {
     const arrow = (w, key) => (!bus || !this._on(key, w) ? "" : w > 0 ? "▲ " : "▼ ");
     const text = {
       pv: num(v.pv), home: num(v.home), grid: `${arrow(v.grid, "n:grid")}${num(Math.abs(v.grid))}`,
-      bat: `${v.socAll === null ? "–" : `${Math.round(v.socAll)} %`} <small>${arrow(v.bat, "n:bat")}${num(Math.abs(v.bat))}</small>`,
+      bat: v.socAll === null ? "–" : `${this._socIcon(v.socAll, !this._on("n:bat", v.bat) ? 0 : v.bat > 0 ? 1 : -1)}<span class="pct">${Math.round(v.socAll)} %</span>`,
     };
     for (const n of nodes) {
       f.values[n.key].innerHTML = text[n.key];
@@ -488,6 +489,18 @@ class NoxcastCard extends HTMLElement {
       }
     }
     this._animate();
+  }
+
+  // battery as high as the digits beside it, filled to the state of charge; the edge of the fill points
+  // right while charging and left while discharging (the course of the level is in the day chart)
+  _socIcon(soc, dir) {
+    const P = this._p, ix = 4, iy = 4, iw = 34, ih = 12, fx = ix + iw * Math.max(0, Math.min(100, soc)) / 100, a = ih * 0.28;
+    const edge = dir > 0 ? `${fx - a},${iy} ${fx + a},${iy + ih / 2} ${fx - a},${iy + ih}`
+      : dir < 0 ? `${fx + a},${iy} ${fx - a},${iy + ih / 2} ${fx + a},${iy + ih}` : `${fx},${iy} ${fx},${iy + ih}`;
+    return `<svg class="soc" viewBox="0 0 46 20" aria-hidden="true"><defs><clipPath id="nx-soc"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="1.5"></rect></clipPath></defs>
+      <rect x="1" y="1" width="40" height="18" rx="3.5" fill="none" stroke="var(--secondary-text-color)" stroke-width="2"></rect>
+      <rect x="41.5" y="6" width="3.5" height="8" rx="1" fill="var(--secondary-text-color)"></rect>
+      <polygon points="${ix - 1},${iy} ${edge} ${ix - 1},${iy + ih}" fill="${P.bat}" clip-path="url(#nx-soc)"></polygon></svg>`;
   }
 
   _buildCompact(el, nodes, bus, shape) {

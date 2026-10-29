@@ -357,7 +357,8 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = []
+PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca41903a68936', '98f9e1716b5afcd9',
+          'f2c51ee26fa14305']
 
 
 async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer) -> None:

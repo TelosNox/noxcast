@@ -2,8 +2,19 @@
 
 Pure functions, no Home Assistant imports. panel.py validates a command, gathers the inputs from the
 coordinator (and the recorder), calls one of these and sends the result. The payloads are what the
-frontend reads (custom_components/noxcast/frontend/*.js): keys, list positions and rounding are part
-of that contract and change only together with the frontend.
+frontend reads (custom_components/noxcast/frontend/*.js): keys and rounding are part of that contract
+and change only together with the frontend.
+
+Payload conventions (schema WS_SCHEMA_VERSION in const.py, sent as "v" in every answer; raise it with
+every change the frontend has to follow):
+- Every value is named. No positional tuples: what was [ts, a, b] is an object.
+- A time series is a column table: {"t": [hour starts], "<name>": [values], ...}, all lists of equal
+  length, by time. One name per quantity: "wh" (energy of the hour), "w" (mean power), "p10"/"p90",
+  "soc" (fraction), "ghi"/"clear" (W/m²), "temp" (°C), "pv"/"load" (Wh). Columns keep the bulk of the
+  payloads (hourly Wh of every array) compact: no brackets per hour, the names once per series.
+  The frontend reads them with tsRows(series, names...) at the boundary.
+- Lists indexed by hour of day (0-23), such as load profiles, are plain lists; maps keyed by timestamp
+  or id stay maps.
 
 Local days come in as timestamps or as a callable (date -> local midnight), so the time zone stays
 with the caller.
@@ -27,14 +38,24 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
 
 
-def series(hours: dict[float, float], a: float = float("-inf"), b: float = float("inf")) -> list[list[float]]:
-    """[[hour start, Wh rounded to 0.1]] by time, optionally only hours in [a, b)."""
-    return [[t, round(v, 1)] for t, v in sorted(hours.items()) if a <= t < b]
+def columns(rows, *names: str) -> dict[str, list]:
+    """A time series as a column table: rows (t, value per name) -> {"t": [...], name: [...], ...}."""
+    out: dict[str, list] = {"t": [], **{n: [] for n in names}}
+    for row in rows:
+        for key, v in zip(out, row, strict=True):
+            out[key].append(v)
+    return out
 
 
-def band_series(band: dict | None, a: float = float("-inf"), b: float = float("inf")) -> list[list[float]]:
-    """[[hour start, P10, P90]] of the total, by time."""
-    return [[t, round(lo, 1), round(hi, 1)] for t, (lo, hi) in sorted((band or {}).get("hours", {}).items()) if a <= t < b]
+def series(hours: dict[float, float], a: float = float("-inf"), b: float = float("inf")) -> dict:
+    """{"t": hour starts, "wh": values rounded to 0.1} by time, optionally only hours in [a, b)."""
+    return columns(((t, round(v, 1)) for t, v in sorted(hours.items()) if a <= t < b), "wh")
+
+
+def band_series(band: dict | None, a: float = float("-inf"), b: float = float("inf")) -> dict:
+    """{"t", "p10", "p90"} of the total, by time."""
+    return columns(((t, round(lo, 1), round(hi, 1)) for t, (lo, hi) in sorted((band or {}).get("hours", {}).items())
+                    if a <= t < b), "p10", "p90")
 
 
 # ---------------------------------------------------------------- noxcast/learned
@@ -47,10 +68,17 @@ def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning
         out.append({
             "id": sub_id, "name": arr.name, "tilt": arr.geometry.tilt, "azimuth": arr.geometry.azimuth,
             "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
-            "learned": la.as_dict() if la else None,
+            "learned": learned_dict(la) if la else None,
             "facade_cells": facade_cells(la) if la else {},
             "last_learning": last_learning.isoformat() if last_learning else None,
         })
+    return out
+
+
+def learned_dict(la: LearnedArray) -> dict:
+    """The learned state as stored, with the months named: "YYYY-MM" -> {"efficiency", "hours"}."""
+    out = la.as_dict()
+    out["efficiency_months"] = {m: {"efficiency": e, "hours": n} for m, (e, n) in (la.efficiency_months or {}).items()}
     return out
 
 
@@ -88,7 +116,8 @@ def today_totals(data, consumers: dict, days: int, today: date, day_start: Calla
     if b:
         sim, storage = b["sim"], b["storage"]
         out["battery"] = {
-            "points": [[t, round(f, 4)] for t, f in sim.points], "full": sim.full_at, "empty": sim.empty_at,
+            "points": columns(((t, round(f, 4)) for t, f in sim.points), "soc"),
+            "full": sim.full_at, "empty": sim.empty_at,
             "lost_today": round(sum(h["lost"] for t, h in sim.hours.items() if t < b["day_end"]), 1),
             "charge_start": b["charge_start"], "max": storage.max_soc, "min": storage.min_soc,
         }
@@ -162,13 +191,21 @@ def load_entry(house_load: str, profile, consumers: dict, consumer_profiles: dic
             "k": forecast.k,
             "sustained": forecast.sustained,
             "sustained_since": forecast.sustained_since,
-            "base": [[t, v] for t, v in sorted(forecast.base.items())],
-            "consumers": {sid: [[t, v] for t, v in sorted(s.items())] for sid, s in forecast.consumers.items()},
+            "base": columns(sorted(forecast.base.items()), "w"),
+            "consumers": {sid: columns(sorted(s.items()), "w") for sid, s in forecast.consumers.items()},
         },
         "backtest": backtest,
-        "events": events,
+        "events": load_events(events),
         "last_learning": last_learning.isoformat() if last_learning else None,
     }
+
+
+def load_events(events: dict | None) -> dict | None:
+    """Recurring device runs as stored (events.suggestions), the usual start hours named: {"q1", "q3"}."""
+    if not events:
+        return events
+    return {**events, "groups": [{**g, "hours": {"q1": g["hours"][0], "q3": g["hours"][1]}}
+                                 for g in events.get("groups", [])]}
 
 
 def model_summary(m, kind: str) -> dict | None:
@@ -270,7 +307,7 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
             "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
                         "max_discharge_w": st.max_discharge_w},
-            "hours": [[t, round(pv.get(t, 0.0), 1), round(load[t], 1)] for t in hours],
+            "hours": columns(((t, round(pv.get(t, 0.0), 1), round(load[t], 1)) for t in hours), "pv", "load"),
             "day_end": b["day_end"], "charge_start": b["charge_start"],
             "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
                     "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh)},
@@ -344,8 +381,8 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
                  "steps": {str(int(t)): s for t, s in steps[sid].items()},
                  "efficiency": (learned.get(sid) or LearnedArray()).efficiency}
-        entry["day_ahead"] = [[h.ts, h.forecast[sid]] for h in arch if sid in h.forecast]
-        entry["actual"] = [[h.ts, h.actual[sid]] for h in arch if sid in (h.actual or {})]
+        entry["day_ahead"] = columns(((h.ts, h.forecast[sid]) for h in arch if sid in h.forecast), "wh")
+        entry["actual"] = columns(((h.ts, h.actual[sid]) for h in arch if sid in (h.actual or {})), "wh")
         if current:
             entry["forecast"] = series(data.forecast.get(sid, {}), a, b)
             if a <= now < b:
@@ -356,17 +393,20 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
                 entry["correction"] = data.correction.get(sid)
                 entry["periods"] = (data.effects.get(sid) or {}).get("periods", [])
         out.append(entry)
-    band = band_series(data.band, a, b) if data is not None and data.band else []
+    band = band_series(data.band if data is not None else None, a, b)
     sky = explain.clearness(site, hours)
-    history = [[s, [[t, v] for t, v in snap]] for s, snap in (archive_day.history if archive_day else [])]
+    # forecasts of the day as they were at each snapshot: {"at": snapshot time, "t", "wh"}
+    history = [{"at": s, **columns(snap, "wh")} for s, snap in (archive_day.history if archive_day else [])]
     return {"arrays": out, "band": band, "history": history,
-            "weather": [[t, round(g, 1), round(c, 1), weather[t].temp] for t, (g, c) in sorted(sky.items())]}
+            "weather": columns(((t, round(g, 1), round(c, 1), weather[t].temp) for t, (g, c) in sorted(sky.items())),
+                               "ghi", "clear", "temp")}
 
 
 def day_pv(view: dict) -> dict[float, float]:
     """Measured PV of all arrays per hour of a day view, for the energy paths."""
     pv: dict[float, float] = {}
     for arr in view["arrays"]:
-        for t, v in arr.get("actual", []):
+        actual = arr.get("actual") or {"t": [], "wh": []}
+        for t, v in zip(actual["t"], actual["wh"], strict=True):
             pv[t] = pv.get(t, 0.0) + v
     return pv

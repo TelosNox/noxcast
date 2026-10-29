@@ -1,8 +1,13 @@
 // Noxcast panel section "Forecast accuracy": day-ahead forecasts from the archive against what happened.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/accuracy".
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+
 const ACC_TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     title: "Prognosegüte", days: "Tage", error: "Tagesfehler", bias: "Abweichung", noData: "Noch keine abgeschlossenen Tage im Archiv. Die Tagesprognose wird jeden Abend archiviert und nachts mit den Messwerten ergänzt.",
     source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", all: "Alle Flächen",
     range: "Zeitraum", perDay: "Prognose und Ist pro Tag", forecast: "Prognose", actual: "Ist", calendar: "Kalender",
@@ -19,6 +24,7 @@ const ACC_TEXT = {
     weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     title: "Forecast accuracy", days: "days", error: "Daily error", bias: "Bias", noData: "No completed days in the archive yet. The day-ahead forecast is archived every evening and completed with measurements at night.",
     source: "Weather source", primary: "Main source", open_meteo: "Open-Meteo", all: "All arrays",
     range: "Period", perDay: "Forecast and actual per day", forecast: "Forecast", actual: "Actual", calendar: "Calendar",
@@ -67,8 +73,10 @@ class NoxcastAccuracy extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/accuracy" }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/accuracy" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
+      this._data = data;
       this._error = null;
     } catch (err) {
       this._error = String((err && err.message) || err);

@@ -76,15 +76,18 @@ def test_day_view_of_a_past_day():
     start = DAY0 + 9 * 86400
     view = views.day_view(SITE, {"roof": SimpleNamespace(name="Roof", geometry=GEO)},
                           {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(a, key), None, start, start + 86400, start + 5 * 86400)
-    assert view["history"] == [[1782889200.0, [[1782907200.0, 350]]],
-                               [1782896400.0, [[1782900000.0, 300], [1782907200.0, 400]]]]
+    assert view["history"] == [{"at": 1782889200.0, "t": [1782907200.0], "wh": [350]},
+                               {"at": 1782896400.0, "t": [1782900000.0, 1782907200.0], "wh": [300, 400]}]
     roof = view["arrays"][0]
-    assert roof["day_ahead"][:3] == [[1782878400.0, 0.0], [1782882000.0, 18.8], [1782885600.0, 37.5]]
-    assert roof["actual"][-2:] == [[1782925200.0, 61.8], [1782928800.0, 41.2]]
-    assert len(roof["day_ahead"]) == 16 and len(roof["actual"]) == 15 and len(roof["steps"]) == 16
-    assert view["weather"][:2] == [[1782878400.0, 0.0, 94.4, None], [1782882000.0, 30.0, 243.3, 15.0]]
+    assert roof["day_ahead"]["t"][:3] == [1782878400.0, 1782882000.0, 1782885600.0]
+    assert roof["day_ahead"]["wh"][:3] == [0.0, 18.8, 37.5]
+    assert roof["actual"]["t"][-2:] == [1782925200.0, 1782928800.0] and roof["actual"]["wh"][-2:] == [61.8, 41.2]
+    assert len(roof["day_ahead"]["t"]) == 16 and len(roof["actual"]["wh"]) == 15 and len(roof["steps"]) == 16
+    assert {k: v[:2] for k, v in view["weather"].items()} == {
+        "t": [1782878400.0, 1782882000.0], "ghi": [0.0, 30.0], "clear": [94.4, 243.3], "temp": [None, 15.0]}
+    empty = {"t": [], "ghi": [], "clear": [], "temp": []}
     assert views.day_view(SITE, {}, {}, None, None, start, start + 86400, start + 5 * 86400) == \
-        {"arrays": [], "band": [], "history": [], "weather": []}
+        {"arrays": [], "band": {"t": [], "p10": [], "p90": []}, "history": [], "weather": empty}
 
 
 def test_errors_and_sources_from_stored_archive():

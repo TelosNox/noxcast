@@ -60,6 +60,12 @@ const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const LAG_RETRY_MS = 15000;                     // Noxcast still has the day before (its midnight run is not done)
 const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
+// payload schema this card reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the card asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+const OUTDATED = { de: "Noxcast wurde aktualisiert – bitte Seite neu laden", en: "Noxcast was updated – please reload the page" };
+// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
+const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
 
 // weather conditions in classes; the strip marks where the class changes
 const WX_CLASS = { sunny: "sun", "clear-night": "sun", partlycloudy: "part", cloudy: "cloud", fog: "cloud", windy: "cloud",
@@ -313,6 +319,7 @@ class NoxcastCard extends HTMLElement {
     this._loading = true;
     try {
       const today = await ask(this._hass, { type: "noxcast/today" });
+      this._outdated = today.v !== WS_SCHEMA;
       const stats = await this._history();
       // the day comes from Noxcast: just after midnight its new computation may still be running, then the
       // card keeps showing the day before and asks again shortly
@@ -682,11 +689,12 @@ class NoxcastCard extends HTMLElement {
     if (!el) return;
     const t = this._t, P = this._p;
     if (!this._data) { el.innerHTML = `<div class="muted">${this._error && (this._tries || 0) > 2 ? this._esc(this._error) : "…"}</div>`; return; }
+    if (this._outdated) { el.innerHTML = `<div class="muted">${OUTDATED[this._lang.slice(0, 2)] || OUTDATED.en}</div>`; return; }
     const arrays = this._arrays();
     if (!arrays.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
 
     const now = Date.now() / 1000, H = 3600;
-    const sum = (key) => { const m = new Map(); for (const a of arrays) for (const [h, v] of a[key] || []) m.set(h, (m.get(h) || 0) + v); return m; };
+    const sum = (key) => { const m = new Map(); for (const a of arrays) for (const [h, v] of tsRows(a[key], "wh")) m.set(h, (m.get(h) || 0) + v); return m; };
     const expM = sum("expected"), fcM = sum("forecast"), mornM = sum("morning"), lossM = sum("loss");
     const exp = (h) => expM.get(h) || 0, loss = (h) => lossM.get(h) || 0;
     const fc = (h) => (fcM.has(h) ? fcM.get(h) : mornM.get(h)) || 0;
@@ -750,7 +758,7 @@ class NoxcastCard extends HTMLElement {
       <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" clip-path="url(#nx-load-past)"></path>
       <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" stroke-dasharray="3 3" clip-path="url(#nx-load-next)"></path>`;
     // P10–P90 of the coming hours, learned by Noxcast from its forecast archive
-    const bandM = new Map(((this._data.today && this._data.today.band) || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
+    const bandM = new Map(tsRows(this._data.today && this._data.today.band, "p10", "p90").map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
     let bandPath = "";
     if (bandH.length > 1 && this._show("band")) {
@@ -784,7 +792,7 @@ class NoxcastCard extends HTMLElement {
       const srv = this._data.today && this._data.today.battery;
       if (srv) {                                   // Noxcast's simulation (batteries configured in the integration)
         bat.max = srv.max; bat.min = srv.min;
-        const pts = srv.points;
+        const pts = tsRows(srv.points, "soc");
         sim = { points: pts, full: srv.full, at: (ts) => {
           if (!pts.length) return null;
           if (ts <= pts[0][0]) return pts[0][1];
@@ -940,7 +948,7 @@ class NoxcastCard extends HTMLElement {
       if (ts < today) { const l = byHour.get(k) || []; l.push(r.mean * scale); byHour.set(k, l); }
     }
     const liveHome = this._live().home;
-    const srvLoad = new Map((this._data.today && this._data.today.load) || []);     // Noxcast load forecast
+    const srvLoad = new Map(tsRows(this._data.today && this._data.today.load, "wh"));     // Noxcast load forecast
     const load = (h) => {
       if (h + H <= now && measured.has(h)) return measured.get(h);
       if (h <= now && h + H > now && homeId) return liveHome;

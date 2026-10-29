@@ -2,8 +2,15 @@
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/battery".
 // The what-if simulation mirrors battery.simulate in the integration; without changes it gives the same numbers.
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
+const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+
 const BAT_TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     noBattery: "Kein Akku eingerichtet. In der Noxcast-Konfiguration einen Akku hinzufügen.",
     noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf.",
     socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", grid: "Netzbezug",
@@ -22,6 +29,7 @@ const BAT_TEXT = {
     predHelp: "Morgens, wenn die Tagesprognose festgeschrieben wird, merkt sich Noxcast, wann der Akku laut Simulation voll und wann er leer sein wird. Das Ist kommt aus den 5-Minuten-Statistiken der Ladestand-Sensoren (Home Assistant hält sie etwa zehn Tage). Hohle Punkte: Vorhersage, gefüllte: Ist. Leer zählt bis zum Ladebeginn am nächsten Morgen.",
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     noBattery: "No battery set up. Add a battery in the Noxcast configuration.",
     noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run.",
     socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", grid: "From grid",
@@ -94,8 +102,10 @@ class NoxcastBattery extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/battery" }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/battery" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
+      this._data = data;
       this._loaded = Date.now();
       this._error = null;
     } catch (err) {
@@ -133,7 +143,7 @@ class NoxcastBattery extends HTMLElement {
 
   _variant(e) {
     const v = this._v, a = v.start, b = v.start + v.minutes * 60;
-    const hours = e.hours.map(([ts, pv, load]) => {
+    const hours = tsRows(e.hours, "pv", "load").map(([ts, pv, load]) => {
       const overlap = Math.max(0, Math.min(ts + H, b) - Math.max(ts, a)) / H;
       return [ts, pv, load + v.power * overlap];
     });
@@ -141,11 +151,11 @@ class NoxcastBattery extends HTMLElement {
   }
 
   // the variant runs to the end of the forecast (tomorrow midnight), so a consumer can be placed in tomorrow's surplus
-  _end(e) { return e.hours.length ? e.hours[e.hours.length - 1][0] + H : e.charge_start; }
+  _end(e) { const ts = e.hours.t; return ts.length ? ts[ts.length - 1] + H : e.charge_start; }
 
   _results(e) {
     const t = this._t, now = this._data.now;
-    const base = simulate(e.storage, e.hours, now, this._end(e)), { sim, hours } = this._variant(e);
+    const base = simulate(e.storage, tsRows(e.hours, "pv", "load"), now, this._end(e)), { sim, hours } = this._variant(e);
     const v = this._v, energy = v.power * v.minutes / 60;
     const extra = sim.grid - base.grid;
     const row = (label, a, b, fmt, goodIfLower) => {

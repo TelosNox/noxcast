@@ -93,6 +93,9 @@ ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluati
 ERROR_DAYS = 30                          # window of the forecast error sensor
 MORNING_HOUR = 6                         # local hour at which today's forecast is fixed
 ATTR_SCHEMA_VERSION = 1
+# schema of the websocket payloads ("v" in every answer, see views.py); the frontend checks it and asks
+# for a reload when a browser tab still runs the scripts of another version
+WS_SCHEMA_VERSION = 1
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"
 SERVICE_RELEARN = "relearn"

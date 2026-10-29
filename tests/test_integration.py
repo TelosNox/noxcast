@@ -1,7 +1,11 @@
 """Home Assistant level tests: config flow, array subentry, learning and sensors."""
 from __future__ import annotations
 
-from datetime import timedelta
+import dataclasses
+import functools
+import hashlib
+import json
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -317,6 +321,204 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
     data = hass.config_entries.async_get_entry(entry.entry_id).subentries[subentry.subentry_id].data
     assert "orientation_2" not in data and "orientation_4" not in data          # removed again: one plane
+
+
+def _canon(o):
+    """Everything the coordinator computed as plain JSON, floats exact (repr), for a fingerprint."""
+    if dataclasses.is_dataclass(o) and not isinstance(o, type):
+        return {"__": type(o).__name__, **{f.name: _canon(getattr(o, f.name)) for f in dataclasses.fields(o)}}
+    if isinstance(o, dict):
+        return {k if isinstance(k, str) else repr(k): _canon(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_canon(v) for v in o]
+    if isinstance(o, (set, frozenset)):
+        return sorted(_canon(v) for v in o)
+    if isinstance(o, float):
+        return repr(o)
+    if isinstance(o, (datetime, date)):
+        return o.isoformat()
+    if o is None or isinstance(o, (str, int, bool)):
+        return o
+    if hasattr(o, "__dict__"):
+        return {"__": type(o).__name__, **{k: _canon(v) for k, v in vars(o).items()}}
+    return repr(o)
+
+
+def _fingerprint(c) -> str:
+    state = _canon({
+        "learned": c.learned, "band": c.band, "load_profile": c.load_profile, "floor_profile": c.floor_profile,
+        "consumer_profiles": c.consumer_profiles, "consumer_models": c.consumer_models, "run_profiles": c.run_profiles,
+        "load_events": c.load_events, "load_backtest": c.load_backtest, "battery_log": c.battery_log,
+        "store": c._store_data(), "archive": c._archive_data(), "fine": c.fine, "data": c.data,
+        "runs": {sid: c.run_profile(sid) for sid, cc in c.consumers.items() if cc.timing == "flexible"},
+    })
+    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()[:16]
+
+
+# Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
+# a refactoring must leave them as they are; a deliberate model change updates them.
+PINNED = []
+
+
+async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer) -> None:
+    """Learning (PV, band, load, consumers, events), hourly updates (intraday, battery, plan) and the nightly
+    run on synthetic data, compared bit for bit with pinned fingerprints."""
+    import math
+    import random
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.noxcast import archive
+    from custom_components.noxcast.coordinator import NoxcastCoordinator
+
+    tz = dt_util.get_default_time_zone()
+
+    def local(y, m, d, h, mi):
+        return datetime(y, m, d, h, mi, tzinfo=tz).astimezone(dt_util.UTC)
+
+    times = [local(2026, 6, 10, 5, 30), local(2026, 6, 10, 12, 5), local(2026, 6, 10, 13, 40),
+             local(2026, 6, 11, 1, 30), local(2026, 6, 11, 9, 10)]
+    freezer.move_to(times[0])
+    rng = random.Random(7)
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    t_end = local(2026, 6, 12, 0, 0).timestamp()
+    t0 = t_end - 75 * 86400
+    hours = [t0 + i * 3600 for i in range(int((t_end - t0) // 3600))]
+    kind = {d: rng.choices(["clear", "mixed", "overcast"], [0.4, 0.35, 0.25])[0] for d in range(80)}
+    day = {t: int((t - t0) // 86400) for t in hours}
+    cloud = {t: 1.0 if kind[day[t]] == "clear" else rng.uniform(0.4, 0.95) if kind[day[t]] == "mixed"
+             else rng.uniform(0.15, 0.35) for t in hours}
+    loc = {t: datetime.fromtimestamp(t, tz) for t in hours}
+    temp = {t: 14 + 6 * math.sin(2 * math.pi * (loc[t].hour - 9) / 24) - 0.1 * (75 - day[t]) for t in hours}
+    sky = {t: model.clearsky_weather(site, t).ghi for t in hours}
+    ghi = {t: sky[t] * cloud[t] for t in hours}
+    geos = {"S": model.ArrayGeometry(30, 180, 3000, 35.0),
+            "EW": model.ArrayGeometry(20, 90, 2400, model.HEATING_K, (model.Plane(20, 270, 1200),))}
+    pv = {n: model.forecast(site, g, model.LearnedArray(efficiency=0.9), [model.WeatherHour(t, ghi[t], temp=temp[t])
+                                                                           for t in hours]) for n, g in geos.items()}
+    stats = {("sensor.pv1", "mean"): {t: v * 0.55 for t, v in pv["S"].items()},
+             ("sensor.pv2", "mean"): {t: v * 0.45 for t, v in pv["S"].items()},
+             ("sensor.pv3", "mean"): pv["EW"]}
+    for sid in ("sensor.pv1", "sensor.pv2", "sensor.pv3"):
+        mean = stats[(sid, "mean")]
+        stats[(sid, "min")] = {t: v * (0.95 if kind[day[t]] == "clear" else 0.5) for t, v in mean.items()}
+        stats[(sid, "max")] = {t: v * (1.05 if kind[day[t]] == "clear" else 1.4) for t, v in mean.items()}
+    stats[("sensor.soc", "max")] = {t: min(100.0, 20 + (22 if kind[day[t]] == "clear" else 8) * max(0, loc[t].hour - 8))
+                                    for t in hours}
+    washer = {t: ((1900 if loc[t].hour == 10 else 450) if day[t] % 4 == 1 and loc[t].hour in (10, 11) else 0.0)
+              for t in hours}
+    dishwasher = {t: (1.1 if loc[t].hour == 20 else 0.35 if loc[t].hour == 21 else 0.0) if day[t] % 3 else 0.0
+                  for t in hours}                                                  # kWh per hour
+    heat_pump = {t: max(0.0, 16 - temp[t]) * 70 for t in hours}
+    tv = {t: 125.0 if 19 <= loc[t].hour <= 22 and day[t] % 5 else 0.0 for t in hours}
+    base = {t: 230 + (380 if loc[t].hour == 7 else 0) + (520 if 18 <= loc[t].hour <= 21 else 0) + rng.uniform(-40, 60)
+            for t in hours}
+    stats[("sensor.house", "mean")] = {t: base[t] + washer[t] + dishwasher[t] * 1000 + heat_pump[t] + tv[t]
+                                       for t in hours}
+    stats[("sensor.house", "min")] = {t: base[t] * 0.8 + heat_pump[t] * 0.9 for t in hours}
+    stats[("sensor.washer", "mean")], stats[("sensor.dw", "change")] = washer, dishwasher
+    stats[("sensor.hp", "mean")], stats[("sensor.tv", "mean")] = heat_pump, tv
+    fine = {}
+    for (sid, kind_), series in stats.items():
+        if kind_ in ("mean", "change"):
+            fine[(sid, kind_)] = {t + i * 300: v / 12 if kind_ == "change" else v * (1 + 0.04 * math.sin(i))
+                                  for t, v in series.items() if t >= t_end - 14 * 86400 for i in range(12)}
+
+    async def fake_stats(_hass, ids, start, kind, period="hour", end=None):
+        a, b = start.timestamp(), end.timestamp() if end else math.inf
+        now = dt_util.utcnow().timestamp()
+        src, step = (stats, 4200) if period == "hour" else (fine, 300)        # hours are compiled a bit later
+        return {sid: {t: v for t, v in src[(sid, kind)].items() if a <= t < b and t + step <= now}
+                for sid in ids if (sid, kind) in src}
+
+    async def fake_factors(_hass, ids, table=None):
+        return {i: 1000.0 if i == "sensor.dw" and table else 1.0 for i in ids}
+
+    async def fake_archive(series, *args):
+        return {t: v for t, v in series.items() if args[-3].timestamp() <= t < args[-2].timestamp()}
+
+    weather, alt = [], {"icon_seamless": [], "ecmwf_ifs": []}
+    for i in range(9 * 24):
+        t = local(2026, 6, 9, 0, 0).timestamp() + i * 3600
+        c, g = 0.3 + 0.35 * (1 + math.sin(i / 7)), model.clearsky_weather(site, t).ghi
+        tt = 18 + 6 * math.sin(2 * math.pi * ((i % 24) - 9) / 24)
+        details = {"cloud": 100 * (1 - c), "sun": c, "wind": 3.0 + i % 5, "wind_dir": float(i * 37 % 360)}
+        weather.append(model.WeatherHour(t, g * c, temp=tt, **details))
+        alt["icon_seamless"].append(model.WeatherHour(t, g * c * 0.9, temp=tt - 1, **details))
+        alt["ecmwf_ifs"].append(model.WeatherHour(t, g * min(1.0, c * 1.1), temp=tt + 1, **details))
+
+    subentries = [config_entries.ConfigSubentryData(data=data, subentry_type=kind_, title=data.get("name", kind_),
+                                                    unique_id=None) for kind_, data in (
+        ("array", {"name": "South", "power_sensors": ["sensor.pv1", "sensor.pv2"], "tilt": 30, "azimuth": 180,
+                   "peak_power": 3000, "heating": 35, "temp_coeff": -0.35, "valid_since": "2026-04-10"}),
+        ("array", {"name": "EastWest", "power_sensors": ["sensor.pv3"], "tilt": 20, "azimuth": 90, "peak_power": 2400,
+                   "orientation_2": {"tilt": 20, "azimuth": 270, "peak_power": 1200}}),
+        ("consumer", {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible"}),
+        ("consumer", {"name": "Dryer", "power_sensor": "sensor.dryer", "timing": "flexible", "run_power": 1500,
+                      "run_minutes": 90}),
+        ("consumer", {"name": "Dishwasher", "energy_sensor": "sensor.dw", "timing": "fixed", "kind": "program",
+                      "remaining_time": "sensor.dw_remaining", "elapsed_time": "sensor.dw_elapsed"}),
+        ("consumer", {"name": "Heat pump", "power_sensor": "sensor.hp", "timing": "fixed", "kind": "regulated"}),
+        ("consumer", {"name": "TV", "power_sensor": "sensor.tv", "timing": "fixed", "kind": "session"}),
+        ("battery", {"soc_sensor": "sensor.soc", "capacity": 5, "max_soc": 100, "min_soc": 10, "reserve": 5,
+                     "coupling": "dc", "max_charge_w": 2000, "max_discharge_w": 1500}),
+        ("battery", {"soc_sensor": "sensor.soc2", "capacity": 2, "max_soc_entity": "sensor.max_soc", "min_soc": 20,
+                     "coupling": "ac", "efficiency": 88}))]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
+                            data={"soc_sensors": ["sensor.soc"], "soc_full_pct": 95, "house_load": "sensor.house"},
+                            options={"archive_temperature": True, "satellite": True}, subentries_data=subentries)
+    entry.add_to_hass(hass)
+    ids = {s.data["name"]: sid for sid, s in entry.subentries.items() if s.subentry_type == "array"}
+    past = {}                                       # day-ahead forecasts of the last weeks, for the band
+    for back in range(1, 30):
+        d = date(2026, 6, 10) - timedelta(days=back)
+        a = datetime(d.year, d.month, d.day, tzinfo=tz).timestamp()
+        f = rng.uniform(0.6, 1.4)
+        archive.snapshot(past, d, "2026-01-01T00:00:00+00:00",
+                         {a + i * 3600: (min(sky[a + i * 3600], ghi[a + i * 3600] * f), temp[a + i * 3600]) for i in range(24)},
+                         {ids[n]: {a + i * 3600: pv[n][a + i * 3600] * f for i in range(24)} for n in ("S", "EW")})
+    hass_storage[f"{DOMAIN}.{entry.entry_id}.archive"] = {"version": 1, "minor_version": 1, "key": "a",
+                                                           "data": archive.to_store(past)}
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {"version": 1, "minor_version": 1, "key": "m", "data": {
+        "exclusions": [{"start": t_end - 30 * 86400, "end": t_end - 29 * 86400, "note": "x"}]}}
+    for eid, value, unit in (("sensor.soc", "55", "%"), ("sensor.soc2", "80", "%"), ("sensor.max_soc", "90", "%"),
+                             ("sensor.washer", "0", "W"), ("sensor.hp", "0.8", "kW"), ("sensor.dw_remaining", "45", "min"),
+                             ("sensor.dw", "0.6", "kWh"), ("sensor.dw_elapsed", "30", "min"), ("sensor.tv", "130", "W"),
+                             ("sensor.dryer", "0", "W")):
+        hass.states.async_set(eid, value, {"unit_of_measurement": unit})
+
+    prints = []
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, alt)), \
+         patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
+         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
+         patch("custom_components.noxcast.coordinator.async_archive_temperature",
+               side_effect=functools.partial(fake_archive, temp)), \
+         patch("custom_components.noxcast.coordinator.async_archive_irradiance",
+               side_effect=functools.partial(fake_archive, ghi)), \
+         patch.object(NoxcastCoordinator, "_async_started"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        c = entry.runtime_data
+        prints.append(_fingerprint(c))
+        assert await c.async_learn()
+        await c.async_refresh()
+        prints.append(_fingerprint(c))
+        for when in times[1:3]:
+            freezer.move_to(when)
+            await c.async_refresh()
+            prints.append(_fingerprint(c))
+        freezer.move_to(times[3])
+        await c._async_nightly(times[3])
+        await c.async_refresh()
+        prints.append(_fingerprint(c))
+        freezer.move_to(times[4])
+        await c.async_refresh()
+        prints.append(_fingerprint(c))
+        await hass.async_block_till_done()
+    data = c.data
+    assert c.band and data.load and data.battery and data.plan
+    assert c.load_events is not None and all(c.consumer_models.values())
+    assert prints == PINNED, prints
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

@@ -538,11 +538,11 @@ class NoxcastCard extends HTMLElement {
     // battery: filled to the state of charge; with battery_arrows the arrow of the flow lights up beside it. A bit
     // lower than the other icons: its closed body looks larger than their open shapes
     const soc = v.socAll === null ? 0 : Math.max(0, Math.min(100, v.socAll)), dir = !this._on("n:bat", v.bat) ? 0 : v.bat > 0 ? 1 : -1;
-    const arrows = !c.battery_arrows ? "" : `<path d="M36 5.5 L39.5 11 H32.5 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
-      <path d="M36 18.5 L39.5 13 H32.5 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
-    const bat = svg(c.battery_arrows ? 41 : 31, `<rect x="1.5" y="5.5" width="25" height="13" rx="2.5" fill="none" stroke="${off}" stroke-width="1.6"></rect>
-      <rect x="27" y="9.5" width="3" height="5" rx=".8" fill="${off}"></rect>
-      <rect x="3.5" y="7.5" width="${((21 * soc) / 100).toFixed(2)}" height="9" rx="1.2" fill="${P.bat}"></rect>${arrows}`);
+    const arrows = !c.battery_arrows ? "" : `<path d="M41 4 L45 10.5 H37 Z" fill="${P.bat}" fill-opacity="${dir > 0 ? 1 : 0.22}"></path>
+      <path d="M41 20 L45 13.5 H37 Z" fill="${P.bat}" fill-opacity="${dir < 0 ? 1 : 0.22}"></path>`;
+    const bat = svg(c.battery_arrows ? 46 : 36, `<rect x="1.5" y="4" width="29" height="16" rx="3" fill="none" stroke="${off}" stroke-width="1.6"></rect>
+      <rect x="31" y="9" width="3.5" height="6" rx="1" fill="${off}"></rect>
+      <rect x="3.5" y="6" width="${((25 * soc) / 100).toFixed(2)}" height="12" rx="1.4" fill="${P.bat}"></rect>${arrows}`);
     // house: a window lights per step
     const hs = this._step("n:home", v.home, base);
     const win = (x, i) => `<rect x="${x}" y="13" width="4" height="4" fill="${i < hs ? P.pv : "none"}" stroke="${i < hs ? P.pv : off}" stroke-width="1"></rect>`;

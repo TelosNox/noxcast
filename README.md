@@ -127,8 +127,8 @@ display.
 - **Power now** as a row of figures: PV, battery, home, grid, with moving dots for the
   flows. Icons above the figures show their state: the sun grows with the share of peak power, the
   battery is filled to its state of charge, a window of the house lights up per step of load, and
-  the pylon gets a lightning bolt per step (blue while drawing, yellow while feeding in). The steps
-  are 3 and 8 times the base load, the quietest tenth of the hourly house load over the last 7 days.
+  the pylon gets a lightning bolt per step (blue while drawing, yellow while feeding in). A step
+  goes up at once; it goes down at once below 60 % of its limit, otherwise after 30 s below it.
   Tapping a figure opens its entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
   load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
@@ -144,6 +144,8 @@ display.
 | `range` | `production` | `production` (an hour around sunrise and sunset) or `day` (0–24 h, night compressed) |
 | `labels` | `icons` | `icons` (icons that show the state) or `text` (names, battery percentage and power) |
 | `sun_glow` | `false` | The sun icon glows by the share of peak power |
+| `home_steps` | `[100, 300, 1000]` | Icons: a window of the house lights from each of these watts |
+| `grid_steps` | `[300, 1000]` | Icons: second and third lightning bolt of the grid, either direction (the first comes with the flow, from `flow_min_w`) |
 | `battery_arrows` | `false` | Up and down arrows beside the battery icon, the one of the flow lit |
 | `flow_style` | `chain` | `chain` (dots between the figures) or `bus` (a line below them) |
 | `flow_speed` | `normal` | `calm`, `normal`, `lively` |

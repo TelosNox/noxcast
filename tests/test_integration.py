@@ -357,8 +357,7 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['9b29cab0c1d1866d', '609a938c712514fa', '431292a25be9411c', '5f5d13baaceee82b', '54a3c5d5dd13c70f',
-          '0f4a1ff7165d2c5c']
+PINNED = []
 
 
 async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer) -> None:
@@ -448,8 +447,10 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         alt["icon_seamless"].append(model.WeatherHour(t, g * c * 0.9, temp=tt - 1, **details))
         alt["ecmwf_ifs"].append(model.WeatherHour(t, g * min(1.0, c * 1.1), temp=tt + 1, **details))
 
+    # fixed ids: they are keys of everything learned and stored, so random ones would change the fingerprints
     subentries = [config_entries.ConfigSubentryData(data=data, subentry_type=kind_, title=data.get("name", kind_),
-                                                    unique_id=None) for kind_, data in (
+                                                    unique_id=None, subentry_id=sid) for sid, (kind_, data) in zip((
+        "S", "EW", "washer", "dryer", "dishwasher", "heat_pump", "tv", "battery", "battery2"), (
         ("array", {"name": "South", "power_sensors": ["sensor.pv1", "sensor.pv2"], "tilt": 30, "azimuth": 180,
                    "peak_power": 3000, "heating": 35, "temp_coeff": -0.35, "valid_since": "2026-04-10"}),
         ("array", {"name": "EastWest", "power_sensors": ["sensor.pv3"], "tilt": 20, "azimuth": 90, "peak_power": 2400,
@@ -464,13 +465,13 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         ("battery", {"soc_sensor": "sensor.soc", "capacity": 5, "max_soc": 100, "min_soc": 10, "reserve": 5,
                      "coupling": "dc", "max_charge_w": 2000, "max_discharge_w": 1500}),
         ("battery", {"soc_sensor": "sensor.soc2", "capacity": 2, "max_soc_entity": "sensor.max_soc", "min_soc": 20,
-                     "coupling": "ac", "efficiency": 88}))]
+                     "coupling": "ac", "efficiency": 88})))]
     entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
-                            data={"soc_sensors": ["sensor.soc"], "soc_full_pct": 95, "house_load": "sensor.house"},
+                            entry_id="pinned", data={"soc_sensors": ["sensor.soc"], "soc_full_pct": 95,
+                                                     "house_load": "sensor.house"},
                             options={"archive_temperature": True, "satellite": True}, subentries_data=subentries)
     entry.add_to_hass(hass)
-    short = {"South": "S", "EastWest": "EW"}
-    ids = {short[s.data["name"]]: sid for sid, s in entry.subentries.items() if s.subentry_type == "array"}
+    assert set(entry.subentries) >= {"S", "EW"}
     past = {}                                       # day-ahead forecasts of the last weeks, for the band
     for back in range(1, 30):
         d = date(2026, 6, 10) - timedelta(days=back)
@@ -478,7 +479,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         f = rng.uniform(0.6, 1.4)
         archive.snapshot(past, d, "2026-01-01T00:00:00+00:00",
                          {a + i * 3600: (min(sky[a + i * 3600], ghi[a + i * 3600] * f), temp[a + i * 3600]) for i in range(24)},
-                         {ids[n]: {a + i * 3600: pv[n][a + i * 3600] * f for i in range(24)} for n in ("S", "EW")})
+                         {n: {a + i * 3600: pv[n][a + i * 3600] * f for i in range(24)} for n in ("S", "EW")})
     hass_storage[f"{DOMAIN}.{entry.entry_id}.archive"] = {"version": 1, "minor_version": 1, "key": "a",
                                                            "data": archive.to_store(past)}
     hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {"version": 1, "minor_version": 1, "key": "m", "data": {

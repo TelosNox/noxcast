@@ -1,7 +1,7 @@
 """Sidebar panel "Noxcast" and the day card, both fed by websocket commands.
 
 A thin adapter: each command gathers its inputs from the coordinators (and the recorder), lets a pure
-function of views.py build the payload and sends it.
+function of views.py build the payload and sends it with the schema version (see views.py).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import views
-from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN
+from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,6 +101,11 @@ def _version(*names: str) -> str:
     return str(int(max((Path(__file__).parent / "frontend" / n).stat().st_mtime for n in names)))
 
 
+def _send(connection: websocket_api.ActiveConnection, msg: dict[str, Any], result: dict | None) -> None:
+    """Send a payload with its schema version first ("v"); None (no Noxcast entry) stays None."""
+    connection.send_result(msg["id"], None if result is None else {"v": WS_SCHEMA_VERSION, **result})
+
+
 def _coordinators(hass: HomeAssistant) -> list:
     return [e.runtime_data for e in hass.config_entries.async_loaded_entries(DOMAIN)]
 
@@ -123,7 +128,7 @@ def _local_date(ts: float) -> str:
 def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Learned state of all arrays of all Noxcast entries (the site is the Home Assistant location)."""
     arrays = [a for c in _coordinators(hass) for a in views.learned_arrays(c.arrays, c.learned, c.last_learning)]
-    connection.send_result(msg["id"], {
+    _send(connection, msg, {
         "latitude": hass.config.latitude, "longitude": hass.config.longitude,
         "time_zone": hass.config.time_zone, "arrays": arrays,
     })
@@ -144,7 +149,7 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     if coordinators:
         c = coordinators[0]
         result.update(views.today_totals(c.data, c.consumers, c.forecast_days, dt_util.now().date(), _day_start))
-    connection.send_result(msg["id"], result)
+    _send(connection, msg, result)
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_ACCURACY})
@@ -155,7 +160,7 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
     for c in _coordinators(hass):
         days = await hass.async_add_executor_job(views.accuracy_days, c.forecast_archive, c.site)
         entries.append({"arrays": views.array_names(c.arrays), "days": days})
-    connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "entries": entries})
+    _send(connection, msg, {"time_zone": hass.config.time_zone, "entries": entries})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LOAD})
@@ -166,7 +171,7 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
                                 c.data.load if c.data is not None else None, c.load_backtest, c.load_events,
                                 c.last_learning)
                for c in _coordinators(hass) if c.house_load]
-    connection.send_result(msg["id"], {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
+    _send(connection, msg, {"now": dt_util.utcnow().timestamp(), "time_zone": hass.config.time_zone,
                                        "entries": entries})
 
 
@@ -195,7 +200,7 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
             entry.title, weather_models=c.weather_models, data=c.data, last_learning=c.last_learning,
             learning_error=c.last_learning_error, archive_errors=c.archive_errors, arrays=c.arrays, learned=c.learned,
             exclusions=c.exclusions, archive=c.forecast_archive, fine=c.fine, sensors=sensors))
-    connection.send_result(msg["id"], {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
+    _send(connection, msg, {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_BATTERY})
@@ -233,7 +238,7 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
             result["predictions"] = views.prediction_review(
                 c.battery_log, short, socs, lambda key: _day_start(date.fromisoformat(key) + timedelta(days=1)))
         entries.append(result)
-    connection.send_result(msg["id"], {"now": now.timestamp(), "time_zone": hass.config.time_zone,
+    _send(connection, msg, {"now": now.timestamp(), "time_zone": hass.config.time_zone,
                                        "review_days": REVIEW_DAYS, "entries": entries})
 
 
@@ -243,11 +248,11 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     """The sensors the day card shows, as configured in the integration; the card only changes the display."""
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
-        connection.send_result(msg["id"], None)
+        _send(connection, msg, None)
         return
     entry = entries[0]
     c = entry.runtime_data
-    connection.send_result(msg["id"], views.card_config(
+    _send(connection, msg, views.card_config(
         c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), entry.data.get(CONF_FEED_IN), c.batteries,
         _battery_names(entry), er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather")))
 
@@ -272,4 +277,4 @@ async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection
             except Exception:  # noqa: BLE001 – the day view works without the energy paths
                 _LOGGER.exception("Energy paths of %s failed", day)
         result["entries"].append(view)
-    connection.send_result(msg["id"], result)
+    _send(connection, msg, result)

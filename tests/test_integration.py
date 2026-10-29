@@ -15,7 +15,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 
 from custom_components.noxcast import model, solar
-from custom_components.noxcast.const import DOMAIN
+from custom_components.noxcast.const import DOMAIN, WS_SCHEMA_VERSION
 
 pytestmark = pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
 
@@ -378,12 +378,14 @@ async def _ws_prints(client) -> dict:
         await client.send_json_auto_id({"type": f"{DOMAIN}/{cmd}"})
         msg = await client.receive_json()
         assert msg["success"], (cmd, msg)
+        assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
         out[cmd] = hashlib.sha256(json.dumps(msg["result"]).encode()).hexdigest()[:16]
     days = []
     for offset in range(-31, 3):
         await client.send_json_auto_id({"type": f"{DOMAIN}/day", "offset": offset})
         msg = await client.receive_json()
         assert msg["success"], (offset, msg)
+        assert msg["result"]["v"] == WS_SCHEMA_VERSION, offset
         days.append(msg["result"])
     out["day"] = hashlib.sha256(json.dumps(days).encode()).hexdigest()[:16]
     return out

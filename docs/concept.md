@@ -427,6 +427,12 @@ orientation changes the geometry key and starts relearning.
   Further sections are tabs in the panel header, each a module of its own. One shared stylesheet
   (`noxcast-theme.js`, adopted into the panel and every section) gives all pages the same look:
   a page header with title and lead, frosted cards with a gradient edge, key figures as tiles.
+  The websocket payloads (panel and cards) are named and versioned: every value has a key, no
+  positional tuples; a time series is a column table `{"t": [hour starts], "wh": [...]}` (compact,
+  the names once per series), and every answer carries the schema version `v`
+  (`WS_SCHEMA_VERSION`). The scripts check it: an open browser tab that still runs the scripts of
+  another version shows "Noxcast was updated – please reload the page" instead of misreading the
+  data. Conventions in `views.py`; a change the frontend has to follow raises the version.
   - **Day** (`noxcast/day`, offset −120 … +2 days): one day in detail. The groups stacked (actual
     where measured, the expectation or forecast for the rest), the reference as a dashed line (the
     6 o'clock forecast today, the day-ahead forecast for past days), the running forecast and the
@@ -547,7 +553,8 @@ orientation changes the geometry key and starts relearning.
   `forecasting.py` turns learned state, weather and today's measurements into the hourly result
   (PV, intraday correction, load, band, battery, plan). The coordinator only schedules, fetches
   (statistics, weather, states), stores and publishes. Likewise `panel.py` only adapts the
-  websocket commands: it gathers the inputs and sends what `views.py` builds from them; the steps
+  websocket commands: it gathers the inputs and sends what `views.py` builds from them (named,
+  versioned payloads, see Outputs); the steps
   of an archived day under the current learned model come from `explain.replay`.
 - Stable public interface: versioned entity IDs and attribute schema.
 - Transparent storage: learned parameters as readable, versioned files; diagnostic export.

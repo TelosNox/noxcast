@@ -15,11 +15,13 @@ const W_TEXT = {
   de: { outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Noch kein Wetter von Noxcast",
     days: "Tage", show_pv: "PV-Ertrag pro Tag", temperature: "Außentemperatur (optional)",
     humidity_s: "Außenfeuchte (optional)", name: "Bezeichnung der Außenwerte", look: "Aussehen",
-    pv_bar: "Balken: Anteil am Ertrag bei klarem Himmel", line: "Linie am Zeilenrand", fill: "Zeilenhintergrund", none: "Kein Balken" },
+    pv_bar: "Balken: Anteil am Ertrag bei klarem Himmel", line: "Linie am Zeilenrand", fill: "Zeilenhintergrund", none: "Kein Balken",
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden" },
   en: { outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather from Noxcast yet",
     days: "Days", show_pv: "PV yield per day", temperature: "Outside temperature (optional)",
     humidity_s: "Outside humidity (optional)", name: "Label of the outside values", look: "Look",
-    pv_bar: "Bar: share of the clear-sky yield", line: "Line at the row edge", fill: "Row background", none: "No bar" },
+    pv_bar: "Bar: share of the clear-sky yield", line: "Line at the row edge", fill: "Row background", none: "No bar",
+    outdated: "Noxcast was updated – please reload the page" },
 };
 
 const W_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night", partlycloudy: "mdi:weather-partly-cloudy",
@@ -31,6 +33,9 @@ const W_COLOR = { sunny: "#F2B233", "clear-night": "#F2B233", partlycloudy: "#C2
   "lightning-rainy": "#2F80C8", snowy: "#2F80C8", "snowy-rainy": "#2F80C8", hail: "#2F80C8" };
 const W_REFRESH_MS = 15 * 60 * 1000;
 const W_TIMEOUT_MS = 20000;
+// payload schema this card reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the card asks for a reload instead of misreading the data
+const W_SCHEMA = 1;
 
 class NoxcastWeatherCard extends HTMLElement {
   static getStubConfig() { return { days: 5 }; }
@@ -104,7 +109,8 @@ class NoxcastWeatherCard extends HTMLElement {
     if (!this._hass || !this._config.show_pv) return;
     try {
       const today = await this._ask({ type: "noxcast/today" });
-      this._pv = new Map((today.days || []).map((d) => [d.date, d]));
+      this._outdated = today.v !== W_SCHEMA;
+      this._pv = new Map((this._outdated ? [] : today.days || []).map((d) => [d.date, d]));
       this._tz = today.time_zone;
     } catch (err) {
       setTimeout(() => { if (this.isConnected) this._refresh(); }, 30000);   // Noxcast may still be starting
@@ -174,7 +180,8 @@ class NoxcastWeatherCard extends HTMLElement {
         ${tv === null ? "" : `<span class="now">${this._num(tv, 1)}°</span>`}
         ${hv === null ? "" : `<span class="hum">${this._num(hv)} % ${t.humidity}</span>`}
       </div>` : "";
-    const body = this._entity ? `<div class="rows ${bar}">${rows}</div>` : `<div class="muted">${t.noWeather}</div>`;
+    const body = (this._outdated ? `<div class="muted">${t.outdated}</div>` : "")
+      + (this._entity ? `<div class="rows ${bar}">${rows}</div>` : `<div class="muted">${t.noWeather}</div>`);
     this.shadowRoot.innerHTML = `<style>
       ha-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
       ha-card.nx { border-radius: 20px; border: var(--nx-edge-width, 2px) solid transparent;   /* edge width: set --nx-edge-width in a theme */

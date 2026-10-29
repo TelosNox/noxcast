@@ -2,8 +2,13 @@
 // weather source, archive and excluded periods. Answers "why does it not learn?" without logs.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/diagnostics".
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+
 const DIAG_TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
@@ -18,6 +23,7 @@ const DIAG_TEXT = {
       weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf" },
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
@@ -57,8 +63,10 @@ class NoxcastDiagnostics extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/diagnostics" }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/diagnostics" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
+      this._data = data;
       this._error = null;
     } catch (err) {
       this._error = String((err && err.message) || err);

@@ -32,8 +32,13 @@ const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prog
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+
 const TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster",
     shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor",
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
@@ -68,6 +73,7 @@ const TEXT = {
     },
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     title: "Learned", overview: "Overview", map: "Map", grid: "Year grid",
     shade: "Shade", refl: "Reflection", dir: "Direction factor",
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
@@ -280,12 +286,15 @@ class NoxcastPanel extends HTMLElement {
     clearTimeout(this._retry);
     try {
       // a request lost while the connection is rebuilt never answers: give up and ask again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/learned" }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/learned" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
-      this._cache = {};
-      this._error = null;
       this._tries = 0;
-      if (this._state.doy === null) this._state.doy = dayOfYear(new Date());
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; } else {
+        this._data = data;
+        this._cache = {};
+        this._error = null;
+        if (this._state.doy === null) this._state.doy = dayOfYear(new Date());
+      }
     } catch (err) {
       this._tries = (this._tries || 0) + 1;
       if (this._tries > 2) this._error = String(err && err.message || err);   // shown only once retries failed
@@ -703,7 +712,7 @@ class NoxcastPanel extends HTMLElement {
   _effMonths(la) {
     const c = this._t.checks, entries = Object.entries(la.efficiency_months || {});
     if (!entries.length) return `<section class="card pad"><h3>${c.effTitle}</h3><p class="muted">${c.noEff}</p></section>`;
-    const W = 420, H = 150, pad = 36, vals = entries.map(([, [v]]) => v).concat([la.efficiency]);
+    const W = 420, H = 150, pad = 36, vals = entries.map(([, m]) => m.efficiency).concat([la.efficiency]);
     const lo = Math.min(...vals) - 0.02, hi = Math.max(...vals) + 0.02;
     const x = (i) => pad + (entries.length === 1 ? (W - pad) / 2 : i / (entries.length - 1) * (W - pad - 10));
     const y = (v) => H - 20 - (v - lo) / (hi - lo) * (H - 34);
@@ -711,8 +720,8 @@ class NoxcastPanel extends HTMLElement {
     let svg = `<defs><linearGradient id="nx-eff" x1="0" x2="1"><stop offset="0" stop-color="#F5A524"></stop><stop offset=".5" stop-color="#FF6A3D"></stop><stop offset="1" stop-color="#8B5CF6"></stop></linearGradient></defs>`;
     for (const v of [lo + 0.02, (lo + hi) / 2, hi - 0.02]) svg += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"></line><text x="${pad - 4}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="ax">${Math.round(v * 100)}</text>`;
     svg += `<line x1="${pad}" x2="${W}" y1="${y(la.efficiency).toFixed(1)}" y2="${y(la.efficiency).toFixed(1)}" class="sp" stroke-dasharray="5 4"></line>`;
-    svg += `<polyline points="${entries.map(([, [v]], i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="url(#nx-eff)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
-    entries.forEach(([m, [v, n]], i) => {
+    svg += `<polyline points="${entries.map(([, m], i) => `${x(i).toFixed(1)},${y(m.efficiency).toFixed(1)}`).join(" ")}" fill="none" stroke="url(#nx-eff)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+    entries.forEach(([m, { efficiency: v, hours: n }], i) => {
       const [yy, mm] = m.split("-").map(Number);
       svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4.5" fill="var(--card-background-color)" stroke="#FF6A3D" stroke-width="2.5"><title>${this._t.months[mm - 1]} ${yy}: ${pct(v)} (${n} ${c.hours})</title></circle>`;
       if (entries.length <= 14 || i % 2 === 0) svg += `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${this._t.months[mm - 1]}</text>`;

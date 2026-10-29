@@ -2,8 +2,15 @@
 // and actual, the weather of each hour, and for a chosen hour how its forecast comes about.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/day".
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
+const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+
 const DAY_TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     today: "Heute", yesterday: "Gestern", tomorrow: "Morgen", prev: "Tag zurück", next: "Tag vor",
     dayAhead: "Prognose Vortag", morning: "Prognose 6 Uhr", expected: "Erwartung", actual: "Ist", forecast: "Prognose",
     held: "Prognose laufend", deviation: "Abweichung", peak: "Spitze", band: "Spanne P10–P90", now: "jetzt",
@@ -32,6 +39,7 @@ const DAY_TEXT = {
     kwh: "kWh", w: "W",
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     today: "Today", yesterday: "Yesterday", tomorrow: "Tomorrow", prev: "Previous day", next: "Next day",
     dayAhead: "Day-ahead forecast", morning: "Forecast 6 am", expected: "Expected", actual: "Actual", forecast: "Forecast",
     held: "Running forecast", deviation: "Deviation", peak: "Peak", band: "Range P10–P90", now: "now",
@@ -112,8 +120,10 @@ class NoxcastDay extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/day", offset: this._offset }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/day", offset: this._offset }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
+      this._data = data;
       this._loaded = Date.now();
       this._error = null;
       const e = (this._data.entries || [])[0];
@@ -153,18 +163,18 @@ class NoxcastDay extends HTMLElement {
   // the main series of an array: actual where measured, expectation (today) or forecast for the rest
   _main(arr) {
     const now = this._data.now, out = new Map();
-    const actual = new Map(arr.actual || []);
+    const actual = new Map(tsRows(arr.actual, "wh"));
     if (this._phase === "past") return actual;
-    const rest = new Map(this._phase === "today" ? arr.expected || [] : arr.forecast || []);
+    const rest = new Map(tsRows(this._phase === "today" ? arr.expected : arr.forecast, "wh"));
     for (const [t, v] of rest) out.set(t, t + HOUR <= now && actual.has(t) ? actual.get(t) : v);
     return out;
   }
 
   // the reference the day is measured against: morning forecast today, day-ahead forecast otherwise
   _reference(arr) {
-    if (this._phase === "today" && arr.morning && arr.morning.length) return new Map(arr.morning);
-    if (arr.day_ahead && arr.day_ahead.length) return new Map(arr.day_ahead);
-    return this._phase === "future" ? new Map(arr.forecast || []) : new Map();
+    if (this._phase === "today" && arr.morning && arr.morning.t.length) return new Map(tsRows(arr.morning, "wh"));
+    if (arr.day_ahead && arr.day_ahead.t.length) return new Map(tsRows(arr.day_ahead, "wh"));
+    return this._phase === "future" ? new Map(tsRows(arr.forecast, "wh")) : new Map();
   }
 
   _sum(m) { let s = 0; for (const v of m.values()) s += v; return s; }
@@ -223,13 +233,13 @@ class NoxcastDay extends HTMLElement {
     const t = this._t, phase = this._phase;
     const main = e.arrays.reduce((a, arr) => a + this._sum(this._main(arr)), 0);
     const ref = e.arrays.reduce((a, arr) => a + this._sum(this._reference(arr)), 0);
-    const refLabel = phase === "today" && e.arrays.some((a) => a.morning && a.morning.length) ? t.morning : phase === "future" ? t.forecast : t.dayAhead;
+    const refLabel = phase === "today" && e.arrays.some((a) => a.morning && a.morning.t.length) ? t.morning : phase === "future" ? t.forecast : t.dayAhead;
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
     const totals = new Map();
     for (const arr of e.arrays) for (const [h, v] of this._main(arr)) totals.set(h, (totals.get(h) || 0) + v);
     let peakT = null, peak = 0;
     for (const [h, v] of totals) if (v > peak) { peak = v; peakT = h; }
-    const band = e.band || [];
+    const band = tsRows(e.band, "p10", "p90");
     const figs = [[mainLabel, `${this._kwh(main)} ${t.kwh}`]];
     if (ref > 0 && phase !== "future") {
       const dev = (main - ref) / ref;
@@ -252,15 +262,15 @@ class NoxcastDay extends HTMLElement {
   _chart(e) {
     const t = this._t, d = this._data, hours = this._hours(), now = d.now, phase = this._phase;
     const W = 960, X0 = 40, X1 = W - 10, Hp = 240, top = 12;
-    const sky = new Map((e.weather || []).map(([ts, g, c, temp]) => [ts, [g, c, temp]]));
+    const sky = new Map(tsRows(e.weather, "ghi", "clear", "temp").map(([ts, g, c, temp]) => [ts, [g, c, temp]]));
     const lit = hours.filter((h) => e.arrays.some((a) => (this._main(a).get(h) || 0) > 1 || (this._reference(a).get(h) || 0) > 1) || (sky.get(h) && sky.get(h)[1] > 20));
     const h0 = lit.length ? Math.max(d.start, lit[0] - HOUR) : d.start + 5 * HOUR, h1 = lit.length ? Math.min(d.end, lit[lit.length - 1] + 2 * HOUR) : d.end - 3 * HOUR;
     const span = hours.filter((h) => h >= h0 && h < h1);
     const x = (ts) => X0 + (ts - h0) / (h1 - h0) * (X1 - X0);
     const mains = e.arrays.map((a) => this._main(a)), refs = e.arrays.map((a) => this._reference(a));
-    const held = e.arrays.map((a) => new Map(a.held || []));
+    const held = e.arrays.map((a) => new Map(tsRows(a.held, "wh")));
     const total = (maps, h) => maps.reduce((s, m) => s + (m.get(h) || 0), 0);
-    const band = new Map((e.band || []).map(([ts, lo, hi]) => [ts, [lo, hi]]));
+    const band = new Map(tsRows(e.band, "p10", "p90").map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const peakW = e.arrays.reduce((a, arr) => a + (arr.peak_w || 0), 0);
     const max = Math.max(200, ...span.map((h) => Math.max(total(mains, h), total(refs, h), band.has(h) ? band.get(h)[1] : 0))) * 1.08;
     const ymax = Math.min(max, peakW > 0 ? Math.max(peakW, 200) : max);
@@ -326,7 +336,7 @@ class NoxcastDay extends HTMLElement {
       svg += `<rect x="${x(h).toFixed(1)}" y="0" width="${(x(h + HOUR) - x(h)).toFixed(1)}" height="${Sy + Sh}" class="hit" data-act="hour" data-t="${h}"><title>${this._hm(h)}: ${Math.round(total(mains, h))} W (${parts})</title></rect>`;
     }
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? `${t.actual} / ${t.expected}` : t.forecast;
-    const refLabel = phase === "today" && e.arrays.some((a) => a.morning && a.morning.length) ? t.morning : phase === "future" ? t.forecast : t.dayAhead;
+    const refLabel = phase === "today" && e.arrays.some((a) => a.morning && a.morning.t.length) ? t.morning : phase === "future" ? t.forecast : t.dayAhead;
     const legend = [...e.arrays.map((a, i) => `<span><i class="sw" style="background:${DAY_COLORS[i % 6]}"></i>${this._esc(a.name)}</span>`),
       `<span class="muted">${mainLabel}</span>`,
       phase !== "future" ? `<span><i class="ln dashed"></i>${refLabel}</span>` : "",
@@ -436,10 +446,10 @@ class NoxcastDay extends HTMLElement {
 
   // the expectation for the day at each recorded hour: a fan of hourly curves and the day totals converging
   _history(e) {
-    const t = this._t, d = this._data, snaps = (e.history || []).map(([ts, hs]) => [ts, new Map(hs)]);
+    const t = this._t, d = this._data, snaps = (e.history || []).map((s) => [s.at, new Map(tsRows(s, "wh"))]);
     if (!snaps.length) return "";
     const dayAhead = new Map();
-    for (const arr of e.arrays) for (const [h, v] of arr.day_ahead || []) dayAhead.set(h, (dayAhead.get(h) || 0) + v);
+    for (const arr of e.arrays) for (const [h, v] of tsRows(arr.day_ahead, "wh")) dayAhead.set(h, (dayAhead.get(h) || 0) + v);
     const result = new Map();
     for (const arr of e.arrays) for (const [h, v] of this._main(arr)) result.set(h, (result.get(h) || 0) + v);
     const resultSum = this._sum(result), final = this._phase === "past";
@@ -568,7 +578,7 @@ class NoxcastDay extends HTMLElement {
     if (h === null || !steps.length) return `${head}<p class="muted">${h === null ? t.hourHint : t.noSteps}</p>`;
     const sum = (k) => steps.reduce((a, s) => a + (s[k] || 0), 0);
     const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat"].map((k) => [k, sum(k), "step"]), ["result", sum("result"), "total"]];
-    const at = (key, a) => new Map(a[key] || []).get(h);
+    const at = (key, a) => new Map(tsRows(a[key], "wh")).get(h);
     if (phase === "today" && h + HOUR > now) {
       const exp = arrays.reduce((a, arr) => a + (at("expected", arr) || 0), 0);
       if (Math.abs(exp - sum("result")) >= 1) items.push(["corr", exp - sum("result"), "step"], ["expected", exp, "total"]);

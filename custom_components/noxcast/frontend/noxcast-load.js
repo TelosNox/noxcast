@@ -1,8 +1,15 @@
 // Noxcast panel section "Load": the learned load profile, the consumers and the forecast by part.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/load".
 
+// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
+// updated while this page was open, and the module asks for a reload instead of misreading the data
+const WS_SCHEMA = 1;
+// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
+const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+
 const LOAD_TEXT = {
   de: {
+    outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     noLoad: "Die Lastprognose ist nicht eingerichtet. In der Noxcast-Konfiguration den Hausverbrauch-Sensor eintragen und Verbraucher mit eigenem Sensor hinzufügen.",
     notLearned: "Das Lastprofil wird beim nächsten Lernlauf erstellt.",
     restToday: "Last Rest heute", tomorrow: "Last morgen", correction: "Korrektur jetzt", sustained: "Dauerlast", sustainedSince: (h) => `seit ${h}`, days: "Tage Daten",
@@ -23,6 +30,7 @@ const LOAD_TEXT = {
     kwh: "kWh", now: "jetzt", today: "heute",
   },
   en: {
+    outdated: "Noxcast was updated – please reload the page",
     noLoad: "The load forecast is not set up. Set the house load sensor in the Noxcast configuration and add consumers with their own sensor.",
     notLearned: "The load profile is created by the next learning run.",
     restToday: "Load rest of today", tomorrow: "Load tomorrow", correction: "Correction now", sustained: "Sustained load", sustainedSince: (h) => `since ${h}`, days: "days of data",
@@ -68,8 +76,10 @@ class NoxcastLoad extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      this._data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/load" }),
+      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/load" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
+      this._data = data;
       this._loaded = Date.now();
       this._error = null;
     } catch (err) {
@@ -106,8 +116,8 @@ class NoxcastLoad extends HTMLElement {
   _hours(e) {
     const fc = e.forecast;
     if (!fc) return [];
-    const parts = Object.fromEntries(Object.entries(fc.consumers).map(([sid, s]) => [sid, new Map(s)]));
-    return fc.base.map(([ts, b]) => {
+    const parts = Object.fromEntries(Object.entries(fc.consumers).map(([sid, s]) => [sid, new Map(tsRows(s, "w"))]));
+    return tsRows(fc.base, "w").map(([ts, b]) => {
       const c = Object.fromEntries(Object.entries(parts).map(([sid, m]) => [sid, m.get(ts) || 0]));
       return [ts, b, c, b + Object.values(c).reduce((a, v) => a + v, 0)];
     });
@@ -252,7 +262,7 @@ class NoxcastLoad extends HTMLElement {
       <td class="num"><span class="evbar"><i style="width:${(g.power_w / max * 100).toFixed(0)}%"></i></span>${this._num(g.power_w / 1000, 1)} kW</td>
       <td class="num">${g.minutes < 90 ? `${g.minutes} min` : `${this._num(g.minutes / 60, 1)} h`}</td>
       <td class="num">${this._kwh(g.energy_wh)} ${t.kwh}</td><td class="num">${g.count}×</td>
-      <td class="num">${g.hours[0] === g.hours[1] ? `${g.hours[0]} h` : `${g.hours[0]}–${g.hours[1] + 1} h`}</td></tr>`).join("");
+      <td class="num">${g.hours.q1 === g.hours.q3 ? `${g.hours.q1} h` : `${g.hours.q1}–${g.hours.q3 + 1} h`}</td></tr>`).join("");
     return `<table><thead><tr><th class="num">${t.evPower}</th><th class="num">${t.evDuration}</th><th class="num">${t.evEnergy}</th>
       <th class="num">${t.evCount}</th><th class="num">${t.evHours}</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="help">${t.evHelp(Math.round(evs.days))}</p>`;

@@ -48,18 +48,21 @@ def data(**kw) -> object:
 
 
 def test_series_and_band_rounding_and_window():
-    assert views.series({2.0: 1.26, 1.0: 3.0}) == [[1.0, 3.0], [2.0, 1.3]]
-    assert views.series({1.0: 1.0, 2.0: 2.0, 3.0: 3.0}, 2.0, 3.0) == [[2.0, 2.0]]
-    assert views.band_series({"hours": {5.0: (1.04, 2.06), 1.0: (0.0, 0.0)}}, 2.0) == [[5.0, 1.0, 2.1]]
-    assert views.band_series(None) == []
+    assert views.series({2.0: 1.26, 1.0: 3.0}) == {"t": [1.0, 2.0], "wh": [3.0, 1.3]}
+    assert views.series({1.0: 1.0, 2.0: 2.0, 3.0: 3.0}, 2.0, 3.0) == {"t": [2.0], "wh": [2.0]}
+    assert views.band_series({"hours": {5.0: (1.04, 2.06), 1.0: (0.0, 0.0)}}, 2.0) == {"t": [5.0], "p10": [1.0], "p90": [2.1]}
+    assert views.band_series(None) == {"t": [], "p10": [], "p90": []}
+    assert views.columns([(1.0, 2, 3)], "a", "b") == {"t": [1.0], "a": [2], "b": [3]}
 
 
 def test_learned_arrays():
-    la = model.LearnedArray(efficiency=0.9)
+    la = model.LearnedArray(efficiency=0.9, efficiency_months={"2026-06": [0.91, 120]})
     out = views.learned_arrays(arrays(), {"roof": la}, datetime(2026, 7, 1, 2, tzinfo=timezone.utc))
     assert [list(a) for a in out] == [["id", "name", "tilt", "azimuth", "peak_w", "planes", "learned", "facade_cells",
                                        "last_learning"]] * 2
-    assert out[0]["learned"] == la.as_dict() and out[0]["last_learning"] == "2026-07-01T02:00:00+00:00"
+    assert out[0]["learned"] == {**la.as_dict(), "efficiency_months": {"2026-06": {"efficiency": 0.91, "hours": 120}}}
+    assert la.efficiency_months == {"2026-06": [0.91, 120]}                       # the stored state stays as it is
+    assert out[0]["last_learning"] == "2026-07-01T02:00:00+00:00"
     assert out[1]["learned"] is None and out[1]["facade_cells"] == {}
     assert out[1]["planes"] == [{"tilt": 90, "azimuth": 270, "peak_w": 400}, {"tilt": 90, "azimuth": 90, "peak_w": 200}]
 
@@ -68,10 +71,11 @@ def test_today_arrays_and_totals():
     d = data()
     out = views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400)
     roof = out[0]
-    assert roof["expected"] == [[A + 12 * H, 310.1]] and roof["forecast"] == [[A + 12 * H, 305.0]]
-    assert roof["loss"] == [[A + 9 * H, 12.3]] and roof["periods"] == [{"kind": "shade"}]
-    assert len(roof["tomorrow"]) == 24 and roof["tomorrow_wh"] == 4001
-    assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == [] and out[1]["tomorrow_wh"] == 0
+    assert roof["expected"] == {"t": [A + 12 * H], "wh": [310.1]} and roof["forecast"] == {"t": [A + 12 * H], "wh": [305.0]}
+    assert roof["loss"] == {"t": [A + 9 * H], "wh": [12.3]} and roof["periods"] == [{"kind": "shade"}]
+    assert len(roof["tomorrow"]["wh"]) == 24 and roof["tomorrow_wh"] == 4001
+    assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == {"t": [], "wh": []}
+    assert out[1]["tomorrow_wh"] == 0
     sim = bt.Simulation(points=[(A + 12 * H, 0.512345)], full_at=A + 14 * H,
                         hours={A + 12 * H: {"lost": 10.04}, A + 30 * H: {"lost": 99.0}})
     d.battery = {"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1), "day_end": A + 86400, "charge_start": A + 32 * H}
@@ -80,8 +84,9 @@ def test_today_arrays_and_totals():
               "c2": {"now": SimpleNamespace(pv_share=0.0), "today": None}}
     totals = views.today_totals(d, {"c1": SimpleNamespace(name="Washer")}, 3, DAY, day_start)
     assert list(totals) == ["days", "load", "band", "battery", "plan"]
-    assert totals["load"] == [[A + 12 * H, 456.8]] and totals["band"] == [[A + 12 * H, 250.0, 350.1]]
-    assert totals["battery"] == {"points": [[A + 12 * H, 0.5123]], "full": A + 14 * H, "empty": None, "lost_today": 10.0,
+    assert totals["load"] == {"t": [A + 12 * H], "wh": [456.8]}
+    assert totals["band"] == {"t": [A + 12 * H], "p10": [250.0], "p90": [350.1]}
+    assert totals["battery"] == {"points": {"t": [A + 12 * H], "soc": [0.5123]}, "full": A + 14 * H, "empty": None, "lost_today": 10.0,
                                  "charge_start": A + 32 * H, "max": 0.9, "min": 0.1}
     assert totals["plan"] == [{"name": "Washer", "now": 0.123, "start": 1.0, "end": 2.0, "pv": 0.5},
                               {"name": "c2", "now": 0.0, "start": None, "end": None, "pv": None}]
@@ -115,9 +120,14 @@ def test_load_entry_and_model_summaries():
     assert tv["model"]["expected"][:3] == [0.0, 60.0, 0.0] and hp["model"] == {
         "mode": "heat", "threshold": 15.0, "base_wh": 1000.0, "slope_wh": 200.0, "r2": 0.8, "days": 40}
     assert w["kind"] == "profile" and w["model"] is None and w["profile"] == profile.as_dict()
-    assert out["forecast"] == {"k": 1.1, "sustained": 20.0, "sustained_since": 9.0, "base": [[1.0, 4.0], [2.0, 5.0]],
-                               "consumers": {"dw": [[1.0, 3.0]]}}
+    assert out["forecast"] == {"k": 1.1, "sustained": 20.0, "sustained_since": 9.0,
+                               "base": {"t": [1.0, 2.0], "w": [4.0, 5.0]}, "consumers": {"dw": {"t": [1.0], "w": [3.0]}}}
     assert views.load_entry("s", None, {}, {}, {}, None, None, None, None)["forecast"] is None
+    events = {"days": 30.0, "runs": 4, "groups": [{"power_w": 2000, "count": 4, "hours": [8, 11], "last": 1.0}]}
+    out = views.load_entry("s", None, {}, {}, {}, None, None, events, None)
+    assert out["events"] == {"days": 30.0, "runs": 4, "groups": [{"power_w": 2000, "count": 4, "hours": {"q1": 8, "q3": 11},
+                                                                  "last": 1.0}]}
+    assert events["groups"][0]["hours"] == [8, 11]                                  # the stored events stay as they are
 
 
 def test_sensor_roles_rows_and_diagnostics():
@@ -167,7 +177,8 @@ def test_battery_entry_and_reviews():
                       "charge_start": A + 32 * H})
     out = views.battery_entry(batteries, {}, d, A + 11.5 * H)
     assert list(out) == ["batteries", "storage", "hours", "day_end", "charge_start", "sim"]
-    assert out["hours"] == [[A + 11 * H, 320.0, 100.0], [A + 12 * H, 310.0, 200.1], [A + 13 * H, 400.0, 300.0]]
+    assert out["hours"] == {"t": [A + 11 * H, A + 12 * H, A + 13 * H], "pv": [320.0, 310.0, 400.0],
+                            "load": [100.0, 200.1, 300.0]}
     assert out["sim"] == {"full": A + 14 * H, "empty": None, "lost_wh": 11, "grid_wh": 1, "charged_wh": 100}
     assert out["storage"]["max_charge_w"] == 2000 and out["storage"]["max_discharge_w"] is None
     stats = {"sensor.soc": [{"start": A, "min": 20.0, "max": 60.0}, {"start": datetime.fromtimestamp(A + H, timezone.utc),
@@ -206,12 +217,15 @@ def test_day_view_of_today_merges_archive_and_current_data():
     roof, wall = view["arrays"]
     assert list(roof) == ["id", "name", "peak_w", "steps", "efficiency", "day_ahead", "actual", "forecast", "morning",
                           "held", "expected", "correction", "periods"]
-    assert roof["day_ahead"] == [[A + 4 * H, 9.0], [A + 5 * H, 9.0], [A + 12 * H, 9.0]] and wall["day_ahead"] == []
-    assert roof["actual"] == [[A + 10 * H, 200.0]] and wall["actual"] == [] and wall["efficiency"] == model.DEFAULT_EFFICIENCY
-    assert roof["correction"] == 0.05 and wall["correction"] is None and len(roof["forecast"]) == 24
-    assert view["band"] == [[A + 12 * H, 250.0, 350.1]] and view["history"] == []
-    weather = {w[0]: w for w in view["weather"]}
-    assert weather[A + 12 * H][1] == 620.0 and weather[A + 12 * H][3] == 20.0      # the current source wins
+    none = {"t": [], "wh": []}
+    assert roof["day_ahead"] == {"t": [A + 4 * H, A + 5 * H, A + 12 * H], "wh": [9.0, 9.0, 9.0]} and wall["day_ahead"] == none
+    assert roof["actual"] == {"t": [A + 10 * H], "wh": [200.0]} and wall["actual"] == none
+    assert wall["efficiency"] == model.DEFAULT_EFFICIENCY
+    assert roof["correction"] == 0.05 and wall["correction"] is None and len(roof["forecast"]["t"]) == 24
+    assert view["band"] == {"t": [A + 12 * H], "p10": [250.0], "p90": [350.1]} and view["history"] == []
+    w = view["weather"]
+    i = w["t"].index(A + 12 * H)
+    assert w["ghi"][i] == 620.0 and w["temp"][i] == 20.0                            # the current source wins
     hours = [model.WeatherHour(t, w.ghi, None, None, w.temp) for t, w in sorted(
         {**{h.start: h for h in explain.archived_weather(archive.day(arc, DAY))},
          **{w.start: w for w in d.weather if A <= w.start < A + 86400}}.items())]
@@ -221,7 +235,39 @@ def test_day_view_of_today_merges_archive_and_current_data():
     later = views.day_view(SITE, arrays(), {}, None, d, A + 86400, A + 2 * 86400, A + 12.5 * H)
     assert list(later["arrays"][0]) == ["id", "name", "peak_w", "steps", "efficiency", "day_ahead", "actual", "forecast"]
     assert views.day_pv(view) == {A + 10 * H: 200.0}
-    assert views.day_pv({"arrays": [{"actual": [[1.0, 2.0]]}, {"actual": [[1.0, 3.0], [2.0, 1.0]]}, {}]}) == {1.0: 5.0, 2.0: 1.0}
+    assert views.day_pv({"arrays": [{"actual": {"t": [1.0], "wh": [2.0]}}, {"actual": {"t": [1.0, 2.0], "wh": [3.0, 1.0]}},
+                                    {}]}) == {1.0: 5.0, 2.0: 1.0}
+
+
+def _tuples(v, path=""):
+    """Paths of lists that hold lists (positional tuples) anywhere in a payload."""
+    if isinstance(v, dict):
+        return [p for k, x in v.items() for p in _tuples(x, f"{path}.{k}")]
+    if isinstance(v, list):
+        return ([path] if any(isinstance(x, (list, tuple)) for x in v) else []) + \
+            [p for x in v for p in _tuples(x, f"{path}[]")]
+    return []
+
+
+def test_payloads_hold_no_positional_tuples():
+    """Every value is named (see the conventions in views.py): no list of lists in any payload."""
+    d = data(load=lf.LoadForecast({A + 12 * H: 456.78}, {A + 12 * H: 400.0}, {"c": {A + 12 * H: 50.0}}, 1.0))
+    d.battery = {"sim": bt.Simulation(points=[(A + 12 * H, 0.5)], hours={}), "storage": bt.Battery(5000, 0.5, 0.9, 0.1),
+                 "day_end": A + 86400, "charge_start": A + 32 * H}
+    arc = {"2026-07-01": {"issued": "x", "hours": {str(int(A + 12 * H)): {"ghi": 500.0, "forecast": {"roof": 9.0}}},
+                          "history": {str(A + 6 * H): {str(A + 12 * H): 300.0}}}}
+    la = model.LearnedArray(efficiency=0.9, efficiency_months={"2026-06": [0.91, 120]})
+    events = {"days": 30.0, "groups": [{"power_w": 2000, "hours": [8, 11]}]}
+    payloads = {
+        "today": {"arrays": views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400),
+                  **views.today_totals(d, {}, 3, DAY, day_start)},
+        "day": views.day_view(SITE, arrays(), {}, archive.day(arc, DAY), d, A, A + 86400, A + 12.5 * H),
+        "battery": views.battery_entry({"b1": {"capacity": 5}}, {}, d, A + 11.5 * H),
+        "load": views.load_entry("s", None, {}, {}, {}, d.load, None, events, None),
+        "learned": views.learned_arrays(arrays(), {"roof": la}, None),
+    }
+    assert payloads["day"]["history"] == [{"at": A + 6 * H, "t": [A + 12 * H], "wh": [300.0]}]
+    assert {k: _tuples(v) for k, v in payloads.items()} == {k: [] for k in payloads}
 
 
 def test_replay_of_an_archived_day():

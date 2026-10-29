@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 H = 3600.0
 COUPLING_DC, COUPLING_AC = "dc", "ac"
@@ -136,6 +137,31 @@ def charge_start(pv: dict[float, float], load: dict[float, float], start: float,
     return None
 
 
+def day_simulation(batteries: list[Battery], pv: dict[float, float], load: dict[float, float] | None,
+                   band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float) -> dict | None:
+    """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
+
+    {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
+    the time full with PV at P10 and at P90. None without batteries or load forecast.
+    """
+    if not batteries or load is None:
+        return None
+    storage = combine(batteries)
+    if storage is None:
+        return None
+    tomorrow_end = day_end + 86400
+    start = charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
+    sim = simulate(storage, pv, load, now, start)
+    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+    if band_hours:
+        # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
+        sims = [simulate(storage, {**pv, **{t: lh[i] for t, lh in band_hours.items()}}, load, now, start) for i in (0, 1)]
+        out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
+                                      for s in sims],
+                       "full_at": [s.full_at for s in sims]}
+    return out
+
+
 def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_of) -> list[dict]:
     """Daily lowest and highest state of charge of all batteries as one storage, from hourly statistics.
 
@@ -179,6 +205,16 @@ def prediction(sim: Simulation, storage: Battery, made: float, day_end: float, u
             "empty_at": sim.empty_at if sim.empty_at is not None and sim.empty_at < until else None,
             "max_soc": round(max(today), 4) if today else None,
             "max": storage.max_soc, "min": storage.min_soc}
+
+
+def remember(log: dict[str, dict], day: date, battery: dict, now: float) -> dict[str, dict] | None:
+    """The log with the day's first prediction (see day_simulation) added and old days dropped; None if it has one."""
+    key = day.isoformat()
+    if key in log:
+        return None
+    log = {**log, key: prediction(battery["sim"], battery["storage"], now, battery["day_end"], battery["charge_start"])}
+    oldest = (day - timedelta(days=PREDICTION_DAYS)).isoformat()
+    return {k: v for k, v in log.items() if k >= oldest}
 
 
 def combined_soc(series: list[tuple[float, dict[float, float]]]) -> dict[float, float]:

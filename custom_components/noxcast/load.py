@@ -500,6 +500,21 @@ class Run:
     minutes: float | None = None
 
 
+RUNNING_W = 20                   # a consumer drawing at least this much counts as running
+
+
+def current_run(power: float | None, remaining: float | None, energy: float | None = None,
+                elapsed: float | None = None) -> Run | None:
+    """The run now from the consumer's current values: power (W) from its sensor or energy (Wh) / elapsed
+    time (min), remaining minutes. None when it does not run."""
+    minutes = remaining if remaining and remaining > 0 else None
+    if power is None and energy is not None and elapsed and elapsed > 0:
+        power = energy / (elapsed / 60)            # mean power of the program so far
+    if power is None or (power < RUNNING_W and minutes is None):
+        return None
+    return Run(power, minutes)
+
+
 def run_value(run: Run, now: float, t: float) -> float | None:
     """Mean W of hour t (for the part from now on) caused by a run; None after the run.
 

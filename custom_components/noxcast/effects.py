@@ -56,3 +56,19 @@ def significant_periods(site: Site, geo: ArrayGeometry, learned: LearnedArray, d
                 out.append({"type": "reflection", "start": run[0], "end": run[-1] + 3600, "wh": round(wh)})
         run = [t] if t is not None and gain[t] >= GAIN_MIN_HOUR_WH else []
     return sorted(out, key=lambda p: p["start"])
+
+
+def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, weather: list[WeatherHour],
+                forecast_wh: dict[float, float], expected: dict[float, float], day_start: float,
+                day_end: float) -> dict:
+    """Shade loss and reflection gain of the day, scaled like the expected output, with significant periods."""
+    if learned is None:
+        return {"loss": {}, "gain": {}, "periods": []}
+    loss, gain = hourly_effects(site, geo, learned, [w for w in weather if day_start <= w.start < day_end])
+
+    def scaled(series: dict[float, float]) -> dict[float, float]:
+        return {t: v * (expected.get(t, 0.0) / forecast_wh[t] if forecast_wh.get(t) else 1.0) for t, v in series.items()}
+
+    loss, gain = scaled(loss), scaled(gain)
+    periods = significant_periods(site, geo, learned, day_start, loss, gain, sum(expected.values()))
+    return {"loss": loss, "gain": gain, "periods": periods}

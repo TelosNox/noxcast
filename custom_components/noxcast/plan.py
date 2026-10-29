@@ -98,6 +98,23 @@ def plan(runs: list[RunProfile], surplus_h: dict[float, float], lost_h: dict[flo
     return out
 
 
+def day_plan(runs: list[RunProfile], pv: dict[float, float], load: dict[float, float], lost: dict[float, float],
+             now: float, day_end: float) -> dict[str, dict]:
+    """Best windows in the surplus of today (counting what the battery would lose) and of tomorrow, in run order."""
+    surplus = {t: max(pv.get(t, 0.0) - w, 0.0) for t, w in load.items()}
+    today = plan(runs, {t: v for t, v in surplus.items() if t < day_end}, lost, now, day_end)
+    tomorrow = plan(runs, {t: v for t, v in surplus.items() if day_end <= t}, {}, day_end, day_end + 86400)
+    return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
+                     "tomorrow": tomorrow[r.name]["best"]} for r in runs}
+
+
+def run_profile(name: str, power_w: float | None, minutes: float | None, learned: dict | None) -> RunProfile | None:
+    """A flexible consumer's run: configured values first, learned ones ({"power_w", "minutes"}) otherwise."""
+    learned = learned or {}
+    power, minutes = power_w or learned.get("power_w"), minutes or learned.get("minutes")
+    return RunProfile(name, float(power), float(minutes)) if power and minutes else None
+
+
 RUN_W = 30.0                      # hourly mean above which a consumer counts as running
 MIN_RUNS = 2
 

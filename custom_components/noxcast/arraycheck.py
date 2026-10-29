@@ -5,6 +5,7 @@ and point at things worth checking (soiling, ageing, a tilt or azimuth that does
 """
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from .model import (
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
 
+_LOGGER = logging.getLogger(__name__)
 H = 3600.0
 MONTH_MIN_HOURS = 20                 # hours a month needs for its efficiency
 GEOMETRY_MIN_HOURS = 60              # clear unshaded hours the geometry check needs
@@ -188,3 +190,15 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
     return {"tilt": round(tilt, 1), "azimuth": round(az, 1), "spread": round(s, 4), "spread_configured": round(configured, 4),
             "improvement": round(improvement, 3), "hours": len(rows), "deviates": off and confidence != "low",
             "confidence": confidence}
+
+
+def annotate(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
+             air_temp: dict[float, float] | None, satellite_ghi: dict[float, float] | None, year: int,
+             steady: set[float] | None = None) -> None:
+    """Set the panel explanations on a freshly learned array; a failure never stops the learning."""
+    try:
+        learned.months = month_balance(site, geo, learned, year, air_temp)
+        learned.efficiency_months = efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+        learned.geometry_check = check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Array check failed")

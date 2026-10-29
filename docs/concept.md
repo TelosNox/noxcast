@@ -541,6 +541,12 @@ orientation changes the geometry key and starts relearning.
   parts enabled via config subentries.
 - Internal modules: `pv/`, `load/`, `plan/`, plus shared weather access, storage, backtesting
   and diagnostics.
+- Functional core, imperative shell: every computation is a pure function without Home Assistant
+  imports, testable on plain data. `learning.py` learns arrays, archive values, load and consumer
+  models from fetched history (optionally only from selected days, for backtests);
+  `forecasting.py` turns learned state, weather and today's measurements into the hourly result
+  (PV, intraday correction, load, band, battery, plan). The coordinator only schedules, fetches
+  (statistics, weather, states), stores and publishes.
 - Stable public interface: versioned entity IDs and attribute schema.
 - Transparent storage: learned parameters as readable, versioned files; diagnostic export.
 - Backtesting harness: replay history as if forecasting at that time. Every model change must

@@ -127,6 +127,10 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         res = await hass.services.async_call("weather", "get_forecasts", {"type": kind}, target={"entity_id": weather_id},
                                              blocking=True, return_response=True)
         assert len(res[weather_id]["forecast"]) >= n
+    await client.send_json_auto_id({"type": "noxcast/today"})    # the day card: the day the data was computed for
+    msg = await client.receive_json()
+    assert msg["success"] and msg["result"]["day_start"] == dt_util.start_of_local_day().timestamp()
+    assert msg["result"]["arrays"][0]["tomorrow_wh"] > 0
     for offset in (0, 1, -1):                                 # the day view: today, tomorrow, a past day
         await client.send_json_auto_id({"type": "noxcast/day", "offset": offset})
         msg = await client.receive_json()

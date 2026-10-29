@@ -237,7 +237,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._hours = {}, {}
         try:
-            self.forecast_archive = (await self._archive_store.async_load() or {}).get("days", {})
+            self.forecast_archive = fc_archive.from_store(await self._archive_store.async_load())
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Noxcast forecast archive could not be read; starting a new one", exc_info=True)
             self.forecast_archive = {}
@@ -763,7 +763,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return lf.Run(power, minutes)
 
     def _archive_data(self) -> dict:
-        return {"days": self.forecast_archive}
+        return fc_archive.to_store(self.forecast_archive)
 
     def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
                           alt: dict[str, tuple[dict, dict]] | None = None,

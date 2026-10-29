@@ -26,14 +26,93 @@ weather entity as primary source.
 
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
+
+The stored dict is written only here (snapshot, add_*, prune) and read elsewhere only through the
+read-only views Day / Hour / Source (days(), day(), dates()); they parse the string keys and leave
+the stored format untouched. Values are the stored objects themselves: readers must not modify them.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date
 
 MIN_DAY_HOURS = 20
 HISTORY_HOURS = range(5, 22)     # local hours at which the day's expectation is recorded
+
+
+@dataclass(frozen=True, slots=True)
+class Source:
+    """An alternative weather model's forecast of an hour ("alt")."""
+    ghi: float | None                    # forecast GHI of that model, W/m²
+    forecast: dict[str, float]           # array id -> Wh from that model's weather
+    wx: dict                             # weather details (see details()), {} if none
+
+
+@dataclass(frozen=True, slots=True)
+class Hour:
+    """One archived hour of a day-ahead forecast."""
+    ts: float                            # hour start (UTC timestamp)
+    ghi: float | None                    # forecast GHI (mean of the models), W/m²
+    temp: float | None                   # forecast air temperature, °C
+    wx: dict                             # weather details (see details()), {} if none
+    forecast: dict[str, float]           # array id -> day-ahead forecast, Wh
+    actual: dict[str, float] | None      # array id -> measured Wh; None until the hour is learned
+    alt: dict[str, Source]               # weather model name -> its own forecast, {} if one model
+    curtailed: bool                      # possibly curtailed (full battery): actual is no measure of the sun
+    sat_ghi: float | None                # satellite-measured GHI, W/m²
+    measured: dict[str, float] | None    # array id -> model output from sat_ghi, Wh
+
+
+@dataclass(frozen=True, slots=True)
+class Day:
+    """One archived day: its day-ahead forecast hour by hour and how the expectation developed."""
+    date: str                            # local date, ISO
+    issued: str | None                   # when the forecast was made (ISO), the last snapshot before the day
+    hours: list[Hour]                    # by hour start
+    history: list[tuple[float, list[tuple[float, float]]]]   # (snapshot ts, [(hour start, Wh all arrays)]), by time
+
+    @property
+    def complete(self) -> bool:
+        """Every hour has its actual values."""
+        return bool(self.hours) and all(h.actual is not None for h in self.hours)
+
+
+def _hour(key: str, h: dict) -> Hour:
+    return Hour(float(key), h.get("ghi"), h.get("temp"), h.get("wx", {}), h.get("forecast", {}), h.get("actual"),
+                {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {})) for name, s in h.get("alt", {}).items()},
+                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"))
+
+
+def _day(key: str, d: dict) -> Day:
+    hours = sorted((_hour(k, h) for k, h in (d.get("hours") or {}).items()), key=lambda h: h.ts)
+    history = [(float(s), sorted((float(t), v) for t, v in snap.items()))
+               for s, snap in sorted((d.get("history") or {}).items(), key=lambda kv: float(kv[0]))]
+    return Day(key, d.get("issued"), hours, history)
+
+
+def days(archive: dict) -> list[Day]:
+    """All archived days, by date."""
+    return [_day(k, archive[k]) for k in sorted(archive)]
+
+
+def day(archive: dict, when: date | str) -> Day | None:
+    key = when if isinstance(when, str) else when.isoformat()
+    return _day(key, archive[key]) if key in archive else None
+
+
+def dates(archive: dict) -> list[str]:
+    """Archived dates (ISO), in order."""
+    return sorted(archive)
+
+
+def from_store(data: dict | None) -> dict:
+    """The archive from its stored form ({"days": archive})."""
+    return (data or {}).get("days", {})
+
+
+def to_store(archive: dict) -> dict:
+    return {"days": archive}
 
 
 def details(cloud: float | None = None, sun: float | None = None, wind: float | None = None,
@@ -107,21 +186,20 @@ def prune(archive: dict, oldest: date) -> None:
         del archive[key]
 
 
-def _forecast(hour: dict, source: str | None) -> dict[str, float] | None:
-    """Forecast of an hour from the primary source or an alternative source."""
+def forecast(hour: Hour, source: str | None = None) -> dict[str, float] | None:
+    """Forecast of an hour from the primary source or an alternative source (None if not archived)."""
     if source is None:
-        return hour["forecast"]
-    alt = hour.get("alt", {})
-    return alt[source]["forecast"] if source in alt else None
+        return hour.forecast
+    return hour.alt[source].forecast if source in hour.alt else None
 
 
 def alt_sources(archive: dict, since: date | None = None) -> list[str]:
     """Names of the alternative sources archived (since a date), in order of appearance."""
     names: dict[str, None] = {}
-    for key, day in sorted(archive.items()):
-        if since is None or key >= since.isoformat():
-            for hour in day["hours"].values():
-                names.update(dict.fromkeys(hour.get("alt", {})))
+    for d in days(archive):
+        if since is None or d.date >= since.isoformat():
+            for hour in d.hours:
+                names.update(dict.fromkeys(hour.alt))
     return list(names)
 
 
@@ -131,18 +209,18 @@ def day_totals(archive: dict, array_id: str | None = None, source: str | None = 
     source: None = primary weather source or an alternative source name.
     """
     out = {}
-    for key, day in archive.items():
-        hours = list(day["hours"].values())
-        if not hours or any("actual" not in h for h in hours):
+    for d in days(archive):
+        if not d.complete:
             continue
-        forecasts = [_forecast(h, source) for h in hours]
+        hours = d.hours
+        forecasts = [forecast(h, source) for h in hours]
         if any(f is None for f in forecasts):
             continue
-        ids = [array_id] if array_id else list(hours[0]["forecast"])
-        if any(sid not in h["actual"] or sid not in f for h, f in zip(hours, forecasts) for sid in ids):
+        ids = [array_id] if array_id else list(hours[0].forecast)
+        if any(sid not in h.actual or sid not in f for h, f in zip(hours, forecasts) for sid in ids):
             continue
-        out[key] = (sum(f[sid] for f in forecasts for sid in ids),
-                    sum(h["actual"][sid] for h in hours for sid in ids))
+        out[d.date] = (sum(f[sid] for f in forecasts for sid in ids),
+                       sum(h.actual[sid] for h in hours for sid in ids))
     return out
 
 

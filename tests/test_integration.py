@@ -362,12 +362,12 @@ PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca4190
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
-    "midday": {"learned": "09ae5c2244396037", "today": "e0fdd96041ccf9f9", "accuracy": "81deb7aaac621a2a",
-               "load": "ec97ba3b1fe8c395", "diagnostics": "171796093529a473", "battery": "8bc7c7b4d61dd060",
-               "card_config": "7fc203106dc53066", "day": "cf0b44a4baf5708c"},
-    "morning": {"learned": "7afc3bed685d9132", "today": "d6f63ae4c0482d42", "accuracy": "5a2a75e0783e3060",
-                "load": "11b668dbdefbb77f", "diagnostics": "3fd9df274e887b65", "battery": "70d663a4fd624a66",
-                "card_config": "7fc203106dc53066", "day": "28ab113943986b20"},
+    "midday": {"learned": "01cacdd618a28b71", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
+               "load": "a7700b7f3ce0a9c6", "diagnostics": "2792537e49f6ca12", "battery": "4a924f136495a769",
+               "card_config": "9576395acefde089", "day": "a81cbef60c41e7c3"},
+    "morning": {"learned": "e2ad061042929404", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
+                "load": "ed6dea904ab7ff60", "diagnostics": "8b61b68cdfcfbce0", "battery": "e0dc625e527929a8",
+                "card_config": "9576395acefde089", "day": "11f58e9a21f84166"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config")
 

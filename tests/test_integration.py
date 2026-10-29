@@ -359,9 +359,30 @@ def _fingerprint(c) -> str:
 # a refactoring must leave them as they are; a deliberate model change updates them.
 PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca41903a68936', '98f9e1716b5afcd9',
           'f2c51ee26fa14305']
+# Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
+# next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
+WS_PINNED: dict = {}
+WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config")
 
 
-async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer) -> None:
+async def _ws_prints(client) -> dict:
+    out = {}
+    for cmd in WS_COMMANDS:
+        await client.send_json_auto_id({"type": f"{DOMAIN}/{cmd}"})
+        msg = await client.receive_json()
+        assert msg["success"], (cmd, msg)
+        out[cmd] = hashlib.sha256(json.dumps(msg["result"]).encode()).hexdigest()[:16]
+    days = []
+    for offset in range(-31, 3):
+        await client.send_json_auto_id({"type": f"{DOMAIN}/day", "offset": offset})
+        msg = await client.receive_json()
+        assert msg["success"], (offset, msg)
+        days.append(msg["result"])
+    out["day"] = hashlib.sha256(json.dumps(days).encode()).hexdigest()[:16]
+    return out
+
+
+async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer, hass_ws_client) -> None:
     """Learning (PV, band, load, consumers, events), hourly updates (intraday, battery, plan) and the nightly
     run on synthetic data, compared bit for bit with pinned fingerprints."""
     import math
@@ -491,7 +512,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                              ("sensor.dryer", "0", "W")):
         hass.states.async_set(eid, value, {"unit_of_measurement": unit})
 
-    prints = []
+    prints, ws_prints = [], {}
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, alt)), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
@@ -511,6 +532,8 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
             freezer.move_to(when)
             await c.async_refresh()
             prints.append(_fingerprint(c))
+        client = await hass_ws_client(hass)
+        ws_prints["midday"] = await _ws_prints(client)
         freezer.move_to(times[3])
         await c._async_nightly(times[3])
         await c.async_refresh()
@@ -518,11 +541,13 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         freezer.move_to(times[4])
         await c.async_refresh()
         prints.append(_fingerprint(c))
+        ws_prints["morning"] = await _ws_prints(client)
         await hass.async_block_till_done()
     data = c.data
     assert c.band and data.load and data.battery and data.plan
     assert c.load_events is not None and all(c.consumer_models.values())
     assert prints == PINNED, prints
+    assert ws_prints == WS_PINNED, ws_prints
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

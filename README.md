@@ -228,8 +228,9 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
   how much clearer or cloudier the last hours were than forecast (half the shift for the current
   hour, halving every further hour, never above clear sky). The running hour counts from 15
   measured minutes.
-- The **P10–P90 band** comes from the archive: how far actual and forecast differed on past days
-  with similar clearness.
+- The **P10–P90 band** comes from the archive: how far the clearness of actual and forecast differed
+  on past days with similar weather. It shifts the clouds, so it never goes above a clear sky (plus
+  5 % for model errors).
 
 ### Weather
 

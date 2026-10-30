@@ -72,3 +72,25 @@ def series(store: dict, sensor: str) -> Series:
             if v is not None:
                 out[steps["t0"] + i * STEP] = float(v)
     return out
+
+
+def steady_band(five_min: Series) -> tuple[Series, Series]:
+    """(minimum, maximum) per period over itself and its two neighbours, the archive holding means only.
+
+    The counterpart of an hour's minimum and maximum for model.steady_hours: a period at the edge of
+    the kept values, or next to a gap, has none and does not count as steady.
+    """
+    low, high = {}, {}
+    for t, v in five_min.items():
+        before, after = five_min.get(t - STEP), five_min.get(t + STEP)
+        if before is not None and after is not None:
+            low[t], high[t] = min(before, v, after), max(before, v, after)
+    return low, high
+
+
+def summary(store: dict) -> dict:
+    """How far the archive reaches, for the diagnostics: months of data are lost if it silently stops."""
+    days = sorted(store)
+    filled = {s: sum(1 for d in store.values() if (d.get(s) or {}).get("w")) for d in store.values() for s in d}
+    return {"days": len(days), "first": days[0] if days else None, "last": days[-1] if days else None,
+            "days_with_values": filled}

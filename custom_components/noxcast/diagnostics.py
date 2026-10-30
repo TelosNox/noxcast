@@ -7,6 +7,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from . import fine as fn
 from .const import CONF_API_KEY, Series
 from .coordinator import NoxcastConfigEntry
 
@@ -36,5 +37,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
         "last_learning_error": coordinator.last_learning_error,
         "forecast_archive": coordinator.forecast_archive,
+        "fine_archive": fn.summary(coordinator.fine),
         "forecast_updated": data.updated.isoformat() if data and data.updated else None,
     }

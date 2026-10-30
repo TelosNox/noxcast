@@ -22,6 +22,7 @@ from datetime import date, datetime, tzinfo
 
 from . import archive as fc_archive
 from . import explain
+from . import fine as fn
 from . import learning as ln
 from .model import LearnedArray, measured_forecast, usable_samples
 from .solar import Site
@@ -184,17 +185,82 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
                              for name in ("holdout", "in_sample", "baseline")})}
 
 
-def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-        archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
-    """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing."""
+def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, store: dict, now: float,
+                 soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
+    """Would the 5-minute archive (fine.py) make a better model? {"arrays": {id: result}, "total": result}.
+
+    result = {"status", "today", "same_days", "fine", "merged"} or not enough data. All four on the same
+    unlearned hours within the archive's days, hourly and with measured irradiance, as a forecast is used:
+    today: learned from hours as now, on all days of the half; same_days: from hours, only on the archive's
+    days of the half; fine: from 5-minute means on those days; merged: today with the cells that fine learned.
+    same_days against fine is the effect of the resolution, today against merged the decision to switch.
+    Not run by the integration: it learns from about twelve times the samples.
+    """
+    day_of = _day_of(tz)
+    sat = history.satellite_ghi
+    if not sat:
+        reason = _not_enough(NO_SATELLITE)
+        return {"arrays": {sid: reason for sid in arrays}, "total": reason}
+    fine = ln.fine_history(site, history, store)
+    air = history.air_temp or {}
+    covered: dict[str, set[date]] = {}
+    tests: dict[str, Series] = {}
+    out: dict[str, dict] = {}
+    for sid, arr in arrays.items():
+        covered[sid] = {day_of(t) for t in ln.scaled_sum(fine.power, arr.sensors, {})}
+        tests[sid] = {t: p for t, p in _usable(arr, history, soc_full, exclusions).items()
+                      if t in sat and day_of(t) in covered[sid] and _lit(p, sat[t])}
+        folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
+        days = [len({day_of(t) for t in fold}) for fold in folds]
+        if min(days) < MIN_FOLD_DAYS or min(map(len, folds)) < MIN_FOLD_HOURS:
+            out[sid] = _not_enough(FEW_DAYS, sum(days), 2 * MIN_FOLD_DAYS)
+    good = {sid: arr for sid, arr in arrays.items() if sid not in out}
+    if not good:
+        total = _not_enough(FEW_DAYS, max((r["days"] for r in out.values()), default=0), 2 * MIN_FOLD_DAYS)
+        return {"arrays": out, "total": total}
+
+    names = ("today", "same_days", "fine", "merged")
+    runs: dict[str, dict[str, Pairs]] = {sid: {name: {} for name in names} for sid in good}
+    for even in (True, False):
+        def half(t: float, even: bool = even) -> bool:
+            return _even(t, day_of) == even
+
+        for sid, arr in good.items():
+            def in_archive(t: float, even: bool = even, days: set[date] = covered[sid]) -> bool:
+                return half(t, even) and day_of(t) in days
+
+            today = ln.learn_array(site, arr, history, now, soc_full, exclusions, half)
+            same = ln.learn_array(site, arr, history, now, soc_full, exclusions, in_archive)
+            sharp = ln.learn_array(site, arr, fine, now, soc_full, exclusions, in_archive, fn.STEP)
+            merged = LearnedArray(**{**today.__dict__, "cells": {**today.cells, **sharp.cells}})
+            hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tests[sid] if not half(t)]
+            for name, model in zip(names, (today, same, sharp, merged)):
+                fc = measured_forecast(site, arr.geometry, model, hours)
+                runs[sid][name].update({h[0]: (fc[h[0]], tests[sid][h[0]]) for h in hours})
+
+    def result(parts: dict[str, Pairs]) -> dict:
+        return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}
+
+    out.update({sid: result(run) for sid, run in runs.items()})
+    return {"arrays": out, "total": result({name: _summed([run[name] for run in runs.values()]) for name in names})}
+
+
+def _day_of(tz: tzinfo) -> Callable[[float], date]:
+    """The local day of a time; cached per 15 minutes, the finest step of a time zone's offset."""
     cache: dict[int, date] = {}
 
     def day_of(t: float) -> date:
-        hour = int(t // 3600)                     # time zones with half hours: hour starts stay in their day
-        if hour not in cache:
-            cache[hour] = datetime.fromtimestamp(t, tz).date()
-        return cache[hour]
+        slot = int(t // 900)
+        if slot not in cache:
+            cache[slot] = datetime.fromtimestamp(t, tz).date()
+        return cache[slot]
+    return day_of
 
+
+def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
+        archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
+    """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing."""
+    day_of = _day_of(tz)
     return {"version": VERSION, "computed_at": now,
             "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of),
             "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of)}

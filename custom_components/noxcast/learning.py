@@ -15,9 +15,12 @@ from datetime import datetime, timezone, tzinfo
 from . import archive as fc_archive
 from . import arraycheck as ac
 from . import events as ev
+from . import fine as fn
 from . import load as lf
 from . import plan as pl
-from .model import HOUR, ArrayGeometry, LearnedArray, learn, measured_forecast, steady_hours, usable_samples
+from .model import (
+    HOUR, ArrayGeometry, LearnedArray, clearsky_weather, learn, measured_forecast, steady_hours, usable_samples,
+)
 from .solar import Site
 from .const import Series
 
@@ -118,6 +121,36 @@ def scaled_sum(stats: dict[str, dict[float, float | None]], sensors: tuple[str, 
 
 def _only(series: Series, keep: Keep | None) -> Series:
     return series if keep is None else {t: v for t, v in series.items() if keep(t)}
+
+
+def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
+    """The history at the 5-minute archive's periods (fine.py), for learning with period=fine.STEP.
+
+    The archive holds power in W. State of charge and temperature keep the value of their hour. The
+    satellite's hour keeps its clearness, so that its mean stays the same and a low sun does not look
+    brighter than the clear sky. Hours without a satellite value stay without one.
+    """
+    sensors = {s for day in store.values() for s in day}
+    power = {s: fn.series(store, s) for s in sensors}
+    bands = {s: fn.steady_band(series) for s, series in power.items()}
+    hours = {t - t % HOUR for series in power.values() for t in series}
+    steps = [k * fn.STEP for k in range(int(HOUR // fn.STEP))]
+    soc: Series = {}
+    air: Series = {}
+    satellite: Series = {}
+    for hour in hours:
+        for step in steps:
+            if hour in history.soc:
+                soc[hour + step] = history.soc[hour]
+            if history.air_temp and hour in history.air_temp:
+                air[hour + step] = history.air_temp[hour]
+        if history.satellite_ghi and hour in history.satellite_ghi:
+            clear = [clearsky_weather(site, hour + step, period=fn.STEP).ghi for step in steps]
+            mean = sum(clear) / len(clear)
+            for step, ghi in zip(steps, clear):
+                satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
+    return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
+                     air or None, satellite or None)
 
 
 def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,

@@ -366,10 +366,10 @@ PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca4190
 WS_PINNED = {
     "midday": {"learned": "01cacdd618a28b71", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
                "load": "a7700b7f3ce0a9c6", "diagnostics": "2792537e49f6ca12", "battery": "4a924f136495a769",
-               "card_config": "9576395acefde089", "backtest": "PIN_MIDDAY", "day": "a81cbef60c41e7c3"},
+               "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
     "morning": {"learned": "e2ad061042929404", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
                 "load": "ed6dea904ab7ff60", "diagnostics": "8b61b68cdfcfbce0", "battery": "e0dc625e527929a8",
-                "card_config": "9576395acefde089", "backtest": "PIN_MORNING", "day": "11f58e9a21f84166"},
+                "card_config": "9576395acefde089", "backtest": "ddbd4cd122996b8d", "day": "11f58e9a21f84166"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 

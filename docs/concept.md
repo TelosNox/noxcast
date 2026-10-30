@@ -591,8 +591,8 @@ each half; or no satellite irradiance) gives an explicit `not_enough_data` with 
 The coordinator starts it after the nightly learning as a background task in the executor, on the
 history that run fetched and on copies of the learned state and the archive. It writes nothing to
 either; a failure is logged and the last result stays. It does not run after a manual relearn. The
-hold-out learns twice on half the data, so it takes about 1.7 times a learning run (9 s against 6 s
-on the reference installation): cheap enough for every night. The result is a few numbers per array
+hold-out learns twice on half the data, so it takes about twice a learning run: cheap enough
+for every night. The result is a few numbers per array
 under the additive key `pv_backtest` of the main store, so it survives a restart; `noxcast/backtest`
 sends it to the accuracy view. No entities or attributes.
 

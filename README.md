@@ -129,7 +129,8 @@ display.
   battery is filled to its state of charge, a window of the house lights up per step of load, and
   the pylon gets a lightning bolt per step (blue while drawing, yellow while feeding in). A step
   goes up at once; it goes down at once below 60 % of its limit, otherwise after 30 s below it.
-  Tapping a figure opens its entity.
+  Tapping a figure opens its entity. With several entities behind it, as with PV arrays and
+  batteries, it first lists them with their current values; tapping a row opens that entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
   load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
   band, a lane per array with shade and reflection periods, hourly weather symbols on top. The chart

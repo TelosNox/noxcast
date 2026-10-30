@@ -8,7 +8,7 @@
 // while this page was open, and the script asks for a reload instead of misreading the data
 export const WS_SCHEMA = 1;
 
-// a websocket request that gives up instead of waiting forever
+// a websocket request that gives up: one lost while the connection was rebuilt never answers
 export function ask(hass, msg, timeoutMs = 20000) {
   return Promise.race([hass.connection.sendMessagePromise(msg),
     new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs))]);

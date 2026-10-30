@@ -22,6 +22,7 @@
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 // Tapping PV, battery, home or grid opens the entity's more-info dialog.
+const { WS_SCHEMA, ask, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -59,13 +60,7 @@ const HOME_STEPS = [100, 300, 1000], GRID_STEPS = [300, 1000], STEP_OFF = 0.6, S
 const REFRESH_MS = 5 * 60 * 1000;
 const RETRY_MS = [5000, 15000, 30000, 60000];   // after a failed load; Noxcast may still be starting after a restart
 const LAG_RETRY_MS = 15000;                     // Noxcast still has the day before (its midnight run is not done)
-const TIMEOUT_MS = 20000;                        // a request lost while the connection was rebuilt never answers
-// payload schema this card reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the card asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
 const OUTDATED = { de: "Noxcast wurde aktualisiert – bitte Seite neu laden", en: "Noxcast was updated – please reload the page" };
-// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
-const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
 
 // weather conditions in classes; the strip marks where the class changes
 const WX_CLASS = { sunny: "sun", "clear-night": "sun", partlycloudy: "part", cloudy: "cloud", fog: "cloud", windy: "cloud",
@@ -77,11 +72,6 @@ const WX_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night"
   lightning: "mdi:weather-lightning", hail: "mdi:weather-hail", snowy: "mdi:weather-snowy", "snowy-rainy": "mdi:weather-snowy-rainy",
   exceptional: "mdi:alert-circle-outline" };
 
-// a websocket request that gives up instead of waiting forever
-function ask(hass, msg) {
-  return Promise.race([hass.connection.sendMessagePromise(msg),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS))]);
-}
 class NoxcastCard extends HTMLElement {
   static getConfigElement() { return document.createElement("noxcast-card-editor"); }
 
@@ -431,7 +421,7 @@ class NoxcastCard extends HTMLElement {
   _icon(name, cx, cy, size, color) {
     if (!name || !customElements.get("ha-icon")) return null;
     return `<foreignObject x="${cx - size / 2}" y="${(cy - size / 2).toFixed(1)}" width="${size}" height="${size}">
-      <ha-icon icon="${this._esc(name)}" style="--mdc-icon-size:${size}px;color:${color};display:block;line-height:0"></ha-icon></foreignObject>`;
+      <ha-icon icon="${esc(name)}" style="--mdc-icon-size:${size}px;color:${color};display:block;line-height:0"></ha-icon></foreignObject>`;
   }
 
   // more-info of the entity behind a tapped flow element
@@ -588,7 +578,7 @@ class NoxcastCard extends HTMLElement {
   _buildCompact(el, nodes, bus, shape) {
     const N = nodes.length, mid = (i) => ((i + 0.5) / N) * 100;
     const head = (n) => (this._icons ? `<span class="ic" data-ic="${n.key}" title="${n.label}"></span>` : `<span class="l">${n.label}</span>`);
-    const cell = (n) => `<div class="f" data-cell="${n.key}"${n.id ? ` data-more="${this._esc(n.id)}"` : ""}>${head(n)}
+    const cell = (n) => `<div class="f" data-cell="${n.key}"${n.id ? ` data-more="${esc(n.id)}"` : ""}>${head(n)}
       <span class="v" data-v="${n.key}"></span></div>`;
     const dots = (y) => [0, 1, 2, 3].map(() => `<circle cy="${y}" r="2.8" visibility="hidden"></circle>`).join("");
     let html;
@@ -688,7 +678,7 @@ class NoxcastCard extends HTMLElement {
     const el = this.shadowRoot && this.shadowRoot.getElementById("band");
     if (!el) return;
     const t = this._t, P = this._p;
-    if (!this._data) { el.innerHTML = `<div class="muted">${this._error && (this._tries || 0) > 2 ? this._esc(this._error) : "…"}</div>`; return; }
+    if (!this._data) { el.innerHTML = `<div class="muted">${this._error && (this._tries || 0) > 2 ? esc(this._error) : "…"}</div>`; return; }
     if (this._outdated) { el.innerHTML = `<div class="muted">${OUTDATED[this._lang.slice(0, 2)] || OUTDATED.en}</div>`; return; }
     const arrays = this._arrays();
     if (!arrays.length) { el.innerHTML = `<div class="muted">${t.noData}</div>`; return; }
@@ -1014,17 +1004,10 @@ class NoxcastCard extends HTMLElement {
     return { points, full, at };
   }
 
-  _hm(ts) {
-    return new Date(ts * 1000).toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit", timeZone: this._tz });
-  }
+  _hm(ts) { return hm(ts, this._lang, this._tz); }
 
-  _kwh(wh) {
-    return (wh / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  }
+  _kwh(wh) { return kwh(wh, this._lang); }
 
-  _esc(s) {
-    return String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-  }
 }
 
 // Smooth path through points (pixels) without overshoot: monotone cubic (Fritsch-Carlson), as " C..." segments.

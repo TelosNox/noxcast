@@ -10,6 +10,7 @@
 // humidity: sensor.outdoor_humidity
 // name: Außen                          # label of the measured values
 // look: noxcast                        # noxcast: the Noxcast panel look; plain: Home Assistant card
+const { WS_SCHEMA, ask, esc, num } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const W_TEXT = {
   de: { outside: "Außen", humidity: "Feuchte", kwh: "kWh", noWeather: "Noch kein Wetter von Noxcast",
@@ -32,10 +33,6 @@ const W_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night",
 const W_COLOR = { sunny: "#F2B233", "clear-night": "#F2B233", partlycloudy: "#C27A06", rainy: "#2F80C8", pouring: "#2F80C8",
   "lightning-rainy": "#2F80C8", snowy: "#2F80C8", "snowy-rainy": "#2F80C8", hail: "#2F80C8" };
 const W_REFRESH_MS = 15 * 60 * 1000;
-const W_TIMEOUT_MS = 20000;
-// payload schema this card reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the card asks for a reload instead of misreading the data
-const W_SCHEMA = 1;
 
 class NoxcastWeatherCard extends HTMLElement {
   static getStubConfig() { return { days: 5 }; }
@@ -89,14 +86,9 @@ class NoxcastWeatherCard extends HTMLElement {
   get _lang() { return this._hass.language || "en"; }
   get _entity() { return this._srcWeather; }
 
-  _ask(msg) {
-    return Promise.race([this._hass.connection.sendMessagePromise(msg),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), W_TIMEOUT_MS))]);
-  }
-
   async _loadSource() {
     try {
-      const src = await this._ask({ type: "noxcast/card_config" });
+      const src = await ask(this._hass, { type: "noxcast/card_config" });
       this._srcWeather = src && src.weather;
     } catch (err) {
       this._srcWeather = null;
@@ -108,8 +100,8 @@ class NoxcastWeatherCard extends HTMLElement {
   async _refresh() {
     if (!this._hass || !this._config.show_pv) return;
     try {
-      const today = await this._ask({ type: "noxcast/today" });
-      this._outdated = today.v !== W_SCHEMA;
+      const today = await ask(this._hass, { type: "noxcast/today" });
+      this._outdated = today.v !== WS_SCHEMA;
       this._pv = new Map((this._outdated ? [] : today.days || []).map((d) => [d.date, d]));
       this._tz = today.time_zone;
     } catch (err) {
@@ -139,7 +131,6 @@ class NoxcastWeatherCard extends HTMLElement {
     this._subFor = null;
   }
 
-  _esc(s) { return String(s ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
 
   // local calendar date of a timestamp in the Home Assistant time zone
   _date(ms) {
@@ -147,7 +138,7 @@ class NoxcastWeatherCard extends HTMLElement {
     return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
   }
 
-  _num(v, d = 0) { return Number(v).toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  _num(v, d = 0) { return num(v, this._lang, d); }
 
   _render() {
     if (!this.shadowRoot || !this._hass) return;
@@ -168,7 +159,7 @@ class NoxcastWeatherCard extends HTMLElement {
       const share = pv && pv.clear_wh ? `${Math.min(100, (100 * pv.wh) / pv.clear_wh).toFixed(1)}%` : null;
       const shown = share !== null && bar !== "none";
       return `<div class="day${shown ? ` bar-${bar}" style="--share:${share}` : ""}">
-        <span class="d">${this._esc(label)}</span>
+        <span class="d">${esc(label)}</span>
         <ha-icon icon="${W_ICON[f.condition] || "mdi:weather-cloudy"}" style="color:${W_COLOR[f.condition] || "var(--secondary-text-color)"}"></ha-icon>
         <span class="tmp">${f.temperature == null ? "–" : `${Math.round(f.temperature)}°`} <span class="lo">${f.templow == null ? "" : `${Math.round(f.templow)}°`}</span></span>
         <span class="rain">${rain}</span>
@@ -176,7 +167,7 @@ class NoxcastWeatherCard extends HTMLElement {
       </div>`;
     }).join("");
     const head = temp || hum ? `<div class="head">
-        <span class="lbl">${this._esc(c.name || t.outside)}</span>
+        <span class="lbl">${esc(c.name || t.outside)}</span>
         ${tv === null ? "" : `<span class="now">${this._num(tv, 1)}°</span>`}
         ${hv === null ? "" : `<span class="hum">${this._num(hv)} % ${t.humidity}</span>`}
       </div>` : "";

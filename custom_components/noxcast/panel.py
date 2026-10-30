@@ -61,8 +61,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
                                          "noxcast-diagnostics.js", "noxcast-battery.js",
                                          "noxcast-theme.js", "noxcast-day.js")
-    card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")
-    weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js")
+    card_version = await hass.async_add_executor_job(_version, "noxcast-card.js", "noxcast-common.js")
+    weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js", "noxcast-common.js")
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "frontend"), cache_headers=False)])
     await panel_custom.async_register_panel(

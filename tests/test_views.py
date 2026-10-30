@@ -249,6 +249,24 @@ def _tuples(v, path=""):
     return []
 
 
+METRIC = {"day_error": 0.1, "hour_error": 0.2, "bias": -0.01, "hour_mae_wh": 30.0, "days": 40, "hours": 400}
+BACKTEST = {"version": 1, "computed_at": A, "seconds": 9.3,
+            "replay": {"arrays": {"roof": {"status": "ok", "then": METRIC, "now": METRIC, "baseline": METRIC},
+                                  "gone": {"status": "ok", "then": METRIC, "now": METRIC, "baseline": METRIC}},
+                       "total": {"status": "ok", "then": METRIC, "now": METRIC, "baseline": METRIC}},
+            "holdout": {"arrays": {"roof": {"status": "not_enough_data", "reason": "few_days", "days": 12, "needed": 28}},
+                        "total": {"status": "not_enough_data", "reason": "few_days", "days": 12, "needed": 28}}}
+
+
+def test_backtest_entry():
+    e = views.backtest_entry(arrays(), BACKTEST)
+    assert e["arrays"][0]["id"] == "roof" and e["computed_at"] == A and "seconds" not in e
+    assert set(e["replay"]["arrays"]) == {"roof"} and e["replay"]["total"]["now"] == METRIC     # a removed array is not shown
+    assert e["holdout"]["arrays"]["roof"]["needed"] == 28
+    empty = views.backtest_entry(arrays(), None)                 # before the first run
+    assert empty["replay"] is None and empty["holdout"] is None and empty["computed_at"] is None
+
+
 def test_payloads_hold_no_positional_tuples():
     """Every value is named (see the conventions in views.py): no list of lists in any payload."""
     d = data(load=lf.LoadForecast({A + 12 * H: 456.78}, {A + 12 * H: 400.0}, {"c": {A + 12 * H: 50.0}}, 1.0))
@@ -265,6 +283,7 @@ def test_payloads_hold_no_positional_tuples():
         "battery": views.battery_entry({"b1": {"capacity": 5}}, {}, d, A + 11.5 * H),
         "load": views.load_entry("s", None, {}, {}, {}, d.load, None, events, None),
         "learned": views.learned_arrays(arrays(), {"roof": la}, None),
+        "backtest": views.backtest_entry(arrays(), BACKTEST),
     }
     assert payloads["day"]["history"] == [{"at": A + 6 * H, "t": [A + 12 * H], "wh": [300.0]}]
     assert {k: _tuples(v) for k, v in payloads.items()} == {k: [] for k in payloads}

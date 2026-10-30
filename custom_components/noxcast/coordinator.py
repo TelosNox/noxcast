@@ -6,7 +6,9 @@ around them: statistics, weather, current states, stores, and turning the config
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
+import time
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -29,6 +31,7 @@ from .const import (
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
 )
 from . import archive as fc_archive
+from . import backtest as pv_backtest
 from . import band as bd
 from . import fine as fn
 from . import events as ev
@@ -118,6 +121,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.load_events: dict | None = None         # recurring device runs in the house load (suggestions)
         self.band: dict | None = None                # learned forecast uncertainty (band.learn_band)
         self.load_backtest: dict | None = None
+        self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
+        self._backtest_task: asyncio.Task | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
@@ -148,6 +153,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
             self.band = bd.valid(stored.get("band"))
+            self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
             self.battery_log = dict(stored.get("battery_log") or {})
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
@@ -209,7 +215,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_nightly(self, _now: datetime) -> None:
         await self._async_record_fine()
-        await self.async_learn()
+        await self.async_learn(backtest=True)
 
     async def _async_record_fine(self) -> None:
         """Keep yesterday's (and any missed day's) 5-minute means per power sensor while the statistics exist."""
@@ -285,6 +291,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         today = self._today
         return {
             "band": self.band,
+            "pv_backtest": self.pv_backtest,
             "battery_log": self.battery_log,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
@@ -308,13 +315,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     # ------------------------------------------------------------------ learning
 
-    async def async_learn(self) -> bool:
-        """Relearn all arrays from history. Keeps the previous state on failure."""
+    async def async_learn(self, backtest: bool = False) -> bool:
+        """Relearn all arrays from history. Keeps the previous state on failure.
+
+        backtest: afterwards start the backtest in the background (the nightly run), on the same history.
+        """
         if not self.arrays:
             return True
         async with self._learn_lock:
             try:
-                await self._async_learn()
+                inputs = await self._async_learn()
             except Exception as err:  # noqa: BLE001
                 self.last_learning_error = str(err) or type(err).__name__
                 _LOGGER.exception("Noxcast learning failed; keeping the previous learned state")
@@ -322,9 +332,36 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.last_learning_error = None
         self._store.async_delay_save(self._store_data, 5)
         await self.async_request_refresh()
+        if backtest and (self._backtest_task is None or self._backtest_task.done()):
+            self._backtest_task = self.config_entry.async_create_background_task(
+                self.hass, self._async_backtest(*inputs), "noxcast backtest")
         return True
 
-    async def _async_learn(self) -> None:
+    async def _async_backtest(self, history: ln.PvHistory, now: float, soc_full: float,
+                              exclusions: list[tuple[float, float]]) -> None:
+        """Compare the model with the past (backtest.py); a failure leaves the last result in place."""
+        try:
+            result = await self.hass.async_add_executor_job(
+                self._run_backtest, dict(self.learned), dict(self.forecast_archive), history, now, soc_full, exclusions)
+        except Exception:  # noqa: BLE001 – learning and forecast do not depend on it
+            _LOGGER.exception("Noxcast backtest failed; keeping the last result")
+            return
+        self.pv_backtest = result
+        self._store.async_delay_save(self._store_data, 5)
+
+    def _run_backtest(self, learned: dict[str, LearnedArray], archive: dict, history: ln.PvHistory, now: float,
+                      soc_full: float, exclusions: list[tuple[float, float]]) -> dict:
+        """Executor. On copies: whatever happens here cannot reach the learned state or the archive."""
+        start = time.monotonic()
+        result = pv_backtest.run(self.site, self.arrays, copy.deepcopy(learned), history, copy.deepcopy(archive), now,
+                                 soc_full, exclusions, dt_util.get_default_time_zone())
+        seconds = round(time.monotonic() - start, 1)
+        _LOGGER.info("PV backtest took %.1f s: replay %s, hold-out %s", seconds, result["replay"]["total"],
+                     result["holdout"]["total"])
+        return {**result, "seconds": seconds}
+
+    async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
+        """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""
         now = dt_util.utcnow()
         start = now - timedelta(days=365 * HISTORY_YEARS)
         options = self.config_entry.data
@@ -350,6 +387,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
+        return history, now.timestamp(), soc_full, exclusions
 
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""

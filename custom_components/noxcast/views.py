@@ -175,6 +175,17 @@ def array_names(arrays: dict) -> list[dict]:
 
 # ---------------------------------------------------------------- noxcast/load
 
+# ---------------------------------------------------------------- noxcast/backtest
+
+def backtest_entry(arrays: dict, result: dict | None) -> dict:
+    """The last result of backtest.run for the arrays still configured; replay and holdout are None before the first."""
+    def part(name: str) -> dict | None:
+        p = (result or {}).get(name)
+        return {"total": p["total"], "arrays": {sid: r for sid, r in p["arrays"].items() if sid in arrays}} if p else None
+    return {"arrays": array_names(arrays), "computed_at": (result or {}).get("computed_at"),
+            "replay": part("replay"), "holdout": part("holdout")}
+
+
 def load_entry(house_load: str, profile, consumers: dict, consumer_profiles: dict, consumer_models: dict, forecast,
                backtest: dict | None, events: dict | None, last_learning: datetime | None) -> dict:
     """Load forecast of one entry: profiles, consumers with their learned model, the forecast by part, backtest."""

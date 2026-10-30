@@ -30,6 +30,7 @@ PANEL_PATH = "noxcast"
 WS_LEARNED = f"{DOMAIN}/learned"
 WS_TODAY = f"{DOMAIN}/today"
 WS_ACCURACY = f"{DOMAIN}/accuracy"
+WS_BACKTEST = f"{DOMAIN}/backtest"
 WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
@@ -44,6 +45,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_learned)
     websocket_api.async_register_command(hass, ws_today)
     websocket_api.async_register_command(hass, ws_accuracy)
+    websocket_api.async_register_command(hass, ws_backtest)
     websocket_api.async_register_command(hass, ws_load)
     websocket_api.async_register_command(hass, ws_diagnostics)
     websocket_api.async_register_command(hass, ws_battery)
@@ -161,6 +163,13 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
         days = await hass.async_add_executor_job(views.accuracy_days, c.forecast_archive, c.site)
         entries.append({"arrays": views.array_names(c.arrays), "days": days})
     _send(connection, msg, {"time_zone": hass.config.time_zone, "entries": entries})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_BACKTEST})
+@callback
+def ws_backtest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The last PV backtest for the accuracy view: past days with today's model, and unlearned days."""
+    _send(connection, msg, {"entries": [views.backtest_entry(c.arrays, c.pv_backtest) for c in _coordinators(hass)]})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LOAD})

@@ -21,6 +21,12 @@ const ACC_TEXT = {
     verdictModel: "Der größere Teil des Fehlers bleibt auch mit gemessenem Wetter. Hier lohnt ein Blick auf Verschattung, Ausrichtung und Wirkungsgrad.",
     verdictBoth: "Wettervorhersage und Modell tragen etwa gleich viel zum Fehler bei.",
     splitHelp: "Für jede vergangene Stunde rechnet Noxcast das Modell noch einmal mit der Einstrahlung aus dem Satellitenarchiv. Wetteranteil = Prognose − Modell mit gemessenem Wetter, Modellanteil = Modell mit gemessenem Wetter − Ist. Beide Balken zusammen ergeben die Tagesabweichung. Ein Rest bleibt immer: Satellitenwerte sind Flächenmittel und keine Messung am Dach.",
+    backtest: "Rückrechnung", hourError: "Stundenfehler", better: "besser", worse: "schlechter",
+    btReplay: "Archivierte Tage, vorhergesagtes Wetter", btThen: "Prognose damals", btNow: "Heutiges Modell", btNoMap: "Ohne Verschattungskarte",
+    btHoldout: "Ungelernte Tage, gemessenes Wetter", btUnseen: "Ungelernte Tage", btSeen: "Gelernte Tage",
+    btPending: "Noch keine Rückrechnung. Sie läuft nachts nach dem Lernen.", btNoSat: "Dafür braucht es das Satellitenarchiv (Optionen der Integration).",
+    btFew: (days, needed) => `Noch zu wenig Daten: ${days} von ${needed} Tagen.`,
+    btHelp: "Oben rechnet das heutige Modell die archivierten Tage mit der damaligen Wettervorhersage nach; unten lernt es auf jedem zweiten Tag und wird auf den übrigen mit gemessener Einstrahlung geprüft: Liegen die ungelernten Tage deutlich über den gelernten, merkt es sich Zufälle.",
     weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
   },
   en: {
@@ -38,6 +44,12 @@ const ACC_TEXT = {
     verdictModel: "The larger part of the error remains even with measured weather. Shading, orientation and efficiency are worth a look.",
     verdictBoth: "Weather forecast and model contribute about equally to the error.",
     splitHelp: "For every past hour Noxcast runs the model again on the irradiance from the satellite archive. Weather part = forecast − model on measured weather, model part = model on measured weather − actual. Both bars together are the daily deviation. Some rest always remains: satellite values are area means, not a measurement on the roof.",
+    backtest: "Backtest", hourError: "Hourly error", better: "better", worse: "worse",
+    btReplay: "Archived days, forecast weather", btThen: "Forecast then", btNow: "Today's model", btNoMap: "Without shading map",
+    btHoldout: "Unlearned days, measured weather", btUnseen: "Unlearned days", btSeen: "Learned days",
+    btPending: "No backtest yet. It runs at night after learning.", btNoSat: "This needs the satellite archive (options of the integration).",
+    btFew: (days, needed) => `Not enough data yet: ${days} of ${needed} days.`,
+    btHelp: "Above, today's model recomputes the archived days from the weather forecast of that time; below, it learns on every other day and is tested on the rest with measured irradiance: if the unlearned days lie clearly above the learned ones, it memorises chance.",
     weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
   },
 };
@@ -78,12 +90,20 @@ class NoxcastAccuracy extends HTMLElement {
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._error = null;
+      this._loadBacktest();
     } catch (err) {
       this._error = String((err && err.message) || err);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }
     this._render();
+  }
+
+  // the backtest comes separately and only adds a section: the tab works without it
+  async _loadBacktest() {
+    const data = await this._hass.connection.sendMessagePromise({ type: "noxcast/backtest" }).catch(() => null);
+    this._bt = data && data.v === WS_SCHEMA ? data : null;
+    if (this._bt) this._render();
   }
 
   // ------------------------------------------------------------ evaluation
@@ -157,7 +177,7 @@ class NoxcastAccuracy extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else {
       const all = this._days(this._s.source), days = this._inRange(all);
-      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>`;
+      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>${this._backtest()}`;
     }
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${this._controls()}${body}</div>`;
   }
@@ -186,6 +206,7 @@ class NoxcastAccuracy extends HTMLElement {
       <section class="card pad"><div class="figs">${figs}</div><p class="help">${t.help}</p></section>
       <section class="card pad"><h3>${t.perDay}</h3>${this._bars(days)}</section>
       ${this._split(days)}
+      ${this._backtest()}
       <section class="card pad">${sel ? this._hourly(sel) : `<h3>${t.hourly}</h3><p class="muted">${t.pick}</p>`}</section>
       <div class="split">
         <section class="card pad"><h3>${t.calendar}</h3>${this._calendar(days)}</section>
@@ -254,6 +275,36 @@ class NoxcastAccuracy extends HTMLElement {
       <div class="legend"><span><i class="sw" style="background:var(--nx-wx)"></i>${t.weatherPart}</span><span><i class="sw" style="background:var(--nx-md)"></i>${t.modelPart}</span>
         <span>&gt; 0 = ${t.over}</span></div>
       <p class="help">${t.splitHelp}</p></section>`;
+  }
+
+  // the model against the past: forecast then vs. today's model, unlearned vs. learned days, each with the baseline
+  _backtest() {
+    const t = this._t, entry = this._bt && (this._bt.entries || [])[0];
+    if (!entry) return "";
+    if (!entry.replay && !entry.holdout) return `<section class="card pad"><h3>${t.backtest}</h3><p class="muted">${t.btPending}</p></section>`;
+    const pick = (part) => part && (this._s.array === "all" ? part.total : (part.arrays || {})[this._s.array]);
+    const pc = (v, signed = false) => (v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${(v * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+    const row = (label, m, on) => `<tr${on ? ` class="on"` : ""}><td>${label}</td><td class="num">${pc(m.day_error)}</td><td class="num">${pc(m.hour_error)}</td><td class="num">${pc(m.bias, true)}</td></tr>`;
+    const gain = (m, base, key) => {
+      if (!m[key] || !base[key]) return "";
+      const g = 1 - m[key] / base[key];
+      return ` · <b class="${g >= 0 ? "good" : "bad"}">${Math.abs(Math.round(g * 100))} % ${g >= 0 ? t.better : t.worse}</b>`;
+    };
+    const fig = (label, m, key, name, detail) => `<div class="fig"><span class="muted small">${label} (${m.days} ${t.days}, ${m.hours} h)</span>
+      <span class="big">${pc(m[key])} <span class="muted small">${name}</span></span><span class="small muted">${detail}</span></div>`;
+    const missing = (label, r) => `<div class="fig"><span class="muted small">${label}</span><span class="small">${r.reason === "no_satellite" ? t.btNoSat : t.btFew(r.days, r.needed)}</span></div>`;
+    const rep = pick(entry.replay), hold = pick(entry.holdout), figs = [], rows = [];
+    const group = (label) => `<tr><th colspan="4">${label}</th></tr>`;
+    if (rep && rep.status === "ok") {
+      figs.push(fig(t.btReplay, rep.now, "day_error", t.error, `${t.btThen} ${pc(rep.then.day_error)}${gain(rep.now, rep.then, "day_error")} · ${t.btNoMap} ${pc(rep.baseline.day_error)}`));
+      rows.push(group(t.btReplay), row(t.btThen, rep.then), row(t.btNow, rep.now, true), row(t.btNoMap, rep.baseline));
+    } else if (rep) figs.push(missing(t.btReplay, rep));
+    if (hold && hold.status === "ok") {
+      figs.push(fig(t.btHoldout, hold.holdout, "hour_error", t.hourError, `${t.btSeen} ${pc(hold.in_sample.hour_error)} · ${t.btNoMap} ${pc(hold.baseline.hour_error)}${gain(hold.holdout, hold.baseline, "hour_error")}`));
+      rows.push(group(t.btHoldout), row(t.btUnseen, hold.holdout, true), row(t.btSeen, hold.in_sample), row(t.btNoMap, hold.baseline));
+    } else if (hold) figs.push(missing(t.btHoldout, hold));
+    const table = rows.length ? `<table class="btable"><thead><tr><th></th><th class="num">${t.error}</th><th class="num">${t.hourError}</th><th class="num">${t.bias}</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : "";
+    return `<section class="card pad"><h3>${t.backtest}</h3><div class="figs">${figs.join("")}</div>${table}<p class="help">${t.btHelp}</p></section>`;
   }
 
   _calendar(days) {
@@ -415,6 +466,8 @@ class NoxcastAccuracy extends HTMLElement {
       .share { height: 8px; border-radius: 4px; margin: 14px 0 6px; background: linear-gradient(90deg, var(--nx-md), color-mix(in srgb, var(--nx-md) 70%, #fff)); overflow: hidden; }
       .share div { height: 100%; background: linear-gradient(90deg, var(--nx-wx), color-mix(in srgb, var(--nx-wx) 70%, #fff)); box-shadow: 0 0 10px var(--nx-wx); }
       .verdict { margin: 4px 0 10px; font-size: 13px; line-height: 1.45; }
+      .btable { margin-top: 12px; } .btable tbody th { padding-top: 10px; }
+      .good { color: ${d ? "#4CC77A" : "#2E9E5B"}; font-weight: 500; } .bad { color: ${d ? "#E0574A" : "#C83A2E"}; font-weight: 500; }
     </style>`;
   }
 }

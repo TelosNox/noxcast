@@ -20,6 +20,7 @@ Create a long-lived access token in Home Assistant (Profile → Security) and st
 |---|---|
 | `fetch_history.py` | Download hourly long-term statistics (array power, battery SOC) into `data/` |
 | `shading_report.py` | Shading per month × hour and beam-transmission map over sun position → `out/` |
+| `backtest.py --config … --statistics … [--satellite … --temperature … --archive …]` | The integration's PV backtest on exported data, metrics as JSON; run it from two checkouts on the same files to compare model versions (see `docs/concept.md`, PV backtest) |
 | `forecast.py [ha\|openmeteo]` | Three-day forecast from learned geometry/shading and weather irradiance, compared with actuals and an optional other forecast |
 
 ## Method in short

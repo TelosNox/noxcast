@@ -466,7 +466,9 @@ orientation changes the geometry key and starts relearning.
     computes the model once more for every past hour on the satellite irradiance and the measured air
     temperature (stored as `measured` per array, once, with the parameters of that night). Weather
     part = forecast − model on measured weather, model part = model on measured weather − actual;
-    both add up to the daily deviation, and a verdict names the larger source of error.
+    both add up to the daily deviation, and a verdict names the larger source of error. The backtest
+    (`noxcast/backtest`, see PV backtest under Architecture) sits below it: forecast then against today's
+    model on the same days, unlearned against learned days, each with the model without the shading map.
   - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a
     7-day mean; the forecast by part (base load and each consumer, stacked per hour), the learned
     profile (workday, weekend, fixed consumers) and the consumers with their timing, sensor and share.
@@ -558,10 +560,46 @@ orientation changes the geometry key and starts relearning.
   of an archived day under the current learned model come from `explain.replay`.
 - Stable public interface: versioned entity IDs and attribute schema.
 - Transparent storage: learned parameters as readable, versioned files; diagnostic export.
-- Backtesting harness: replay history as if forecasting at that time. Every model change must
-  prove itself there; users see how good the forecast is for their system.
+- Backtesting harness (`backtest.py`): replay history and test on unlearned days, see below. Every
+  model change must prove itself there; users see how good the forecast is for their system.
 - Special cases: east-west roofs, vertical and bifacial modules, several arrays on one
   inverter, daylight saving time.
+
+### PV backtest
+
+The accuracy view otherwise shows only the error of the forecast as it was issued, with the model of
+that time. `backtest.py` answers two further questions with the same pure functions as production:
+
+- **Replay:** the current learned model on the weather archived with each complete day-ahead forecast
+  (`explain.archived_weather` + `explain.replay`, the normal forecast path, nothing scaled on top),
+  against what was forecast then and what happened. With today's knowledge, would those days have been
+  forecast better? The weather error stays in, so a short period with a one-sided weather error can
+  favour a model that happens to lean the same way.
+- **Hold-out:** learn on even (local) days and test on odd ones, and vice versa, on the measured satellite
+  irradiance, so the weather forecast error does not hide the model error. Every day is evaluated twice
+  by models from the same amount of data: unlearned (hold-out) and learned (in-sample). The gap
+  shows what the model memorises, such as pseudo-shade cells from too few clear hours.
+- **Baseline:** in both, the same model without the learned shading map (cells and facade), as the load
+  backtest compares with a 7-day mean: this is what the map contributes.
+
+Metrics per array and in total, relative to the actual energy: daily energy error, hourly absolute error
+and bias, plus the mean hourly error in Wh and the number of days and hours. All compared models use the
+same hours: those learning uses (`usable_samples`: validity, full battery, exclusions) with light, in the replay
+also without the archive's `curtailed` flag. Too little data (replay: 7 days; hold-out: 14 days and 60 hours in
+each half; or no satellite irradiance) gives an explicit `not_enough_data` with the reason, not a number.
+
+The coordinator starts it after the nightly learning as a background task in the executor, on the
+history that run fetched and on copies of the learned state and the archive. It writes nothing to
+either; a failure is logged and the last result stays. It does not run after a manual relearn. The
+hold-out learns twice on half the data, so it takes about twice a learning run: cheap enough
+for every night. The result is a few numbers per array
+under the additive key `pv_backtest` of the main store, so it survives a restart; `noxcast/backtest`
+sends it to the accuracy view. No entities or attributes.
+
+**Rule for model changes:** a change of the model must show before its PR that it is better on
+unlearned days. `prototype/backtest.py` runs the same functions on exported data and prints the metrics
+as JSON; run it from both checkouts on the same files and put the hold-out, in-sample and baseline
+numbers per array into the PR. Better in-sample with a worse hold-out is overfitting and does not count.
 
 ## Load forecast and surplus (planned)
 

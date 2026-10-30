@@ -345,11 +345,13 @@ def _canon(o):
 
 
 def _fingerprint(c) -> str:
+    # everything but the backtest's own result, which the forecast never reads and has its own pin (WS_PINNED)
     state = _canon({
         "learned": c.learned, "band": c.band, "load_profile": c.load_profile, "floor_profile": c.floor_profile,
         "consumer_profiles": c.consumer_profiles, "consumer_models": c.consumer_models, "run_profiles": c.run_profiles,
         "load_events": c.load_events, "load_backtest": c.load_backtest, "battery_log": c.battery_log,
-        "store": c._store_data(), "archive": c._archive_data(), "fine": c.fine, "data": c.data,
+        "store": {k: v for k, v in c._store_data().items() if k != "pv_backtest"},
+        "archive": c._archive_data(), "fine": c.fine, "data": c.data,
         "runs": {sid: c.run_profile(sid) for sid, cc in c.consumers.items() if cc.timing == "flexible"},
     })
     return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()[:16]
@@ -364,12 +366,12 @@ PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca4190
 WS_PINNED = {
     "midday": {"learned": "01cacdd618a28b71", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
                "load": "a7700b7f3ce0a9c6", "diagnostics": "2792537e49f6ca12", "battery": "4a924f136495a769",
-               "card_config": "9576395acefde089", "day": "a81cbef60c41e7c3"},
+               "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
     "morning": {"learned": "e2ad061042929404", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
                 "load": "ed6dea904ab7ff60", "diagnostics": "8b61b68cdfcfbce0", "battery": "e0dc625e527929a8",
-                "card_config": "9576395acefde089", "day": "11f58e9a21f84166"},
+                "card_config": "9576395acefde089", "backtest": "ddbd4cd122996b8d", "day": "11f58e9a21f84166"},
 }
-WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config")
+WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 
 
 async def _ws_prints(client) -> dict:
@@ -544,7 +546,9 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
             prints.append(_fingerprint(c))
         ws_prints["midday"] = await _ws_prints(client)
         freezer.move_to(times[3])
+        assert c.pv_backtest is None                # only the nightly run starts it, not a learning run
         await c._async_nightly(times[3])
+        await c._backtest_task
         await c.async_refresh()
         prints.append(_fingerprint(c))
         freezer.move_to(times[4])
@@ -554,9 +558,72 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         await hass.async_block_till_done()
     data = c.data
     assert c.band and data.load and data.battery and data.plan
+    for part in ("replay", "holdout"):
+        assert c.pv_backtest[part]["total"]["status"] == "ok", c.pv_backtest
+        assert set(c.pv_backtest[part]["arrays"]) == {"S", "EW"}
+    assert c._store_data()["pv_backtest"] == c.pv_backtest
     assert c.load_events is not None and all(c.consumer_models.values())
     assert prints == PINNED, prints
     assert ws_prints == WS_PINNED, ws_prints
+
+
+async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_client) -> None:
+    """It produces a result that survives a restart, and a failure leaves learning and the last result alone."""
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
+
+    async def fake_stats(_hass, ids, _start, kind, period="hour", end=None):
+        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
+
+    async def fake_factors(_hass, ids):
+        return {i: 1.0 for i in ids}
+
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})), \
+         patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
+         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
+         patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
+                                                              context={"source": config_entries.SOURCE_USER})
+        await hass.config_entries.subentries.async_configure(sub["flow_id"], ARRAY)
+        await hass.async_block_till_done()
+        c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert await c.async_learn() and c._backtest_task is None        # a manual learning run does not start it
+
+        with patch("custom_components.noxcast.backtest.run", side_effect=RuntimeError("boom")):
+            c.last_learning = None
+            await c._async_nightly(dt_util.now())
+            await c._backtest_task
+        assert c.pv_backtest is None and c.last_learning is not None and c.last_learning_error is None and c.learned
+
+        await c._async_nightly(dt_util.now())
+        await c._backtest_task
+        res = c.pv_backtest
+        assert res["holdout"]["total"] == {"status": "not_enough_data", "reason": "no_satellite", "days": 0, "needed": 0}
+        assert res["replay"]["total"]["status"] == "not_enough_data"     # nothing archived yet
+
+        with patch("custom_components.noxcast.backtest.run", side_effect=RuntimeError("boom")):
+            await c._async_nightly(dt_util.now())
+            await c._backtest_task
+        assert c.pv_backtest is res                                      # the last result stays
+
+        client = await hass_ws_client(hass)
+        await client.send_json_auto_id({"type": f"{DOMAIN}/backtest"})
+        msg = await client.receive_json()
+        assert msg["success"] and msg["result"]["v"] == WS_SCHEMA_VERSION
+        answer = msg["result"]["entries"][0]
+        assert answer["arrays"][0]["name"] == "Roof" and answer["holdout"]["total"]["reason"] == "no_satellite"
+        assert "seconds" not in answer
+
+        await c._store.async_save(c._store_data())                       # a restart reads it back
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.config_entries.async_get_entry(entry.entry_id).runtime_data.pv_backtest == json.loads(json.dumps(res))
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

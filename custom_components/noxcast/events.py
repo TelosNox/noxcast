@@ -14,6 +14,8 @@ from __future__ import annotations
 from datetime import datetime, tzinfo
 from statistics import median
 
+from .const import Series
+
 SLOT = 300.0                 # 5-minute statistics
 DAYS = 10                    # how far back the recorder usually keeps them
 BASELINE_SLOTS = 73         # ±3 h window of the moving baseline, so a run of two hours stays a minority
@@ -31,7 +33,7 @@ def _quantile(values: list[float], q: float) -> float:
     return s[min(len(s) - 1, int(q * (len(s) - 1) + 0.5))]
 
 
-def excess(series: dict[float, float]) -> dict[float, float]:
+def excess(series: Series) -> Series:
     """Load above a low quantile of the surrounding six hours."""
     ts = sorted(series)
     out = {}
@@ -42,7 +44,7 @@ def excess(series: dict[float, float]) -> dict[float, float]:
     return out
 
 
-def runs(series: dict[float, float]) -> list[dict]:
+def runs(series: Series) -> list[dict]:
     """Plateaus of the excess load: start, minutes, median power above the baseline, energy."""
     ex = excess(series)
     found, current = [], []
@@ -90,7 +92,7 @@ def groups(found: list[dict], tz: tzinfo) -> list[dict]:
     return sorted(out, key=lambda g: -g["energy_wh"] * g["count"])
 
 
-def suggestions(load: dict[float, float], consumers: list[dict[float, float]], tz: tzinfo) -> dict:
+def suggestions(load: Series, consumers: list[Series], tz: tzinfo) -> dict:
     """Recurring device runs in the house load minus the configured consumers."""
     rest = {t: w - sum(c.get(t, 0.0) for c in consumers) for t, w in load.items()}
     found = runs(rest)

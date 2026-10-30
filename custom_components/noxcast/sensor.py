@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import load as lf
-from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS
+from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS, TOTAL, Series
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
 
@@ -29,13 +29,13 @@ def _day_bounds(offset: int) -> tuple[float, float]:
 MIN_DAY_HOURS = 20          # a day total needs (almost) all hours; partial days would look like bad weather
 
 
-def day_energy(hours: dict[float, float], offset: int) -> float | None:
+def day_energy(hours: Series, offset: int) -> float | None:
     a, b = _day_bounds(offset)
     day = [wh for t, wh in hours.items() if a <= t < b]
     return round(sum(day) / 1000, 3) if len(day) >= MIN_DAY_HOURS else None
 
 
-def remaining_today(hours: dict[float, float]) -> float:
+def remaining_today(hours: Series) -> float:
     now = dt_util.utcnow().timestamp()
     _, end = _day_bounds(0)
     total = 0.0
@@ -46,7 +46,7 @@ def remaining_today(hours: dict[float, float]) -> float:
     return round(total / 1000, 3)
 
 
-def hourly_attribute(hours: dict[float, float], offset: int) -> dict[str, float]:
+def hourly_attribute(hours: Series, offset: int) -> dict[str, float]:
     a, b = _day_bounds(offset)
     return {dt_util.as_local(dt_util.utc_from_timestamp(t)).isoformat(): round(wh / 1000, 3)
             for t, wh in hours.items() if a <= t < b}
@@ -54,7 +54,7 @@ def hourly_attribute(hours: dict[float, float], offset: int) -> dict[str, float]
 
 @dataclass(frozen=True, kw_only=True)
 class ForecastDescription(SensorEntityDescription):
-    value: Callable[[dict[float, float]], float | None]
+    value: Callable[[Series], float | None]
     series: str = "forecast"            # forecast (latest), morning (fixed in the morning), expected (actual + corrected)
     day_offset: int | None = None       # day of the hourly attribute
 
@@ -76,7 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
     coordinator = entry.runtime_data
     total_device = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name="Noxcast", manufacturer="Noxcast",
                               entry_type=DeviceEntryType.SERVICE)
-    async_add_entities([ForecastSensor(coordinator, d, None, total_device) for d in FORECASTS]
+    async_add_entities([ForecastSensor(coordinator, d, TOTAL, total_device) for d in FORECASTS]
                        + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
     if coordinator.house_load:
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
@@ -127,7 +127,7 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
         # a single failed weather update must not blank the forecast
         return self.coordinator.forecast_available
 
-    def _hours(self) -> dict[float, float]:
+    def _hours(self) -> Series:
         data = self.coordinator.data
         if data is None:
             return {}
@@ -146,10 +146,10 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
         data = self.coordinator.data
         if self.entity_description.series == "morning" and data is not None:
             attrs["fixed_at"] = data.morning_fixed.isoformat() if data.morning_fixed else None
-        if self.entity_description.series == "expected" and data is not None and self._sub_id is not None:
+        if self.entity_description.series == "expected" and data is not None and self._sub_id is not TOTAL:
             attrs["correction"] = data.correction.get(self._sub_id)
         # P10 / P90 for the total, learned from the forecast archive (band.py)
-        band = data.band if data is not None and self._sub_id is None else None
+        band = data.band if data is not None and self._sub_id is TOTAL else None
         if band:
             key = self.entity_description.key
             value = band["rest"] if key == "energy_remaining_today" else band["days"].get(
@@ -345,7 +345,7 @@ class LoadSensor(NoxcastEntity, SensorEntity):
             return None
         a, b = _day_bounds(self._offset)
 
-        def day_sum(series: dict[float, float]) -> float:
+        def day_sum(series: Series) -> float:
             return round(sum(wh for t, wh in series.items() if a <= t < b) / 1000, 3)
 
         names = {sid: c.name for sid, c in self.coordinator.consumers.items()}

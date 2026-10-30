@@ -37,6 +37,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
+from .const import Series
+
 MIN_DAY_HOURS = 20
 HISTORY_HOURS = range(5, 22)     # local hours at which the day's expectation is recorded
 
@@ -131,8 +133,8 @@ def details(cloud: float | None = None, sun: float | None = None, wind: float | 
 
 
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
-             forecasts: dict[str, dict[float, float]],
-             alt: dict[str, tuple[dict[float, float], dict[str, dict[float, float]]]] | None = None,
+             forecasts: dict[str, Series],
+             alt: dict[str, tuple[Series, dict[str, Series]]] | None = None,
              wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
 
@@ -165,7 +167,7 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
     return True
 
 
-def add_actuals(archive: dict, array_id: str, actual_w: dict[float, float], before: float,
+def add_actuals(archive: dict, array_id: str, actual_w: Series, before: float,
                 curtailed: set[float] = frozenset()) -> None:
     """Add measured hourly mean power (W = Wh per hour) for hours that have ended.
 
@@ -234,7 +236,7 @@ def daily_error(archive: dict, since: date, array_id: str | None = None,
     return sum(abs(f - a) for f, a in days.values()) / actual, len(days)
 
 
-def add_history(archive: dict, day: date, stamp: float, total: dict[float, float]) -> bool:
+def add_history(archive: dict, day: date, stamp: float, total: Series) -> bool:
     """Record the day's expectation (Wh per hour, all arrays) as it stands at `stamp`, once per stamp.
 
     Only for a day that is in the archive (its day-ahead forecast is the start of the history).
@@ -250,8 +252,8 @@ def add_history(archive: dict, day: date, stamp: float, total: dict[float, float
     return True
 
 
-def add_measured(archive: dict, array_id: str, satellite_ghi: dict[float, float], air_temp: dict[float, float] | None,
-                 predict: Callable[[list[tuple[float, float, float | None]]], dict[float, float]], before: float) -> int:
+def add_measured(archive: dict, array_id: str, satellite_ghi: Series, air_temp: Series | None,
+                 predict: Callable[[list[tuple[float, float, float | None]]], Series], before: float) -> int:
     """Model output from the measured weather for ended hours that have satellite irradiance.
 
     Computed once per hour and array with the parameters learned at that time, so a later relearn

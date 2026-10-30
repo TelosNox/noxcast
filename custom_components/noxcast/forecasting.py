@@ -13,7 +13,7 @@ from . import band as bd
 from . import battery as bt
 from . import load as lf
 from . import plan as pl
-from .const import MORNING_HOUR
+from .const import MORNING_HOUR, TOTAL, Series
 from .effects import day_effects
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .learning import ArrayConfig, ConsumerConfig, scaled_sum
@@ -26,13 +26,13 @@ RECENT_MIN_SLOTS_RUNNING = 3     # 5-minute values (15 minutes) before the runni
 
 @dataclass
 class NoxcastData:
-    """Hourly Wh per array (subentry_id) and as total (key None)."""
+    """Hourly Wh per array (subentry_id) and as total (key TOTAL)."""
 
-    forecast: dict[str | None, dict[float, float]] = field(default_factory=dict)   # weather forecast, 3 days
-    morning: dict[str | None, dict[float, float]] = field(default_factory=dict)    # today, fixed in the morning
-    expected: dict[str | None, dict[float, float]] = field(default_factory=dict)   # today: actual + corrected rest
-    clear: dict[str | None, dict[float, float]] = field(default_factory=dict)      # clear-sky output over the horizon
-    held: dict[str, dict[float, float]] = field(default_factory=dict)  # today: latest forecast, held once the hour began
+    forecast: dict[str | None, Series] = field(default_factory=dict)   # weather forecast, 3 days
+    morning: dict[str | None, Series] = field(default_factory=dict)    # today, fixed in the morning
+    expected: dict[str | None, Series] = field(default_factory=dict)   # today: actual + corrected rest
+    clear: dict[str | None, Series] = field(default_factory=dict)      # clear-sky output over the horizon
+    held: dict[str, Series] = field(default_factory=dict)  # today: latest forecast, held once the hour began
     correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
@@ -43,32 +43,32 @@ class NoxcastData:
     battery: dict | None = None               # simulation until tomorrow's charge start (see battery.day_simulation)
     plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see band.forecast_band)
-    actual: dict[str, dict[float, float]] = field(default_factory=dict)   # today's measured hours per array
+    actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
 
     @property
-    def arrays(self) -> dict[str, dict[float, float]]:
-        return {k: v for k, v in self.forecast.items() if k is not None}
+    def arrays(self) -> dict[str, Series]:
+        return {k: v for k, v in self.forecast.items() if k is not TOTAL}
 
     @property
-    def total(self) -> dict[float, float]:
-        return self.forecast.get(None, {})
+    def total(self) -> Series:
+        return self.forecast.get(TOTAL, {})
 
 
 @dataclass
 class Today:
     """Carried from one update to the next (and stored): per array Wh per hour start."""
 
-    hours: dict[str, dict[float, float]] = field(default_factory=dict)     # forecast since midnight, past hours kept
-    morning: dict[str, dict[float, float]] = field(default_factory=dict)   # today's forecast as fixed in the morning
+    hours: dict[str, Series] = field(default_factory=dict)     # forecast since midnight, past hours kept
+    morning: dict[str, Series] = field(default_factory=dict)   # today's forecast as fixed in the morning
     morning_fixed: datetime | None = None
-    held: dict[str, dict[float, float]] = field(default_factory=dict)      # see intraday.held_forecast
+    held: dict[str, Series] = field(default_factory=dict)      # see intraday.held_forecast
 
 
 def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, float | None]],
                  recent: dict[str, dict[float, float | None]], factors: dict[str, float], day_start: float,
-                 now: float) -> tuple[dict[str, dict[float, float]], dict[str, tuple[float, float, float]]]:
+                 now: float) -> tuple[dict[str, Series], dict[str, tuple[float, float, float]]]:
     """Measured mean power (W = Wh) of today's hours per array, and the running hour.
 
     hourly: hourly means since midnight; recent: 5-minute means since the start of the previous hour.
@@ -77,7 +77,7 @@ def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, f
     running = (hour start, mean power of the measured part, measured share).
     """
     hour_now = now - now % 3600
-    hours: dict[str, dict[float, float]] = {}
+    hours: dict[str, Series] = {}
     running: dict[str, tuple[float, float, float]] = {}
     for sub_id, arr in arrays.items():
         measured = scaled_sum(hourly, arr.sensors, factors)
@@ -94,9 +94,9 @@ def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, f
 
 
 def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray], weather: list[WeatherHour],
-       models: dict[str, list[WeatherHour]], before: Today, actual: dict[str, dict[float, float]],
+       models: dict[str, list[WeatherHour]], before: Today, actual: dict[str, Series],
        running: dict[str, tuple[float, float, float]], now: datetime, local_now: datetime, day_start: float,
-       day_end: float) -> tuple[NoxcastData, Today, dict[str, dict[str, dict[float, float]]]]:
+       day_end: float) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
     """PV forecast per array and in total: weather forecast, morning fix, clear sky, today's expected hours.
 
     weather: hours from local midnight to the horizon; models: each weather model on its own (for the
@@ -106,7 +106,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     ts_now = now.timestamp()
     result = NoxcastData(day_start=day_start)
     today = Today(dict(before.hours), dict(before.morning), before.morning_fixed, dict(before.held))
-    alt: dict[str, dict[str, dict[float, float]]] = {m: {} for m in models}
+    alt: dict[str, dict[str, Series]] = {m: {} for m in models}
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id, LearnedArray())
         fresh = forecast(site, arr.geometry, la, weather)
@@ -154,17 +154,17 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
         result.effects[sub_id] = day_effects(site, arr.geometry, learned.get(sub_id), weather, day,
                                              result.expected[sub_id], day_start, day_end)
     for series in (result.forecast, result.morning, result.expected, result.clear):
-        total: dict[float, float] = {}
+        total: Series = {}
         for hours in list(series.values()):
             for t, wh in hours.items():
                 total[t] = total.get(t, 0.0) + wh
-        series[None] = dict(sorted(total.items()))
+        series[TOTAL] = dict(sorted(total.items()))
     return result, today, alt
 
 
 def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Profile, floor_profile: lf.Profile | None,
-         profiles: dict[str, lf.Profile], models: dict[str, dict], series: dict[str, dict[float, float]],
-         floor: dict[float, float] | None, running: dict[str, lf.Run], zone: tzinfo, tz: tzinfo, now: float,
+         profiles: dict[str, lf.Profile], models: dict[str, dict], series: dict[str, Series],
+         floor: Series | None, running: dict[str, lf.Run], zone: tzinfo, tz: tzinfo, now: float,
          end: float, day_start: float, temps: dict[float, float | None] | None = None) -> lf.LoadForecast:
     """Load forecast with the correction from the last hours and the consumers running now.
 
@@ -196,10 +196,10 @@ def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Prof
 def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[bt.Battery],
             runs: list[pl.RunProfile], now: float, day_end: float) -> None:
     """Band, battery simulation and plan of flexible consumers, set on result (needs its PV and load)."""
-    total = dict(result.forecast.get(None, {}))
-    total.update(result.expected.get(None, {}))          # today: actual so far and the corrected rest
-    result.band = bd.forecast_band(band, site, result.weather, total, result.expected.get(None, {}),
-                                   result.clear.get(None, {}), now, day_end)
+    total = dict(result.forecast.get(TOTAL, {}))
+    total.update(result.expected.get(TOTAL, {}))          # today: actual so far and the corrected rest
+    result.band = bd.forecast_band(band, site, result.weather, total, result.expected.get(TOTAL, {}),
+                                   result.clear.get(TOTAL, {}), now, day_end)
     load_hours = result.load.hours if result.load is not None else None
     result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end)
     if result.load is None or not runs:

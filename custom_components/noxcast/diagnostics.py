@@ -7,7 +7,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_API_KEY
+from .const import CONF_API_KEY, Series
 from .coordinator import NoxcastConfigEntry
 
 
@@ -15,7 +15,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
     coordinator = entry.runtime_data
     data = coordinator.data
 
-    def hours(series: dict[float, float]) -> dict[str, float]:
+    def hours(series: Series) -> dict[str, float]:
         return {dt_util.utc_from_timestamp(t).isoformat(): round(v, 1) for t, v in series.items()}
 
     return {

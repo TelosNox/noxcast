@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .const import Series
+
 WINDOW_HOURS = 3
 RECENT_WEIGHT = 0.6              # weight per hour further back in the window
 STRENGTH = 0.5                   # share of the measured clearness shift applied to the current hour
@@ -33,7 +35,7 @@ class Partial:
     profile: float               # clear-sky power over the measured part / over the whole hour
 
 
-def clearness_shift(forecast: dict[float, float], actual: dict[float, float], clear: dict[float, float],
+def clearness_shift(forecast: Series, actual: Series, clear: Series,
                     now: float, peak_w: float, partial: Partial | None = None) -> float | None:
     """Measured minus forecast clearness of the last hours, energy weighted; None if too dark.
 
@@ -57,8 +59,8 @@ def clearness_shift(forecast: dict[float, float], actual: dict[float, float], cl
     return max(min(deviation / clear_sum, CLEARNESS_MAX), -CLEARNESS_MAX)
 
 
-def expected_hours(forecast: dict[float, float], actual: dict[float, float], clear: dict[float, float],
-                   now: float, shift: float | None) -> dict[float, float]:
+def expected_hours(forecast: Series, actual: Series, clear: Series,
+                   now: float, shift: float | None) -> Series:
     """Past hours: actual (forecast where no measurement exists); current and coming hours: forecast with
     the clearness shifted towards the measurement, limited to [0, clear sky]."""
     out = {}
@@ -76,8 +78,8 @@ def expected_hours(forecast: dict[float, float], actual: dict[float, float], cle
     return out
 
 
-def held_forecast(previous: dict[float, float], current: dict[float, float], now: float,
-                  day_start: float) -> dict[float, float]:
+def held_forecast(previous: Series, current: Series, now: float,
+                  day_start: float) -> Series:
     """Today's forecast per hour, held once the hour has begun.
 
     Hours still ahead follow the latest forecast; an hour that has begun keeps the value it had

@@ -19,11 +19,12 @@ from . import load as lf
 from . import plan as pl
 from .model import ArrayGeometry, LearnedArray, learn, measured_forecast, steady_hours, usable_samples
 from .solar import Site
+from .const import Series
 
 _LOGGER = logging.getLogger(__name__)
 
 Keep = Callable[[float], bool]
-Series = dict[float, float]
+Series = Series
 
 
 @dataclass(frozen=True)

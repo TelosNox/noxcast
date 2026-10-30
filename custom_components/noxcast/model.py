@@ -54,6 +54,8 @@ from .solar import (
     Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
 )
 
+from .const import Series
+
 AZ_STEP = 10.0
 EL_STEP = 5.0
 SUBSTEPS = 6                     # 10-minute sub-steps per hour
@@ -152,6 +154,11 @@ class WeatherHour:
     precip: float | None = None  # precipitation in the hour, mm
     code: int | None = None      # WMO weather code of the hour (thunderstorm and fog cannot be averaged)
     humidity: float | None = None  # relative humidity %, middle of the hour
+
+
+# format of LearnedArray in the store: raise when a field changes meaning. Learned state is only a cache of the
+# history, so a state of another version is dropped and relearned at startup instead of being migrated.
+LEARNED_VERSION = 1
 
 
 @dataclass
@@ -353,7 +360,7 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
 
 # ---------------------------------------------------------------------------- learning
 
-def usable_samples(power: dict[float, float], *, soc: dict[float, float] | None = None, soc_full: float = 95.0,
+def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
                    exclusions: list[tuple[float, float]] = (), valid_since: float | None = None) -> list[tuple[float, float]]:
     """Filter hourly mean power (W) for learning: commissioning, validity, curtailment, exclusions."""
     producing = [t for t, p in power.items() if p is not None and p > 5]
@@ -392,7 +399,7 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
 
 
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
-          air_temp: dict[float, float] | None = None, satellite_ghi: dict[float, float] | None = None,
+          air_temp: Series | None = None, satellite_ghi: Series | None = None,
           datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS,
           steady: set[float] | None = None) -> LearnedArray:
     """Learn efficiency, temperature coefficient, shading map and sky view from (hour_start, mean power W) samples.
@@ -423,7 +430,7 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
 
 
 def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                   satellite_ghi: dict[float, float], air_temp: dict[float, float] | None = None) -> float | None:
+                   satellite_ghi: Series, air_temp: Series | None = None) -> float | None:
     """Share of the isotropic sky diffuse the plane sees, from overcast hours (None without enough of them).
 
     What the installation produced beyond beam and ground reflection, relative to the sky diffuse a
@@ -465,7 +472,7 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 
 
 def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
-           air_temp: dict[float, float] | None, satellite_ghi: dict[float, float] | None,
+           air_temp: Series | None, satellite_ghi: Series | None,
            datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float,
            steady: set[float] | None = None) -> LearnedArray:
     rows = []
@@ -851,7 +858,7 @@ def facade_cells(learned: LearnedArray) -> dict[str, float]:
 
 
 def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                 satellite_ghi: dict[float, float] | None, air_temp: dict[float, float] | None = None) -> dict | None:
+                 satellite_ghi: Series | None, air_temp: Series | None = None) -> dict | None:
     """A row of buildings opposite, fitted to clear hours with the learned parameters, or None.
 
     Per row direction and height the clear hours are forecast with the facade and without any shade.
@@ -1016,7 +1023,7 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
     return out
 
 
-def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> dict[float, float]:
+def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> Series:
     """Expected energy per hour (Wh), keyed by hour start (UNIX seconds)."""
     out = {}
     for wh in weather:
@@ -1041,6 +1048,6 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
 
 
 def measured_forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray,
-                      hours: list[tuple[float, float, float | None]]) -> dict[float, float]:
+                      hours: list[tuple[float, float, float | None]]) -> Series:
     """The model on measured weather: what the forecast would have been with a perfect weather forecast."""
     return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])

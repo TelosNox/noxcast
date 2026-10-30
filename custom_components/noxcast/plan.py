@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from statistics import median
 
+from .const import Series
+
 H = 3600.0
 STEP = 900.0                      # start grid and integration step: 15 minutes
 
@@ -38,7 +40,7 @@ class Window:
     lost_share: float
 
 
-def _slots(series: dict[float, float]) -> dict[float, float]:
+def _slots(series: Series) -> Series:
     """Hourly Wh -> Wh per 15-minute slot (evenly spread over the hour)."""
     out = {}
     for t, wh in series.items():
@@ -47,7 +49,7 @@ def _slots(series: dict[float, float]) -> dict[float, float]:
     return out
 
 
-def evaluate(run: RunProfile, start: float, surplus: dict[float, float], lost: dict[float, float]) -> Window:
+def evaluate(run: RunProfile, start: float, surplus: Series, lost: Series) -> Window:
     """Shares of a run starting at `start`; surplus and lost are per 15-minute slot (Wh)."""
     need_per_slot = run.power_w * STEP / H
     remaining = run.minutes * 60
@@ -64,7 +66,7 @@ def evaluate(run: RunProfile, start: float, surplus: dict[float, float], lost: d
     return Window(start, start + run.minutes * 60, min(1.0, pv / energy), min(1.0, from_lost / energy))
 
 
-def best_window(run: RunProfile, surplus: dict[float, float], lost: dict[float, float], earliest: float,
+def best_window(run: RunProfile, surplus: Series, lost: Series, earliest: float,
                 latest_end: float) -> Window | None:
     """Best start on the 15-minute grid with the run ending by latest_end; slot series as in evaluate."""
     start = earliest + (-earliest) % STEP
@@ -77,7 +79,7 @@ def best_window(run: RunProfile, surplus: dict[float, float], lost: dict[float, 
     return best
 
 
-def plan(runs: list[RunProfile], surplus_h: dict[float, float], lost_h: dict[float, float], now: float,
+def plan(runs: list[RunProfile], surplus_h: Series, lost_h: Series, now: float,
          latest_end: float) -> dict[str, dict]:
     """Place runs in priority order. Returns per name: best window and the shares when started now."""
     surplus, lost = _slots(surplus_h), _slots(lost_h)
@@ -98,7 +100,7 @@ def plan(runs: list[RunProfile], surplus_h: dict[float, float], lost_h: dict[flo
     return out
 
 
-def day_plan(runs: list[RunProfile], pv: dict[float, float], load: dict[float, float], lost: dict[float, float],
+def day_plan(runs: list[RunProfile], pv: Series, load: Series, lost: Series,
              now: float, day_end: float) -> dict[str, dict]:
     """Best windows in the surplus of today (counting what the battery would lose) and of tomorrow, in run order."""
     surplus = {t: max(pv.get(t, 0.0) - w, 0.0) for t, w in load.items()}
@@ -119,7 +121,7 @@ RUN_W = 30.0                      # hourly mean above which a consumer counts as
 MIN_RUNS = 2
 
 
-def learn_run(name: str, series: dict[float, float]) -> RunProfile | None:
+def learn_run(name: str, series: Series) -> RunProfile | None:
     """Typical run from hourly mean power: runs are blocks of consecutive hours above RUN_W.
 
     Hourly means blur start and end, so the run power is taken from the block's strongest hour

@@ -28,7 +28,7 @@ from typing import Any
 from . import archive as fc_archive
 from . import battery as bt
 from . import explain
-from .const import (CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+from .const import (TOTAL, Series, CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
                     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
 from .model import LearnedArray, clearsky_weather, facade_cells
 from .solar import Site
@@ -47,7 +47,7 @@ def columns(rows, *names: str) -> dict[str, list]:
     return out
 
 
-def series(hours: dict[float, float], a: float = float("-inf"), b: float = float("inf")) -> dict:
+def series(hours: Series, a: float = float("-inf"), b: float = float("inf")) -> dict:
     """{"t": hour starts, "wh": values rounded to 0.1} by time, optionally only hours in [a, b)."""
     return columns(((t, round(v, 1)) for t, v in sorted(hours.items()) if a <= t < b), "wh")
 
@@ -141,10 +141,10 @@ def day_totals(data, days: int, today: date, day_start: Callable[[date], float])
         day = today + timedelta(days=offset)
         a = day_start(day)
         b = day_start(day + timedelta(days=1))
-        values = [v for t, v in data.forecast.get(None, {}).items() if a <= t < b]
+        values = [v for t, v in data.forecast.get(TOTAL, {}).items() if a <= t < b]
         if len(values) < 20:
             continue
-        clear = sum(v for t, v in data.clear.get(None, {}).items() if a <= t < b)
+        clear = sum(v for t, v in data.clear.get(TOTAL, {}).items() if a <= t < b)
         p = band.get(offset) or band.get(str(offset))
         out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)), "clear_wh": round(clear) or None,
                     "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None})
@@ -281,7 +281,7 @@ def diagnostics_entry(title: str, *, weather_models, data, last_learning: dateti
         "title": title,
         "weather": {"source": "open_meteo", "models": weather_models,
                     "updated": data.weather_fetched.isoformat() if data and data.weather_fetched else None,
-                    "hours": len((data.forecast or {}).get(None, {})) if data else 0},
+                    "hours": len((data.forecast or {}).get(TOTAL, {})) if data else 0},
         "learning": {"last": last_learning.isoformat() if last_learning else None,
                      "seconds": learning_seconds, "backtest_seconds": backtest_seconds,
                      "error": learning_error, "archive_errors": archive_errors},
@@ -311,8 +311,8 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
     b = data.battery if data is not None else None
     if b:
         st, sim = b["storage"], b["sim"]
-        pv = dict(data.forecast.get(None, {}))
-        pv.update(data.expected.get(None, {}))
+        pv = dict(data.forecast.get(TOTAL, {}))
+        pv.update(data.expected.get(TOTAL, {}))
         load = data.load.hours
         hours = sorted(t for t in load if t + 3600 > now)
         out.update({
@@ -414,9 +414,9 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
                                "ghi", "clear", "temp")}
 
 
-def day_pv(view: dict) -> dict[float, float]:
+def day_pv(view: dict) -> Series:
     """Measured PV of all arrays per hour of a day view, for the energy paths."""
-    pv: dict[float, float] = {}
+    pv: Series = {}
     for arr in view["arrays"]:
         actual = arr.get("actual") or {"t": [], "wh": []}
         for t, v in zip(actual["t"], actual["wh"], strict=True):

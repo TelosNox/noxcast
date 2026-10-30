@@ -40,7 +40,7 @@ const TEXT = {
     title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster",
     shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor",
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
-    facade: "Häuserkante (Höhe · Richtung · Bereich)", fromFacade: "aus der Häuserkante",
+    facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
     notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
@@ -50,6 +50,7 @@ const TEXT = {
     open: "Öffnen", months: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
     help: {
       shade: "Jedes Feld ist eine Sonnenposition. Die Farbe zeigt, wie viel Direktlicht dort ankommt. Folge einer Sonnenbahn von links nach rechts, um einen Tag abzulesen.",
+      facade: "Felder mit dem Hinweis „aus der Horizontlinie“ sind nicht gemessen. Für Sonnenstände ohne genug klare Stunden, meist im Winter, rechnet Noxcast mit einer geraden Linie für das Hindernis am Horizont, etwa Häuser, Wald oder Hügel. Sie gleicht Unebenheiten aus, einzelne höhere Gebäude oder Bäume fehlen darin. Sobald ein Feld gemessen ist, ersetzt der Messwert die Linie.",
       refl: "Zusätzliches Licht von beschienenen Wänden oder Dächern, in Prozent der Direktstrahlung. Gelernt nur dort, wo das Modul selbst wenig Direktlicht bekommt.",
       dir: "Was nach Schatten und Reflexion übrig bleibt: Geometrie- und Modellfehler. Werte nahe 1 sind gut.",
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
@@ -75,7 +76,7 @@ const TEXT = {
     title: "Learned", overview: "Overview", map: "Map", grid: "Year grid",
     shade: "Shade", refl: "Reflection", dir: "Direction factor",
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
-    facade: "Building edge (height · direction · range)", fromFacade: "from the building edge",
+    facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
     notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
@@ -85,6 +86,7 @@ const TEXT = {
     open: "Open", months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     help: {
       shade: "Each cell is a sun position. The colour shows how much direct light arrives there. Follow a sun path from left to right to read a day.",
+      facade: "Cells marked \"from the horizon line\" are not measured. For sun positions without enough clear hours, mostly in winter, Noxcast uses one straight line for the obstacle on the horizon, such as houses, a forest or a hill. It evens out irregularities, so a single taller building or tree is missing from it. Once a cell is measured, the measurement replaces the line.",
       refl: "Extra light from sunlit walls or roofs, in percent of the direct normal irradiance. Learned only where the module itself gets little direct light.",
       dir: "What remains after shade and reflection: geometry and model errors. Values close to 1 are good.",
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
@@ -178,7 +180,7 @@ function displayValue(cells, ai, ei) {
   return near.length >= 2 ? near.reduce((a, b) => a + b, 0) / near.length : null;
 }
 
-// learned cells; cells without a learned value take the learned building edge where there is one
+// learned cells; cells without a learned value take the learned horizon line where there is one
 function cellsOf(arr) {
   return { ...(arr.facade_cells || {}), ...((arr.learned || {}).cells || {}) };
 }
@@ -499,7 +501,7 @@ class NoxcastPanel extends HTMLElement {
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
           <section class="card pad"><h2>${esc(arr.name)}</h2>${figs}</section>
-          <section class="card pad"><h3>${s.mode === "grid" ? t.grid : t[s.layer]}</h3><p class="help">${s.mode === "grid" ? t.help.grid : t.help[s.layer]}</p></section>
+          <section class="card pad"><h3>${s.mode === "grid" ? t.grid : t[s.layer]}</h3><p class="help">${s.mode === "grid" ? t.help.grid : t.help[s.layer]}</p>${s.layer === "shade" && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}</section>
         </aside>
       </div>`;
   }
@@ -911,7 +913,7 @@ class NoxcastPanel extends HTMLElement {
       .compass .fit { stroke: url(#nx-geo); stroke-width: 4; stroke-linecap: round; }
       .tiles2 { flex: 1 1 200px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
       .tile.warn { border-color: #FF6A3D; } .tile.ok { border-color: rgba(46, 170, 110, .6); }
-      .mgrid + .help, svg + .legend, .legend + .help, .note + .help { margin-top: 10px; }
+      .mgrid + .help, svg + .legend, .legend + .help, .note + .help, .help + .help { margin-top: 10px; }
       .note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; } .note.warn { color: #E8543C; }
       .badge { margin-left: 8px; font-size: 11px; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
         color: #fff; background: linear-gradient(115deg, #FF6A3D, #8B5CF6); }

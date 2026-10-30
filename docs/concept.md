@@ -186,12 +186,13 @@ shades one module more than the other, while the reduced output at high south-we
 on both modules and is therefore no shade – it turned out to be module heat (see Temperature).
 Using per-module sensors as shade evidence is a later step.
 
-### Building edge for cells without data
+### Horizon line for cells without data
 
 Low winter sun crosses positions that only a few clear days a year reach; many such cells stay
 without a learned value and used to take their neighbours' mean, or count as free. In a town the
-obstacle there is usually a row of houses, and its edge follows from geometry: for a straight
-row with height H above the modules at a distance d at right angles,
+obstacle there is usually a row of houses, a forest edge or a hill. It is modelled as a straight
+row (`facade` in the code), whose edge follows from geometry: with height H above the modules at a
+distance d at right angles,
 tan(edge) = H / d · cos(azimuth − row direction), the row being further away towards the sides.
 Two numbers (row direction, H / d as an angle) and an azimuth range describe it.
 

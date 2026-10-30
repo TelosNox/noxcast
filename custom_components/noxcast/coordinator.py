@@ -126,6 +126,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
+        self.last_learning_seconds: float | None = None  # duration of the last successful run, fetches included
         self.last_learning_error: str | None = None
         self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
         self._today = fc.Today()                  # today's hours, morning fix and held values between updates
@@ -168,6 +169,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                         if sid in self.consumers}
             if stored.get("last_learning"):
                 self.last_learning = dt_util.parse_datetime(stored["last_learning"])
+            self.last_learning_seconds = stored.get("last_learning_seconds")
             day_start = dt_util.start_of_local_day().timestamp()
             for sub_id, hours in stored.get("hours", {}).items():
                 if sub_id in self.arrays:
@@ -295,6 +297,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "battery_log": self.battery_log,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
+            "last_learning_seconds": self.last_learning_seconds,
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
                        for sid, la in self.learned.items() if sid in self.arrays},
             # today's hours survive a restart even if the weather source no longer reports past hours
@@ -323,6 +326,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if not self.arrays:
             return True
         async with self._learn_lock:
+            start = time.monotonic()
             try:
                 inputs = await self._async_learn()
             except Exception as err:  # noqa: BLE001
@@ -330,6 +334,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 _LOGGER.exception("Noxcast learning failed; keeping the previous learned state")
                 return False
         self.last_learning_error = None
+        self.last_learning_seconds = round(time.monotonic() - start, 1)
         self._store.async_delay_save(self._store_data, 5)
         await self.async_request_refresh()
         if backtest and (self._backtest_task is None or self._backtest_task.done()):

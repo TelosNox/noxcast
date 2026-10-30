@@ -9,7 +9,7 @@ const WS_SCHEMA = 1;
 const DIAG_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
-    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
+    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", learnTook: "Lernen", backtestTook: "Rückrechnung", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
     days: "Tage", complete: "vollständig", hours: "Stunden", samples: "Stunden gelernt", mapCoverage: "Karte", efficiency: "Wirkungsgrad",
@@ -24,7 +24,7 @@ const DIAG_TEXT = {
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
-    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
+    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", learnTook: "Learning", backtestTook: "Backtest", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
     days: "days", complete: "complete", hours: "hours", samples: "hours learned", mapCoverage: "Map", efficiency: "Efficiency",
@@ -108,7 +108,7 @@ class NoxcastDiagnostics extends HTMLElement {
     const t = this._t, issues = this._issues(e);
     const tiles = [
       [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `Open-Meteo ${this._esc((e.weather.models || []).join(" + "))} · ${e.weather.hours} ${t.hours}`],
-      [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._dt(e.learning.last) : ""],
+      [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._learningSub(e.learning) : ""],
       [t.archive, `${e.archive.days} ${t.days}`, `${e.archive.complete} ${t.complete}`],
       [t.fine, `${(e.fine || {}).days || 0} ${t.days}`, t.fineSub],
     ].map(([k, v, sub]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span><span class="muted small">${sub}</span></div>`).join("");
@@ -147,6 +147,19 @@ class NoxcastDiagnostics extends HTMLElement {
 
   _pct(v) { return `${Math.round(v * 100)} %`; }
   _d(iso) { return new Date(iso).toLocaleDateString(this._lang, { timeZone: this._data.time_zone }); }
+  // when, and how long the last run took on this machine
+  _learningSub(l) {
+    const t = this._t, parts = [this._dt(l.last)];
+    if (l.seconds != null) parts.push(`${t.learnTook} ${this._secs(l.seconds)}`);
+    if (l.backtest_seconds != null) parts.push(`${t.backtestTook} ${this._secs(l.backtest_seconds)}`);
+    return parts.join(" · ");
+  }
+
+  _secs(s) {
+    if (s >= 60) return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+    return `${s.toLocaleString(this._lang, { maximumFractionDigits: s < 10 ? 1 : 0 })} s`;
+  }
+
   _dt(iso) { return new Date(iso).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" }); }
   _ago(iso) {
     const t = this._t, m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));

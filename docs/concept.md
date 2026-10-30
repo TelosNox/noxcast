@@ -486,7 +486,8 @@ orientation changes the geometry key and starts relearning.
     dumbbell per day with the mean deviation of the full and empty times and how often "full or
     not" was right. Short-term statistics are kept for about ten days, so older predictions have
     no comparison.
-  - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run and archive at a glance;
+  - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run (with its duration and the backtest's, to see what
+    they cost on the real machine) and archive at a glance;
     notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30
     days), learning and archive errors; every sensor Noxcast reads with role, state, state class and
     coverage; learned arrays and excluded periods.

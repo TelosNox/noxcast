@@ -150,18 +150,18 @@ def test_sensor_roles_rows_and_diagnostics():
     arc = {"2026-07-01": {"hours": {str(int(A)): {"ghi": 0.0, "forecast": {}, "actual": {}}}}, "2026-07-02": {"hours": {}}}
     entry = views.diagnostics_entry(
         "Noxcast", weather_models=["icon"], data=data(weather_fetched=datetime(2026, 7, 1, tzinfo=timezone.utc)),
-        last_learning=None, learning_error="boom", archive_errors={}, arrays=arrays(),
+        last_learning=None, learning_seconds=12.5, backtest_seconds=None, learning_error="boom", archive_errors={}, arrays=arrays(),
         learned={"roof": model.LearnedArray(efficiency=0.9, samples=5)}, exclusions=[{"start": A, "end": A + H}],
         archive=arc, fine={"s": {"a": {}}, "t": {"b": {1: 2}}}, sensors=[row])
     assert entry == {"title": "Noxcast",
                      "weather": {"source": "open_meteo", "models": ["icon"], "updated": "2026-07-01T00:00:00+00:00", "hours": 72},
-                     "learning": {"last": None, "error": "boom", "archive_errors": {}},
+                     "learning": {"last": None, "seconds": 12.5, "backtest_seconds": None, "error": "boom", "archive_errors": {}},
                      "arrays": [{"name": "Roof", "samples": 5, "coverage": 0.0, "efficiency": 0.9},
                                 {"name": "Wall", "samples": 0, "coverage": None, "efficiency": None}],
                      "exclusions": [{"start": "2026-06-30T22:00:00+00:00", "end": "2026-06-30T23:00:00+00:00", "note": ""}],
                      "archive": {"days": 2, "complete": 1}, "fine": {"days": 1}, "sensors": [row]}
-    assert views.diagnostics_entry("N", weather_models=[], data=None, last_learning=None, learning_error=None,
-                                   archive_errors={}, arrays={}, learned={}, exclusions=[], archive={}, fine={},
+    assert views.diagnostics_entry("N", weather_models=[], data=None, last_learning=None, learning_seconds=None,
+                                   backtest_seconds=None, learning_error=None, archive_errors={}, arrays={}, learned={}, exclusions=[], archive={}, fine={},
                                    sensors=[])["weather"] == {"source": "open_meteo", "models": [], "updated": None, "hours": 0}
 
 

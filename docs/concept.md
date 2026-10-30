@@ -387,6 +387,8 @@ orientation changes the geometry key and starts relearning.
   left out of efficiency, direction factor, reflection and the clear-hour median of the shading
   map – unless the sensors disagree strongly, which is a shadow on part of the array.
 - Time reference: an hourly mean belongs to the sun position at the middle of the hour.
+  Learning and forecasting (`model.py`) also take another period length: a sample is the mean of that
+  period, and minimum numbers of hours stay the same observed time. Everything running uses hours.
 
 ## Outputs
 

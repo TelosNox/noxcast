@@ -474,3 +474,57 @@ def test_no_facade_without_shade():
 def test_facade_sector_may_cross_north():
     f = {"direction": 330.0, "height": 20.0, "start": 280.0, "end": 400.0, "gain": 0.5}
     assert model.facade_transmission(f, 20, 2) == 0.0 and model.facade_transmission(f, 60, 2) is None
+
+
+FIVE_MIN = 300.0
+
+
+def test_substeps_follow_the_period():
+    assert [model._substeps(p) for p in (3600.0, 1800.0, 600.0, 300.0, 60.0)] == [6, 3, 1, 1, 1]
+
+
+def test_forecast_of_shorter_periods_adds_up_to_the_hour():
+    learned = model.LearnedArray(efficiency=0.9, temp_coeff=0.0)
+    start = 1781258400.0
+    hour = model.forecast(SITE, GEO, learned, [model.clearsky_weather(SITE, start)])[start]
+    starts = [start + k * FIVE_MIN for k in range(12)]
+    five = model.forecast(SITE, GEO, learned, [model.clearsky_weather(SITE, t, period=FIVE_MIN) for t in starts], FIVE_MIN)
+    assert abs(sum(five.values()) / hour - 1) < 0.005           # Wh per period, not W
+    half = [start, start + 1800.0]
+    parts = model.forecast(SITE, GEO, learned, [model.clearsky_weather(SITE, t, period=1800.0) for t in half], 1800.0)
+    assert abs(sum(parts.values()) / hour - 1) < 0.005
+
+
+def test_clearsky_means_of_a_period_are_taken_over_that_period():
+    start = 1781258400.0
+    _, _, az_hour, _, ghi_hour = model.clearsky_hour(SITE, GEO, start)
+    five = [model.clearsky_hour(SITE, GEO, start + k * FIVE_MIN, period=FIVE_MIN) for k in range(12)]
+    assert abs(sum(r[4] for r in five) / 12 / ghi_hour - 1) < 0.005
+    assert five[0][2] < az_hour < five[-1][2]                   # the sun moves within the hour
+
+
+def test_learning_from_five_minutes_recovers_mask_and_efficiency():
+    """Clear days at 5 minutes: the same result as a known mask, with thresholds meaning the same observed time."""
+    samples, sat = [], {}
+    for k in range(int(70 * 86400 / FIVE_MIN)):
+        t = START + 60 * 86400 + k * FIVE_MIN
+        sun = solar.sun_position(SITE, t + FIVE_MIN / 2)
+        if sun.elevation <= 0:
+            continue
+        w = model.clearsky_weather(SITE, t, period=FIVE_MIN)
+        beam, diff, _ = model.array_irradiance(GEO, sun, w.dni, w.dhi, w.ghi, solar.extra_radiation(t + FIVE_MIN / 2))
+        samples.append((t, GEO.peak_w * EFF * (beam * true_transmission(sun.azimuth, sun.elevation) + diff) / 1000))
+        sat[t] = w.ghi
+    learned = model.learn(SITE, GEO, samples, samples[-1][0], satellite_ghi=sat, datasheet_temp_coeff=0.0,
+                          steady={t for t, _ in samples}, period=FIVE_MIN)
+    assert learned.steady_filter and abs(learned.efficiency / EFF - 1) < 0.03
+    assert model.transmission(learned, 100.0, 10.0) < 0.3       # behind the mask
+    assert model.transmission(learned, 180.0, 40.0) > 0.9       # free
+
+
+def test_a_few_five_minute_samples_are_not_enough_for_a_cell():
+    """Four periods of 5 minutes are not the four hours a cell needs."""
+    t0 = START + 170 * 86400 + 10 * 3600
+    samples = [(t0 + k * FIVE_MIN, 400.0) for k in range(4)]
+    learned = model.learn(SITE, GEO, samples, t0 + 3600, period=FIVE_MIN, datasheet_temp_coeff=0.0)
+    assert not learned.cells

@@ -1,12 +1,7 @@
 // Noxcast panel section "Day": one day in detail. The groups stacked, forecast against expectation
 // and actual, the weather of each hour, and for a chosen hour how its forecast comes about.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/day".
-
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
-// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
-const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+const { WS_SCHEMA, ask, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DAY_TEXT = {
   de: {
@@ -120,8 +115,7 @@ class NoxcastDay extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/day", offset: this._offset }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/day", offset: this._offset });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._loaded = Date.now();
@@ -201,7 +195,7 @@ class NoxcastDay extends HTMLElement {
   _render() {
     const t = this._t, e = this._data && (this._data.entries || [])[0];
     let body;
-    if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
+    if (this._error) body = `<section class="card pad">${esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e || !e.arrays.some((a) => this._main(a).size)) body = `${this._nav()}<section class="card pad">${t.noData}</section>`;
     else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>${this._energy(e)}${this._history(e)}`;
@@ -319,7 +313,7 @@ class NoxcastDay extends HTMLElement {
     e.arrays.forEach((arr, i) => {
       const per = (arr.periods || []).filter((p) => p.end > h0 && p.start < h1);
       if (!per.length) return;
-      svg += `<text x="${X0 - 6}" y="${Ly + 8}" text-anchor="end" class="ax">${this._esc(arr.name).slice(0, 6)}</text>`;
+      svg += `<text x="${X0 - 6}" y="${Ly + 8}" text-anchor="end" class="ax">${esc(arr.name).slice(0, 6)}</text>`;
       for (const p of per) svg += `<rect x="${x(Math.max(p.start, h0)).toFixed(1)}" y="${Ly}" width="${Math.max(2, x(Math.min(p.end, h1)) - x(Math.max(p.start, h0))).toFixed(1)}" height="9" rx="3" class="${p.type === "shade" ? "lshade" : "lrefl"}"><title>${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${this._kwh(p.wh)} ${t.kwh}</title></rect>`;
       Ly += 13;
     });
@@ -332,12 +326,12 @@ class NoxcastDay extends HTMLElement {
     if (this._hour !== null && this._hour >= h0 && this._hour < h1) svg += `<rect x="${x(this._hour).toFixed(1)}" y="${top - 4}" width="${(x(this._hour + HOUR) - x(this._hour)).toFixed(1)}" height="${Hp - top + 4}" class="sel"></rect>`;
     // hit areas: one per hour
     for (const h of span) {
-      const parts = e.arrays.map((a, i) => `${this._esc(a.name)} ${Math.round(mains[i].get(h) || 0)} W`).join(", ");
+      const parts = e.arrays.map((a, i) => `${esc(a.name)} ${Math.round(mains[i].get(h) || 0)} W`).join(", ");
       svg += `<rect x="${x(h).toFixed(1)}" y="0" width="${(x(h + HOUR) - x(h)).toFixed(1)}" height="${Sy + Sh}" class="hit" data-act="hour" data-t="${h}"><title>${this._hm(h)}: ${Math.round(total(mains, h))} W (${parts})</title></rect>`;
     }
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? `${t.actual} / ${t.expected}` : t.forecast;
     const refLabel = phase === "today" && e.arrays.some((a) => a.morning && a.morning.t.length) ? t.morning : phase === "future" ? t.forecast : t.dayAhead;
-    const legend = [...e.arrays.map((a, i) => `<span><i class="sw" style="background:${DAY_COLORS[i % 6]}"></i>${this._esc(a.name)}</span>`),
+    const legend = [...e.arrays.map((a, i) => `<span><i class="sw" style="background:${DAY_COLORS[i % 6]}"></i>${esc(a.name)}</span>`),
       `<span class="muted">${mainLabel}</span>`,
       phase !== "future" ? `<span><i class="ln dashed"></i>${refLabel}</span>` : "",
       phase === "today" ? `<span><i class="ln dotted"></i>${t.held}</span>` : "",
@@ -553,7 +547,7 @@ class NoxcastDay extends HTMLElement {
     const fig = (k, v) => `<span class="gfig"><span class="muted">${k}</span> ${v}</span>`;
     return `<section class="card pad grow"><h3>${t.groups}</h3><div class="glist">
       ${rows.map((r) => `<div class="gitem">
-        <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${this._esc(r.arr.name)}</div>
+        <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${esc(r.arr.name)}</div>
           <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main)} ${t.kwh}</b></div></div>
         ${spark(r.m, r.i)}
         <div class="gfigs">
@@ -571,7 +565,7 @@ class NoxcastDay extends HTMLElement {
   _waterfallBody(e) {
     const t = this._t, h = this._hour, phase = this._phase, now = this._data.now;
     const chips = [["all", t.all], ...e.arrays.map((a) => [a.id, a.name])].map(([id, name]) =>
-      `<button class="chip ${this._focus === id ? "on" : ""}" data-act="focus" data-id="${this._esc(id)}">${this._esc(name)}</button>`).join("");
+      `<button class="chip ${this._focus === id ? "on" : ""}" data-act="focus" data-id="${esc(id)}">${esc(name)}</button>`).join("");
     const arrays = this._focus === "all" ? e.arrays : e.arrays.filter((a) => a.id === this._focus);
     const steps = arrays.map((a) => (a.steps || {})[String(h)]).filter(Boolean);
     const head = `<h3>${t.waterfall}${h !== null ? ` · ${this._hm(h)}–${this._hm(h + HOUR)}` : ""}</h3><div class="chips">${chips}</div>`;
@@ -609,10 +603,9 @@ class NoxcastDay extends HTMLElement {
   // ------------------------------------------------------------ formatting
 
   _pct(v) { const r = Math.round(v * 100); return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r)} %`; }
-  _num(v, d) { return Number(v).toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d }); }
-  _kwh(wh) { return (wh / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
-  _hm(ts) { return new Date(ts * 1000).toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: this._data.time_zone }); }
-  _esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  _num(v, d) { return num(v, this._lang, d); }
+  _kwh(wh) { return kwh(wh, this._lang); }
+  _hm(ts) { return hm(ts, this._lang, this._data.time_zone, { hourCycle: "h23" }); }
 
   _style() {
     const d = this._dark;

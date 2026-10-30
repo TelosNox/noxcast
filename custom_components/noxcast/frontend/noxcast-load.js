@@ -1,11 +1,6 @@
 // Noxcast panel section "Load": the learned load profile, the consumers and the forecast by part.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/load".
-
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
-// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
-const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+const { WS_SCHEMA, ask, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const LOAD_TEXT = {
   de: {
@@ -76,8 +71,7 @@ class NoxcastLoad extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/load" }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/load" });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._loaded = Date.now();
@@ -93,7 +87,7 @@ class NoxcastLoad extends HTMLElement {
   _render() {
     const t = this._t, e = this._data && (this._data.entries || [])[0];
     let body;
-    if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
+    if (this._error) body = `<section class="card pad">${esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e) body = `<section class="card pad">${t.noLoad}</section>`;
     else if (!e.profile) body = `<section class="card pad">${t.notLearned}</section>`;
@@ -173,14 +167,14 @@ class NoxcastLoad extends HTMLElement {
       const x = pad + i * bw;
       let acc = 0;
       const seg = (v, fill) => { if (v <= 0) return ""; const r = `<rect x="${(x + 1).toFixed(1)}" y="${y(acc + v).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${(y(acc) - y(acc + v)).toFixed(1)}" fill="${fill}"></rect>`; acc += v; return r; };
-      const title = `${this._hm(ts)}: ${Math.round(total)} W (${t.base} ${Math.round(base)}${ids.filter((id) => parts[id] > 0).map((id) => `, ${this._esc(e.consumers.find((c) => c.id === id).name)} ${Math.round(parts[id])}`).join("")})`;
+      const title = `${this._hm(ts)}: ${Math.round(total)} W (${t.base} ${Math.round(base)}${ids.filter((id) => parts[id] > 0).map((id) => `, ${esc(e.consumers.find((c) => c.id === id).name)} ${Math.round(parts[id])}`).join("")})`;
       svg += `<g><title>${title}</title>${seg(base, "var(--nx-base)")}${ids.map((id, k) => seg(parts[id] || 0, this._color(k))).join("")}</g>`;
       if (ts === todayEnd) svg += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="0" y2="${H - 18}" stroke="var(--secondary-text-color)" stroke-dasharray="3 3"></line>`;
       const hour = Number(this._hm(ts).slice(0, 2));
       if (hour % 3 === 0) svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${hour}</text>`;
     });
     const legend = [`<span><i style="background:var(--nx-base)"></i>${t.base}</span>`,
-      ...e.consumers.map((c, k) => `<span><i style="background:${this._color(k)}"></i>${this._esc(c.name)}</span>`)].join("");
+      ...e.consumers.map((c, k) => `<span><i style="background:${this._color(k)}"></i>${esc(c.name)}</span>`)].join("");
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.forecast}">${svg}</svg><div class="legend">${legend}</div>`;
   }
 
@@ -208,9 +202,9 @@ class NoxcastLoad extends HTMLElement {
     for (let h = 0; h < 24; h += 3) svg += `<text x="${x(h).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${h}</text>`;
     for (const [name, f, color, dash] of lines) {
       const pts = Array.from({ length: 24 }, (_, h) => f(h)).map((v, h) => (v == null ? null : `${x(h).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
-      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ""}><title>${this._esc(name)}</title></polyline>`;
+      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ""}><title>${esc(name)}</title></polyline>`;
     }
-    const legend = lines.map(([name, , color, dash]) => `<span><i class="ln" style="border-top:2px ${dash ? "dashed" : "solid"} ${color}"></i>${this._esc(name)}</span>`).join("");
+    const legend = lines.map(([name, , color, dash]) => `<span><i class="ln" style="border-top:2px ${dash ? "dashed" : "solid"} ${color}"></i>${esc(name)}</span>`).join("");
     const hasFlex = e.consumers.some((c) => c.timing === "flexible");
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.profile}">${svg}</svg><div class="legend">${legend}</div>${hasFlex ? `<p class="help">${t.flexNote}</p>` : ""}`;
   }
@@ -234,7 +228,7 @@ class NoxcastLoad extends HTMLElement {
     const pct = (v) => (total > 0 ? `${Math.round((v / total) * 100)} %` : "–");
     return `<table><thead><tr><th></th><th>${t.timing}</th><th class="num">${t.perDay}</th><th class="num">${t.share}</th></tr></thead><tbody>
       <tr><td><i class="dot" style="background:var(--nx-base)"></i>${t.base}</td><td></td><td class="num">${this._kwh(base)} ${t.kwh}</td><td class="num">${pct(base)}</td></tr>
-      ${rows.map(([c, d, k]) => `<tr><td><i class="dot" style="background:${this._color(k)}"></i>${this._esc(c.name)}<div class="muted small mono">${this._esc(c.sensor || "")}</div></td>
+      ${rows.map(([c, d, k]) => `<tr><td><i class="dot" style="background:${this._color(k)}"></i>${esc(c.name)}<div class="muted small mono">${esc(c.sensor || "")}</div></td>
         <td>${t[c.timing] || c.timing}${c.timing === "fixed" ? ` · ${t.kinds[c.kind] || c.kind}` : ""}${this._modelInfo(c)}</td><td class="num">${this._kwh(d)} ${t.kwh}</td><td class="num">${pct(d)}</td></tr>`).join("")}
     </tbody></table>`;
   }
@@ -270,10 +264,9 @@ class NoxcastLoad extends HTMLElement {
 
   // ------------------------------------------------------------ formatting
 
-  _num(v, d) { return Number(v).toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d }); }
-  _kwh(wh) { return (wh / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
-  _hm(ts) { return new Date(ts * 1000).toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: this._data.time_zone }); }
-  _esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  _num(v, d) { return num(v, this._lang, d); }
+  _kwh(wh) { return kwh(wh, this._lang); }
+  _hm(ts) { return hm(ts, this._lang, this._data.time_zone, { hourCycle: "h23" }); }
 
   _style() {
     const d = this._dark;

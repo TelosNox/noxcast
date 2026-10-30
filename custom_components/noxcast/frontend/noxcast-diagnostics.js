@@ -1,10 +1,7 @@
 // Noxcast panel section "Diagnostics": data quality of every sensor Noxcast reads, learning runs,
 // weather source, archive and excluded periods. Answers "why does it not learn?" without logs.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/diagnostics".
-
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
+const { WS_SCHEMA, ask, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DIAG_TEXT = {
   de: {
@@ -63,8 +60,7 @@ class NoxcastDiagnostics extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/diagnostics" }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/diagnostics" });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._error = null;
@@ -79,7 +75,7 @@ class NoxcastDiagnostics extends HTMLElement {
   _issues(e) {
     const t = this._t.issues, out = [];
     for (const s of e.sensors) {
-      const name = `<span class="mono">${this._esc(s.entity_id)}</span>`;
+      const name = `<span class="mono">${esc(s.entity_id)}</span>`;
       if (s.state === null) out.push(["bad", `${name} ${t.missing}`]);
       else if (s.state === "unavailable") out.push(["warn", `${name} ${t.unavailable}`]);
       if (STAT_ROLES.has(s.role) && s.state !== null) {
@@ -88,8 +84,8 @@ class NoxcastDiagnostics extends HTMLElement {
       }
     }
     if (!e.learning.last) out.push(["warn", t.noLearning]);
-    if (e.learning.error) out.push(["bad", t.learnError.replace("{e}", this._esc(e.learning.error))]);
-    for (const [n, err] of Object.entries(e.learning.archive_errors || {})) out.push(["warn", t.archiveError.replace("{n}", n).replace("{e}", this._esc(err))]);
+    if (e.learning.error) out.push(["bad", t.learnError.replace("{e}", esc(e.learning.error))]);
+    for (const [n, err] of Object.entries(e.learning.archive_errors || {})) out.push(["warn", t.archiveError.replace("{n}", n).replace("{e}", esc(err))]);
     if (e.weather.updated && Date.now() - Date.parse(e.weather.updated) > 2 * 3600000) out.push(["warn", t.weatherStale.replace("{t}", this._ago(e.weather.updated))]);
     return out;
   }
@@ -97,7 +93,7 @@ class NoxcastDiagnostics extends HTMLElement {
   _render() {
     const t = this._t;
     let body;
-    if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
+    if (this._error) body = `<section class="card pad">${esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else body = this._data.entries.map((e) => this._entry(e)).join("");
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">
@@ -107,7 +103,7 @@ class NoxcastDiagnostics extends HTMLElement {
   _entry(e) {
     const t = this._t, issues = this._issues(e);
     const tiles = [
-      [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `Open-Meteo ${this._esc((e.weather.models || []).join(" + "))} · ${e.weather.hours} ${t.hours}`],
+      [t.weather, e.weather.updated ? this._ago(e.weather.updated) : t.never, `Open-Meteo ${esc((e.weather.models || []).join(" + "))} · ${e.weather.hours} ${t.hours}`],
       [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._learningSub(e.learning) : ""],
       [t.archive, `${e.archive.days} ${t.days}`, `${e.archive.complete} ${t.complete}`],
       [t.fine, `${(e.fine || {}).days || 0} ${t.days}`, t.fineSub],
@@ -116,16 +112,16 @@ class NoxcastDiagnostics extends HTMLElement {
       ? `<ul class="issues">${issues.map(([lvl, text]) => `<li class="${lvl}"><span class="dot"></span><span>${text}</span></li>`).join("")}</ul>`
       : `<p class="okline"><span class="dot ok"></span>${t.ok}</p>`;
     const owners = [...new Set(e.sensors.map((s) => s.owner))];
-    const rows = owners.map((o) => `<tr class="group"><td colspan="5">${this._esc(o)}</td></tr>${e.sensors.filter((s) => s.owner === o).map((s) => `
-      <tr><td><span class="mono">${this._esc(s.entity_id)}</span><div class="muted small">${t.roles[s.role] || s.role}</div></td>
-        <td class="num">${s.state === null ? "–" : `${this._esc(s.state)} ${this._esc(s.unit || "")}`}</td>
-        <td class="muted small">${this._esc(s.state_class || "")}</td>
+    const rows = owners.map((o) => `<tr class="group"><td colspan="5">${esc(o)}</td></tr>${e.sensors.filter((s) => s.owner === o).map((s) => `
+      <tr><td><span class="mono">${esc(s.entity_id)}</span><div class="muted small">${t.roles[s.role] || s.role}</div></td>
+        <td class="num">${s.state === null ? "–" : `${esc(s.state)} ${esc(s.unit || "")}`}</td>
+        <td class="muted small">${esc(s.state_class || "")}</td>
         <td>${STAT_ROLES.has(s.role) ? (s.statistics ? this._meter(s.coverage) : `<span class="bad">✕</span>`) : ""}</td>
         <td class="muted small">${s.first ? `${t.since} ${this._d(s.first)}` : ""}</td></tr>`).join("")}`).join("");
-    const arrays = e.arrays.map((a) => `<tr><td>${this._esc(a.name)}</td><td class="num">${(a.samples || 0).toLocaleString(this._lang)}</td>
+    const arrays = e.arrays.map((a) => `<tr><td>${esc(a.name)}</td><td class="num">${(a.samples || 0).toLocaleString(this._lang)}</td>
       <td class="num">${a.coverage === null ? "–" : this._pct(a.coverage)}</td><td class="num">${a.efficiency === null ? "–" : this._pct(a.efficiency)}</td></tr>`).join("");
     const excl = e.exclusions.length
-      ? `<ul class="plain">${e.exclusions.map((x) => `<li>${this._d(x.start)} – ${this._d(new Date(Date.parse(x.end) - 1000).toISOString())}${x.note ? ` · <span class="muted">${this._esc(x.note)}</span>` : ""}</li>`).join("")}</ul>`
+      ? `<ul class="plain">${e.exclusions.map((x) => `<li>${this._d(x.start)} – ${this._d(new Date(Date.parse(x.end) - 1000).toISOString())}${x.note ? ` · <span class="muted">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>`
       : `<p class="muted">${t.none}</p>`;
     return `
       <section class="card pad"><div class="figs">${tiles}</div></section>
@@ -165,7 +161,6 @@ class NoxcastDiagnostics extends HTMLElement {
     const t = this._t, m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
     return m < 120 ? `${t.ago} ${m} ${t.min}`.trim() : `${t.ago} ${Math.round(m / 60)} ${t.h}`.trim();
   }
-  _esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   _style() {
     const d = this._dark;

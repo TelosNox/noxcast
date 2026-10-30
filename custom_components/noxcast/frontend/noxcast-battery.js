@@ -1,12 +1,7 @@
 // Noxcast panel section "Battery & surplus": what-if runs on the current forecast and the last 30 days.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/battery".
 // The what-if simulation mirrors battery.simulate in the integration; without changes it gives the same numbers.
-
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
-// a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]
-const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((n) => s[n][i])]) : []);
+const { WS_SCHEMA, ask, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const BAT_TEXT = {
   de: {
@@ -102,8 +97,7 @@ class NoxcastBattery extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/battery" }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/battery" });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._loaded = Date.now();
@@ -123,7 +117,7 @@ class NoxcastBattery extends HTMLElement {
   _render() {
     const t = this._t, e = this._data && (this._data.entries || [])[0];
     let body;
-    if (this._error) body = `<section class="card pad">${this._esc(this._error)}</section>`;
+    if (this._error) body = `<section class="card pad">${esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e) body = `<section class="card pad">${t.noBattery}</section>`;
     else {
@@ -319,8 +313,8 @@ class NoxcastBattery extends HTMLElement {
 
   // ------------------------------------------------------------ formatting
 
-  _kwh(wh) { return (wh / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
-  _hm(ts) { return new Date(ts * 1000).toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: this._data.time_zone }); }
+  _kwh(wh) { return kwh(wh, this._lang); }
+  _hm(ts) { return hm(ts, this._lang, this._data.time_zone, { hourCycle: "h23" }); }
   _dayKey(ts) { return new Date(ts * 1000).toLocaleDateString("en-CA", { timeZone: this._data.time_zone }); }
   _when(ts) {
     const t = this._t, d = this._dayKey(ts), today = this._dayKey(this._data.now);
@@ -328,7 +322,6 @@ class NoxcastBattery extends HTMLElement {
   }
   _date(key) { const [y, m, d] = key.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(this._lang, { day: "numeric", month: "numeric", timeZone: "UTC" }); }
   _dur(min) { return min < 60 ? `${min} min` : `${(min / 60).toLocaleString(this._lang, { maximumFractionDigits: 2 })} ${this._t.h}`; }
-  _esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   _style() {
     const d = this._dark;

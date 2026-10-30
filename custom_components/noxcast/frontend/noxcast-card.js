@@ -21,7 +21,8 @@
 // look: plain                          # plain: Home Assistant card; noxcast: the Noxcast panel look
 // legend: true                         # legend below the chart, only for what is shown
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
-// Tapping PV, battery, home or grid opens the entity's more-info dialog.
+// Tapping a figure opens the more-info dialog of its entity. With several entities behind it (PV arrays and
+// sensors, battery level and power) it first lists them with their current values.
 const { WS_SCHEMA, ask, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const TEXT = {
@@ -199,6 +200,7 @@ class NoxcastCard extends HTMLElement {
     clearTimeout(this._midnight);
     clearTimeout(this._stepTimer);
     this._stepTimer = null;
+    this._closeDetail();
     this._timer = null;
     if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
     this._onVisible = null;
@@ -387,6 +389,21 @@ class NoxcastCard extends HTMLElement {
       .cf .gap { display: block; width: 100%; height: .72em; height: 1cap; overflow: visible; }
       .cf.chain .f { padding: 0 10px; }   /* room between a value and the lines beside it */
       .bus { display: block; width: 100%; height: 22px; margin-top: -4px; overflow: visible; }
+      #flow { position: relative; z-index: 2; }   /* the list of a figure lies above the chart */
+      .cf .f.open { background: rgba(127,127,127,.15); border-radius: 8px; }
+      .pop { position: absolute; box-sizing: border-box; min-width: 170px; max-width: 100%; padding: 4px; font-size: 13px;
+        background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color);
+        border: 1px solid var(--divider-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+      .pop > div, .pop button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; padding: 0 8px; box-sizing: border-box; }
+      .pop button { width: 100%; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      .pop button:hover { background: rgba(127,127,127,.15); }
+      .pop .head { color: var(--secondary-text-color); font-size: 12px; min-height: 26px; }
+      .pop .sub { padding-left: 18px; }
+      .pop .two { padding-right: 0; }
+      .pop .two button { width: auto; flex: none; }
+      .pop .two span:first-child { flex: 1; }
+      .pop .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pop .w { white-space: nowrap; font-variant-numeric: tabular-nums; }
       .wx { margin-bottom: 6px; }       /* a little air, so the strip does not read as a lid on the chart */
       .muted { color: var(--secondary-text-color); }
       .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
@@ -439,12 +456,10 @@ class NoxcastCard extends HTMLElement {
   // power now as one row of figures, in the order PV, battery, home, grid: then the power
   // between two neighbours is the net flow across that border. flow_style chain shows it as dots in the gaps,
   // bus as dots on a line below the figures with a stub to each. Built once per shape, so the dots never jump;
-  // each figure opens its entity
+  // each figure opens its entity, or the list of its entities
   _renderCompact(el, v) {
     const P = this._p, t = this._t, c = this._config, bus = c.flow_style === "bus";
-    const num = (x) => (Math.abs(x) >= 1000
-      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
-      : `${Math.round(x)} W`);
+    const num = (x) => this._num(x);
     // prod > 0: the figure supplies power, < 0: it takes power
     const nodes = [{ key: "pv", label: t.pv, color: P.pvText, dot: P.pv, id: (v.groups.find((g) => g.id) || {}).id, prod: v.pv }];
     if (v.bats.length) nodes.push({ key: "bat", label: t.battery, color: P.bat, dot: P.bat, id: (v.bats.find((b) => b.id) || {}).id, prod: -v.bat });
@@ -508,7 +523,82 @@ class NoxcastCard extends HTMLElement {
         f.knots[n.key].setAttribute("fill", on ? n.dot : P.rail);
       }
     }
+    if (this._detail) this._detail.spans.forEach((span, i) => { span.textContent = this._detail.values[i](); });
     this._animate();
+  }
+
+  _num(x) {
+    return Math.abs(x) >= 1000
+      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
+      : `${Math.round(x)} W`;
+  }
+
+  // what is behind a figure that sums up several entities: rows of a name and cells, each cell a value and the
+  // entity it opens (none for the sum of an array)
+  _details(key) {
+    const c = this._config, watts = (w) => (w === null ? "–" : this._num(Math.abs(w)));
+    const title = (id) => { const st = id && this._hass.states[id]; return (st && st.attributes.friendly_name) || id; };
+    if (key === "pv") {
+      return (c.pv.groups || []).flatMap((g) => {
+        const ids = (g.entities || [g.entity]).filter(Boolean);
+        const power = (id) => () => { const w = this._watts(id, g.invert); return watts(w === null ? null : Math.max(0, w)); };
+        if (ids.length === 1) return [{ name: g.name || title(ids[0]), cells: [{ id: ids[0], value: power(ids[0]) }] }];
+        return [{ name: g.name, head: true, cells: [{ value: () => this._num(this._groupW(g)) }] },
+          ...ids.map((id) => ({ name: title(id), sub: true, cells: [{ id, value: power(id) }] }))];
+      });
+    }
+    if (key !== "bat") return [];
+    return (c.batteries || []).map((b) => {
+      const soc = () => { const v = this._soc(b.soc); return v === null ? "–" : `${Math.round(v)} %`; };
+      const power = () => {
+        const w = this._watts(b.entity, b.invert);
+        return `${w !== null && this._on(`d:${b.entity}`, w) ? (w > 0 ? "▲ " : "▼ ") : ""}${watts(w)}`;
+      };
+      return { name: b.name || title(b.soc || b.entity), cells: [b.soc && { id: b.soc, value: soc }, b.entity && { id: b.entity, value: power }].filter(Boolean) };
+    });
+  }
+
+  _tapFlow(ev, el) {
+    const target = ev.target.closest ? ev.target : null;
+    const list = target && target.closest("[data-list]");
+    const more = target && target.closest("[data-more]");
+    if (target && target.closest(".pop") && !more) return;
+    const again = list && this._detail && this._detail.cell === list;
+    this._closeDetail();
+    if (list && !again) this._openDetail(list, el);
+    else if (more) this._moreInfo(ev);
+  }
+
+  // the list of a figure, just below it and inside the card; its values follow the sensors until it closes
+  _openDetail(cell, el) {
+    const values = [];
+    const value = (fn) => { values.push(fn); return `<span class="w">${esc(fn())}</span>`; };
+    const button = (id, inner, cls = "") => `<button type="button"${cls ? ` class="${cls}"` : ""} data-more="${esc(id)}">${inner}</button>`;
+    const name = (r) => `<span class="n">${esc(r.name)}</span>`;
+    const pop = document.createElement("div");
+    pop.className = "pop";
+    pop.innerHTML = this._details(cell.dataset.list).map((r) => {
+      if (r.head) return `<div class="head">${name(r)}${value(r.cells[0].value)}</div>`;
+      if (r.cells.length === 1) return button(r.cells[0].id, `${name(r)}${value(r.cells[0].value)}`, r.sub ? "sub" : "");
+      return `<div class="two">${name(r)}${r.cells.map((x) => button(x.id, value(x.value))).join("")}</div>`;
+    }).join("");
+    el.appendChild(pop);
+    const box = el.getBoundingClientRect(), at = cell.getBoundingClientRect();
+    pop.style.top = `${at.bottom - box.top + 4}px`;
+    pop.style.left = `${Math.max(0, Math.min(at.left - box.left, box.width - pop.offsetWidth))}px`;
+    cell.classList.add("open");
+    const outside = (ev) => { if (!ev.composedPath().includes(el)) this._closeDetail(); };
+    document.addEventListener("click", outside);
+    this._detail = { pop, cell, values, outside, spans: [...pop.querySelectorAll(".w")] };
+  }
+
+  _closeDetail() {
+    const d = this._detail;
+    if (!d) return;
+    document.removeEventListener("click", d.outside);
+    d.pop.remove();
+    d.cell.classList.remove("open");
+    this._detail = null;
   }
 
   // icons instead of names above the figures (labels: icons; battery_style: power of earlier versions keeps the names)
@@ -578,7 +668,12 @@ class NoxcastCard extends HTMLElement {
   _buildCompact(el, nodes, bus, shape) {
     const N = nodes.length, mid = (i) => ((i + 0.5) / N) * 100;
     const head = (n) => (this._icons ? `<span class="ic" data-ic="${n.key}" title="${n.label}"></span>` : `<span class="l">${n.label}</span>`);
-    const cell = (n) => `<div class="f" data-cell="${n.key}"${n.id ? ` data-more="${esc(n.id)}"` : ""}>${head(n)}
+    // one entity behind a figure opens at once, several as a list
+    const tap = (n) => {
+      const ids = this._details(n.key).flatMap((r) => r.cells.map((x) => x.id)).filter(Boolean), id = ids[0] || n.id;
+      return ids.length > 1 ? ` data-list="${n.key}"` : id ? ` data-more="${esc(id)}"` : "";
+    };
+    const cell = (n) => `<div class="f" data-cell="${n.key}"${tap(n)}>${head(n)}
       <span class="v" data-v="${n.key}"></span></div>`;
     const dots = (y) => [0, 1, 2, 3].map(() => `<circle cy="${y}" r="2.8" visibility="hidden"></circle>`).join("");
     let html;
@@ -596,8 +691,9 @@ class NoxcastCard extends HTMLElement {
       html = `<div class="cf" style="grid-template-columns:repeat(${N}, minmax(0, 1fr))">${nodes.map(cell).join("")}</div>
         <svg class="bus" aria-hidden="true"><line x1="${mid(0)}%" x2="${mid(N - 1)}%" y1="16" y2="16" stroke="${this._p.rail}" stroke-width="2" stroke-linecap="round"></line>${segs}${stubs}</svg>`;
     }
+    this._closeDetail();
     el.innerHTML = html;
-    el.onclick = (ev) => this._moreInfo(ev);
+    el.onclick = (ev) => this._tapFlow(ev, el);
     const q = (sel) => [...el.querySelectorAll(sel)];
     const segs = q("[data-seg]").map((g) => ({ line: g.querySelector("line"), dots: [...g.querySelectorAll("circle")],
       x0: Number(g.dataset.x0), x1: Number(g.dataset.x1), max: bus ? 4 : 3, n: 0, dir: 1, dur: 1, phase: 0 }));

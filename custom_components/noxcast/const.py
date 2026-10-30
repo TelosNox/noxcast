@@ -3,6 +3,10 @@ from datetime import timedelta
 
 DOMAIN = "noxcast"
 
+# a time series: start of the period in UTC seconds -> value (Wh, W, ...; hourly unless a function says otherwise)
+type Series = dict[float, float]
+TOTAL = None                             # key of the sum of all arrays in the series per array of NoxcastData
+
 # main entry
 CONF_SOC_SENSORS = "soc_sensors"
 CONF_SOC_FULL = "soc_full_pct"

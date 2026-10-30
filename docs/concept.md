@@ -560,6 +560,11 @@ orientation changes the geometry key and starts relearning.
   versioned payloads, see Outputs); the steps
   of an archived day under the current learned model come from `explain.replay`.
 - Stable public interface: versioned entity IDs and attribute schema.
+- Contracts inside: a time series is `Series` (`const.py`: period start in UTC seconds -> value), the
+  sum of all arrays has the key `TOTAL`. Learned state carries `LEARNED_VERSION`: it is only a cache of
+  the history, so another version is relearned at startup instead of migrated.
+- Boundaries as tests (`tests/test_boundaries.py`): the core does not import Home Assistant; load,
+  battery and plan see PV only as a series.
 - Transparent storage: learned parameters as readable, versioned files; diagnostic export.
 - Backtesting harness (`backtest.py`): replay history and test on unlearned days, see below. Every
   model change must prove itself there; users see how good the forecast is for their system.

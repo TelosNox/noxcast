@@ -6,7 +6,7 @@ import functools
 import hashlib
 import json
 from datetime import date, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant import config_entries
@@ -350,7 +350,7 @@ def _fingerprint(c) -> str:
         "learned": c.learned, "band": c.band, "load_profile": c.load_profile, "floor_profile": c.floor_profile,
         "consumer_profiles": c.consumer_profiles, "consumer_models": c.consumer_models, "run_profiles": c.run_profiles,
         "load_events": c.load_events, "load_backtest": c.load_backtest, "battery_log": c.battery_log,
-        "store": {k: v for k, v in c._store_data().items() if k not in ("pv_backtest", "last_learning_seconds")},
+        "store": {k: v for k, v in c._store_data().items() if k not in ("pv_backtest", "last_learning_seconds", "learned_version")},
         "archive": c._archive_data(), "fine": c.fine, "data": c.data,
         "runs": {sid: c.run_profile(sid) for sid, cc in c.consumers.items() if cc.timing == "flexible"},
     })
@@ -628,6 +628,21 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
         await hass.async_block_till_done()
         again = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert again.pv_backtest == json.loads(json.dumps(res)) and again.last_learning_seconds == c.last_learning_seconds
+
+        # learned state in another format is relearned; a store from before the version stays valid
+        for version, kept in ((model.LEARNED_VERSION + 1, False), (None, True)):
+            stored = again._store_data()
+            stored["learned_version"] = version
+            if version is None:
+                del stored["learned_version"]
+            await again._store.async_save(stored)
+            with patch("custom_components.noxcast.coordinator.NoxcastCoordinator.async_learn", AsyncMock(return_value=True)) as learn:
+                assert await hass.config_entries.async_reload(entry.entry_id)
+                await hass.async_block_till_done()
+            again = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+            assert bool(again.learned) is kept and learn.called is not kept, version
+            if not kept:
+                assert await again.async_learn() and again.learned
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

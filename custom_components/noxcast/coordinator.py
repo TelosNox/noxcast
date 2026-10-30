@@ -20,6 +20,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    Series,
+    TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
     WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
@@ -43,7 +45,7 @@ from . import load as lf
 from . import plan as pl
 from .forecasting import NoxcastData
 from .learning import ArrayConfig, ConsumerConfig
-from .model import HEATING_K, ArrayGeometry, LearnedArray, Plane, WeatherHour
+from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour
 from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
@@ -150,7 +152,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         try:
             stored = await self._store.async_load() or {}
             self.exclusions = [e for e in stored.get("exclusions", []) if {"start", "end"} <= set(e)]
-            for sub_id, data in stored.get("arrays", {}).items():
+            arrays = stored.get("arrays", {}) if stored.get("learned_version", 1) == LEARNED_VERSION else {}
+            for sub_id, data in arrays.items():
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
             self.band = bd.valid(stored.get("band"))
@@ -298,6 +301,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
             "last_learning_seconds": self.last_learning_seconds,
+            "learned_version": LEARNED_VERSION,
             "arrays": {sid: {"geometry": self._geometry_key(sid), "learned": la.as_dict()}
                        for sid, la in self.learned.items() if sid in self.arrays},
             # today's hours survive a restart even if the weather source no longer reports past hours
@@ -399,7 +403,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return bd.from_archive(self.forecast_archive, self.site, {sid: a.geometry for sid, a in self.arrays.items()},
                                self.learned)
 
-    async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, dict[float, float]]:
+    async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:
         """House load and consumer power in W: {sensor: {hour start: mean W}}.
 
         Consumers without a power sensor use their energy sensor: the hourly change in Wh is the mean W.
@@ -415,13 +419,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                       for t, v in stats.get(sid, {}).items() if v is not None}
                 for sid in ids + energy}
 
-    async def _async_load_floor(self, start: datetime) -> dict[float, float]:
+    async def _async_load_floor(self, start: datetime) -> Series:
         """Hourly minimum of the house load in W (the base-load floor before consumers are subtracted)."""
         factor = (await async_power_factors(self.hass, [self.house_load])).get(self.house_load, 1.0)
         stats = await async_hourly_statistics(self.hass, [self.house_load], start, "min")
         return {t: v * factor for t, v in stats.get(self.house_load, {}).items() if v is not None}
 
-    async def async_day_flows(self, start: float, end: float, pv: dict[float, float]) -> dict | None:
+    async def async_day_flows(self, start: float, end: float, pv: Series) -> dict | None:
         """Where the energy of [start, end) went (see flows.py); None without house load and batteries."""
         socs = {d[CONF_SOC_SENSOR]: float(d.get(CONF_CAPACITY) or 0) * 1000
                 for d in self.batteries.values() if d.get(CONF_SOC_SENSOR)}
@@ -447,7 +451,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             battery = {t: sum(v) for t, v in parts.items() if len(v) == len(socs)}   # every battery known
         return fl.day_flows(pv, load, battery, start, end, grid)
 
-    async def _async_learn_load(self, now: datetime, air_temp: dict[float, float] | None = None) -> None:
+    async def _async_learn_load(self, now: datetime, air_temp: Series | None = None) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""
         days = lf.PROFILE_DAYS + lf.BACKTEST_DAYS + 1
         series = await self._async_load_series(now - timedelta(days=days))
@@ -504,7 +508,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return lf.DayTypeZone(tz, types)
 
     async def _async_load_forecast(self, now: float, end: float,
-                                   temps: dict[float, float] | None = None) -> lf.LoadForecast | None:
+                                   temps: Series | None = None) -> lf.LoadForecast | None:
         """Load forecast with the correction from the last hours and the consumers running now."""
         if not self.house_load or self.load_profile is None:
             return None
@@ -628,7 +632,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return fetched
 
     async def _async_today_actual(self, day_start: float, now: float
-                                  ) -> tuple[dict[str, dict[float, float]], dict[str, tuple[float, float, float]]]:
+                                  ) -> tuple[dict[str, Series], dict[str, tuple[float, float, float]]]:
         """Today's measured hours per array and the running hour (see forecasting.today_actual)."""
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         hour_now = now - now % 3600
@@ -674,7 +678,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         if local_now.hour in fc_archive.HISTORY_HOURS and fc_archive.add_history(
                 self.forecast_archive, local_now.date(), local_now.replace(minute=0, second=0, microsecond=0).timestamp(),
-                result.expected[None]):
+                result.expected[TOTAL]):
             self._archive_store.async_delay_save(self._archive_data, 300)
 
         result.load = await self._async_load_forecast(

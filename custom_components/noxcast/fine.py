@@ -13,12 +13,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 
+from .const import Series
+
 STEP = 300                       # seconds, as Home Assistant's 5-minute statistics
 FINE_DAYS = 3 * 366
 STATS_DAYS = 9                   # 5-minute statistics Home Assistant keeps (default 10 days), minus a margin
 
 
-def day_steps(five_min: dict[float, float], day_start: float, day_end: float,
+def day_steps(five_min: Series, day_start: float, day_end: float,
               useful: Callable[[float], bool]) -> dict | None:
     """{"t0": first period start, "w": [W or None per period]} from the first to the last useful period.
 
@@ -61,7 +63,7 @@ def prune(store: dict, oldest: date, sensors: set[str]) -> None:
             del day[sensor]
 
 
-def series(store: dict, sensor: str) -> dict[float, float]:
+def series(store: dict, sensor: str) -> Series:
     """All kept 5-minute means of one sensor: {period start: W}."""
     out = {}
     for day in store.values():

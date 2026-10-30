@@ -10,11 +10,13 @@ import and export shows only the net.
 """
 from __future__ import annotations
 
+from .const import Series
+
 HOUR = 3600.0
 KEYS = ("pv_home", "pv_battery", "pv_grid", "battery_home", "battery_grid", "grid_home", "grid_battery", "pv_rest")
 
 
-def battery_energy(soc: dict[float, float], capacity_wh: float) -> dict[float, float]:
+def battery_energy(soc: Series, capacity_wh: float) -> Series:
     """Energy into the battery per hour (Wh, > 0 charging) from the hourly mean state of charge in %."""
     out = {}
     for t in soc:
@@ -24,8 +26,8 @@ def battery_energy(soc: dict[float, float], capacity_wh: float) -> dict[float, f
     return out
 
 
-def day_flows(pv: dict[float, float], load: dict[float, float] | None, battery: dict[float, float] | None,
-              start: float, end: float, grid: dict[float, float] | None = None) -> dict | None:
+def day_flows(pv: Series, load: Series | None, battery: Series | None,
+              start: float, end: float, grid: Series | None = None) -> dict | None:
     """Totals in Wh of each path in [start, end).
 
     pv: PV energy per hour; load: house load per hour, or None without a house-load sensor; battery:

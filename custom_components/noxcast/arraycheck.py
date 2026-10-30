@@ -14,6 +14,7 @@ from .model import (
     temperature_factor, transmission,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
+from .const import Series
 
 _LOGGER = logging.getLogger(__name__)
 H = 3600.0
@@ -28,7 +29,7 @@ def _month(ts: float) -> str:
 
 
 def month_balance(site: Site, geo: ArrayGeometry, learned: LearnedArray, year: int,
-                  air_temp: dict[float, float] | None = None) -> list[dict]:
+                  air_temp: Series | None = None) -> list[dict]:
     """Clear-sky day in the middle of each month: energy and what shade, reflection, direction and heat change.
 
     Each effect is the difference between the full model and the model without that effect, relative
@@ -65,7 +66,7 @@ def month_balance(site: Site, geo: ArrayGeometry, learned: LearnedArray, year: i
 
 
 def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-          satellite_ghi: dict[float, float] | None, air_temp: dict[float, float] | None,
+          satellite_ghi: Series | None, air_temp: Series | None,
           steady: set[float] | None = None) -> list[dict]:
     """Hours that show the plane itself: clear (by satellite, if there is one), unshaded, well lit.
 
@@ -98,8 +99,8 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
 
 
 def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                        satellite_ghi: dict[float, float] | None = None,
-                        air_temp: dict[float, float] | None = None,
+                        satellite_ghi: Series | None = None,
+                        air_temp: Series | None = None,
                         steady: set[float] | None = None) -> dict[str, list]:
     """Efficiency at 25 °C per calendar month: {"YYYY-MM": [efficiency, hours]}.
 
@@ -124,8 +125,8 @@ def _spread(ratios: list[float]) -> float:
 
 
 def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                   satellite_ghi: dict[float, float] | None = None,
-                   air_temp: dict[float, float] | None = None, steady: set[float] | None = None) -> dict | None:
+                   satellite_ghi: Series | None = None,
+                   air_temp: Series | None = None, steady: set[float] | None = None) -> dict | None:
     """Tilt and azimuth under which clear unshaded hours fit one efficiency best.
 
     With the right geometry the ratio of measured to modelled power stays the same over the day and the
@@ -193,7 +194,7 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 
 
 def annotate(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-             air_temp: dict[float, float] | None, satellite_ghi: dict[float, float] | None, year: int,
+             air_temp: Series | None, satellite_ghi: Series | None, year: int,
              steady: set[float] | None = None) -> None:
     """Set the panel explanations on a freshly learned array; a failure never stops the learning."""
     try:

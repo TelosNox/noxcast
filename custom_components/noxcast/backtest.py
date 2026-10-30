@@ -25,6 +25,7 @@ from . import explain
 from . import learning as ln
 from .model import LearnedArray, measured_forecast, usable_samples
 from .solar import Site
+from .const import Series
 
 VERSION = 1
 OK, NOT_ENOUGH = "ok", "not_enough_data"
@@ -64,7 +65,7 @@ def _not_enough(reason: str, days: int = 0, needed: int = 0) -> dict:
     return {"status": NOT_ENOUGH, "reason": reason, "days": days, "needed": needed}
 
 
-def _usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> dict[float, float]:
+def _usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> Series:
     """The array's hours learning would use, with the mean power (W = Wh per hour)."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
@@ -145,7 +146,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
         reason = _not_enough(NO_SATELLITE)
         return {"arrays": {sid: reason for sid in arrays}, "total": reason}
     air = history.air_temp or {}
-    tests: dict[str, dict[float, float]] = {}
+    tests: dict[str, Series] = {}
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
         tests[sid] = {t: p for t, p in _usable(arr, history, soc_full, exclusions).items()

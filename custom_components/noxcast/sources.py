@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_WEATHER_MODELS, FORECAST_DAYS, POWER_UNIT_FACTORS
+from .const import DEFAULT_WEATHER_MODELS, FORECAST_DAYS, POWER_UNIT_FACTORS, Series
 from .model import WeatherHour
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def _number(value) -> float | None:
     return v if math.isfinite(v) else None
 
 
-def _mid_hour(instant: dict[float, float]) -> dict[float, float]:
+def _mid_hour(instant: Series) -> Series:
     """Instantaneous values at full hours -> value at the middle of the hour starting there."""
     return {t: (v + instant[t + 3600]) / 2 for t, v in instant.items() if t + 3600 in instant}
 
@@ -206,7 +206,7 @@ async def _async_archive(hass: HomeAssistant, url: str, params: dict, api_key: s
 
 
 async def async_archive_temperature(hass: HomeAssistant, url: str, latitude: float, longitude: float,
-                                    start: datetime, end: datetime, api_key: str | None = None) -> dict[float, float]:
+                                    start: datetime, end: datetime, api_key: str | None = None) -> Series:
     """Air temperature (°C) at the middle of each hour, keyed by hour start (reanalysis archive)."""
     data = await _async_archive(hass, url, {
         "latitude": latitude, "longitude": longitude, "start_date": f"{start:%Y-%m-%d}",
@@ -217,7 +217,7 @@ async def async_archive_temperature(hass: HomeAssistant, url: str, latitude: flo
 
 
 async def async_archive_irradiance(hass: HomeAssistant, url: str, model: str, latitude: float, longitude: float,
-                                   start: datetime, end: datetime, api_key: str | None = None) -> dict[float, float]:
+                                   start: datetime, end: datetime, api_key: str | None = None) -> Series:
     """Measured hourly mean GHI (W/m²) keyed by hour start (satellite archive)."""
     params = {"latitude": latitude, "longitude": longitude, "start_date": f"{start:%Y-%m-%d}",
               "end_date": f"{end:%Y-%m-%d}", "hourly": "shortwave_radiation"}

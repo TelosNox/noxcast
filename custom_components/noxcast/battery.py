@@ -15,6 +15,8 @@ import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from .const import Series
+
 H = 3600.0
 COUPLING_DC, COUPLING_AC = "dc", "ac"
 DEFAULT_EFFICIENCY = {COUPLING_DC: 0.95, COUPLING_AC: 0.90}   # round trip
@@ -75,7 +77,7 @@ class Simulation:
         return self.points[-1][1]
 
 
-def simulate(battery: Battery, pv: dict[float, float], load: dict[float, float], now: float, end: float) -> Simulation:
+def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float) -> Simulation:
     """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour)."""
     sim = Simulation()
     cap = battery.capacity_wh
@@ -129,7 +131,7 @@ def simulate(battery: Battery, pv: dict[float, float], load: dict[float, float],
     return sim
 
 
-def charge_start(pv: dict[float, float], load: dict[float, float], start: float, end: float) -> float | None:
+def charge_start(pv: Series, load: Series, start: float, end: float) -> float | None:
     """First hour in [start, end) with PV above the load: from here the battery charges again."""
     for t in sorted(pv):
         if start <= t < end and pv[t] > load.get(t, math.inf):
@@ -137,7 +139,7 @@ def charge_start(pv: dict[float, float], load: dict[float, float], start: float,
     return None
 
 
-def day_simulation(batteries: list[Battery], pv: dict[float, float], load: dict[float, float] | None,
+def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
@@ -217,7 +219,7 @@ def remember(log: dict[str, dict], day: date, battery: dict, now: float) -> dict
     return {k: v for k, v in log.items() if k >= oldest}
 
 
-def combined_soc(series: list[tuple[float, dict[float, float]]]) -> dict[float, float]:
+def combined_soc(series: list[tuple[float, Series]]) -> Series:
     """All batteries as one storage: state of charge 0..1 weighted by capacity, where every battery has a value.
 
     series: per battery (capacity_wh, {time: state of charge 0..1}).
@@ -231,7 +233,7 @@ def combined_soc(series: list[tuple[float, dict[float, float]]]) -> dict[float, 
     return {t: sum(c * s[t] for c, s in series) / cap for t in sorted(common)}
 
 
-def outcome(soc: dict[float, float], pred: dict, day_end: float, step: float = 300.0) -> dict | None:
+def outcome(soc: Series, pred: dict, day_end: float, step: float = 300.0) -> dict | None:
     """What happened to a prediction: first time full and empty in the same windows, highest state of charge.
 
     soc: combined state of charge per period start (5-minute statistics). `complete` tells whether the
@@ -248,7 +250,7 @@ def outcome(soc: dict[float, float], pred: dict, day_end: float, step: float = 3
             "complete": last + step >= until, "day_complete": last + step >= day_end}
 
 
-def prediction_review(log: dict[str, dict], soc: dict[float, float], day_end_of) -> list[dict]:
+def prediction_review(log: dict[str, dict], soc: Series, day_end_of) -> list[dict]:
     """Logged predictions with their outcome, oldest first; days without data are left out.
 
     day_end_of: date key -> end of that local day (timestamp).

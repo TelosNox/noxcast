@@ -17,6 +17,7 @@ from collections.abc import Callable
 from . import archive as fc_archive
 from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
 from .solar import Site
+from .const import Series
 
 VERSION = 2                  # 1: ratios actual / forecast (unbounded), 2: clearness shifts
 CLASSES = ((0.35, "overcast"), (0.7, "mixed"), (float("inf"), "clear"))
@@ -108,8 +109,8 @@ def day_band(band: dict | None, forecast_wh: float, clear_wh: float, clearness: 
     return _bounded(forecast_wh, clear_wh, r) if r else None
 
 
-def hour_band(band: dict | None, hours: dict[float, float], clear: dict[float, float],
-              clearness: dict[float, float]) -> dict[float, tuple[float, float]]:
+def hour_band(band: dict | None, hours: Series, clear: Series,
+              clearness: Series) -> dict[float, tuple[float, float]]:
     out = {}
     for t, wh in hours.items():
         r = shifts(band, "hourly", clearness.get(t, 0.0))
@@ -128,8 +129,8 @@ def from_archive(archive: dict, site: Site, geometries: dict[str, ArrayGeometry]
     return learn_band(archive, lambda ts: clearsky_weather(site, ts).ghi, clear_wh, keep)
 
 
-def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], total: dict[float, float],
-                  today: dict[float, float], sky: dict[float, float], now: float, day_end: float) -> dict | None:
+def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], total: Series,
+                  today: Series, sky: Series, now: float, day_end: float) -> dict | None:
     """P10 / P90 of the total forecast: per hour from now on, per day, and for the rest of today.
 
     total: forecast with today's expected hours; today: today's expected hours (measured part certain,

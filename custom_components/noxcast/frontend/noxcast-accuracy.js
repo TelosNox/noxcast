@@ -1,9 +1,6 @@
 // Noxcast panel section "Forecast accuracy": day-ahead forecasts from the archive against what happened.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/accuracy".
-
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
+const { WS_SCHEMA, ask, esc, hm, kwh } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const ACC_TEXT = {
   de: {
@@ -85,8 +82,7 @@ class NoxcastAccuracy extends HTMLElement {
   async _load() {
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/accuracy" }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/accuracy" });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._error = null;
@@ -101,7 +97,7 @@ class NoxcastAccuracy extends HTMLElement {
 
   // the backtest comes separately and only adds a section: the tab works without it
   async _loadBacktest() {
-    const data = await this._hass.connection.sendMessagePromise({ type: "noxcast/backtest" }).catch(() => null);
+    const data = await ask(this._hass, { type: "noxcast/backtest" }).catch(() => null);
     this._bt = data && data.v === WS_SCHEMA ? data : null;
     if (this._bt) this._render();
   }
@@ -173,7 +169,7 @@ class NoxcastAccuracy extends HTMLElement {
   _render() {
     const t = this._t;
     let body;
-    if (this._error) body = `<div class="card pad">${this._esc(this._error)}</div>`;
+    if (this._error) body = `<div class="card pad">${esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else {
       const all = this._days(this._s.source), days = this._inRange(all);
@@ -187,10 +183,10 @@ class NoxcastAccuracy extends HTMLElement {
     const entry = this._data && (this._data.entries || [])[0];
     const hasAlt = entry && entry.days.some((d) => d.hours.some((h) => h.alt && Object.keys(h.alt).length));
     const chip = (key, val, label) => `<button class="chip ${s[key] === val ? "on" : ""}" data-set="${key}" data-val="${val}">${label}</button>`;
-    const arrays = entry ? [chip("array", "all", t.all), ...entry.arrays.map((a) => chip("array", a.id, this._esc(a.name)))] : [];
+    const arrays = entry ? [chip("array", "all", t.all), ...entry.arrays.map((a) => chip("array", a.id, esc(a.name)))] : [];
     return `<div class="controls">
       <div class="group"><span class="muted small">${t.range}</span>${[14, 30, 90].map((r) => chip("range", r, `${r} ${t.days}`)).join("")}</div>
-      ${hasAlt ? `<div class="group"><span class="muted small">${t.source}</span>${this._sources.map((src) => chip("source", src, this._esc(this._label(src)))).join("")}</div>` : ""}
+      ${hasAlt ? `<div class="group"><span class="muted small">${t.source}</span>${this._sources.map((src) => chip("source", src, esc(this._label(src)))).join("")}</div>` : ""}
       ${arrays.length > 2 ? `<div class="group">${arrays.join("")}</div>` : ""}
     </div>`;
   }
@@ -350,7 +346,7 @@ class NoxcastAccuracy extends HTMLElement {
       for (let i = i0; i <= i1; i++) if (v[i] !== null) pts.push(`${(pad + (i - i0 + 0.5) * bw).toFixed(1)},${y(v[i]).toFixed(1)}`);
       svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></polyline>`;
     }
-    const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${this._color(src)}"></i>${src === "measured" ? t.measured : this._esc(this._label(src))} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
+    const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${this._color(src)}"></i>${src === "measured" ? t.measured : esc(this._label(src))} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
     const issued = day.raw.issued ? ` · ${t.issued} ${new Date(day.raw.issued).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" })}` : "";
     return `<h3>${t.hourly} ${this._date(day.date)}<span class="muted small">${issued}</span></h3>
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.hourly}"><defs><pattern id="acc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="6" fill="var(--nx-hatch)"></rect></pattern></defs>${svg}</svg>
@@ -377,7 +373,7 @@ class NoxcastAccuracy extends HTMLElement {
       const own = this._inRange(this._days(src)).filter((d) => prim.has(d.date));
       if (own.length < 3) return "";
       const sc = this._score(own), base = this._score(own.map((d) => prim.get(d.date)));
-      return `<tr${src === this._s.source ? ` class="on"` : ""}><td>${this._esc(this._label(src))}</td><td class="num">${own.length}</td>
+      return `<tr${src === this._s.source ? ` class="on"` : ""}><td>${esc(this._label(src))}</td><td class="num">${own.length}</td>
         <td class="num">${this._pct(sc.error)}</td><td class="num">${this._pct(sc.bias, true)}</td><td class="num">${this._pct(base.error)}</td><td>${this._meter(sc.error)}</td></tr>`;
     }).join("");
     if (!rows) return "";
@@ -415,10 +411,9 @@ class NoxcastAccuracy extends HTMLElement {
     return `${signed && v > 0 ? "+" : ""}${s} %`;
   }
 
-  _kwh(wh, d = 1) { return (wh / 1000).toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  _kwh(wh, d = 1) { return kwh(wh, this._lang, d); }
   _date(key, short = false) { return new Date(`${key}T12:00:00Z`).toLocaleDateString(this._lang, short ? { day: "numeric", month: "numeric" } : { weekday: "short", day: "numeric", month: "short" }); }
-  _hm(ts) { return new Date(ts * 1000).toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit", timeZone: this._data.time_zone }); }
-  _esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  _hm(ts) { return hm(ts, this._lang, this._data.time_zone); }
 
   _style() {
     const d = this._dark;

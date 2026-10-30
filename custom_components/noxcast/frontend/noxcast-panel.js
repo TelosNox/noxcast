@@ -1,6 +1,7 @@
 // Noxcast sidebar panel: what the system has learned per array (shade, reflection, direction factor),
 // plus further sections that live in their own modules (e.g. forecast accuracy).
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/learned".
+const { WS_SCHEMA, ask, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
@@ -32,9 +33,6 @@ const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prog
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
 
-// payload schema this module reads (WS_SCHEMA_VERSION in const.py): another one means the integration was
-// updated while this page was open, and the module asks for a reload instead of misreading the data
-const WS_SCHEMA = 1;
 
 const TEXT = {
   de: {
@@ -286,8 +284,7 @@ class NoxcastPanel extends HTMLElement {
     clearTimeout(this._retry);
     try {
       // a request lost while the connection is rebuilt never answers: give up and ask again
-      const data = await Promise.race([this._hass.connection.sendMessagePromise({ type: "noxcast/learned" }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000))]);
+      const data = await ask(this._hass, { type: "noxcast/learned" });
       this._tries = 0;
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; } else {
         this._data = data;
@@ -415,14 +412,14 @@ class NoxcastPanel extends HTMLElement {
       return;
     }
     let body;
-    if (this._error) body = `<div class="card pad">${this._esc(this._error)}</div>`;
+    if (this._error) body = `<div class="card pad">${esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!this._data.arrays.length) body = `<div class="card pad">${t.noData}</div>`;
     else if (this._state.view === "array" && this._array(this._state.arrayId)) body = this._renderArray(this._array(this._state.arrayId));
     else body = this._renderOverview();
     // inside an array the way back sits above the content, not in the toolbar
     const crumbs = this._state.view === "array" && this._array(this._state.arrayId)
-      ? `<nav class="crumbs"><button class="link" data-action="overview">‹ ${t.overview}</button><span class="muted"> / </span><span>${this._esc(this._array(this._state.arrayId).name)}</span></nav>`
+      ? `<nav class="crumbs"><button class="link" data-action="overview">‹ ${t.overview}</button><span class="muted"> / </span><span>${esc(this._array(this._state.arrayId).name)}</span></nav>`
       : "";
     this.shadowRoot.innerHTML = `${this._style()}
       <div class="toolbar">
@@ -467,14 +464,14 @@ class NoxcastPanel extends HTMLElement {
     const cards = this._data.arrays.map((arr) => {
       const figs = this._figures(arr).slice(0, 6).map(([k, v]) => `<div class="fig"><span class="muted">${k}</span><span class="mono">${v}</span></div>`).join("");
       const maps = ["shade", "refl", "dir"].map((layer) => `
-        <button class="mini" data-action="open" data-id="${arr.id}" data-layer="${layer}" aria-label="${this._esc(arr.name)}: ${t[layer]}">
+        <button class="mini" data-action="open" data-id="${arr.id}" data-layer="${layer}" aria-label="${esc(arr.name)}: ${t[layer]}">
           ${this._mapSvg(arr, layer, { mini: true })}
           <span class="muted small">${t[layer]}</span>
         </button>`).join("");
       const gc = arr.learned && arr.learned.geometry_check;
       const badge = gc && gc.deviates ? `<span class="badge">${t.checks.badge}</span>` : "";
       return `<section class="card row">
-        <div class="figs"><h2>${this._esc(arr.name)}${badge}</h2>${figs}
+        <div class="figs"><h2>${esc(arr.name)}${badge}</h2>${figs}
           <button class="btn" data-action="open" data-id="${arr.id}" data-layer="shade">${t.open}</button></div>
         <div class="minis">${maps}</div>
       </section>`;
@@ -501,7 +498,7 @@ class NoxcastPanel extends HTMLElement {
         </div>
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
-          <section class="card pad"><h2>${this._esc(arr.name)}</h2>${figs}</section>
+          <section class="card pad"><h2>${esc(arr.name)}</h2>${figs}</section>
           <section class="card pad"><h3>${s.mode === "grid" ? t.grid : t[s.layer]}</h3><p class="help">${s.mode === "grid" ? t.help.grid : t.help[s.layer]}</p></section>
         </aside>
       </div>`;
@@ -808,10 +805,6 @@ class NoxcastPanel extends HTMLElement {
     this._state.playing = false;
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
-  }
-
-  _esc(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
   _style() {

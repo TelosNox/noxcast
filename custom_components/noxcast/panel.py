@@ -58,7 +58,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     from homeassistant.components.http import StaticPathConfig
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
-    version = await hass.async_add_executor_job(_version, "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
+    version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
                                          "noxcast-diagnostics.js", "noxcast-battery.js",
                                          "noxcast-theme.js", "noxcast-day.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js")

@@ -273,8 +273,8 @@ def sensor_row(entity_id: str, role: str, owner: str, state, rows: list[dict], h
     }
 
 
-def diagnostics_entry(title: str, *, weather_models, data, last_learning: datetime | None, learning_error: str | None,
-                      archive_errors: dict, arrays: dict, learned: dict[str, LearnedArray], exclusions: list[dict],
+def diagnostics_entry(title: str, *, weather_models, data, last_learning: datetime | None, learning_seconds: float | None,
+                      backtest_seconds: float | None, learning_error: str | None, archive_errors: dict, arrays: dict, learned: dict[str, LearnedArray], exclusions: list[dict],
                       archive: dict, fine: dict, sensors: list[dict]) -> dict:
     """Data quality of one entry: weather source, learning runs, arrays, exclusions, archive, sensors."""
     return {
@@ -283,6 +283,7 @@ def diagnostics_entry(title: str, *, weather_models, data, last_learning: dateti
                     "updated": data.weather_fetched.isoformat() if data and data.weather_fetched else None,
                     "hours": len((data.forecast or {}).get(None, {})) if data else 0},
         "learning": {"last": last_learning.isoformat() if last_learning else None,
+                     "seconds": learning_seconds, "backtest_seconds": backtest_seconds,
                      "error": learning_error, "archive_errors": archive_errors},
         "arrays": [{"name": arr.name, "samples": learned[sid].samples if sid in learned else 0,
                     "coverage": learned[sid].coverage if sid in learned else None,

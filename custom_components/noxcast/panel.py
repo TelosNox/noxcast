@@ -207,6 +207,7 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
                                     entity_id in meta, DIAG_DAYS * 24) for entity_id, role, owner in roles]
         entries.append(views.diagnostics_entry(
             entry.title, weather_models=c.weather_models, data=c.data, last_learning=c.last_learning,
+            learning_seconds=c.last_learning_seconds, backtest_seconds=(c.pv_backtest or {}).get("seconds"),
             learning_error=c.last_learning_error, archive_errors=c.archive_errors, arrays=c.arrays, learned=c.learned,
             exclusions=c.exclusions, archive=c.forecast_archive, fine=c.fine, sensors=sensors))
     _send(connection, msg, {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})

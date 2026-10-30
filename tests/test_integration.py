@@ -350,7 +350,7 @@ def _fingerprint(c) -> str:
         "learned": c.learned, "band": c.band, "load_profile": c.load_profile, "floor_profile": c.floor_profile,
         "consumer_profiles": c.consumer_profiles, "consumer_models": c.consumer_models, "run_profiles": c.run_profiles,
         "load_events": c.load_events, "load_backtest": c.load_backtest, "battery_log": c.battery_log,
-        "store": {k: v for k, v in c._store_data().items() if k != "pv_backtest"},
+        "store": {k: v for k, v in c._store_data().items() if k not in ("pv_backtest", "last_learning_seconds")},
         "archive": c._archive_data(), "fine": c.fine, "data": c.data,
         "runs": {sid: c.run_profile(sid) for sid, cc in c.consumers.items() if cc.timing == "flexible"},
     })
@@ -381,6 +381,8 @@ async def _ws_prints(client) -> dict:
         msg = await client.receive_json()
         assert msg["success"], (cmd, msg)
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
+        for entry in msg["result"].get("entries", []) if cmd == "diagnostics" else []:     # durations are not results
+            del entry["learning"]["seconds"], entry["learning"]["backtest_seconds"]
         out[cmd] = hashlib.sha256(json.dumps(msg["result"]).encode()).hexdigest()[:16]
     days = []
     for offset in range(-31, 3):
@@ -562,6 +564,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         assert c.pv_backtest[part]["total"]["status"] == "ok", c.pv_backtest
         assert set(c.pv_backtest[part]["arrays"]) == {"S", "EW"}
     assert c._store_data()["pv_backtest"] == c.pv_backtest
+    assert c.last_learning_seconds is not None and c._store_data()["last_learning_seconds"] == c.last_learning_seconds
     assert c.load_events is not None and all(c.consumer_models.values())
     assert prints == PINNED, prints
     assert ws_prints == WS_PINNED, ws_prints
@@ -623,7 +626,8 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
         await c._store.async_save(c._store_data())                       # a restart reads it back
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
-        assert hass.config_entries.async_get_entry(entry.entry_id).runtime_data.pv_backtest == json.loads(json.dumps(res))
+        again = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert again.pv_backtest == json.loads(json.dumps(res)) and again.last_learning_seconds == c.last_learning_seconds
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

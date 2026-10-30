@@ -13,6 +13,8 @@ JSON. To compare two model versions, run this script from both checkouts on the 
 --satellite   Open-Meteo archive answer (or its "hourly" block) with shortwave_radiation; optional.
 --temperature Open-Meteo archive answer (or its "hourly" block) with temperature_2m; optional.
 --archive     the day-ahead archive, as stored ({"days": ...}) or plain; optional.
+--fine        the 5-minute archive, as stored (.storage/noxcast.<entry id>.fine) or plain {"days": ...}; optional.
+              Adds "fine_holdout": would learning from it be better? Takes much longer than the rest.
 --now         ISO time of the run, the reference for ageing; default: the last hour of the statistics.
 
 All these files hold personal data and stay out of the repository (*.local.json, prototype/data/).
@@ -72,6 +74,7 @@ def main() -> None:
     parser.add_argument("--satellite")
     parser.add_argument("--temperature")
     parser.add_argument("--archive")
+    parser.add_argument("--fine")
     parser.add_argument("--now")
     args = parser.parse_args()
 
@@ -102,6 +105,10 @@ def main() -> None:
     learned = ln.learn_arrays(site, arrays, history, now, soc_full, exclusions)
     learning = time.monotonic() - start
     result = backtest.run(site, arrays, learned, history, days, now, soc_full, exclusions, tz)
+    if args.fine:
+        fine = json.loads(pathlib.Path(args.fine).read_text(encoding="utf-8"))
+        fine = fine.get("data", fine).get("days", {})
+        result["fine_holdout"] = backtest.fine_holdout(site, arrays, history, fine, now, soc_full, exclusions, tz)
     names = {sid: arr.name for sid, arr in arrays.items()}
     print(json.dumps({"names": names, "seconds": {"learning": round(learning, 1),
                                                    "backtest": round(time.monotonic() - start - learning, 1)}, **result},

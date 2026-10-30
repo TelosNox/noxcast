@@ -271,7 +271,7 @@ Assistant's 5-minute statistics (which are kept only about ten days), for sharpe
 5 minutes cover about 1.25° of sun azimuth, and two modules of one array that differ at the same
 moment show partial shade. Only periods with the sun in front of the modules, in whole watts, for
 at most three years: about 0.5 MB per sensor, however long Noxcast runs. Not used for the forecast
-yet.
+yet; the diagnostics download shows how far it reaches (`fine_archive`).
 
 ### Load forecast
 

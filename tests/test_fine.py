@@ -39,3 +39,14 @@ def test_store_stays_bounded_and_missing_days_are_fetched_once():
     store["2027-05-30"]["gone"] = {"t0": 0, "w": [1]}
     fn.prune(store, date(2024, 6, 1), {"a"})
     assert "2020-01-01" not in store and all("gone" not in d for d in store.values())
+
+
+def test_steady_band_needs_both_neighbours():
+    low, high = fn.steady_band({DAY: 100.0, DAY + 300: 120.0, DAY + 600: 90.0, DAY + 1200: 80.0})
+    assert low == {DAY + 300: 90.0} and high == {DAY + 300: 120.0}
+
+
+def test_summary_shows_how_far_the_archive_reaches():
+    assert fn.summary({}) == {"days": 0, "first": None, "last": None, "days_with_values": {}}
+    store = {"2026-10-20": {"a": {"t0": DAY, "w": [1]}, "b": {}}, "2026-10-21": {"a": {"t0": DAY, "w": [2]}, "b": {"t0": DAY, "w": [3]}}}
+    assert fn.summary(store) == {"days": 2, "first": "2026-10-20", "last": "2026-10-21", "days_with_values": {"a": 2, "b": 1}}

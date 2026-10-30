@@ -610,6 +610,15 @@ unlearned days. `prototype/backtest.py` runs the same functions on exported data
 as JSON; run it from both checkouts on the same files and put the hold-out, in-sample and baseline
 numbers per array into the PR. Better in-sample with a worse hold-out is overfitting and does not count.
 
+**5-minute data (#130):** `backtest.fine_holdout` asks whether the 5-minute archive makes a better model. It
+learns per half of the archive's days from hours and from 5-minute means (`learning.fine_history`), and tests
+all of them hourly on the other half with measured irradiance, as a forecast is used. The archive holds means
+only, so a period counts as steady by its two neighbours; the satellite's hour keeps its clearness. Only
+`prototype/backtest.py --fine` runs it, since it learns from about twelve times the samples, and nothing
+switches on until it shows a gain. The sun returns to the archive's first positions at the end of February 2027;
+before that the hours tested are mostly positions only half of the data has seen. The download of the
+diagnostics shows how far the archive reaches (`fine_archive`).
+
 ## Load forecast and surplus (planned)
 
 Status: step 1 built (base-load profile, consumers with fixed / flexible timing and a power or energy

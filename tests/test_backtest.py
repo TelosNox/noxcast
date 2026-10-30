@@ -7,6 +7,7 @@ from conftest import load
 
 archive = load("archive")
 backtest = load("backtest")
+fn = load("fine")
 ln = load("learning")
 model = load("model")
 solar = load("solar")
@@ -18,6 +19,7 @@ DAY0 = 1776729600.0                     # 2026-04-21 00:00 UTC
 NOW = DAY0 + 90 * 86400
 ARRAY = ln.ArrayConfig("roof", "Roof", ("pv",), GEO, None)
 TRUE = model.LearnedArray(efficiency=0.9)
+ARRAY_MAST = ln.ArrayConfig("roof", "Roof", ("pv",), GEO, None, 0.0)
 
 
 def even(t: float) -> bool:
@@ -172,3 +174,61 @@ def test_days_are_local_days():
 def test_old_result_is_dropped():
     assert backtest.valid({"version": backtest.VERSION, "replay": {}}) and backtest.valid({"version": 0}) is None
     assert backtest.valid(None) is None and backtest.valid("x") is None
+
+
+MAST = (170.0, 185.0)                   # a narrow obstacle: it takes little of any hour, but all of some periods
+
+
+def _mast_data(days: int = 44):
+    """Clear days at 5 minutes with a narrow shadow, as the hours (mean, minimum, maximum) and the archive."""
+    five, sat5 = {}, {}
+    for k in range(days * 288):
+        t = DAY0 + k * 300.0
+        sun = solar.sun_position(SITE, t + 150)
+        if sun.elevation <= 0:
+            continue
+        w = model.clearsky_weather(SITE, t, period=300.0)
+        beam, diff, _ = model.array_irradiance(GEO, sun, w.dni, w.dhi, w.ghi, solar.extra_radiation(t + 150))
+        shade = 0.0 if MAST[0] <= sun.azimuth < MAST[1] else 1.0
+        five[t] = GEO.peak_w * 0.9 * (beam * shade + diff) / 1000
+        sat5[t] = w.ghi
+    rows: dict[float, list[float]] = {}
+    for t, v in five.items():
+        rows.setdefault(t - t % 3600, []).append(v)
+    mean = {t: sum(r) / 12 for t, r in rows.items()}
+    sat = {t: model.clearsky_weather(SITE, t).ghi for t in rows}
+    hist = ln.PvHistory({"pv": mean}, {"pv": {t: min(r) for t, r in rows.items()}}, {"pv": {t: max(r) for t, r in rows.items()}},
+                        {}, {}, {t: 15.0 for t in rows}, sat)
+    store: dict = {}
+    for d in range(days):
+        a = DAY0 + d * 86400
+        day = datetime.fromtimestamp(a, UTC).date()
+        fn.add_day(store, day, "pv", fn.day_steps(five, a, a + 86400, lambda ts: True))
+    return hist, store
+
+
+def test_fine_history_keeps_the_hour_and_its_clearness():
+    hist, store = _mast_data(3)
+    fine = ln.fine_history(SITE, hist, store)
+    hour = DAY0 + 11 * 3600
+    steps = [hour + k * 300 for k in range(12)]
+    assert abs(sum(fine.satellite_ghi[t] for t in steps) / 12 / hist.satellite_ghi[hour] - 1) < 1e-9
+    assert all(fine.air_temp[t] == 15.0 for t in steps)
+    assert hour + 300 in fine.power_min["pv"] and fine.power_min["pv"][hour + 300] <= fine.power["pv"][hour + 300]
+
+
+def test_fine_holdout_compares_the_resolutions_on_the_same_hours():
+    hist, store = _mast_data()
+    before = copy.deepcopy(store)
+    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 44 * 86400, 95, [], UTC)
+    assert store == before
+    a = r["arrays"]["roof"]
+    assert a["status"] == "ok" and r["total"]["status"] == "ok"
+    assert {a[n]["hours"] for n in ("today", "same_days", "fine", "merged")} == {a["today"]["hours"]} and a["today"]["hours"] > 500
+    assert a["fine"]["hour_error"] < a["same_days"]["hour_error"]
+
+
+def test_fine_holdout_needs_days_in_the_archive():
+    hist, store = _mast_data(10)
+    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 10 * 86400, 95, [], UTC)
+    assert r["arrays"]["roof"] == {"status": "not_enough_data", "reason": "few_days", "days": 10, "needed": 28}

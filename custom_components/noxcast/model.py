@@ -43,6 +43,10 @@ Model:  P = peak_w · efficiency₂₅ · f_temp · (beam_poa · T(sun) · D(sun
 - S: sky view, the share of the isotropic sky diffuse the plane sees (houses opposite, an overhang
   above). Learned from overcast hours, which carry almost only diffuse light; the other parameters
   are learned again with it, since clear hours contain diffuse light too.
+
+Everything is written for periods of an hour, the resolution of long-term statistics and of the weather. Learning
+and forecasting also take another period length (seconds): a sample is then the mean of such a period, and a
+minimum number of hours stays the same observed time (see _periods).
 """
 from __future__ import annotations
 
@@ -58,6 +62,7 @@ from .const import Series
 
 AZ_STEP = 10.0
 EL_STEP = 5.0
+HOUR = 3600.0                    # seconds, the default period
 SUBSTEPS = 6                     # 10-minute sub-steps per hour
 MIN_BEAM_W = 60.0                # expected beam power (W) needed to observe shading
 MIN_CELL_SAMPLES = 4
@@ -195,6 +200,22 @@ class LearnedArray:
 
 # ---------------------------------------------------------------------------- helpers
 
+def _substeps(period: float) -> int:
+    """Sub-steps of a period: about 10 minutes long, a short period is a single one."""
+    return max(1, round(period / HOUR * SUBSTEPS))
+
+
+def _sun_path(site: Site, start: float, period: float) -> list[SunPosition]:
+    """The sun at the middle of each sub-step of a period, also below the horizon."""
+    n = _substeps(period)
+    return [sun_position(site, start + (i + 0.5) * period / n) for i in range(n)]
+
+
+def _periods(hours: float, period: float) -> float:
+    """So many hours of observation in periods: a threshold means the same observed time at any period."""
+    return hours * HOUR / period
+
+
 def _cell(azimuth: float, elevation: float) -> tuple[int, int]:
     return int(azimuth // AZ_STEP), int(elevation // EL_STEP)
 
@@ -292,14 +313,13 @@ def array_irradiance(geo: ArrayGeometry, sun: SunPosition, dni: float, dhi: floa
     return beam, diff, geo.heating * square / (poa * poa) if poa > 0 else geo.heating
 
 
-def clearsky_heating(site: Site, geo: ArrayGeometry, start: float, sky_view: float = 1.0) -> float:
-    """Heating (K at 1000 W/m²) for the hourly mean clear-sky irradiance, see array_irradiance."""
+def clearsky_heating(site: Site, geo: ArrayGeometry, start: float, sky_view: float = 1.0, period: float = HOUR) -> float:
+    """Heating (K at 1000 W/m²) for the mean clear-sky irradiance of a period, see array_irradiance."""
     if not geo.extra:
         return geo.heating
     acc = _Heating(geo)
-    dni_extra = extra_radiation(start + 1800)
-    for i in range(SUBSTEPS):
-        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+    dni_extra = extra_radiation(start + period / 2)
+    for sun in _sun_path(site, start, period):
         if sun.elevation <= 0:
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
@@ -327,9 +347,9 @@ class _Heating:
         return self.num / self.den if self.den > 0 else self.default
 
 
-def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
-                  sky_view: float = 1.0) -> tuple[float, float, float, float, float]:
-    """Hourly means of clear-sky (beam, diffuse) on the plane, mean sun (azimuth, elevation) and GHI.
+def clearsky_hour(site: Site, geo: ArrayGeometry, start: float, sky_view: float = 1.0,
+                  period: float = HOUR) -> tuple[float, float, float, float, float]:
+    """Means of clear-sky (beam, diffuse) on the plane over a period, mean sun (azimuth, elevation) and GHI.
 
     The sun position is averaged over the sub-steps where the sun is up, so an hourly mean value
     belongs to the sun path within that hour, not to the hour start.
@@ -338,9 +358,8 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
     sx = sy = el_sum = 0.0
     up = 0
     pressure = site.pressure
-    dni_extra = extra_radiation(start + 1800)
-    for i in range(SUBSTEPS):
-        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+    dni_extra = extra_radiation(start + period / 2)
+    for sun in _sun_path(site, start, period):
         if sun.elevation <= 0:
             continue
         ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, pressure, dni_extra)
@@ -355,7 +374,8 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float,
     if not up:
         return 0.0, 0.0, 0.0, -1.0, 0.0
     az = math.degrees(math.atan2(sx, sy)) % 360.0
-    return beam / SUBSTEPS, diff / SUBSTEPS, az, el_sum / up, ghi_sum / SUBSTEPS
+    n = _substeps(period)
+    return beam / n, diff / n, az, el_sum / up, ghi_sum / n
 
 
 # ---------------------------------------------------------------------------- learning
@@ -379,12 +399,13 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
     return out
 
 
-def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bool]:
+def _learn_temp_coeff(rows: list[tuple[float, float, float]], period: float = HOUR) -> tuple[float, bool]:
     """(cell temperature, ratio, _) rows -> temperature coefficient from the upper envelope per bin."""
     bins: dict[int, list[float]] = {}
     for t_cell, ratio, _ in rows:
         bins.setdefault(int(t_cell // TEMP_BIN_K), []).append(ratio)
-    env = [((b + 0.5) * TEMP_BIN_K, _quantile(v, 0.9)) for b, v in sorted(bins.items()) if len(v) >= TEMP_MIN_BIN_SAMPLES]
+    env = [((b + 0.5) * TEMP_BIN_K, _quantile(v, 0.9)) for b, v in sorted(bins.items())
+           if len(v) >= _periods(TEMP_MIN_BIN_SAMPLES, period)]
     if len(env) < 4 or env[-1][0] - env[0][0] < 15:
         return DEFAULT_TEMP_COEFF, False
     xs, ys = [x for x, _ in env], [y for _, y in env]
@@ -401,36 +422,37 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]]) -> tuple[float, bo
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
           air_temp: Series | None = None, satellite_ghi: Series | None = None,
           datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS,
-          steady: set[float] | None = None) -> LearnedArray:
-    """Learn efficiency, temperature coefficient, shading map and sky view from (hour_start, mean power W) samples.
+          steady: set[float] | None = None, period: float = HOUR) -> LearnedArray:
+    """Learn efficiency, temperature coefficient, shading map and sky view from (period start, mean power W) samples.
 
-    air_temp: air temperature (°C) at the middle of each hour.
-    satellite_ghi: measured hourly mean GHI (W/m²) used to pre-select clear hours (optional).
+    air_temp: air temperature (°C) at the middle of each period.
+    satellite_ghi: measured mean GHI (W/m²) per period used to pre-select clear periods (optional).
     datasheet_temp_coeff: Pmax temperature coefficient per K; used as fixed value instead of learning it.
       Learning over cell-temperature bins also picks up irradiance-dependent model errors, so a known
       datasheet value is more robust.
     steady: hour starts in which the power stayed steady (see steady_hours); efficiency, direction
       factor and reflection then use only those of the clear hours.
+    period: length of a sample in seconds; air_temp, satellite_ghi and steady use the same period starts.
 
     The sky view needs satellite irradiance. It and the other parameters depend on each other, so
     they are learned alternately until the sky view settles.
     """
     args = dict(air_temp=air_temp, satellite_ghi=satellite_ghi, datasheet_temp_coeff=datasheet_temp_coeff,
-                half_life_days=half_life_days, steady=steady)
+                half_life_days=half_life_days, steady=steady, period=period)
     learned = _learn(site, geo, samples, now, sky_view=1.0, **args)
     if satellite_ghi is None:
         return learned
     for _ in range(SKY_VIEW_ITERATIONS):
-        sky = learn_sky_view(site, geo, learned, samples, satellite_ghi, air_temp)
+        sky = learn_sky_view(site, geo, learned, samples, satellite_ghi, air_temp, period)
         if sky is None or abs(sky - learned.sky_view) < 0.01:
             break
         learned = _learn(site, geo, samples, now, sky_view=sky, **args)
-    learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp)
+    learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp, period)
     return learned
 
 
 def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                   satellite_ghi: Series, air_temp: Series | None = None) -> float | None:
+                   satellite_ghi: Series, air_temp: Series | None = None, period: float = HOUR) -> float | None:
     """Share of the isotropic sky diffuse the plane sees, from overcast hours (None without enough of them).
 
     What the installation produced beyond beam and ground reflection, relative to the sky diffuse a
@@ -438,16 +460,16 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
     """
     seen = free = 0.0
     hours = 0
+    n = _substeps(period)
     for t, p in samples:
         ghi = satellite_ghi.get(t)
-        cs_ghi = clearsky_hour(site, geo, t)[4]
+        cs_ghi = clearsky_hour(site, geo, t, period=period)[4]
         if ghi is None or cs_ghi < SKY_VIEW_MIN_CLEARSKY or ghi / cs_ghi >= OVERCAST_KT:
             continue
-        dni_extra = extra_radiation(t + 1800)
+        dni_extra = extra_radiation(t + period / 2)
         rest = sky = 0.0
         heat = _Heating(geo)
-        for i in range(SUBSTEPS):
-            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+        for sun in _sun_path(site, t, period):
             if sun.elevation <= 0:
                 continue
             dni, dhi = erbs(ghi, sun.zenith, dni_extra)
@@ -459,14 +481,14 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
                 learned, sun.azimuth, sun.elevation) + ground + reflection_factor(
                 learned, sun.azimuth, sun.elevation) * dni
             sky += diff - ground
-        rest, sky = rest / SUBSTEPS, sky / SUBSTEPS
+        rest, sky = rest / n, sky / n
         temp = air_temp.get(t) if air_temp else None
         f = temperature_factor(learned.temp_coeff, temp, rest + sky * learned.sky_view, heat.value) \
             if temp is not None else 1.0
         seen += p * 1000 / (geo.peak_w * learned.efficiency * f) - rest
         free += sky
         hours += 1
-    if hours < SKY_VIEW_MIN_HOURS or free <= 0:
+    if hours < _periods(SKY_VIEW_MIN_HOURS, period) or free <= 0:
         return None
     return round(min(max(seen / free, SKY_VIEW_LIMITS[0]), SKY_VIEW_LIMITS[1]), 3)
 
@@ -474,10 +496,10 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
            air_temp: Series | None, satellite_ghi: Series | None,
            datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float,
-           steady: set[float] | None = None) -> LearnedArray:
+           steady: set[float] | None = None, period: float = HOUR) -> LearnedArray:
     rows = []
     for t, p in samples:
-        beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, sky_view)
+        beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, sky_view, period)
         if el <= 0:
             continue
         age = max(now - t, 0) / 86400.0
@@ -485,7 +507,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         if satellite_ghi is not None and satellite_ghi.get(t) is not None and cs_ghi > 50:
             kt = satellite_ghi[t] / cs_ghi
         temp = air_temp.get(t) if air_temp else None
-        heating = clearsky_heating(site, geo, t, sky_view) if temp is not None else geo.heating
+        heating = clearsky_heating(site, geo, t, sky_view, period) if temp is not None else geo.heating
         rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating))
     if not rows:
         return LearnedArray(sky_view=sky_view, learned_at=now)
@@ -494,12 +516,12 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     with_kt = [r for r in rows if r[8] is not None]
     clear_filter = satellite_ghi is not None and len(with_kt) >= MIN_CLEAR_COVERAGE * len(rows)
     basis = [r for r in with_kt if r[8] >= CLEAR_KT] if clear_filter else rows
-    if len(basis) < 50:                                  # too few clear hours: fall back to all hours
+    if len(basis) < _periods(50, period):                                  # too few clear hours: fall back to all hours
         basis, clear_filter = rows, False
     # steady hours only, when there are enough of them: the satellite may call an hour clear while
     # clouds pass over the installation
     calm = [r for r in basis if r[0] in steady] if clear_filter and steady is not None else []
-    steady_filter = len(calm) >= MIN_STEADY_HOURS
+    steady_filter = len(calm) >= _periods(MIN_STEADY_HOURS, period)
     if not steady_filter:
         calm = basis
 
@@ -520,7 +542,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
     elif clear_filter:
         # only clear hours: with cloudy hours, summer clouds and winter sun share temperature bins
-        temp_coeff, temp_learned = _learn_temp_coeff(temp_rows)
+        temp_coeff, temp_learned = _learn_temp_coeff(temp_rows, period)
         temp_source = "learned" if temp_learned else "default"
     else:
         temp_coeff, temp_learned, temp_source = DEFAULT_TEMP_COEFF, False, "default"
@@ -553,11 +575,11 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     def cell_values(obs, q: float) -> dict[str, float]:
         out = {}
         for (ai, ei), items in obs.items():
-            if len(items) < MIN_CELL_SAMPLES:
+            if len(items) < _periods(MIN_CELL_SAMPLES, period):
                 continue
             value = weighted_quantile([v for v, _, _ in items], [w for _, w, _ in items], q)
             recent = [v for v, _, a in items if a <= RECENT_DAYS]
-            if len(recent) >= 3:
+            if len(recent) >= _periods(3, period):
                 recent_value = _quantile(recent, q)
                 if abs(recent_value - value) > CHANGE_THRESHOLD:     # e.g. a tree was cut or a building added
                     value = recent_value
@@ -570,7 +592,8 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         out = cell_values(observe(rows, scaled=False), 0.9)
         if not clear_filter:
             return out
-        seen = {_key(*c) for c, items in observe(basis, scaled=False).items() if len(items) >= MIN_CELL_SAMPLES}
+        seen = {_key(*c) for c, items in observe(basis, scaled=False).items()
+                if len(items) >= _periods(MIN_CELL_SAMPLES, period)}
         return {k: v for k, v in out.items() if k in seen}
 
     cells = envelope()
@@ -581,15 +604,15 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         probe = LearnedArray(cells=cells)
         unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= 0.95]
         steady_unshaded = [r for r in unshaded if r[0] in steady] if steady_filter else []
-        if len(steady_unshaded) >= MIN_UNSHADED_HOURS:
+        if len(steady_unshaded) >= _periods(MIN_UNSHADED_HOURS, period):
             unshaded = steady_unshaded
-        source = unshaded if len(unshaded) >= MIN_UNSHADED_HOURS else strong
+        source = unshaded if len(unshaded) >= _periods(MIN_UNSHADED_HOURS, period) else strong
         if source:
             efficiency = eff_quantile(source, 0.5)
             cells = envelope()
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
         if steady_filter:
-            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale)
+            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale, period)
 
     cells = shape_cells(cells)
     direction: dict[str, float] = {}
@@ -603,7 +626,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             t, p, _, _, az, el = r[:6]
             if transmission(probe, az, el) < 0.999:
                 continue
-            beam, diff, dni, heating = _measured_parts(site, geo, probe, t, satellite_ghi[t])
+            beam, diff, dni, heating = _measured_parts(site, geo, probe, t, satellite_ghi[t], period)
             if dni < REFLECTION_MIN_DNI:
                 continue
             f = temperature_factor(temp_coeff, r[9], beam + diff, heating) if r[9] is not None else 1.0
@@ -616,7 +639,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             if beam < REFLECTION_MAX_BEAM_SHARE * dni:
                 refl_obs.setdefault(b, []).append((observed - beam - diff) / dni)
         refl_bins = {b: min(max(_quantile(v, 0.5), 0.0), REFLECTION_LIMIT) for b, v in refl_obs.items()
-                     if len(v) >= DIRECTION_MIN_SAMPLES}
+                     if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period)}
         reflection = {_key(*b): round(v, 3) for b, v in refl_bins.items() if v >= 0.005}
 
         # the rest on the beam part, in both directions: geometry and model errors
@@ -626,7 +649,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
                 continue
             dir_obs.setdefault(b, []).append((observed - diff - refl_bins.get(b, 0.0) * dni) / beam)
         direction = {_key(*b): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
-                     for b, v in dir_obs.items() if len(v) >= DIRECTION_MIN_SAMPLES}
+                     for b, v in dir_obs.items() if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period)}
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
                            cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
@@ -662,7 +685,8 @@ def _bilinear(azimuth: float, elevation: float) -> list[tuple[tuple[int, int], f
 
 
 def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[str, float],
-               factor: Callable[[tuple], float], scale: Callable[[tuple], float]) -> dict[str, float]:
+               factor: Callable[[tuple], float], scale: Callable[[tuple], float],
+               period: float = HOUR) -> dict[str, float]:
     """Shading cells such that the forecast, integrated over the sub-steps of each hour, meets the hourly means.
 
     The per-cell estimate gives each hour to the cell of its mid-hour sun position, so a shadow
@@ -678,24 +702,24 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
     scale(row): satellite clearness.
     """
     eqs = []
+    n = _substeps(period)
     for r in rows:
         t, p, _, diff = r[:4]
         k = scale(r)
-        dni_extra = extra_radiation(t + 1800)
+        dni_extra = extra_radiation(t + period / 2)
         coef: dict[tuple[int, int], float] = {}
-        for i in range(SUBSTEPS):
-            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+        for sun in _sun_path(site, t, period):
             if sun.elevation <= 0:
                 continue
             ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
             beam, _, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
             for cell, w in _bilinear(sun.azimuth, sun.elevation):
-                coef[cell] = coef.get(cell, 0.0) + beam * k / SUBSTEPS * w
+                coef[cell] = coef.get(cell, 0.0) + beam * k / n * w
         beam = sum(coef.values())
         if geo.peak_w * beam / 1000 <= MIN_BEAM_W or beam < SHADE_FIT_BEAM_SHARE * (beam + diff * k):
             continue
         eqs.append((p * 1000 / (geo.peak_w * factor(r)) - diff * k, coef, r[6]))
-    if len(eqs) < MIN_STEADY_HOURS:
+    if len(eqs) < _periods(MIN_STEADY_HOURS, period):
         return cells
     probe = LearnedArray(cells=cells)                     # cells without an estimate start from their neighbours
     prior = {c: cells[_key(*c)] if _key(*c) in cells else transmission(probe, (c[0] + 0.5) * AZ_STEP,
@@ -738,14 +762,13 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
     return out
 
 
-def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float,
-                    ghi: float) -> tuple[float, float, float, float]:
-    """Hourly means of shaded beam and diffuse on the plane and of DNI, from measured GHI (Erbs split), and the heating."""
-    dni_extra = extra_radiation(start + 1800)
+def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float, ghi: float,
+                    period: float = HOUR) -> tuple[float, float, float, float]:
+    """Means over the period of shaded beam and diffuse on the plane and of DNI, from measured GHI (Erbs split), and the heating."""
+    dni_extra = extra_radiation(start + period / 2)
     beam_sum = diff_sum = dni_sum = 0.0
     heat = _Heating(geo)
-    for i in range(SUBSTEPS):
-        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+    for sun in _sun_path(site, start, period):
         if sun.elevation <= 0 or ghi <= 0:
             continue
         dni, dhi = erbs(ghi, sun.zenith, dni_extra)
@@ -754,7 +777,8 @@ def _measured_parts(site: Site, geo: ArrayGeometry, learned: LearnedArray, start
         diff_sum += diff
         dni_sum += dni
         heat.add(beam, diff, heating)
-    return beam_sum / SUBSTEPS, diff_sum / SUBSTEPS, dni_sum / SUBSTEPS, heat.value
+    n = _substeps(period)
+    return beam_sum / n, diff_sum / n, dni_sum / n, heat.value
 
 
 def _isotonic(values: list[float], increasing: bool = True) -> list[float]:
@@ -858,7 +882,7 @@ def facade_cells(learned: LearnedArray) -> dict[str, float]:
 
 
 def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                 satellite_ghi: Series | None, air_temp: Series | None = None) -> dict | None:
+                 satellite_ghi: Series | None, air_temp: Series | None = None, period: float = HOUR) -> dict | None:
     """A row of buildings opposite, fitted to clear hours with the learned parameters, or None.
 
     Per row direction and height the clear hours are forecast with the facade and without any shade.
@@ -869,17 +893,17 @@ def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples:
     """
     if not satellite_ghi:
         return None
+    n = _substeps(period)
     hours = []                                            # (azimuth column, actual, [(az, el, beam, rest, heat, temp)])
     for t, p in samples:
         ghi = satellite_ghi.get(t)
-        cs = clearsky_weather(site, t).ghi
+        cs = clearsky_weather(site, t, period=period).ghi
         if ghi is None or cs <= 50 or ghi / cs < CLEAR_KT:
             continue
-        dni_extra = extra_radiation(t + 1800)
+        dni_extra = extra_radiation(t + period / 2)
         temp = air_temp.get(t) if air_temp else None
         steps, low = [], False
-        for i in range(SUBSTEPS):
-            sun = sun_position(site, t + (i + 0.5) * 3600 / SUBSTEPS)
+        for sun in _sun_path(site, t, period):
             if sun.elevation <= 0:
                 continue
             dni, dhi = erbs(ghi, sun.zenith, dni_extra)
@@ -888,7 +912,7 @@ def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples:
                           diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni, heating, temp))
             low = low or (sun.elevation < FACADE_MAX_EL and beam > 0)
         if low:                                           # only hours a facade could shade tell facades apart
-            hours.append((int(sun_position(site, t + 1800).azimuth // AZ_STEP), p, steps))
+            hours.append((int(sun_position(site, t + period / 2).azimuth // AZ_STEP), p, steps))
     if not hours:
         return None
 
@@ -897,7 +921,7 @@ def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples:
         for az, el, beam, rest, heating, temp in steps:
             poa = beam * shade(az, el) + rest
             total += poa * temperature_factor(learned.temp_coeff, temp, poa, heating)
-        return geo.peak_w * learned.efficiency * total / 1000 / SUBSTEPS
+        return geo.peak_w * learned.efficiency * total / 1000 / n
 
     free: dict[int, float] = {}
     for col, p, steps in hours:
@@ -992,16 +1016,16 @@ def _coarse(values: dict[str, float], azimuth: float, elevation: float, default:
     return value
 
 
-def clearsky_weather(site: Site, start: float, temp: float | None = None) -> WeatherHour:
-    """Hourly mean clear-sky irradiance as a weather hour (reference for clearness)."""
+def clearsky_weather(site: Site, start: float, temp: float | None = None, period: float = HOUR) -> WeatherHour:
+    """Mean clear-sky irradiance of a period as a weather hour (reference for clearness)."""
     ghi = dni = dhi = 0.0
-    dni_extra = extra_radiation(start + 1800)
-    for i in range(SUBSTEPS):
-        sun = sun_position(site, start + (i + 0.5) * 3600 / SUBSTEPS)
+    dni_extra = extra_radiation(start + period / 2)
+    for sun in _sun_path(site, start, period):
         if sun.elevation > 0:
             g, n, d = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
             ghi, dni, dhi = ghi + g, dni + n, dhi + d
-    return WeatherHour(start, ghi / SUBSTEPS, dni / SUBSTEPS, dhi / SUBSTEPS, temp)
+    n = _substeps(period)
+    return WeatherHour(start, ghi / n, dni / n, dhi / n, temp)
 
 
 def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, start: float, temp: float | None = None,
@@ -1023,14 +1047,15 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
     return out
 
 
-def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> Series:
-    """Expected energy per hour (Wh), keyed by hour start (UNIX seconds)."""
+def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour],
+             period: float = HOUR) -> Series:
+    """Expected energy per period (Wh), keyed by period start (UNIX seconds); weather: means of those periods."""
     out = {}
+    n = _substeps(period)
     for wh in weather:
-        dni_extra = extra_radiation(wh.start + 1800)
+        dni_extra = extra_radiation(wh.start + period / 2)
         total = 0.0
-        for i in range(SUBSTEPS):
-            sun = sun_position(site, wh.start + (i + 0.5) * 3600 / SUBSTEPS)
+        for sun in _sun_path(site, wh.start, period):
             if sun.elevation <= 0 or wh.ghi <= 0:
                 continue
             if wh.dni is None or wh.dhi is None:
@@ -1043,11 +1068,11 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                 learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
             total += geo.peak_w * learned.efficiency * temperature_factor(
                 learned.temp_coeff, wh.temp, poa, heating) * poa / 1000
-        out[wh.start] = total / SUBSTEPS
+        out[wh.start] = total / n * (period / HOUR)
     return out
 
 
 def measured_forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray,
-                      hours: list[tuple[float, float, float | None]]) -> Series:
+                      hours: list[tuple[float, float, float | None]], period: float = HOUR) -> Series:
     """The model on measured weather: what the forecast would have been with a perfect weather forecast."""
-    return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours])
+    return forecast(site, geo, learned, [WeatherHour(t, g, None, None, temp) for t, g, temp in hours], period)

@@ -76,3 +76,10 @@ def test_load_models_and_day_filter():
     kept = ln.learn_load("house", consumers, hist, timezone.utc, timezone.utc, NOW, NOW, keep=even)
     assert kept.profile.days < out.profile.days
     assert ln.learn_load("house", consumers, ln.LoadHistory({}, {}), timezone.utc, timezone.utc, NOW, NOW) is None
+
+
+def test_explanations_are_for_hours_only():
+    five = {t: 500.0 for t in (DAY0 + 12 * 3600 + k * 300 for k in range(24 * 12))}
+    history_ = ln.PvHistory({"pv1": five, "pv2": {t: v / 1000 for t, v in five.items()}}, {}, {}, {"pv2": 1000.0}, {})
+    learned = ln.learn_arrays(SITE, {"a": ARRAY}, history_, NOW, 95, [], period=300.0)["a"]
+    assert learned.samples and not learned.months

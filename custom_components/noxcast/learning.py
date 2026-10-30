@@ -17,7 +17,7 @@ from . import arraycheck as ac
 from . import events as ev
 from . import load as lf
 from . import plan as pl
-from .model import ArrayGeometry, LearnedArray, learn, measured_forecast, steady_hours, usable_samples
+from .model import HOUR, ArrayGeometry, LearnedArray, learn, measured_forecast, steady_hours, usable_samples
 from .solar import Site
 from .const import Series
 
@@ -121,8 +121,11 @@ def _only(series: Series, keep: Keep | None) -> Series:
 
 
 def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,
-                exclusions: list[tuple[float, float]], keep: Keep | None = None) -> LearnedArray:
-    """Learn one array from its usable hours, with the panel explanations (arraycheck.annotate)."""
+                exclusions: list[tuple[float, float]], keep: Keep | None = None, period: float = HOUR) -> LearnedArray:
+    """Learn one array from its usable hours, with the panel explanations (arraycheck.annotate).
+
+    period: the length of history's periods in seconds; the panel explanations exist for hours only.
+    """
     power = history.power
     missing = [s for s in arr.sensors if not power.get(s)]
     if missing:
@@ -136,11 +139,11 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
                            for s in arr.sensors])
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
-                   datasheet_temp_coeff=arr.temp_coeff, steady=steady)
+                   datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period)
     if result.samples and not 0.5 <= result.efficiency <= 1.2:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
-    if result.samples:
+    if result.samples and period == HOUR:
         ac.annotate(site, arr.geometry, result, samples, history.air_temp, history.satellite_ghi,
                     datetime.fromtimestamp(now, timezone.utc).year, steady)
     _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
@@ -152,9 +155,10 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
 
 
 def learn_arrays(site: Site, arrays: dict[str, ArrayConfig], history: PvHistory, now: float, soc_full: float,
-                 exclusions: list[tuple[float, float]], keep: Keep | None = None) -> dict[str, LearnedArray]:
+                 exclusions: list[tuple[float, float]], keep: Keep | None = None,
+                 period: float = HOUR) -> dict[str, LearnedArray]:
     """Learn every array (subentry id -> LearnedArray); now: UNIX seconds, the reference for ageing."""
-    return {sid: learn_array(site, arr, history, now, soc_full, exclusions, keep) for sid, arr in arrays.items()}
+    return {sid: learn_array(site, arr, history, now, soc_full, exclusions, keep, period) for sid, arr in arrays.items()}
 
 
 def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray],

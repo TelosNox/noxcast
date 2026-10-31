@@ -8,7 +8,7 @@ const LOAD_TEXT = {
     noLoad: "Die Lastprognose ist nicht eingerichtet. In der Noxcast-Konfiguration den Hausverbrauch-Sensor eintragen und Verbraucher mit eigenem Sensor hinzufügen.",
     notLearned: "Das Lastprofil wird beim nächsten Lernlauf erstellt.",
     restToday: "Last Rest heute", tomorrow: "Last morgen", correction: "Korrektur jetzt", sustained: "Dauerlast", sustainedSince: (h) => `seit ${h}`, days: "Tage Daten",
-    backtest: "Rückrechnung", model: "Modell", naive: "7-Tage-Mittel", better: "besser", worse: "schlechter", cases: "Fälle",
+    backtest: "Rückrechnung", model: "Modell", naive: "7-Tage-Mittel", smaller: (p) => `Fehler ${p} % kleiner als das 7-Tage-Mittel`, larger: (p) => `Fehler ${p} % größer als das 7-Tage-Mittel`, cases: "Fälle",
     forecast: "Prognose nach Anteilen", base: "Grundlast", profile: "Gelerntes Profil (Median je Stunde, Programme und Sitzungen erwartet)",
     workday: "Werktag", weekend: "Wochenende", consumers: "Verbraucher", timing: "Zeitbindung", sensor: "Sensor",
     perDay: "Ø pro Tag", share: "Anteil", fixed: "fest", flexible: "flexibel", bias: "Bias",
@@ -29,7 +29,7 @@ const LOAD_TEXT = {
     noLoad: "The load forecast is not set up. Set the house load sensor in the Noxcast configuration and add consumers with their own sensor.",
     notLearned: "The load profile is created by the next learning run.",
     restToday: "Load rest of today", tomorrow: "Load tomorrow", correction: "Correction now", sustained: "Sustained load", sustainedSince: (h) => `since ${h}`, days: "days of data",
-    backtest: "Backtest", model: "Model", naive: "7-day mean", better: "better", worse: "worse", cases: "cases",
+    backtest: "Backtest", model: "Model", naive: "7-day mean", smaller: (p) => `Error ${p} % smaller than the 7-day mean`, larger: (p) => `Error ${p} % larger than the 7-day mean`, cases: "cases",
     forecast: "Forecast by part", base: "Base load", profile: "Learned profile (median per hour, programs and sessions expected)",
     workday: "Workday", weekend: "Weekend", consumers: "Consumers", timing: "Timing", sensor: "Sensor",
     perDay: "Avg per day", share: "Share", fixed: "fixed", flexible: "flexible", bias: "Bias",
@@ -142,7 +142,7 @@ class NoxcastLoad extends HTMLElement {
     ].map(([k, v]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span></div>`).join("");
     const btFig = bt.mae_kwh == null ? "" : `<div class="fig"><span class="muted small">${t.backtest} (${bt.cases} ${t.cases})</span>
       <span class="big">${this._num(bt.mae_kwh, 2)} <span class="muted small">${t.kwh} ${t.model}</span></span>
-      <span class="small muted">${bt.bias_kwh == null ? "" : `${t.bias} ${bt.bias_kwh > 0 ? "+" : ""}${this._num(bt.bias_kwh, 2)} ${t.kwh} · `}${t.naive} ${this._num(bt.naive_mae_kwh, 2)} ${t.kwh}${gain === null ? "" : ` · <b class="${gain >= 0 ? "good" : "bad"}">${Math.abs(Math.round(gain * 100))} % ${gain >= 0 ? t.better : t.worse}</b>`}</span></div>`;
+      <span class="small muted">${bt.bias_kwh == null ? "" : `${t.bias} ${bt.bias_kwh > 0 ? "+" : ""}${this._num(bt.bias_kwh, 2)} ${t.kwh} · `}${t.naive} ${this._num(bt.naive_mae_kwh, 2)} ${t.kwh}${gain === null ? "" : ` · <b class="${gain >= 0 ? "good" : "bad"}">${(gain >= 0 ? t.smaller : t.larger)(Math.abs(Math.round(gain * 100)))}</b>`}</span></div>`;
     return `
       <section class="card pad"><div class="figs">${figs}${btFig}</div><p class="help">${t.help}</p></section>
       ${hours.length ? `<section class="card pad"><h3>${t.forecast}</h3>${this._stack(e, hours, todayEnd)}</section>` : ""}

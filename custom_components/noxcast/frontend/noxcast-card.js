@@ -725,29 +725,41 @@ class NoxcastCard extends HTMLElement {
 
   // hourly weather over [t0, t1): a symbol at every change of the condition class. A run under two hours, or
   // too narrow for its symbol (in the compressed night), joins the run before it, so every change keeps its
-  // symbol; only a run reaching in from the day before may stay too narrow, it keeps its bar without a symbol
+  // symbol; only a run reaching in from the day before may stay too narrow, it keeps its bar without a symbol.
+  // A clear night and a sunny day are the same weather: one bar, whose symbol changes between moon and sun
   _weatherStrip(t0, t1, x, X0, X1, W) {
     if (!this._show("weather") || !this._wx || !this._wx.length) return "";
     const P = this._p, H = 3600, SIZE = 14, MIN = SIZE + 4;
     const hours = this._wx.map((f) => ({ ts: Date.parse(f.datetime) / 1000, cond: f.condition }))
       .filter((f) => f.ts >= t0 - H && f.ts < t1 && f.cond);
     if (!hours.length) return "";
-    const runs = [];
-    const add = (r) => { const last = runs[runs.length - 1]; if (last && last.cls === r.cls) last.end = r.end; else runs.push(r); };
-    for (const f of hours) add({ cls: WX_CLASS[f.cond] || "cloud", cond: f.cond, start: f.ts, end: f.ts + H });
     const width = (r) => Math.min(X1, x(r.end)) - Math.max(X0, x(r.start));
-    for (let i = runs.length - 1; i > 0; i--) {
-      if (runs[i].end - runs[i].start >= 2 * H && width(runs[i]) >= MIN) continue;
-      runs[i - 1].end = runs[i].end;
-      runs.splice(i, 1);
-      if (runs[i] && runs[i].cls === runs[i - 1].cls) { runs[i - 1].end = runs[i].end; runs.splice(i, 1); }   // same class on both sides
-    }
+    const group = (items) => {
+      const runs = [];
+      for (const r of items) { const last = runs[runs.length - 1]; if (last && last.cls === r.cls) last.end = r.end; else runs.push(r); }
+      for (let i = runs.length - 1; i > 0; i--) {
+        if (runs[i].end - runs[i].start >= 2 * H && width(runs[i]) >= MIN) continue;
+        runs[i - 1].end = runs[i].end;
+        runs.splice(i, 1);
+        if (runs[i] && runs[i].cls === runs[i - 1].cls) { runs[i - 1].end = runs[i].end; runs.splice(i, 1); }   // same class on both sides
+      }
+      return runs;
+    };
+    const runs = group(hours.map((f) => ({ cls: WX_CLASS[f.cond] || "cloud", cond: f.cond, start: f.ts, end: f.ts + H })));
+    // the stretches of a run that each have their own symbol; hours of other weather joined to a sunny run go with the hour before
+    const symbols = (r) => {
+      if (r.cls !== "sun") return [r];
+      const clear = hours.filter((f) => f.ts >= r.start && f.ts < r.end && WX_CLASS[f.cond] === "sun");
+      return group(clear.map((f, i) => ({ cls: f.cond, cond: f.cond, start: f.ts, end: i + 1 < clear.length ? clear[i + 1].ts : r.end })));
+    };
     const color = { sun: P.pv, part: P.pvDark, cloud: "var(--secondary-text-color)", rain: P.grid, snow: P.grid };
     const marks = runs.map((r) => {
       const a = Math.max(X0, x(r.start)), b = Math.min(X1, x(r.end));
       if (b - a < 1) return "";
       const bar = `<line x1="${a.toFixed(1)}" x2="${b.toFixed(1)}" y1="19" y2="19" stroke="${color[r.cls]}" stroke-width="1.6" stroke-opacity=".6" stroke-linecap="round"></line>`;
-      return b - a < MIN ? bar : `${bar}${this._icon(WX_ICON[r.cond] || "mdi:weather-cloudy", a + SIZE / 2, 8, SIZE, color[r.cls]) || ""}`;
+      const icons = symbols(r).filter((s) => width(s) >= MIN)
+        .map((s) => this._icon(WX_ICON[s.cond] || "mdi:weather-cloudy", Math.max(X0, x(s.start)) + SIZE / 2, 8, SIZE, color[r.cls]) || "");
+      return `${bar}${icons.join("")}`;
     }).join("");
     return `<svg class="wx" viewBox="0 0 ${W} 22" role="img" aria-label="weather">${marks}</svg>`;
   }

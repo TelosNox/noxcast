@@ -102,7 +102,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     assert all(float(s.state) > 1 for s in tomorrow)
     # 23 or 25 hours on the day the clocks change
     day = dt_util.now().date() + timedelta(days=1)
-    hours = (dt_util.start_of_local_day(day + timedelta(days=1)) - dt_util.start_of_local_day(day)).total_seconds() / 3600
+    hours = (dt_util.start_of_local_day(day + timedelta(days=1)).timestamp() - dt_util.start_of_local_day(day).timestamp()) / 3600
     assert all(s.attributes["schema_version"] == 1 and len(s.attributes["hourly"]) == hours for s in tomorrow)
 
     client = await hass_ws_client(hass)                      # data for the sidebar panel

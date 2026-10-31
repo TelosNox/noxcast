@@ -2,6 +2,7 @@
   "domain": "noxcast",
   "name": "Noxcast",
   "after_dependencies": ["frontend", "http", "lovelace", "panel_custom"],
+  "categories": ["energy.solar_batteries"],
   "codeowners": ["@TelosNox"],
   "config_flow": true,
   "dependencies": ["recorder", "websocket_api"],

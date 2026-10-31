@@ -100,7 +100,10 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     tomorrow = [s for e, s in states.items() if e.endswith("forecast_tomorrow")]
     assert len(tomorrow) == 2                                # total + array
     assert all(float(s.state) > 1 for s in tomorrow)
-    assert all(s.attributes["schema_version"] == 1 and len(s.attributes["hourly"]) == 24 for s in tomorrow)
+    # 23 or 25 hours on the day the clocks change
+    day = dt_util.now().date() + timedelta(days=1)
+    hours = (dt_util.start_of_local_day(day + timedelta(days=1)) - dt_util.start_of_local_day(day)).total_seconds() / 3600
+    assert all(s.attributes["schema_version"] == 1 and len(s.attributes["hourly"]) == hours for s in tomorrow)
 
     client = await hass_ws_client(hass)                      # data for the sidebar panel
     await client.send_json_auto_id({"type": "noxcast/learned"})

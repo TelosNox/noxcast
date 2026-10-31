@@ -18,12 +18,14 @@ const ACC_TEXT = {
     verdictModel: "Der größere Teil des Fehlers bleibt auch mit gemessenem Wetter. Hier lohnt ein Blick auf Verschattung, Ausrichtung und Wirkungsgrad.",
     verdictBoth: "Wettervorhersage und Modell tragen etwa gleich viel zum Fehler bei.",
     splitHelp: "Für jede vergangene Stunde rechnet Noxcast das Modell noch einmal mit der Einstrahlung aus dem Satellitenarchiv. Wetteranteil = Prognose − Modell mit gemessenem Wetter, Modellanteil = Modell mit gemessenem Wetter − Ist. Beide Balken zusammen ergeben die Tagesabweichung. Ein Rest bleibt immer: Satellitenwerte sind Flächenmittel und keine Messung am Dach.",
-    backtest: "Rückrechnung", hourError: "Stundenfehler", better: "besser", worse: "schlechter",
+    backtest: "Rückrechnung", hourError: "Stundenfehler",
+    btSmaller: (p, vs) => `Fehler ${p} % kleiner als ${vs}`, btLarger: (p, vs) => `Fehler ${p} % größer als ${vs}`,
+    btVsThen: "die Prognose damals", btVsNoMap: "ohne Verschattungskarte",
     btReplay: "Archivierte Tage, vorhergesagtes Wetter", btThen: "Prognose damals", btNow: "Heutiges Modell", btNoMap: "Ohne Verschattungskarte",
     btHoldout: "Ungelernte Tage, gemessenes Wetter", btUnseen: "Ungelernte Tage", btSeen: "Gelernte Tage",
     btPending: "Noch keine Rückrechnung. Sie läuft nachts nach dem Lernen.", btNoSat: "Dafür braucht es das Satellitenarchiv (Optionen der Integration).",
     btFew: (days, needed) => `Noch zu wenig Daten: ${days} von ${needed} Tagen.`,
-    btHelp: "Oben rechnet das heutige Modell die archivierten Tage mit der damaligen Wettervorhersage nach; unten lernt es auf jedem zweiten Tag und wird auf den übrigen mit gemessener Einstrahlung geprüft: Liegen die ungelernten Tage deutlich über den gelernten, merkt es sich Zufälle.",
+    btHelp: "Die Prozentzahl zeigt, wie stark der Fehler gegenüber dem Vergleichswert schrumpft: 20 % → 18 % sind 10 % kleiner. Oben: Hätte das heutige Modell die archivierten Tage besser getroffen? Der Fehler der Wettervorhersage bleibt dabei enthalten. Unten: Das Modell lernt auf jedem zweiten Tag und wird auf den übrigen mit gemessener Einstrahlung geprüft; das zeigt, was die Verschattungskarte auf unbekannten Tagen bringt. Liegen die ungelernten Tage deutlich über den gelernten, merkt sich das Modell Zufälle. Die beiden Zahlen beantworten verschiedene Fragen und sind nicht direkt vergleichbar.",
     weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
   },
   en: {
@@ -41,12 +43,14 @@ const ACC_TEXT = {
     verdictModel: "The larger part of the error remains even with measured weather. Shading, orientation and efficiency are worth a look.",
     verdictBoth: "Weather forecast and model contribute about equally to the error.",
     splitHelp: "For every past hour Noxcast runs the model again on the irradiance from the satellite archive. Weather part = forecast − model on measured weather, model part = model on measured weather − actual. Both bars together are the daily deviation. Some rest always remains: satellite values are area means, not a measurement on the roof.",
-    backtest: "Backtest", hourError: "Hourly error", better: "better", worse: "worse",
+    backtest: "Backtest", hourError: "Hourly error",
+    btSmaller: (p, vs) => `Error ${p} % smaller than ${vs}`, btLarger: (p, vs) => `Error ${p} % larger than ${vs}`,
+    btVsThen: "the forecast then", btVsNoMap: "without the shading map",
     btReplay: "Archived days, forecast weather", btThen: "Forecast then", btNow: "Today's model", btNoMap: "Without shading map",
     btHoldout: "Unlearned days, measured weather", btUnseen: "Unlearned days", btSeen: "Learned days",
     btPending: "No backtest yet. It runs at night after learning.", btNoSat: "This needs the satellite archive (options of the integration).",
     btFew: (days, needed) => `Not enough data yet: ${days} of ${needed} days.`,
-    btHelp: "Above, today's model recomputes the archived days from the weather forecast of that time; below, it learns on every other day and is tested on the rest with measured irradiance: if the unlearned days lie clearly above the learned ones, it memorises chance.",
+    btHelp: "The percentage shows how much the error shrinks against the comparison: 20 % → 18 % is 10 % smaller. Above: would today's model have matched the archived days better? The error of the weather forecast stays in. Below: the model learns on every other day and is checked on the rest with measured irradiance; this shows what the shading map brings on unknown days. If the unlearned days lie well above the learned ones, the model memorises chance. The two figures answer different questions and cannot be compared directly.",
     weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
   },
 };
@@ -281,10 +285,10 @@ class NoxcastAccuracy extends HTMLElement {
     const pick = (part) => part && (this._s.array === "all" ? part.total : (part.arrays || {})[this._s.array]);
     const pc = (v, signed = false) => (v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${(v * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
     const row = (label, m, on) => `<tr${on ? ` class="on"` : ""}><td>${label}</td><td class="num">${pc(m.day_error)}</td><td class="num">${pc(m.hour_error)}</td><td class="num">${pc(m.bias, true)}</td></tr>`;
-    const gain = (m, base, key) => {
+    const gain = (m, base, key, vs) => {
       if (!m[key] || !base[key]) return "";
       const g = 1 - m[key] / base[key];
-      return ` · <b class="${g >= 0 ? "good" : "bad"}">${Math.abs(Math.round(g * 100))} % ${g >= 0 ? t.better : t.worse}</b>`;
+      return ` · <b class="${g >= 0 ? "good" : "bad"}">${(g >= 0 ? t.btSmaller : t.btLarger)(Math.abs(Math.round(g * 100)), vs)}</b>`;
     };
     const fig = (label, m, key, name, detail) => `<div class="fig"><span class="muted small">${label} (${m.days} ${t.days}, ${m.hours} h)</span>
       <span class="big">${pc(m[key])} <span class="muted small">${name}</span></span><span class="small muted">${detail}</span></div>`;
@@ -292,11 +296,11 @@ class NoxcastAccuracy extends HTMLElement {
     const rep = pick(entry.replay), hold = pick(entry.holdout), figs = [], rows = [];
     const group = (label) => `<tr><th colspan="4">${label}</th></tr>`;
     if (rep && rep.status === "ok") {
-      figs.push(fig(t.btReplay, rep.now, "day_error", t.error, `${t.btThen} ${pc(rep.then.day_error)}${gain(rep.now, rep.then, "day_error")} · ${t.btNoMap} ${pc(rep.baseline.day_error)}`));
+      figs.push(fig(t.btReplay, rep.now, "day_error", t.error, `${t.btThen} ${pc(rep.then.day_error)}${gain(rep.now, rep.then, "day_error", t.btVsThen)} · ${t.btNoMap} ${pc(rep.baseline.day_error)}`));
       rows.push(group(t.btReplay), row(t.btThen, rep.then), row(t.btNow, rep.now, true), row(t.btNoMap, rep.baseline));
     } else if (rep) figs.push(missing(t.btReplay, rep));
     if (hold && hold.status === "ok") {
-      figs.push(fig(t.btHoldout, hold.holdout, "hour_error", t.hourError, `${t.btSeen} ${pc(hold.in_sample.hour_error)} · ${t.btNoMap} ${pc(hold.baseline.hour_error)}${gain(hold.holdout, hold.baseline, "hour_error")}`));
+      figs.push(fig(t.btHoldout, hold.holdout, "hour_error", t.hourError, `${t.btSeen} ${pc(hold.in_sample.hour_error)} · ${t.btNoMap} ${pc(hold.baseline.hour_error)}${gain(hold.holdout, hold.baseline, "hour_error", t.btVsNoMap)}`));
       rows.push(group(t.btHoldout), row(t.btUnseen, hold.holdout, true), row(t.btSeen, hold.in_sample), row(t.btNoMap, hold.baseline));
     } else if (hold) figs.push(missing(t.btHoldout, hold));
     const table = rows.length ? `<table class="btable"><thead><tr><th></th><th class="num">${t.error}</th><th class="num">${t.hourError}</th><th class="num">${t.bias}</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : "";

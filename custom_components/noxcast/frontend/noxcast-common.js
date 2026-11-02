@@ -19,6 +19,8 @@ export const tsRows = (s, ...names) => (s ? s.t.map((t, i) => [t, ...names.map((
 
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
+// an entity ID as HTML that can wrap after its dots and underscores; copying it still gives the plain ID
+export const escId = (s) => esc(s).replace(/[._]/g, "$&<wbr>");
 
 export const num = (v, lang, digits = 0) => Number(v).toLocaleString(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 export const kwh = (wh, lang, digits = 1) => num(wh / 1000, lang, digits);

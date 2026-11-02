@@ -122,7 +122,7 @@ th { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
   thead { display: none; }
   tr { padding: 8px 0; border-top: 1px solid var(--divider-color); }
   tbody tr:first-child { border-top: 0; }
-  td { border: 0 !important; padding: 2px 0 !important; text-align: right !important; white-space: normal; overflow: hidden; }
+  td { border: 0 !important; padding: 2px 0 !important; text-align: right !important; white-space: normal; overflow: hidden; overflow-wrap: anywhere; }
   td::before { content: attr(data-label); float: left; margin-right: 12px; color: var(--secondary-text-color); font-size: 12px; }
   td:first-child { text-align: left !important; font-weight: 500; }
   td:first-child::before { content: none; }

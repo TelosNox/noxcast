@@ -24,3 +24,5 @@ breaking changes.
 
 - Day section: the lanes below the chart show the full array names instead of their first six characters. A long name
   reaches into the chart; a bar behind it stays faint, so its start remains visible. The tooltip of a bar names its array.
+- Diagnostics and load forecast on a phone: long entity IDs wrap instead of being cut off.
+- Day card: the list behind a figure shows a long name on two lines before shortening it, and the full name in a tooltip.

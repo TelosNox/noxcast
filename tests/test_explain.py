@@ -5,7 +5,7 @@ solar = load("solar")
 model = load("model")
 explain = load("explain")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=35, azimuth=180, peak_w=1000)
 DAY = 1782864000.0            # 2026-07-01 UTC
 

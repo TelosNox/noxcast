@@ -3,16 +3,33 @@ name: Validate
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "17 4 * * 1"      # weekly, for tests-latest: a new Home Assistant arrives without a commit here
+
+permissions:
+  contents: read
 
 jobs:
-  tests:
+  tests:                      # the oldest supported Home Assistant, as pinned in requirements_test.txt and named in hacs.json
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - run: pip install -r requirements_test.txt
+      - run: pytest -q
+
+  tests-latest:               # the newest Home Assistant; not required, an early warning of what it breaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements_test.txt
+      - run: pip install --upgrade pytest-homeassistant-custom-component
+      - run: pip list | grep -E "^homeassistant "
       - run: pytest -q
 
   hassfest:

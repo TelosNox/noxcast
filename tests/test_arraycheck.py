@@ -5,7 +5,7 @@ solar = load("solar")
 model = load("model")
 ac = load("arraycheck")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 TRUE = model.ArrayGeometry(tilt=35, azimuth=200, peak_w=1000)
 START = 1767225600.0          # 2026-01-01 UTC
 EFF = 0.9

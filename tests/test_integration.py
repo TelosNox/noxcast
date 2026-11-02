@@ -265,7 +265,7 @@ async def test_stored_weather_stands_in_when_open_meteo_fails(hass: HomeAssistan
 
 async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
     """Extra orientations are accepted, empty ones are not stored, incomplete or doubled ones are rejected."""
-    import voluptuous_serialize
+    import probatio
     from homeassistant.data_entry_flow import InvalidData
     from homeassistant.helpers import config_validation as cv
 
@@ -287,7 +287,7 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
 
         form = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
                                                                context={"source": config_entries.SOURCE_USER})
-        fields = voluptuous_serialize.convert(form["data_schema"], custom_serializer=cv.custom_serializer)
+        fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         sections = [f for f in fields if f["name"].startswith("orientation_")]
         assert len(sections) == 3 and all(f["type"] == "expandable" and f["expanded"] is False for f in sections)
         hass.config_entries.subentries.async_abort(form["flow_id"])
@@ -316,7 +316,7 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
         form = await hass.config_entries.subentries.async_init(
             (entry.entry_id, "array"),
             context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id})
-        fields = voluptuous_serialize.convert(form["data_schema"], custom_serializer=cv.custom_serializer)
+        fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         expanded = {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"}
         assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True}
         done = await hass.config_entries.subentries.async_configure(form["flow_id"], {**ARRAY, "orientation_2": {}})

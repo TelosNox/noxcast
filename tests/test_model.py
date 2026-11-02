@@ -7,7 +7,7 @@ from conftest import load
 solar = load("solar")
 model = load("model")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=60, azimuth=135, peak_w=920)
 START = 1767225600.0          # 2026-01-01 UTC
 EFF = 0.93

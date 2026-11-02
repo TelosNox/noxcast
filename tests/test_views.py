@@ -14,7 +14,7 @@ model = load("model")
 solar = load("solar")
 views = load("views")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=35, azimuth=180, peak_w=1000)
 TZ = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 1)

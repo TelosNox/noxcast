@@ -26,7 +26,7 @@ energy sensors. Nothing is controlled – all outputs are sensors you can use in
 
 ## Requirements
 
-- Home Assistant 2025.6 or newer, recorder enabled.
+- Home Assistant 2026.10 or newer, recorder enabled.
 - Per PV array a **power** sensor (W/kW, `state_class: measurement`), ideally DC per MPPT input.
   The more history, the sooner the learned values are good; up to two years are used.
 - Internet access to Open-Meteo (free for non-commercial use, no key).

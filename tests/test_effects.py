@@ -7,7 +7,7 @@ solar = load("solar")
 model = load("model")
 effects = load("effects")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=60, azimuth=135, peak_w=920)
 TZ = timezone(timedelta(hours=2))
 DAY = datetime(2026, 10, 14, tzinfo=TZ).timestamp()

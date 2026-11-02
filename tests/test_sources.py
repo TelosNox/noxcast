@@ -62,7 +62,7 @@ def test_bearing_and_wind_mean():
 
 async def test_open_meteo_details(hass: HomeAssistant, aioclient_mock) -> None:
     aioclient_mock.get(sources.OPEN_METEO_URL, json={"hourly": {"time": [T.format(h)[:16] for h in range(3)], **HOURLY}})
-    mean, per_model = await sources.async_open_meteo(hass, 49.0, 8.4, models=["icon_seamless"])
+    mean, per_model = await sources.async_open_meteo(hass, 48.0, 8.0, models=["icon_seamless"])
     hours = {dt_util.utc_from_timestamp(w.start).hour: w for w in mean}
     w = hours[1]                                     # 02:00 holds the mean of 01:00-02:00
     assert w.ghi == 400 and w.sun == 1.0 and w.cloud == 75 and w.wind == 5 and w.wind_dir == pytest.approx(90)
@@ -77,7 +77,7 @@ async def test_open_meteo_model_mean(hass: HomeAssistant, aioclient_mock) -> Non
     aioclient_mock.get(sources.OPEN_METEO_URL, json={"hourly": {
         "time": [T.format(h)[:16] for h in range(3)], **{f"{k}_icon_seamless": v for k, v in HOURLY.items()},
         **{f"{k}_ecmwf_ifs": v for k, v in other.items()}}})
-    mean, per_model = await sources.async_open_meteo(hass, 49.0, 8.4, models=["icon_seamless", "ecmwf_ifs"])
+    mean, per_model = await sources.async_open_meteo(hass, 48.0, 8.0, models=["icon_seamless", "ecmwf_ifs"])
     hours = {dt_util.utc_from_timestamp(w.start).hour: w for w in mean}
     assert set(per_model) == {"icon_seamless", "ecmwf_ifs"}
     assert hours[0].ghi == 200 and hours[0].dni == 300 and hours[0].dhi == 100

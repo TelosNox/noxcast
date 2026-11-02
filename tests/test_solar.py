@@ -8,8 +8,8 @@ from conftest import load
 
 solar = load("solar")
 
-SITE = solar.Site(48.97, 8.45, 113)
-LOC = pvlib.location.Location(48.97, 8.45, "UTC", 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
+LOC = pvlib.location.Location(48.0, 8.0, "UTC", 300.0)
 TIMES = pd.date_range("2026-01-01", "2027-01-01", freq="37min", tz="UTC", inclusive="left")
 
 

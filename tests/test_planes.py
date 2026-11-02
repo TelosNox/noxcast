@@ -9,7 +9,7 @@ model = load("model")
 arraycheck = load("arraycheck")
 shade = load("shade")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 DNI_EXTRA = 1367.0
 
 

@@ -24,7 +24,7 @@ def imports(name: str) -> tuple[set[str], set[str]]:
 
 @pytest.mark.parametrize("name", sorted(p.stem for p in PKG.glob("*.py") if p.stem not in SHELL))
 def test_the_core_does_not_know_home_assistant(name):
-    assert not imports(name)[0] & {"homeassistant", "voluptuous"}
+    assert not imports(name)[0] & {"homeassistant", "probatio", "voluptuous"}
 
 
 @pytest.mark.parametrize("name", ["load", "battery", "plan", "flows"])

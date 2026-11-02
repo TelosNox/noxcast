@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: "17 4 * * 1"      # weekly, for tests-latest: a new Home Assistant arrives without a commit here
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,8 +30,24 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements_test.txt
       - run: pip install --upgrade pytest-homeassistant-custom-component
-      - run: pip list | grep -E "^homeassistant "
+      - run: python .github/scripts/check_latest_ha.py
       - run: pytest -q
+
+  report-latest:              # a failed weekly run is only a mail otherwise; an issue stays until someone deals with it
+    needs: tests-latest
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "The newest Home Assistant fails the tests"
+    steps:
+      - run: |
+          if [ -z "$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[].number')" ]; then
+            gh issue create --title "$TITLE" --body "The weekly \`tests-latest\` job failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
 
   hassfest:
     runs-on: ubuntu-latest

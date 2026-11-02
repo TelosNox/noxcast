@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0b1] - 2026-11-02
+
 ### Added
 
 - PV forecast per array and in total for up to 7 days, hourly, with a P10–P90 band, from Open-Meteo weather.

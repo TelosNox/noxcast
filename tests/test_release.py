@@ -11,6 +11,9 @@ ROOT = Path(__file__).parent.parent
 spec = importlib.util.spec_from_file_location("release_notes", ROOT / ".github/scripts/release_notes.py")
 notes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(notes)
+spec = importlib.util.spec_from_file_location("check_latest_ha", ROOT / ".github/scripts/check_latest_ha.py")
+latest_ha = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(latest_ha)
 
 CHANGELOG = """# Changelog
 
@@ -59,3 +62,12 @@ def test_missing_or_empty_section_refused(version):
 def test_repository_files_have_the_expected_form():
     assert notes.TAG.fullmatch("v" + json.loads((ROOT / notes.MANIFEST).read_text(encoding="utf-8"))["version"])
     assert "## Unreleased" in (ROOT / notes.CHANGELOG).read_text(encoding="utf-8")
+
+
+def test_a_held_back_test_package_is_a_problem():
+    assert latest_ha.problem("0.13.375", "0.13.375") is None
+    assert "0.13.380" in latest_ha.problem("0.13.375", "0.13.380")
+
+
+def test_month_of_a_home_assistant_version():
+    assert latest_ha.month("2026.10.4") == latest_ha.month("2026.10.0") == "2026.10"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import voluptuous as vol
+import probatio as vol
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall

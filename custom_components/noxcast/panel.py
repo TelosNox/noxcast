@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-import voluptuous as vol
+import probatio as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.components.recorder import get_instance

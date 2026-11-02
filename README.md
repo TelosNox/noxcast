@@ -5,7 +5,7 @@ first, then what Noxcast learns about each array (efficiency, shade, reflection,
 a statistical correction. Optional: house load forecast, battery simulation and the best time for
 flexible consumers.
 
-**Status:** early version (0.1.0), breaking changes possible.
+**Status:** early version, breaking changes possible. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 ## Overview
 

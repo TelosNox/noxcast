@@ -184,6 +184,7 @@ def ws_load(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
                                        "entries": entries})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): WS_DIAGNOSTICS})
 @websocket_api.async_response
 async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:

@@ -1,6 +1,10 @@
 """Open-Meteo: irradiance plus the details kept for the archive (cloud cover, sunshine, wind), and the model mean."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from unittest.mock import Mock
+
+import aiohttp
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -12,6 +16,40 @@ HOURLY = {"shortwave_radiation": [0, 300, 400], "direct_normal_irradiance": [0, 
           "temperature_2m": [10, 12, 14], "cloud_cover": [0, 50, 100], "sunshine_duration": [0, 1800, 3600],
           "wind_speed_10m": [2, 4, 6], "wind_direction_10m": [90, 90, 90], "precipitation": [0, 0.2, 1.0],
           "weather_code": [0, 61, 95], "relative_humidity_2m": [80, 70, 60]}
+
+
+def _failure(url: str) -> aiohttp.ClientResponseError:
+    request = Mock(real_url=f"{url}?latitude=12.345&longitude=6.789&apikey=SECRET")
+    failure = aiohttp.ClientResponseError(request, (), status=503, message="Service Unavailable")
+    assert "latitude" in str(failure) and "SECRET" in str(failure)    # what the error would show on its own
+    return failure
+
+
+def _assert_safe(err: sources.SourceError, host: str) -> None:
+    assert str(err) == f"{host} answered 503 Service Unavailable"
+    assert err.__suppress_context__                                   # a traceback leaves out the original error
+
+
+async def test_open_meteo_error_hides_location(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(sources.OPEN_METEO_URL, exc=_failure(sources.OPEN_METEO_URL))
+    with pytest.raises(sources.SourceError) as err:
+        await sources.async_open_meteo(hass, 12.345, 6.789)
+    _assert_safe(err.value, "api.open-meteo.com")
+
+
+async def test_archive_error_hides_location_and_key(hass: HomeAssistant, aioclient_mock) -> None:
+    url = "https://archive.example.test/v1/archive"
+    aioclient_mock.get(url, exc=_failure(url))
+    day = datetime(2026, 10, 24, tzinfo=timezone.utc)
+    with pytest.raises(sources.SourceError) as err:
+        await sources.async_archive_temperature(hass, url, 12.345, 6.789, day, day, "SECRET")
+    _assert_safe(err.value, "archive.example.test")
+
+
+async def test_connection_error_names_only_the_host(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(sources.OPEN_METEO_URL, exc=aiohttp.ClientConnectionError("cannot connect"))
+    with pytest.raises(sources.SourceError, match="^api.open-meteo.com: ClientConnectionError$"):
+        await sources.async_open_meteo(hass, 12.345, 6.789)
 
 
 def test_bearing_and_wind_mean():

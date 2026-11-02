@@ -201,6 +201,8 @@ with the best window today and tomorrow as attributes.
 | `noxcast.exclude_period` | Leave a period out of learning (e.g. curtailment while away, maintenance) |
 | `noxcast.relearn` | Learn again from history now |
 
+Both need an administrator, and so does the *Diagnostics* section of the panel.
+
 ## How it works
 
 ### Forecast of an hour
@@ -300,7 +302,10 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 
 ## Privacy
 
-Noxcast sends only your coordinates to Open-Meteo. Everything else stays in Home Assistant.
+Noxcast sends only your coordinates to Open-Meteo. Everything else stays in Home Assistant. Error messages and
+logs name the weather host and its answer, not the request, so they hold neither your location nor an API key.
+The diagnostics download leaves out the location and API key, but lists your sensor IDs: look through it before
+you post it.
 
 ## Development
 

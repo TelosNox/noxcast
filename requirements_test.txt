@@ -1,3 +1,4 @@
 pytest-homeassistant-custom-component==0.13.371
+voluptuous-serialize
 pvlib
 pandas

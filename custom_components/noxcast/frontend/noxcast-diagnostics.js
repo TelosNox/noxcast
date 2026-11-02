@@ -1,7 +1,7 @@
 // Noxcast panel section "Diagnostics": data quality of every sensor Noxcast reads, learning runs,
 // weather source, archive and excluded periods. Answers "why does it not learn?" without logs.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/diagnostics".
-const { WS_SCHEMA, ask, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, esc, escId } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DIAG_TEXT = {
   de: {
@@ -78,7 +78,7 @@ class NoxcastDiagnostics extends HTMLElement {
   _issues(e) {
     const t = this._t.issues, out = [];
     for (const s of e.sensors) {
-      const name = `<span class="mono">${esc(s.entity_id)}</span>`;
+      const name = `<span class="mono">${escId(s.entity_id)}</span>`;
       if (s.state === null) out.push(["bad", `${name} ${t.missing}`]);
       else if (s.state === "unavailable") out.push(["warn", `${name} ${t.unavailable}`]);
       if (STAT_ROLES.has(s.role) && s.state !== null) {
@@ -116,7 +116,7 @@ class NoxcastDiagnostics extends HTMLElement {
       : `<p class="okline"><span class="dot ok"></span>${t.ok}</p>`;
     const owners = [...new Set(e.sensors.map((s) => s.owner))];
     const rows = owners.map((o) => `<tr class="group"><td colspan="5">${esc(o)}</td></tr>${e.sensors.filter((s) => s.owner === o).map((s) => `
-      <tr><td><span class="mono">${esc(s.entity_id)}</span><div class="muted small">${t.roles[s.role] || s.role}</div></td>
+      <tr><td><span class="mono">${escId(s.entity_id)}</span><div class="muted small">${t.roles[s.role] || s.role}</div></td>
         <td class="num">${s.state === null ? "–" : `${esc(s.state)} ${esc(s.unit || "")}`}</td>
         <td class="muted small">${esc(s.state_class || "")}</td>
         <td>${STAT_ROLES.has(s.role) ? (s.statistics ? this._meter(s.coverage) : `<span class="bad">✕</span>`) : ""}</td>

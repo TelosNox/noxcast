@@ -394,7 +394,7 @@ class NoxcastCard extends HTMLElement {
       .pop { position: absolute; box-sizing: border-box; min-width: 170px; max-width: 100%; padding: 4px; font-size: 13px;
         background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color);
         border: 1px solid var(--divider-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
-      .pop > div, .pop button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; padding: 0 8px; box-sizing: border-box; }
+      .pop > div, .pop button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; padding: 3px 8px; box-sizing: border-box; }
       .pop button { width: 100%; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
       .pop button:hover { background: rgba(127,127,127,.15); }
       .pop .head { color: var(--secondary-text-color); font-size: 12px; min-height: 26px; }
@@ -402,7 +402,7 @@ class NoxcastCard extends HTMLElement {
       .pop .two { padding-right: 0; }
       .pop .two button { width: auto; flex: none; }
       .pop .two span:first-child { flex: 1; }
-      .pop .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pop .n { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }   /* two lines, then "…" */
       .pop .w { white-space: nowrap; font-variant-numeric: tabular-nums; }
       .wx { margin-bottom: 6px; }       /* a little air, so the strip does not read as a lid on the chart */
       .muted { color: var(--secondary-text-color); }
@@ -574,7 +574,7 @@ class NoxcastCard extends HTMLElement {
     const values = [];
     const value = (fn) => { values.push(fn); return `<span class="w">${esc(fn())}</span>`; };
     const button = (id, inner, cls = "") => `<button type="button"${cls ? ` class="${cls}"` : ""} data-more="${esc(id)}">${inner}</button>`;
-    const name = (r) => `<span class="n">${esc(r.name)}</span>`;
+    const name = (r) => `<span class="n" title="${esc(r.name)}">${esc(r.name)}</span>`;
     const pop = document.createElement("div");
     pop.className = "pop";
     pop.innerHTML = this._details(cell.dataset.list).map((r) => {

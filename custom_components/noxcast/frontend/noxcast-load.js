@@ -1,6 +1,6 @@
 // Noxcast panel section "Load": the learned load profile, the consumers and the forecast by part.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/load".
-const { WS_SCHEMA, ask, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, esc, escId, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const LOAD_TEXT = {
   de: {
@@ -228,7 +228,7 @@ class NoxcastLoad extends HTMLElement {
     const pct = (v) => (total > 0 ? `${Math.round((v / total) * 100)} %` : "–");
     return `<table><thead><tr><th></th><th>${t.timing}</th><th class="num">${t.perDay}</th><th class="num">${t.share}</th></tr></thead><tbody>
       <tr><td><i class="dot" style="background:var(--nx-base)"></i>${t.base}</td><td></td><td class="num">${this._kwh(base)} ${t.kwh}</td><td class="num">${pct(base)}</td></tr>
-      ${rows.map(([c, d, k]) => `<tr><td><i class="dot" style="background:${this._color(k)}"></i>${esc(c.name)}<div class="muted small mono">${esc(c.sensor || "")}</div></td>
+      ${rows.map(([c, d, k]) => `<tr><td><i class="dot" style="background:${this._color(k)}"></i>${esc(c.name)}<div class="muted small mono">${escId(c.sensor || "")}</div></td>
         <td>${t[c.timing] || c.timing}${c.timing === "fixed" ? ` · ${t.kinds[c.kind] || c.kind}` : ""}${this._modelInfo(c)}</td><td class="num">${this._kwh(d)} ${t.kwh}</td><td class="num">${pct(d)}</td></tr>`).join("")}
     </tbody></table>`;
   }

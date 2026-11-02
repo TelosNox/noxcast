@@ -16,7 +16,46 @@ optional parts of the same integration. See `docs/concept.md`.
   Personal values live in `*.local.json` (git-ignored); commit only `*.example.json`.
 
 ## Git
-- No commits or pushes without explicit approval from the maintainer.
+- Work reaches `main` only through a pull request. Finished work goes on a branch from `main` and gets a PR with
+  squash auto-merge, without asking; this is the maintainer's standing approval for PR work.
+- Merging a PR does not publish anything for users. Only a release does (see below).
+
+## Releases
+Noxcast is delivered in releases. HACS offers users the latest release, not the latest commit on `main`.
+
+### Versioning
+- Semantic versions: tag `vX.Y.Z`, the same `X.Y.Z` in `custom_components/noxcast/manifest.json`.
+- While the version is 0.x: minor for new features or breaking changes, patch for fixes only.
+- A test release before a stable one: tag `vX.Y.ZbN`, manifest `X.Y.ZbN`, marked as a pre-release on GitHub.
+
+### Changelog
+- `CHANGELOG.md` follows Keep a Changelog: `Unreleased` on top, then one section per version with its date, grouped
+  into Added, Changed, Fixed and Removed.
+- Every PR that users can notice adds its entry to `Unreleased` in the same PR. Internal refactoring and tests need
+  no entry.
+- Entries are in English and written for users: what changes for them, not how the code changed.
+- A breaking change is marked **Breaking** and says what the user has to do.
+
+### Compatibility
+- These count as breaking unless a migration keeps them working: entity IDs, attribute schemas
+  (`ATTR_SCHEMA_VERSION`), websocket payloads (`WS_SCHEMA_VERSION`), stored data (`STORAGE_VERSION`,
+  `LEARNED_VERSION`), config entries (`VERSION`, `MINOR_VERSION`), service names and card options.
+- Stored data that a new version replaces must not silently lose what was learned without a changelog entry.
+- `homeassistant` in `hacs.json` names the oldest version the tests actually cover.
+
+### What a release contains
+1. `Unreleased` moved to a new version section with today's date.
+2. The new version in `manifest.json`.
+3. A tag on the `main` commit with exactly these two changes, and CI green on that commit.
+4. A GitHub release for the tag, with that changelog section as its text.
+
+### How a release runs
+1. A release PR makes changes 1 and 2 and contains nothing else.
+2. A release is published only on the maintainer's explicit go, each time. A merged PR or a green CI is not one.
+3. If a release changes learning, stored data or a migration, a pre-release first runs on the maintainer's Home
+   Assistant through at least one nightly learning run.
+4. Before publishing, check the release against the privacy rule above.
+5. A published tag or release is never moved, replaced or deleted. A mistake gets a new patch version.
 
 ## Design principles
 - Every number must be explainable: physics first, learned parameters second, statistical

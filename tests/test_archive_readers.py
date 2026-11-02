@@ -11,7 +11,7 @@ model = load("model")
 solar = load("solar")
 views = load("views")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=35, azimuth=180, peak_w=1000)
 FIRST = date(2026, 6, 22)
 DAY0 = 1782086400.0                # 2026-06-22 00:00 UTC
@@ -62,7 +62,7 @@ def test_accuracy_days_from_stored_archive():
     days = views.accuracy_days(stored(), SITE)
     assert len(days) == DAYS and days[0]["date"] == "2026-06-22" and days[0]["issued"] == "2026-06-21T22:00:00+00:00"
     h = days[0]["hours"][9]
-    assert h == {"t": 1782133200.0, "ghi": 210.0, "clear": 831.3, "forecast": {"roof": 131.2, "balcony": 43.75},
+    assert h == {"t": 1782133200.0, "ghi": 210.0, "clear": 841.8, "forecast": {"roof": 131.2, "balcony": 43.75},
                  "actual": {"roof": 105.0, "balcony": 35.0}, "alt": {"icon": {"roof": 87.5, "balcony": 10.0}},
                  "curtailed": True, "sat_ghi": 230.0, "measured": {"roof": 300.0, "balcony": 30.0}}
     assert days[0]["hours"][0]["sat_ghi"] is None and days[0]["hours"][0]["measured"] is None
@@ -84,7 +84,7 @@ def test_day_view_of_a_past_day():
     assert roof["actual"]["t"][-2:] == [1782925200.0, 1782928800.0] and roof["actual"]["wh"][-2:] == [61.8, 41.2]
     assert len(roof["day_ahead"]["t"]) == 16 and len(roof["actual"]["wh"]) == 15 and len(roof["steps"]) == 16
     assert {k: v[:2] for k, v in view["weather"].items()} == {
-        "t": [1782878400.0, 1782882000.0], "ghi": [0.0, 30.0], "clear": [94.4, 243.3], "temp": [None, 15.0]}
+        "t": [1782878400.0, 1782882000.0], "ghi": [0.0, 30.0], "clear": [84.6, 234.6], "temp": [None, 15.0]}
     empty = {"t": [], "ghi": [], "clear": [], "temp": []}
     assert views.day_view(SITE, {}, {}, None, None, start, start + 86400, start + 5 * 86400) == \
         {"arrays": [], "band": {"t": [], "p10": [], "p90": []}, "history": [], "weather": empty}

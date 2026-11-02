@@ -11,3 +11,6 @@ venv/
 # Prototype data and outputs
 prototype/data/
 prototype/out/
+
+# Local tool settings and worktrees
+.claude/

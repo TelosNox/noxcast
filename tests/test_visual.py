@@ -8,7 +8,7 @@ solar = load("solar")
 model = load("model")
 visual = load("visual")
 
-SITE = solar.Site(48.97, 8.45, 113)
+SITE = solar.Site(48.0, 8.0, 300.0)
 GEO = model.ArrayGeometry(tilt=30, azimuth=180, peak_w=1000)
 
 

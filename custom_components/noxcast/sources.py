@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -18,6 +19,23 @@ from .model import WeatherHour
 
 _LOGGER = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+class SourceError(Exception):
+    """A weather source failed. The text names only the host: the query of the URL holds the location and API key."""
+
+
+async def _async_get_json(hass: HomeAssistant, url: str, params: dict, timeout: float) -> dict:
+    session = async_get_clientsession(hass)
+    host = urlsplit(url).hostname or "weather source"
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+    except aiohttp.ClientResponseError as err:      # its text and traceback would show the whole URL
+        raise SourceError(f"{host} answered {err.status} {err.message}") from None
+    except aiohttp.ClientError as err:
+        raise SourceError(f"{host}: {type(err).__name__}") from None
 
 
 def _start_ts(value) -> float:
@@ -110,10 +128,7 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
         "latitude": latitude, "longitude": longitude, "timezone": "UTC", "past_days": 1,
         "forecast_days": days, "hourly": ",".join(HOURLY), "models": ",".join(models), "wind_speed_unit": "ms",
     }
-    session = async_get_clientsession(hass)
-    async with session.get(OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        resp.raise_for_status()
-        data = (await resp.json())["hourly"]
+    data = (await _async_get_json(hass, OPEN_METEO_URL, params, 30))["hourly"]
     times = [_parse_utc(t) for t in data["time"]]
 
     def column(var: str, model: str) -> list:
@@ -199,10 +214,7 @@ async def _async_archive(hass: HomeAssistant, url: str, params: dict, api_key: s
     params = {**params, "timezone": "UTC"}
     if api_key:
         params["apikey"] = api_key
-    session = async_get_clientsession(hass)
-    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-        resp.raise_for_status()
-        return (await resp.json())["hourly"]
+    return (await _async_get_json(hass, url, params, 120))["hourly"]
 
 
 async def async_archive_temperature(hass: HomeAssistant, url: str, latitude: float, longitude: float,

@@ -6,6 +6,7 @@ const { WS_SCHEMA, ask, esc } = await import(new URL("./noxcast-common.js" + new
 const DIAG_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
+    adminOnly: "Die Diagnose können nur Administratoren sehen.",
     ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", learnTook: "Lernen", backtestTook: "Rückrechnung", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
@@ -21,6 +22,7 @@ const DIAG_TEXT = {
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
+    adminOnly: "Only administrators can see the diagnostics.",
     ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", learnTook: "Learning", backtestTook: "Backtest", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
@@ -65,6 +67,7 @@ class NoxcastDiagnostics extends HTMLElement {
       this._data = data;
       this._error = null;
     } catch (err) {
+      if (err && err.code === "unauthorized") { this._data = null; this._error = this._t.adminOnly; this._render(); return; }
       this._error = String((err && err.message) || err);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);

@@ -9,6 +9,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -49,8 +50,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             if not await coordinator.async_learn():
                 raise HomeAssistantError(f"Learning failed: {coordinator.last_learning_error}")
 
-    hass.services.async_register(DOMAIN, SERVICE_EXCLUDE_PERIOD, exclude_period, schema=EXCLUDE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_RELEARN, relearn)
+    # both change what is learned, and a run is long and calls the weather archive
+    async_register_admin_service(hass, DOMAIN, SERVICE_EXCLUDE_PERIOD, exclude_period, schema=EXCLUDE_SCHEMA)
+    async_register_admin_service(hass, DOMAIN, SERVICE_RELEARN, relearn)
     await async_setup_panel(hass)
     return True
 

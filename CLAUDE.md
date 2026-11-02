@@ -29,7 +29,7 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 - A test release before a stable one: tag `vX.Y.ZbN`, manifest `X.Y.ZbN`, marked as a pre-release on GitHub.
 
 ### Changelog
-- `CHANGELOG.md` follows Keep a Changelog: `Unreleased` on top, then one section per version with its date, grouped
+- `CHANGELOG.md` follows Keep a Changelog: `## Unreleased` on top, then `## [X.Y.Z] - date` per version, grouped
   into Added, Changed, Fixed and Removed.
 - Every PR that users can notice adds its entry to `Unreleased` in the same PR. Internal refactoring and tests need
   no entry.
@@ -47,7 +47,9 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 1. `Unreleased` moved to a new version section with today's date.
 2. The new version in `manifest.json`.
 3. A tag on the `main` commit with exactly these two changes, and CI green on that commit.
-4. A GitHub release for the tag, with that changelog section as its text.
+4. A GitHub release for the tag, with that changelog section as its text. Pushing the tag runs
+   `.github/workflows/release.yml`, which refuses a tag that disagrees with the manifest or changelog, or is not
+   on `main`, and creates the release.
 
 ### How a release runs
 1. A release PR makes changes 1 and 2 and contains nothing else.

@@ -88,6 +88,7 @@ function smooth(p) {
 
 const DAY_COLORS = ["#F5A524", "#FF6A3D", "#8B5CF6", "#22C7E8", "#2EAA6E", "#E8543C"];
 const HOUR = 3600;
+const NAME_MAX = 0.25, NAME_GAP = 8;    // array names in the chart's lanes: share of the width at most; chart units between name and bar
 
 class NoxcastDay extends HTMLElement {
   constructor() {
@@ -253,6 +254,20 @@ class NoxcastDay extends HTMLElement {
     return `<section class="card pad"><h3>${t.chart}</h3><div id="chartbox">${this._chart(e)}</div><p class="help">${t.hourHint}</p></section>`;
   }
 
+  // width of a text in the chart's axis font, in chart units
+  _textW(text) {
+    const ctx = this._canvas || (this._canvas = document.createElement("canvas").getContext("2d"));
+    ctx.font = `10px ${getComputedStyle(this).fontFamily}`;
+    return ctx.measureText(text).width;
+  }
+
+  _fit(text, max) {
+    if (this._textW(text) <= max) return text;
+    let n = text.length;
+    while (n > 1 && this._textW(`${text.slice(0, n - 1).trimEnd()}…`) > max) n--;
+    return `${text.slice(0, n - 1).trimEnd()}…`;
+  }
+
   _chart(e) {
     const t = this._t, d = this._data, hours = this._hours(), now = d.now, phase = this._phase;
     const W = 960, X0 = 40, X1 = W - 10, Hp = 240, top = 12;
@@ -313,8 +328,15 @@ class NoxcastDay extends HTMLElement {
     e.arrays.forEach((arr, i) => {
       const per = (arr.periods || []).filter((p) => p.end > h0 && p.start < h1);
       if (!per.length) return;
-      svg += `<text x="${X0 - 6}" y="${Ly + 8}" text-anchor="end" class="ax">${esc(arr.name).slice(0, 6)}</text>`;
-      for (const p of per) svg += `<rect x="${x(Math.max(p.start, h0)).toFixed(1)}" y="${Ly}" width="${Math.max(2, x(Math.min(p.end, h1)) - x(Math.max(p.start, h0))).toFixed(1)}" height="9" rx="3" class="${p.type === "shade" ? "lshade" : "lrefl"}"><title>${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${this._kwh(p.wh)} ${t.kwh}</title></rect>`;
+      // the full name may reach into the chart, where the morning is mostly empty; a bar behind it stays faint up to a gap after the text
+      const name = this._fit(arr.name, W * NAME_MAX), free = this._textW(name) + NAME_GAP;
+      for (const p of per) {
+        const a = x(Math.max(p.start, h0)), b = x(Math.min(p.end, h1));
+        const bar = (l, r, cls) => `<rect x="${l.toFixed(1)}" y="${Ly}" width="${Math.max(2, r - l).toFixed(1)}" height="9" rx="3" class="${p.type === "shade" ? "lshade" : "lrefl"}${cls}"><title>${esc(arr.name)}: ${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${this._kwh(p.wh)} ${t.kwh}</title></rect>`;
+        if (a < free) svg += bar(a, Math.min(b, free), " behind");
+        if (b > free) svg += bar(Math.max(a, free), b, "");
+      }
+      svg += `<text x="0" y="${Ly + 8}" class="ax lname">${esc(name)}</text>`;
       Ly += 13;
     });
     const H = Ly + 16;
@@ -640,6 +662,7 @@ class NoxcastDay extends HTMLElement {
       .sel { fill: var(--primary-text-color); fill-opacity: .07; stroke: #FF6A3D; stroke-opacity: .6; rx: 4; }
       .hit { fill: transparent; cursor: pointer; } .hit:hover { fill: var(--primary-text-color); fill-opacity: .04; }
       .lshade { fill: var(--nx-bad); opacity: .8; } .lrefl { fill: #8B5CF6; opacity: .8; }
+      .lshade.behind, .lrefl.behind { opacity: .22; } .lname { pointer-events: none; }
       .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; }
       .legend span { display: inline-flex; align-items: center; gap: 5px; }
       .legend i { display: inline-block; } .legend .sw { width: 12px; height: 10px; border-radius: 3px; }

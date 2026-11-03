@@ -119,6 +119,44 @@ def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, s
     return {m: [round(_quantile(v, q), 4), len(v)] for m, v in sorted(groups.items()) if len(v) >= MONTH_MIN_HOURS}
 
 
+HOUR_COLUMNS = ["start", "power_w", "clear_w", "kt", "air_temp", "steady", "shade", "efficiency", "check"]
+
+
+def hour_table(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
+               satellite_ghi: Series | None = None, air_temp: Series | None = None,
+               steady: set[float] | None = None) -> dict:
+    """Every learning hour with the sun up, for the diagnostics download: {"columns": [...], "rows": [[...]]}.
+
+    clear_w: clear-sky power of the configured planes at an efficiency of 100 %; kt: the satellite's
+    clearness; shade: the learned transmission at the sun position (1 = free); efficiency: what this
+    hour alone says, measured over clear_w · kt · temperature factor (only with a satellite value);
+    check: one of the clear, unshaded, well lit hours behind the efficiency by month and the geometry
+    check. An efficiency far above 1 in these hours, all day long, points at the peak power or the
+    sensor; only in the morning or the afternoon, at the azimuth; rising towards winter, at the tilt.
+    Sun positions are left out: with the time they would give the location.
+    """
+    check = {r["t"] for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)}
+    rows = []
+    for t, p in samples:
+        beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, learned.sky_view)
+        if el <= 0:
+            continue
+        poa = beam + diff
+        clear_w = geo.peak_w * poa / 1000
+        g = satellite_ghi.get(t) if satellite_ghi is not None else None
+        kt = min(g / cs_ghi, 1.2) if g is not None and cs_ghi > 50 else None
+        temp = (air_temp or {}).get(t)
+        eff = None
+        if kt and clear_w > 0:
+            f = temperature_factor(learned.temp_coeff, temp, poa,
+                                   clearsky_heating(site, geo, t, learned.sky_view)) if temp is not None else 1.0
+            eff = round(p / (clear_w * kt * f), 3)
+        rows.append([datetime.fromtimestamp(t, timezone.utc).isoformat(), round(p, 1), round(clear_w, 1),
+                     round(kt, 3) if kt is not None else None, temp, t in steady if steady is not None else None,
+                     round(transmission(learned, az, el), 3), eff, t in check])
+    return {"columns": HOUR_COLUMNS, "rows": rows}
+
+
 def _spread(ratios: list[float]) -> float:
     mid = _quantile(ratios, 0.5)
     return (_quantile(ratios, 0.75) - _quantile(ratios, 0.25)) / mid if mid > 0 else math.inf

@@ -55,3 +55,16 @@ def test_month_balance_shows_shade_and_heat():
     assert dec["shade"] < -0.3
     assert jun["temperature"] < 0 and jun["air_temp"] == 25.0
     assert dec["reflection"] == 0 and jun["clear_wh"] > dec["clear_wh"]
+
+
+def test_hour_table_shows_a_peak_power_set_too_low():
+    samples, ghi = clear_samples(TRUE)
+    low = model.ArrayGeometry(tilt=35, azimuth=200, peak_w=720)      # the data fit 1000 Wp at 90 %: 125 %
+    table = ac.hour_table(SITE, low, model.LearnedArray(efficiency=1.25), samples, ghi, steady={samples[0][0]})
+    assert table["columns"] == ac.HOUR_COLUMNS
+    col = {c: i for i, c in enumerate(table["columns"])}
+    checked = [r for r in table["rows"] if r[col["check"]]]
+    assert len(checked) > 100 and all(abs(r[col["efficiency"]] - 1.25) < 0.01 for r in checked)
+    assert table["rows"][0][col["steady"]] and not table["rows"][1][col["steady"]]
+    assert all(r[col["shade"]] == 1 for r in table["rows"])                 # nothing learned: free everywhere
+    assert ac.hour_table(SITE, low, model.LearnedArray(), samples)["rows"][0][col["efficiency"]] is None   # no satellite

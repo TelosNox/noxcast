@@ -372,6 +372,22 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
         """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""
         now = dt_util.utcnow()
+        history, soc_full, exclusions = await self._async_pv_history(now)
+        air_temp = history.air_temp
+        learned = await self.hass.async_add_executor_job(
+            ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
+        await self.hass.async_add_executor_job(
+            ln.record_archive, self.forecast_archive, self.site, self.arrays, learned, history, now.timestamp(), soc_full)
+        self.learned.update(learned)          # applied in one step on the event loop
+        self.band = await self.hass.async_add_executor_job(self._learn_band)
+        if self.house_load:
+            await self._async_learn_load(now, air_temp)
+        self.last_learning = now
+        self._archive_store.async_delay_save(self._archive_data, 5)
+        return history, now.timestamp(), soc_full, exclusions
+
+    async def _async_pv_history(self, now: datetime) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
+        """The arrays' history as learning sees it, the full state of charge and the exclusions."""
         start = now - timedelta(days=365 * HISTORY_YEARS)
         options = self.config_entry.data
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
@@ -385,18 +401,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp, satellite_ghi = await self._async_archives(start, now)
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest(soc), air_temp, satellite_ghi)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
-        exclusions = [(e["start"], e["end"]) for e in self.exclusions]
-        learned = await self.hass.async_add_executor_job(
-            ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
-        await self.hass.async_add_executor_job(
-            ln.record_archive, self.forecast_archive, self.site, self.arrays, learned, history, now.timestamp(), soc_full)
-        self.learned.update(learned)          # applied in one step on the event loop
-        self.band = await self.hass.async_add_executor_job(self._learn_band)
-        if self.house_load:
-            await self._async_learn_load(now, air_temp)
-        self.last_learning = now
-        self._archive_store.async_delay_save(self._archive_data, 5)
-        return history, now.timestamp(), soc_full, exclusions
+        return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
+
+    async def async_learning_hours(self) -> dict[str, dict]:
+        """Per array the hours learning used, for the diagnostics download (fetched anew, nothing is kept)."""
+        if not self.learned:
+            return {}
+        history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow())
+        return await self.hass.async_add_executor_job(
+            ln.learning_hours, self.site, self.arrays, dict(self.learned), history, soc_full, exclusions)
 
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""

@@ -366,16 +366,16 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['63ab873ca37523af', '80726995bf099c98', '5dc8607464a603a4', 'fedca41903a68936', '98f9e1716b5afcd9',
-          'f2c51ee26fa14305']
+PINNED = ['63ab873ca37523af', '2a48ebeb5681f979', 'fcc3fd2cbc0ad4ce', '906e81897ffb5ca1', 'b0f2c7531cbddb85',
+          'eb33803451a1a9f4']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
-    "midday": {"learned": "01cacdd618a28b71", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
-               "load": "a7700b7f3ce0a9c6", "diagnostics": "2792537e49f6ca12", "battery": "4a924f136495a769",
+    "midday": {"learned": "4065204970d1c433", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
+               "load": "a7700b7f3ce0a9c6", "diagnostics": "bab33893f6cf328c", "battery": "4a924f136495a769",
                "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
-    "morning": {"learned": "e2ad061042929404", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
-                "load": "ed6dea904ab7ff60", "diagnostics": "8b61b68cdfcfbce0", "battery": "e0dc625e527929a8",
+    "morning": {"learned": "66236e6f0c3d4e7b", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
+                "load": "ed6dea904ab7ff60", "diagnostics": "6b79b97e56925278", "battery": "e0dc625e527929a8",
                 "card_config": "9576395acefde089", "backtest": "ddbd4cd122996b8d", "day": "11f58e9a21f84166"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
@@ -573,8 +573,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     assert c._store_data()["pv_backtest"] == c.pv_backtest
     assert c.last_learning_seconds is not None and c._store_data()["last_learning_seconds"] == c.last_learning_seconds
     assert c.load_events is not None and all(c.consumer_models.values())
-    assert prints == PINNED, prints
-    assert ws_prints == WS_PINNED, ws_prints
+    assert (prints, ws_prints) == (PINNED, WS_PINNED), (prints, ws_prints)      # both at once: one CI run updates both
 
 
 async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_client) -> None:

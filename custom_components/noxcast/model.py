@@ -187,6 +187,10 @@ class LearnedArray:
     months: list[dict] = field(default_factory=list)           # clear-sky balance per month
     efficiency_months: dict[str, list] = field(default_factory=dict)   # "YYYY-MM" -> [efficiency, hours]
     geometry_check: dict | None = None                         # best fitting tilt / azimuth
+    efficiency_directions: dict[str, list] = field(default_factory=dict)   # sun sector "E", "SE", ... -> [efficiency, hours]
+    max_power_w: float | None = None                           # highest hourly mean power learned from
+    max_power_t: float | None = None                           # ... and its hour start
+    hints: list[str] = field(default_factory=list)             # implausible values worth checking, see arraycheck.hints
     # a row of buildings opposite: {"direction", "height", "start", "end", "gain"}, see learn_facade
     facade: dict | None = None
 

@@ -11,6 +11,10 @@ breaking changes.
 - The diagnostics download contains, per PV array, the hours learning used: measured power, clear-sky power, the
   satellite's clearness, temperature, shade and what each hour says about the efficiency. This shows where an
   implausible efficiency comes from. The download takes a few seconds longer, since it fetches the history again.
+- Each array under "Learned" shows whether its configuration fits the measurements: the highest hourly power against
+  the configured peak power, the efficiency per sun direction next to the one per month, and plain hints when the peak
+  power, the sensor, the azimuth or the tilt look wrong. Such an array gets a "Check" badge, and the diagnostics tab
+  lists it. Shown after the next learning run.
 
 ## [0.1.0b1] - 2026-11-02
 

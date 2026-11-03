@@ -69,6 +69,19 @@ const TEXT = {
       geoPlanes: "Mehrere Ausrichtungen in einer Modulgruppe: Jede Fläche wird für sich gerechnet. Eine einzelne beste Ebene beschreibt sie nicht, deshalb gibt es hier keinen Geometrie-Vorschlag.",
       geoHelp: "Bei der richtigen Geometrie ist das Verhältnis von Messung zu Modell über Tag und Jahr gleich. Eine falsche Ausrichtung zeigt sich als zu hohe Vormittage und zu niedrige Nachmittage (oder umgekehrt).",
       badge: "Geometrie prüfen",
+      plTitle: "Passt die Konfiguration?", maxPower: "Höchste Stundenleistung", ofPeak: "von {p} Wp", effLearnedTile: "Wirkungsgrad",
+      plOk: "Messwerte und Konfiguration passen zusammen.",
+      plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Die Lernstunden einzeln stehen im Diagnose-Download der Integration.",
+      hint: {
+        peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt der ganzen Fläche) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
+        high: "Der Wirkungsgrad liegt über 105 %: Die Gruppe liefert mehr, als die eingetragenen Module bei dieser Ausrichtung können. Bitte prüfen: die Wp je Fläche, ob der Sensor nur diese Gruppe misst, und ob die Module steiler oder anders ausgerichtet sind als eingetragen.",
+        direction: "Vormittags und nachmittags ergibt sich ein deutlich anderer Wirkungsgrad. Das deutet auf eine falsch eingetragene Ausrichtung: Ist der Vormittag höher, zeigen die Module weiter nach Osten als eingetragen, ist der Nachmittag höher, weiter nach Westen. Auch ein Schatten, den die Karte noch nicht kennt, kann eine Seite drücken.",
+        season: "Der Wirkungsgrad schwankt stark zwischen den Monaten. Steigt er zum Winter hin, sind die Module steiler als eingetragen, fällt er, flacher. Bei tiefer Sonne können auch Modellfehler dahinterstecken.",
+      },
+      dirTitle: "Wirkungsgrad je Sonnenrichtung", dirNone: "Noch zu wenige klare Stunden je Richtung.",
+      dirHelp: "Aus denselben Stunden wie je Monat, sortiert nach der Richtung, aus der die Sonne kam. Bei richtig eingetragener Ausrichtung sind die Balken etwa gleich hoch. Funktioniert auch mit mehreren Ausrichtungen in einer Gruppe.",
+      sectors: { N: "N", NE: "NO", E: "O", SE: "SO", S: "S", SW: "SW", W: "W", NW: "NW" },
+      badgeCheck: "Prüfen",
     },
   },
   en: {
@@ -105,6 +118,19 @@ const TEXT = {
       geoPlanes: "Several orientations in one array: each plane is computed on its own. No single best plane describes them, so there is no geometry suggestion here.",
       geoHelp: "With the right geometry the ratio of measurement to model is the same over the day and the year. A wrong azimuth shows as mornings too high and afternoons too low (or the other way round).",
       badge: "Check geometry",
+      plTitle: "Does the configuration fit?", maxPower: "Highest hourly power", ofPeak: "of {p} Wp", effLearnedTile: "Efficiency",
+      plOk: "Measurements and configuration fit together.",
+      plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. The single learning hours are in the integration's diagnostics download.",
+      hint: {
+        peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
+        high: "The efficiency is above 105 %: the array gives more than the configured modules can at this orientation. Please check the peak power of each plane, whether the sensor measures this array only, and whether the modules are steeper or face another way than configured.",
+        direction: "Morning and afternoon give clearly different efficiencies. That points at a wrong azimuth: a higher morning means the modules face further east than configured, a higher afternoon further west. A shadow the map does not know yet can also push one side down.",
+        season: "The efficiency varies strongly between the months. Rising towards winter means the modules are steeper than configured, falling means flatter. At low sun, model errors can also be behind it.",
+      },
+      dirTitle: "Efficiency per sun direction", dirNone: "Not enough clear hours per direction yet.",
+      dirHelp: "From the same hours as per month, sorted by the direction the sun came from. With the right azimuth the bars are about equally high. Works with several orientations in one array too.",
+      sectors: { N: "N", NE: "NE", E: "E", SE: "SE", S: "S", SW: "SW", W: "W", NW: "NW" },
+      badgeCheck: "Check",
     },
   },
 };
@@ -471,7 +497,9 @@ class NoxcastPanel extends HTMLElement {
           <span class="muted small">${t[layer]}</span>
         </button>`).join("");
       const gc = arr.learned && arr.learned.geometry_check;
-      const badge = gc && gc.deviates ? `<span class="badge">${t.checks.badge}</span>` : "";
+      const hints = (arr.learned && arr.learned.hints) || [];
+      const badge = (hints.includes("peak") || hints.includes("high") ? `<span class="badge">${t.checks.badgeCheck}</span>` : "")
+        + (gc && gc.deviates ? `<span class="badge">${t.checks.badge}</span>` : "");
       return `<section class="card row">
         <div class="figs"><h2>${esc(arr.name)}${badge}</h2>${figs}
           <button class="btn" data-action="open" data-id="${arr.id}" data-layer="shade">${t.open}</button></div>
@@ -684,7 +712,42 @@ class NoxcastPanel extends HTMLElement {
   _checks(arr) {
     const la = arr.learned;
     if (!la) return "";
-    return `${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._geometry(arr, la)}</div>`;
+    return `${this._plausible(arr, la)}${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._effDirections(la)}${this._geometry(arr, la)}</div>`;
+  }
+
+  _plausible(arr, la) {
+    const c = this._t.checks, hints = la.hints || [];
+    const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
+    const max = la.max_power_w;
+    const sub = c.ofPeak.replace("{p}", Math.round(arr.peak_w).toLocaleString(this._lang))
+      + (max == null ? "" : ` · ${pct(max / arr.peak_w)}`)
+      + (la.max_power_t ? ` · ${new Date(la.max_power_t * 1000).toLocaleDateString(this._lang)}` : "");
+    const tiles = `<div class="tiles2">
+      <div class="tile ${hints.includes("peak") ? "warn" : ""}"><span class="muted small">${c.maxPower}</span><b>${max == null ? "–" : `${Math.round(max).toLocaleString(this._lang)} W`}</b><span class="muted small">${sub}</span></div>
+      <div class="tile ${hints.includes("high") ? "warn" : ""}"><span class="muted small">${c.effLearnedTile}</span><b>${pct(la.efficiency)}</b></div></div>`;
+    const notes = hints.length ? hints.map((h) => `<p class="note warn">${c.hint[h] || h}</p>`).join("") : `<p class="note">${c.plOk}</p>`;
+    return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}<p class="help">${c.plHelp}</p></section>`;
+  }
+
+  _effDirections(la) {
+    const c = this._t.checks, entries = Object.entries(la.efficiency_directions || {});
+    if (!entries.length) return `<section class="card pad"><h3>${c.dirTitle}</h3><p class="muted">${c.dirNone}</p><p class="help">${c.dirHelp}</p></section>`;
+    const W = 420, H = 150, pad = 36, vals = entries.map(([, d]) => d.efficiency).concat([la.efficiency, 1]);
+    const hi = Math.max(...vals) * 1.08, bw = Math.min(40, (W - pad) / entries.length - 10);
+    const x = (i) => pad + (i + 0.5) * (W - pad) / entries.length;
+    const y = (v) => H - 20 - v / hi * (H - 34);
+    const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
+    let svg = "";
+    for (const v of [0.5, 1]) svg += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"></line><text x="${pad - 4}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="ax">${Math.round(v * 100)}</text>`;
+    entries.forEach(([s, { efficiency: v, hours: n }], i) => {
+      const fill = v > 1.05 ? "#E8543C" : "#FF6A3D";
+      svg += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0) - y(v)).toFixed(1)}" rx="4" fill="${fill}" opacity=".85"><title>${c.sectors[s] || s}: ${pct(v)} (${n} ${c.hours})</title></rect>`;
+      svg += `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${c.sectors[s] || s}</text>`;
+    });
+    svg += `<line x1="${pad}" x2="${W}" y1="${y(la.efficiency).toFixed(1)}" y2="${y(la.efficiency).toFixed(1)}" class="sp" stroke-dasharray="5 4"></line>`;
+    return `<section class="card pad"><h3>${c.dirTitle}</h3><svg viewBox="0 0 ${W} ${H}" class="mapsvg">${svg}</svg>
+      <div class="legend"><span class="lg"><i class="sw" style="border:0;border-top:2px dashed currentColor;border-radius:0;height:0"></i>${c.effLearned} ${pct(la.efficiency)}</span></div>
+      <p class="help">${c.dirHelp}</p></section>`;
   }
 
   _balance(la) {

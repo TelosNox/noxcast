@@ -76,9 +76,11 @@ def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning
 
 
 def learned_dict(la: LearnedArray) -> dict:
-    """The learned state as stored, with the months named: "YYYY-MM" -> {"efficiency", "hours"}."""
+    """The learned state as stored, with months and sun sectors named: "YYYY-MM" / "SE" -> {"efficiency", "hours"}."""
     out = la.as_dict()
     out["efficiency_months"] = {m: {"efficiency": e, "hours": n} for m, (e, n) in (la.efficiency_months or {}).items()}
+    out["efficiency_directions"] = {s: {"efficiency": e, "hours": n}
+                                    for s, (e, n) in (la.efficiency_directions or {}).items()}
     return out
 
 
@@ -287,7 +289,8 @@ def diagnostics_entry(title: str, *, weather_models, data, last_learning: dateti
                      "error": learning_error, "archive_errors": archive_errors},
         "arrays": [{"name": arr.name, "samples": learned[sid].samples if sid in learned else 0,
                     "coverage": learned[sid].coverage if sid in learned else None,
-                    "efficiency": learned[sid].efficiency if sid in learned else None}
+                    "efficiency": learned[sid].efficiency if sid in learned else None,
+                    "hints": learned[sid].hints if sid in learned else []}
                    for sid, arr in arrays.items()],
         "exclusions": [{"start": _iso(e["start"]), "end": _iso(e["end"]), "note": e.get("note", "")} for e in exclusions],
         "archive": {"days": len(archive), "complete": sum(1 for d in fc_archive.days(archive) if d.complete)},

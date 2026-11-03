@@ -156,8 +156,8 @@ def test_sensor_roles_rows_and_diagnostics():
     assert entry == {"title": "Noxcast",
                      "weather": {"source": "open_meteo", "models": ["icon"], "updated": "2026-07-01T00:00:00+00:00", "hours": 72},
                      "learning": {"last": None, "seconds": 12.5, "backtest_seconds": None, "error": "boom", "archive_errors": {}},
-                     "arrays": [{"name": "Roof", "samples": 5, "coverage": 0.0, "efficiency": 0.9},
-                                {"name": "Wall", "samples": 0, "coverage": None, "efficiency": None}],
+                     "arrays": [{"name": "Roof", "samples": 5, "coverage": 0.0, "efficiency": 0.9, "hints": []},
+                                {"name": "Wall", "samples": 0, "coverage": None, "efficiency": None, "hints": []}],
                      "exclusions": [{"start": "2026-06-30T22:00:00+00:00", "end": "2026-06-30T23:00:00+00:00", "note": ""}],
                      "archive": {"days": 2, "complete": 1}, "fine": {"days": 1}, "sensors": [row]}
     assert views.diagnostics_entry("N", weather_models=[], data=None, last_learning=None, learning_seconds=None,

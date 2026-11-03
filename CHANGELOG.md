@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0b2] - 2026-11-03
+
 ### Added
 - The diagnostics download contains, per PV array, the hours learning used: measured power, clear-sky power, the
   satellite's clearness, temperature, shade and what each hour says about the efficiency. This shows where an

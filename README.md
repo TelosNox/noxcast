@@ -1,43 +1,156 @@
 # Noxcast
 
-PV generation forecast for Home Assistant that explains every number: solar geometry and weather
-first, then what Noxcast learns about each array (efficiency, shade, reflection, temperature), then
-a statistical correction. Optional: house load forecast, battery simulation and the best time for
-flexible consumers.
+**A PV forecast for Home Assistant that learns your installation and explains every number.**
 
-**Status:** early version, breaking changes possible. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+Noxcast forecasts what your solar modules will produce today and in the next days, hour by hour. It starts from
+solar geometry and the weather forecast, learns from your own measurements what your installation really does
+(efficiency, shade from trees and houses, reflection, heat), and shows for every hour how the number came about.
+Optional: a house load forecast, a battery simulation and the best time for the washing machine.
 
-## Overview
+![The day view: forecast, expectation and actual of two arrays, with the P10–P90 range and the weather of each hour](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/day.png)
+
+**Status:** early version, pre-releases only so far; breaking changes are possible and listed in the
+[changelog](CHANGELOG.md). All screenshots show demo data.
+
+- **New to PV forecasts?** Start with [Getting started](#getting-started).
+- **Coming from another forecast integration?** Read [Why Noxcast](#why-noxcast).
+
+## Why Noxcast
+
+Most forecasts compute from tilt, azimuth and peak power, maybe with a damping factor or a horizon you enter by
+hand. Noxcast uses those too, as the starting point, and then learns from your history what is different on your
+roof.
+
+| | Noxcast |
+|---|---|
+| **Shade** | Learned per sun position (10° azimuth × 5° elevation) from your own measurements: the tree in the south-east, the neighbour's house in the west. Nothing to draw or enter. |
+| **Learning** | From up to two years of Home Assistant history you already have, on the first day. Then every night. |
+| **Explanation** | Per hour from clear sky through clouds, shade, reflection, direction and heat to the forecast. No black box: physics first, learned values second, a statistical correction last. |
+| **Range** | P10–P90 from your own archive of past forecasts. It shifts the clouds, so it never goes above a clear sky. |
+| **Accuracy** | Every day-ahead forecast is archived and compared with what happened. With the satellite filter (an option), each day's error is split into weather part and model part. |
+| **Data quality** | Hours with a full battery, zero export, the inverter limit or outages are left out of learning. |
+| **Mounting** | Several orientations on one input (east + west, vertical balcony modules) as one array. |
+| **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, no call limit. |
+| **Privacy** | Runs in Home Assistant. Only your coordinates go to Open-Meteo. |
+| **Self-check** | Flags a configuration that cannot fit the measurements, such as an efficiency above 100 % or a wrong azimuth. |
+
+### What it learns
+
+Each cell of the shading map is a sun position. Red means less direct light arrives there. The lines are
+the sun's paths in June, at the equinox and in December, so you can read off when an obstacle will matter.
+
+![Learned shading map with a tree in the south-east and a house in the west](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/shade-map.png)
+
+The panorama shows the same as seen from the module: the obstacles at their true height and direction, and the
+module's own plane, behind which the sun cannot reach it.
+
+![Panorama from the module: obstacles, partial shade and the sun paths of the year](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/panorama.png)
+
+### How an hour comes about
+
+Every forecast hour breaks down into its steps. Here the morning sun is behind the tree:
+
+<img src="https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/hour.png" alt="Waterfall of one hour: clear sky, clouds, shade, reflection, direction, heat, forecast, actual" width="640">
+
+### How good it is
+
+Forecast against actual for the last 14, 30 or 90 days, by weather class and weather model. With the satellite
+filter, each day's error is split: the weather part is what the weather forecast got wrong, the model part is
+what Noxcast got wrong with the real weather.
+
+![Forecast accuracy: daily error, forecast and actual per day, split into weather part and model part](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/accuracy.png)
+
+### On the dashboard
+
+A day card with power now and the course of the day, and a weather card with the expected yield per day.
+
+![Day card and weather card](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/cards.png)
+
+### Everything it does
 
 | Part | What you get |
 |---|---|
-| PV forecast | Per array and in total: today, tomorrow, day after (up to 7 days), hourly, with a P10–P90 band |
+| PV forecast | Per array and in total: today, tomorrow, day after (up to 7 days), hourly, with a P10–P90 band; offered as solar forecast in the energy dashboard |
 | Today | Forecast fixed at 06:00, expected day (measured + corrected rest), remaining energy |
-| Learning | Efficiency, shading map, reflection, direction factor, sky view, temperature loss – from your own history |
-| Weather | Open-Meteo (mean of ICON and ECMWF IFS), also as a weather entity for the dashboard |
-| Accuracy | Day-ahead archive: forecast against actual, split into weather error and model error |
+| Learning | Efficiency, shading map, horizon line, reflection, direction factor, sky view, temperature loss |
+| Weather | Open-Meteo, also as a weather entity for the dashboard |
+| Accuracy | Day-ahead archive: forecast against actual, split into weather error and model error; nightly backtest |
 | Load (optional) | House load forecast: base load per hour plus your consumers |
 | Battery (optional) | Simulation until tomorrow's charge start: full / empty, surplus, lost surplus, grid |
 | Planning (optional) | Best window and PV share for flexible consumers (washer, dryer, …) |
-| Frontend | Sidebar panel *Noxcast* (full overview), day card and weather card for dashboards |
+| Frontend | Sidebar panel *Noxcast*, day card and weather card |
 
-Noxcast reads Home Assistant's long-term statistics; it needs no own database and no daily
-energy sensors. Nothing is controlled – all outputs are sensors you can use in automations.
+### What Noxcast is not
 
-## Requirements
+- It controls nothing. All results are sensors and attributes for your own automations.
+- It needs a power sensor per array. A daily energy counter alone is not enough (see [below](#what-you-need)).
+- The shading map fills with clear hours. A position the sun reaches only in winter stays open until a clear
+  winter day comes; until then the horizon line fills in.
 
-- Home Assistant 2026.10 or newer, recorder enabled.
-- Per PV array a **power** sensor (W/kW, `state_class: measurement`), ideally DC per MPPT input.
-  The more history, the sooner the learned values are good; up to two years are used.
-- Internet access to Open-Meteo (free for non-commercial use, no key).
+## Getting started
 
-## Installation
+### What you need
 
-HACS → Integrations → ⋮ → Custom repositories → `https://github.com/TelosNox/noxcast` (category
-*Integration*), install, restart Home Assistant. Without HACS: copy `custom_components/noxcast`
-into `config/custom_components` and restart.
+| | Why | How to find it |
+|---|---|---|
+| Home Assistant 2026.10 or newer | | Settings → About |
+| A **power sensor** for your PV (W or kW) | Noxcast learns from its history | Settings → Entities, search for your inverter. A power sensor shows the current output in W or kW and has a line graph in its history. |
+| Tilt, azimuth and peak power of the modules | The starting point of the forecast | Datasheet or installer. Tilt: 0° flat, 90° vertical. Azimuth: 90° east, 180° south, 270° west. Peak power in watts (Wp). |
+| Optional: the battery's state of charge | Hours with a full battery are left out, because the inverter may hold back then | Settings → Entities, a sensor in % |
+| Internet access to Open-Meteo | The weather forecast | Free for non-commercial use, no key |
 
-## Setup
+Which sensor? The best is one per MPPT input of the inverter (often called *PV1 power*, *PV2 power*, or *DC
+power*). The inverter's total output works too, as long as all modules on it face the same way, or you enter
+the other orientations (see the examples). An energy counter in kWh is not enough on its own; a *Derivative*
+helper (Settings → Devices & services → Helpers) turns it into power.
+
+Noxcast reads Home Assistant's long-term statistics, which the recorder keeps by default. The more history,
+the sooner the learned values are good; up to two years are used.
+
+### Install
+
+1. Open HACS → ⋮ → *Custom repositories*, add `https://github.com/TelosNox/noxcast` with the category
+   *Integration*.
+2. Search for *Noxcast* in HACS and download it. Until version 0.1.0, only pre-releases exist: let HACS show beta
+   versions for Noxcast.
+3. Restart Home Assistant.
+
+Without HACS: copy `custom_components/noxcast` into `config/custom_components` and restart.
+
+### Set up
+
+1. Settings → Devices & services → *Add integration* → **Noxcast**. Pick the battery's state of charge sensor if
+   you have one; everything else can stay empty.
+2. On the integration page: ⋮ → *Add PV array*. Pick the power sensor(s), enter tilt, azimuth and peak power.
+   Add one array per group of modules that is measured together.
+3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
+
+Then open **Noxcast** in the sidebar: *Learned* shows what it found about each array, *Day* the forecast of today.
+For the dashboard: *Add card* → *Noxcast*.
+
+### Examples
+
+| Your installation | Arrays in Noxcast |
+|---|---|
+| One inverter, all modules facing south | One array with the inverter's power sensor |
+| Hybrid inverter, east roof on PV1, west roof on PV2 | Two arrays: PV1 east, PV2 west |
+| East and west modules on the same input | One array, east as the main orientation, west as *further orientation 2*, each with its own peak power |
+| Balcony with a micro-inverter, two modules angled differently | One array with a further orientation |
+| Two inverters, both south, one partly shaded by a tree | Two arrays, so the tree is learned only where it matters |
+
+### When something looks wrong
+
+- **Efficiency above 100 % or *Check* on the array:** the configuration does not fit the measurements. Most often
+  the peak power is too low, the azimuth is mirrored (east and west swapped), or a sensor is missing from the
+  array. *Learned* → the array → *Does the configuration fit?* says what to check.
+- **Shading map mostly grey:** not enough clear hours yet. It fills over the weeks.
+- **Forecast too high on days the battery was full:** add the battery's state of charge in the main entry, then
+  call the service `noxcast.relearn`.
+- **Days with maintenance or an outage:** leave them out with `noxcast.exclude_period`.
+- *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
+  of the integration holds what a bug report needs.
+
+## Configuration
 
 Settings → Devices & services → Add integration → **Noxcast**. Then add subentries on the
 integration page (⋮ → *Add PV array* / *Add consumer* / *Add battery*).
@@ -103,7 +216,7 @@ All batteries are simulated as one storage (capacities add up, limits weighted b
 | Satellite filter | Off: uses satellite irradiance to pick clear hours for learning and to split the forecast error into weather and model |
 | Archive URLs, satellite model, API key | Open-Meteo; change only for self-hosted or commercial access |
 
-## Dashboard
+## Dashboard reference
 
 ### Sidebar panel *Noxcast* (full overview)
 

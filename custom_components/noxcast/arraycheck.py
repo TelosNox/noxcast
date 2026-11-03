@@ -1,4 +1,5 @@
-"""Checks of a learned array for the panel: monthly clear-sky balance, efficiency by month, geometry fit.
+"""Checks of a learned array for the panel: monthly clear-sky balance, efficiency by month and by sun
+direction, geometry fit, and hints at a configuration that does not fit the measurements.
 
 Pure functions, no Home Assistant imports. Nothing here changes the forecast; the results explain it
 and point at things worth checking (soiling, ageing, a tilt or azimuth that does not fit the data).
@@ -22,6 +23,11 @@ MONTH_MIN_HOURS = 20                 # hours a month needs for its efficiency
 GEOMETRY_MIN_HOURS = 60              # clear unshaded hours the geometry check needs
 GEOMETRY_MAX_ROWS = 600              # rows evaluated per candidate (evenly thinned)
 MIN_BEAM_SHARE = 0.4                 # hours whose clear-sky plane irradiance is at least this share of the best
+DIRECTION_MIN_HOURS = 10             # hours a sun sector needs for its efficiency
+SECTORS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]   # sun azimuth in 45° sectors, centred on the name
+EFFICIENCY_HIGH = 1.05               # above: more than the configured modules can give
+DIRECTION_SWING = 0.12               # morning and afternoon this far apart (relative): the azimuth
+SEASON_SWING = 0.15                  # months this far apart (relative): the tilt, or model errors at low sun
 
 
 def _month(ts: float) -> str:
@@ -86,7 +92,7 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
         if transmission(learned, az, el) < 0.95:
             continue
         temp = (air_temp or {}).get(t)
-        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp,
+        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp, "az": az,
                      "heating": clearsky_heating(site, geo, t, learned.sky_view) if temp is not None else geo.heating})
     if steady is not None:
         calm = [r for r in rows if r["t"] in steady]
@@ -108,15 +114,65 @@ def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, s
     hours, as in the learning itself. A slow decline points at ageing, a dip at soiling or snow; a
     seasonal swing rather at model errors at low sun.
     """
+    return _efficiency_by(lambda r: _month(r["t"]), MONTH_MIN_HOURS,
+                          _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady), geo, learned,
+                          satellite_ghi is not None)
+
+
+def efficiency_by_direction(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
+                            satellite_ghi: Series | None = None,
+                            air_temp: Series | None = None,
+                            steady: set[float] | None = None) -> dict[str, list]:
+    """Efficiency at 25 °C per sun direction (45° sectors, see SECTORS): {"SE": [efficiency, hours]}.
+
+    The same hours as by month. With the right azimuth the morning and the afternoon agree; a wrong
+    one makes one side too high and the other too low. Works for several planes too, where the
+    geometry check does not.
+    """
+    def sector(r) -> str:
+        return SECTORS[int(((r["az"] + 22.5) % 360) // 45)]
+
+    out = _efficiency_by(sector, DIRECTION_MIN_HOURS, _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady),
+                         geo, learned, satellite_ghi is not None)
+    return {s: out[s] for s in SECTORS if s in out}
+
+
+def _efficiency_by(key, min_hours: int, rows: list[dict], geo: ArrayGeometry, learned: LearnedArray,
+                   satellite: bool) -> dict[str, list]:
     groups: dict[str, list[float]] = {}
-    for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady):
+    for r in rows:
         exp = geo.peak_w * r["poa"] / 1000 * (r["kt"] or 1.0)
         f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"], r["heating"]) if r["temp"] is not None else 1.0
         ratio = r["p"] / (exp * f)
         if ratio <= 1.5:
-            groups.setdefault(_month(r["t"]), []).append(ratio)
-    q = 0.5 if satellite_ghi is not None else 0.95
-    return {m: [round(_quantile(v, q), 4), len(v)] for m, v in sorted(groups.items()) if len(v) >= MONTH_MIN_HOURS}
+            groups.setdefault(key(r), []).append(ratio)
+    q = 0.5 if satellite else 0.95
+    return {k: [round(_quantile(v, q), 4), len(v)] for k, v in sorted(groups.items()) if len(v) >= min_hours}
+
+
+def hints(geo: ArrayGeometry, learned: LearnedArray) -> list[str]:
+    """What does not fit the configuration, most certain first.
+
+    peak: an hourly mean above the configured peak power, which no module gives (peak power or sensor);
+    high: an efficiency above EFFICIENCY_HIGH (peak power, sensor or a geometry that gets too little light);
+    direction: morning and afternoon disagree (azimuth); season: the months disagree (tilt).
+    Shade and little data only lower the efficiency, so a low one alone is no hint.
+    """
+    out = []
+    if learned.max_power_w is not None and learned.max_power_w > geo.peak_w:
+        out.append("peak")
+    if learned.samples and learned.efficiency > EFFICIENCY_HIGH:
+        out.append("high")
+    d = learned.efficiency_directions or {}
+    morning = [d[s][0] for s in ("NE", "E", "SE") if s in d]
+    afternoon = [d[s][0] for s in ("SW", "W", "NW") if s in d]
+    if morning and afternoon and learned.efficiency > 0:
+        if abs(sum(morning) / len(morning) - sum(afternoon) / len(afternoon)) / learned.efficiency > DIRECTION_SWING:
+            out.append("direction")
+    months = [e for e, _ in (learned.efficiency_months or {}).values()]
+    if len(months) >= 3 and learned.efficiency > 0 and (max(months) - min(months)) / learned.efficiency > SEASON_SWING:
+        out.append("season")
+    return out
 
 
 HOUR_COLUMNS = ["start", "power_w", "clear_w", "kt", "air_temp", "steady", "shade", "efficiency", "check"]
@@ -239,5 +295,11 @@ def annotate(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: lis
         learned.months = month_balance(site, geo, learned, year, air_temp)
         learned.efficiency_months = efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady)
         learned.geometry_check = check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+        learned.efficiency_directions = efficiency_by_direction(site, geo, learned, samples, satellite_ghi, air_temp,
+                                                                steady)
+        if samples:
+            learned.max_power_t, learned.max_power_w = max(samples, key=lambda s: s[1])
+            learned.max_power_w = round(learned.max_power_w, 1)
+        learned.hints = hints(geo, learned)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Array check failed")

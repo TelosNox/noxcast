@@ -11,6 +11,7 @@ const DIAG_TEXT = {
     sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
     days: "Tage", complete: "vollständig", hours: "Stunden", samples: "Stunden gelernt", mapCoverage: "Karte", efficiency: "Wirkungsgrad",
+    checkArray: "Passt nicht zur Konfiguration – unter „Gelerntes“ an der Fläche prüfen",
     ago: "vor", min: "min", h: "h", never: "noch nie", refresh: "Aktualisieren",
     help: "Abdeckung = Anteil der Stunden der letzten {days} Tage mit Langzeitstatistik. Unter 90 % lernt Noxcast mit Lücken; ohne Statistik (state_class fehlt) gar nicht.",
     roles: { pv: "PV-Leistung", curtailment_soc: "Ladestand (Abregelung)", house_load: "Hausverbrauch", consumer_power: "Verbraucher Leistung",
@@ -18,7 +19,8 @@ const DIAG_TEXT = {
       battery_max: "Akku Ladegrenze", battery_min: "Akku Entladegrenze" },
     issues: { missing: "existiert nicht", unavailable: "ist nicht verfügbar", noStats: "hat keine Langzeitstatistik (state_class fehlt?)",
       lowCoverage: "Statistik nur zu {p} vorhanden", learnError: "Lernlauf fehlgeschlagen: {e}", archiveError: "Archiv {n}: {e}",
-      weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf" },
+      weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf",
+      arrayHints: "{n}: Die Messwerte passen nicht zur Konfiguration. Unter „Gelerntes“ an der Fläche steht, was zu prüfen ist." },
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -27,6 +29,7 @@ const DIAG_TEXT = {
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
     days: "days", complete: "complete", hours: "hours", samples: "hours learned", mapCoverage: "Map", efficiency: "Efficiency",
+    checkArray: "Does not fit the configuration – check the array under “Learned”",
     ago: "", min: "min ago", h: "h ago", never: "never", refresh: "Refresh",
     help: "Coverage = share of the hours of the last {days} days with long-term statistics. Below 90 % Noxcast learns with gaps; without statistics (missing state_class) not at all.",
     roles: { pv: "PV power", curtailment_soc: "State of charge (curtailment)", house_load: "House load", consumer_power: "Consumer power",
@@ -34,7 +37,8 @@ const DIAG_TEXT = {
       battery_max: "Battery upper limit", battery_min: "Battery lower limit" },
     issues: { missing: "does not exist", unavailable: "is unavailable", noStats: "has no long-term statistics (missing state_class?)",
       lowCoverage: "statistics only for {p} of the hours", learnError: "Learning failed: {e}", archiveError: "Archive {n}: {e}",
-      weatherStale: "Weather forecast not updated for {t}", noLearning: "No learning run yet" },
+      weatherStale: "Weather forecast not updated for {t}", noLearning: "No learning run yet",
+      arrayHints: "{n}: the measurements do not fit the configuration. The array under “Learned” shows what to check." },
   },
 };
 
@@ -89,6 +93,7 @@ class NoxcastDiagnostics extends HTMLElement {
     if (!e.learning.last) out.push(["warn", t.noLearning]);
     if (e.learning.error) out.push(["bad", t.learnError.replace("{e}", esc(e.learning.error))]);
     for (const [n, err] of Object.entries(e.learning.archive_errors || {})) out.push(["warn", t.archiveError.replace("{n}", n).replace("{e}", esc(err))]);
+    for (const a of e.arrays || []) if ((a.hints || []).length) out.push(["warn", t.arrayHints.replace("{n}", esc(a.name))]);
     if (e.weather.updated && Date.now() - Date.parse(e.weather.updated) > 2 * 3600000) out.push(["warn", t.weatherStale.replace("{t}", this._ago(e.weather.updated))]);
     return out;
   }
@@ -122,7 +127,7 @@ class NoxcastDiagnostics extends HTMLElement {
         <td>${STAT_ROLES.has(s.role) ? (s.statistics ? this._meter(s.coverage) : `<span class="bad">✕</span>`) : ""}</td>
         <td class="muted small">${s.first ? `${t.since} ${this._d(s.first)}` : ""}</td></tr>`).join("")}`).join("");
     const arrays = e.arrays.map((a) => `<tr><td>${esc(a.name)}</td><td class="num">${(a.samples || 0).toLocaleString(this._lang)}</td>
-      <td class="num">${a.coverage === null ? "–" : this._pct(a.coverage)}</td><td class="num">${a.efficiency === null ? "–" : this._pct(a.efficiency)}</td></tr>`).join("");
+      <td class="num">${a.coverage === null ? "–" : this._pct(a.coverage)}</td><td class="num${(a.hints || []).length ? " bad" : ""}"${(a.hints || []).length ? ` title="${esc(t.checkArray)}"` : ""}>${a.efficiency === null ? "–" : this._pct(a.efficiency)}${(a.hints || []).length ? " ⚠" : ""}</td></tr>`).join("");
     const excl = e.exclusions.length
       ? `<ul class="plain">${e.exclusions.map((x) => `<li>${this._d(x.start)} – ${this._d(new Date(Date.parse(x.end) - 1000).toISOString())}${x.note ? ` · <span class="muted">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>`
       : `<p class="muted">${t.none}</p>`;

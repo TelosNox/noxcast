@@ -68,3 +68,34 @@ def test_hour_table_shows_a_peak_power_set_too_low():
     assert table["rows"][0][col["steady"]] and not table["rows"][1][col["steady"]]
     assert all(r[col["shade"]] == 1 for r in table["rows"])                 # nothing learned: free everywhere
     assert ac.hour_table(SITE, low, model.LearnedArray(), samples)["rows"][0][col["efficiency"]] is None   # no satellite
+
+
+def test_efficiency_by_direction_is_flat_with_the_right_azimuth_and_tilts_with_a_wrong_one():
+    samples, ghi = clear_samples(TRUE)
+    right = ac.efficiency_by_direction(SITE, TRUE, model.LearnedArray(efficiency=EFF), samples, ghi)
+    assert {"SE", "S", "SW"} <= set(right) and all(abs(v - EFF) < 0.01 for v, n in right.values())
+    assert list(right) == [s for s in ac.SECTORS if s in right]
+    wrong = model.ArrayGeometry(tilt=35, azimuth=150, peak_w=1000)      # configured further east than built
+    d = ac.efficiency_by_direction(SITE, wrong, model.LearnedArray(efficiency=EFF), samples, ghi)
+    assert d["SW"][0] > d["SE"][0] + 0.1                                # the afternoon is higher
+
+
+def _annotated(geo, samples, ghi, efficiency):
+    la = model.LearnedArray(efficiency=efficiency, samples=len(samples))
+    ac.annotate(SITE, geo, la, samples, None, ghi, 2026)
+    return la
+
+
+def test_hints_name_what_does_not_fit():
+    samples, ghi = clear_samples(TRUE)
+    assert _annotated(TRUE, samples, ghi, EFF).hints == []
+    low = model.ArrayGeometry(tilt=35, azimuth=200, peak_w=720)         # peak power too low: 125 %, max above it
+    la = _annotated(low, samples, ghi, 1.25)
+    assert la.hints[:2] == ["peak", "high"] and la.max_power_w > 720 and la.max_power_t in dict(samples)
+    east = model.ArrayGeometry(tilt=35, azimuth=140, peak_w=1000)
+    assert "direction" in _annotated(east, samples, ghi, EFF).hints
+
+
+def test_a_low_efficiency_alone_is_no_hint():
+    shaded = model.LearnedArray(efficiency=0.47, samples=500)
+    assert ac.hints(TRUE, shaded) == []

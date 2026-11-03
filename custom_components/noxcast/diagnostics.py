@@ -1,6 +1,7 @@
-"""Diagnostics download: configuration, learned state and forecast (location is not included)."""
+"""Diagnostics download: configuration, learned state, learning hours and forecast (location is not included)."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -11,6 +12,8 @@ from . import fine as fn
 from .const import CONF_API_KEY, Series
 from .coordinator import NoxcastConfigEntry
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, Any]:
     coordinator = entry.runtime_data
@@ -18,6 +21,14 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
 
     def hours(series: Series) -> dict[str, float]:
         return {dt_util.utc_from_timestamp(t).isoformat(): round(v, 1) for t, v in series.items()}
+
+    # the hours behind an implausible efficiency; fetched first, so archive_errors below belong to this fetch
+    learning_error = None
+    try:
+        learning_hours = await coordinator.async_learning_hours()
+    except Exception as err:  # noqa: BLE001 – the rest of the download stays useful
+        _LOGGER.exception("Learning hours for the diagnostics failed")
+        learning_hours, learning_error = {}, str(err) or type(err).__name__
 
     return {
         "config": dict(entry.data),
@@ -29,10 +40,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
                 "azimuth": arr.geometry.azimuth, "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
                 "valid_since": arr.valid_since,
                 "learned": coordinator.learned[sid].as_dict() if sid in coordinator.learned else None,
+                "learning_hours": learning_hours.get(sid),
                 "forecast_wh": hours(data.arrays.get(sid, {})) if data else None,
             }
             for sid, arr in coordinator.arrays.items()
         },
+        "learning_hours_error": learning_error,
         "exclusions": coordinator.exclusions,
         "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
         "last_learning_error": coordinator.last_learning_error,

@@ -153,17 +153,10 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
                      air or None, satellite or None)
 
 
-def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,
-                exclusions: list[tuple[float, float]], keep: Keep | None = None, period: float = HOUR) -> LearnedArray:
-    """Learn one array from its usable hours, with the panel explanations (arraycheck.annotate).
-
-    period: the length of history's periods in seconds; the panel explanations exist for hours only.
-    """
+def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
+                  keep: Keep | None = None) -> tuple[list[tuple[float, float]], set[float]]:
+    """An array's usable (period start, mean W) samples and its steady hours: what learning sees."""
     power = history.power
-    missing = [s for s in arr.sensors if not power.get(s)]
-    if missing:
-        _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
-                        arr.name, ", ".join(missing))
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
                              valid_since=arr.valid_since)
@@ -171,6 +164,33 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
                            for s in arr.sensors])
+    return samples, steady
+
+
+def learning_hours(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray], history: PvHistory,
+                   soc_full: float, exclusions: list[tuple[float, float]]) -> dict[str, dict]:
+    """Per array the hours learning used, with what each says about the efficiency (arraycheck.hour_table)."""
+    out = {}
+    for sid, arr in arrays.items():
+        if sid not in learned:
+            continue
+        samples, steady = array_samples(arr, history, soc_full, exclusions)
+        out[sid] = ac.hour_table(site, arr.geometry, learned[sid], samples, history.satellite_ghi, history.air_temp,
+                                 steady)
+    return out
+
+
+def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,
+                exclusions: list[tuple[float, float]], keep: Keep | None = None, period: float = HOUR) -> LearnedArray:
+    """Learn one array from its usable hours, with the panel explanations (arraycheck.annotate).
+
+    period: the length of history's periods in seconds; the panel explanations exist for hours only.
+    """
+    missing = [s for s in arr.sensors if not history.power.get(s)]
+    if missing:
+        _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
+                        arr.name, ", ".join(missing))
+    samples, steady = array_samples(arr, history, soc_full, exclusions, keep)
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
                    datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period)
     if result.samples and not 0.5 <= result.efficiency <= 1.2:

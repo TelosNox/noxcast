@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 
-from custom_components.noxcast import model, solar
+from custom_components.noxcast import diagnostics, model, solar
 from custom_components.noxcast.const import DOMAIN, WS_SCHEMA_VERSION
 
 pytestmark = pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
@@ -81,9 +81,13 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         await coordinator.async_learn()
         await hass.async_block_till_done()
+        diag = await diagnostics.async_get_config_entry_diagnostics(hass, coordinator.config_entry)
 
     learned = next(iter(coordinator.learned.values()))
     assert abs(learned.efficiency - 0.92) < 0.03
+    table = next(iter(diag["arrays"].values()))["learning_hours"]       # the hours behind the efficiency
+    assert diag["learning_hours_error"] is None and len(table["rows"]) > 100
+    assert "latitude" not in json.dumps(diag)
     tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
     assert len(coordinator.forecast_archive[tomorrow]["hours"]) >= 23        # day-ahead forecast archived
     lit = [h for h in coordinator.forecast_archive[tomorrow]["hours"].values() if h["ghi"] > 0]

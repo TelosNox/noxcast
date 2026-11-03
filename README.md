@@ -12,6 +12,9 @@ Optional: a house load forecast, a battery simulation and the best time for the 
 **Status:** early version, pre-releases only so far; breaking changes are possible and listed in the
 [changelog](CHANGELOG.md). All screenshots show demo data.
 
+**Languages:** Noxcast is available in English and German (Deutsch). Setup, entities, panel and cards follow the
+language of your Home Assistant user; other languages fall back to English.
+
 - **New to PV forecasts?** Start with [Getting started](#getting-started).
 - **Coming from another forecast integration?** Read [Why Noxcast](#why-noxcast).
 

@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0b3] - 2026-11-04
+
 ### Added
 - A "Panorama" view next to "Map" and "Year grid" under "Learned": the view from the module, direction across and height
   up at the same scale as the eye sees them. It shows the obstacles learned from the measurements, the horizon line

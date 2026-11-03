@@ -37,7 +37,10 @@ const RAD = Math.PI / 180;
 const TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
-    title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster",
+    title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster", pano: "Panorama",
+    panoKinds: { plane: "eigene Modulebene (Dach, Wand, Brüstung)", obstacle: "Hindernis, gemessen", facade: "Hindernis, aus der Horizontlinie",
+      partial: "Teilschatten", free: "frei", none: "noch keine Daten", never: "hier steht die Sonne nie" },
+    panoIdle: "Zeiger über das Bild bewegen: Richtung und Höhe.", panoAt: "Richtung {a}° ({d}) · Höhe {e}° · {k}",
     shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor",
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
     facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
@@ -54,6 +57,7 @@ const TEXT = {
       refl: "Zusätzliches Licht von beschienenen Wänden oder Dächern, in Prozent der Direktstrahlung. Gelernt nur dort, wo das Modul selbst wenig Direktlicht bekommt.",
       dir: "Was nach Schatten und Reflexion übrig bleibt: Geometrie- und Modellfehler. Werte nahe 1 sind gut.",
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
+      pano: "Der Blick vom Modul aus: waagerecht die Himmelsrichtung, senkrecht die Höhe, beides im selben Maßstab wie mit dem Auge. Dunkel sind Hindernisse, die Noxcast aus den Messwerten gelernt hat, schraffiert ergänzt die Horizontlinie, wo noch Messungen fehlen. Vereinfacht gilt eine Sonnenposition mit weniger als der Hälfte Direktlicht als Hindernis; die Abstufungen zeigt die Karte. Die gepunktete Fläche ist die eigene Modulebene: Dahinter erreicht die Sonne das Modul nicht. Liegt ihre Kante vor Ort sichtbar anders, stimmen Neigung oder Ausrichtung nicht.",
     },
     clickHint: "Feld anklicken für Details",
     checks: {
@@ -86,7 +90,10 @@ const TEXT = {
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
-    title: "Learned", overview: "Overview", map: "Map", grid: "Year grid",
+    title: "Learned", overview: "Overview", map: "Map", grid: "Year grid", pano: "Panorama",
+    panoKinds: { plane: "the module's own plane (roof, wall, railing)", obstacle: "obstacle, measured", facade: "obstacle, from the horizon line",
+      partial: "partial shade", free: "free", none: "no data yet", never: "the sun is never here" },
+    panoIdle: "Move the pointer over the picture: direction and height.", panoAt: "Direction {a}° ({d}) · height {e}° · {k}",
     shade: "Shade", refl: "Reflection", dir: "Direction factor",
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
     facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
@@ -103,6 +110,7 @@ const TEXT = {
       refl: "Extra light from sunlit walls or roofs, in percent of the direct normal irradiance. Learned only where the module itself gets little direct light.",
       dir: "What remains after shade and reflection: geometry and model errors. Values close to 1 are good.",
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
+      pano: "The view from the module: across the direction, up the height, both at the same scale as the eye sees them. Dark are obstacles Noxcast learned from the measurements; hatched, the horizon line fills in where measurements are missing. Simplified, a sun position with less than half of the direct light counts as an obstacle; the map shows the shades in between. The dotted area is the module's own plane: behind it the sun does not reach the module. If its edge looks clearly different on site, tilt or azimuth are wrong.",
     },
     clickHint: "Click a cell for details",
     checks: {
@@ -141,12 +149,14 @@ const PALETTE = {
     base: [243, 241, 236], refl: [[243, 241, 236], [244, 190, 120], [209, 104, 22]],
     dir: [[47, 111, 176], [243, 241, 236], [217, 130, 43]],
     unlearned: "#D6D6D2", hatch: "rgba(255,255,255,0.6)", behind: "#EDEDEA", mapBg: "#FFFFFF", path: "#1D2125",
+    pano: { sky: "#DCEAF7", partial: "#B9C6D2", obstacle: "#3F4246", facadeBg: "#9A9C9F", plane: "#6E7176", dot: "#9EA1A6", sun: "#E8890C" },
   },
   dark: {
     free: [118, 168, 108], mid: [214, 132, 72], shade: [150, 36, 36],
     base: [66, 70, 74], refl: [[66, 70, 74], [176, 110, 50], [240, 150, 60]],
     dir: [[90, 150, 220], [66, 70, 74], [235, 150, 60]],
     unlearned: "#34373A", hatch: "rgba(255,255,255,0.14)", behind: "#2B2D30", mapBg: "#1E2022", path: "#E4E6E8",
+    pano: { sky: "#25313D", partial: "#3A4652", obstacle: "#C9CCD0", facadeBg: "#7C8085", plane: "#5A5E63", dot: "#7E8389", sun: "#F5A524" },
   },
 };
 
@@ -223,6 +233,42 @@ function coarse(values, az, el, dflt) {
   return v;
 }
 
+// ---------------------------------------------------------------- panorama: the view from the module
+
+const PANO_STEP = 0.5;                       // degrees per raster step
+const GRAZING = Math.cos(80 * RAD);          // light this flat on every plane counts as the module's own plane
+const PANO_SHADE = 0.5;                      // below this share of direct light a sun position shows an obstacle
+
+// learned share of direct light at a sun position, interpolated between cell centres as the model does;
+// facade: the value comes mostly from the horizon line; null where nothing is learned nearby
+function panoValue(arr, az, el) {
+  const cells = (arr.learned || {}).cells || {}, fc = arr.facade_cells || {};
+  const fa = az / AZ_STEP - 0.5, fe = el / EL_STEP - 0.5;
+  const a0 = Math.floor(fa), e0 = Math.floor(fe), da = fa - a0, de = fe - e0;
+  let v = 0, w = 0, f = 0;
+  for (const [ai, wa] of [[a0, 1 - da], [a0 + 1, da]]) for (const [ei, we] of [[e0, 1 - de], [e0 + 1, de]]) {
+    const k = `${((ai % 36) + 36) % 36},${Math.max(ei, 0)}`;
+    const x = k in cells ? cells[k] : k in fc ? fc[k] : null;
+    if (x === null) continue;
+    v += wa * we * x; w += wa * we;
+    if (!(k in cells)) f += wa * we;
+  }
+  return w >= 0.25 ? { t: v / w, facade: f / w > 0.5 } : null;
+}
+
+// what the module sees at a sun position: its own plane, an obstacle (measured or from the horizon line),
+// partial shade, free sky, nothing learned yet, or a position the sun never takes (sky, nothing to learn there);
+// reach: lowest and highest sun at an azimuth during the year, see NoxcastPanel._pano
+function panoKind(arr, az, el, reach) {
+  if (planes(arr).every((p) => cosIncidence(p.tilt, p.azimuth, az, el) < GRAZING)) return "plane";
+  const r = reach[Math.floor((az - reach.az0) / PANO_STEP)];
+  if (!r || el < r[0] || el > r[1]) return "never";
+  const v = panoValue(arr, az, el);
+  if (!v) return "none";
+  if (v.t < PANO_SHADE) return v.facade ? "facade" : "obstacle";
+  return v.t < 0.9 ? "partial" : "free";
+}
+
 // ---------------------------------------------------------------- time helpers
 
 function tzOffsetMs(ts, tz) {
@@ -263,6 +309,8 @@ class NoxcastPanel extends HTMLElement {
     this._cache = {};
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
+    for (const type of ["pointermove", "pointerdown"]) this.shadowRoot.addEventListener(type, (ev) => this._onPanoPointer(ev));
+    this.shadowRoot.addEventListener("pointerleave", (ev) => this._onPanoPointer(ev), true);
     // the theme import above delays the definition: Home Assistant may already have created the
     // element and set these as plain properties, which would hide the setters; pass them on
     for (const p of ["narrow", "panel", "route", "hass"]) {
@@ -464,6 +512,9 @@ class NoxcastPanel extends HTMLElement {
     if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
     const on = this.shadowRoot.querySelector(".navtab.on"), bar = this.shadowRoot.querySelector(".navtabs");
     if (on && bar && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2;
+    // a panorama wider than a phone opens on the direction the modules face
+    const wrap = this.shadowRoot.querySelector(".pano-wrap"), pano = this.shadowRoot.getElementById("nx-pano");
+    if (wrap && pano && wrap.scrollWidth > wrap.clientWidth) wrap.scrollLeft = Number(pano.dataset.face) * wrap.scrollWidth - wrap.clientWidth / 2;
   }
 
   _figures(arr) {
@@ -511,25 +562,26 @@ class NoxcastPanel extends HTMLElement {
 
   _renderArray(arr) {
     const t = this._t, s = this._state;
-    const modeTabs = ["map", "grid"].map((m) => `<button role="tab" aria-selected="${s.mode === m}" class="tab ${s.mode === m ? "on" : ""}" data-action="mode" data-mode="${m}">${t[m]}</button>`).join("");
+    const modeTabs = ["map", "grid", "pano"].map((m) => `<button role="tab" aria-selected="${s.mode === m}" class="tab ${s.mode === m ? "on" : ""}" data-action="mode" data-mode="${m}">${t[m]}</button>`).join("");
     const layerTabs = ["shade", "refl", "dir"].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
     const main = s.mode === "map" ? `
         <div class="card mapcard">${this._mapSvg(arr, s.layer, {})}</div>
-        ${this._slider(arr)}` : `<div class="card mapcard">${this._gridSvg(arr, s.layer)}</div>`;
+        ${this._slider(arr)}` : s.mode === "pano" ? `<div class="card mapcard"><div class="pano-wrap">${this._panoSvg(arr)}</div><div class="pano-read muted small" id="nx-panoread">${t.panoIdle}</div></div>`
+      : `<div class="card mapcard">${this._gridSvg(arr, s.layer)}</div>`;
     const figs = this._figures(arr).map(([k, v]) => `<div class="fig"><span class="muted">${k}</span><span class="mono">${v}</span></div>`).join("");
     return `
       <div class="split">
         <div class="main">
           <div class="tabs" role="tablist">${modeTabs}</div>
-          <div class="chips">${layerTabs}${s.mode === "map" ? `<span class="muted small hint">${t.clickHint}</span>` : ""}</div>
+          ${s.mode === "pano" ? "" : `<div class="chips">${layerTabs}${s.mode === "map" ? `<span class="muted small hint">${t.clickHint}</span>` : ""}</div>`}
           ${main}
-          ${this._legend(s.layer)}
+          ${s.mode === "pano" ? this._panoLegend() : this._legend(s.layer)}
           ${this._checks(arr)}
         </div>
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
           <section class="card pad"><h2>${esc(arr.name)}</h2>${figs}</section>
-          <section class="card pad"><h3>${s.mode === "grid" ? t.grid : t[s.layer]}</h3><p class="help">${s.mode === "grid" ? t.help.grid : t.help[s.layer]}</p>${s.layer === "shade" && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}</section>
+          <section class="card pad"><h3>${s.mode === "pano" ? t.pano : s.mode === "grid" ? t.grid : t[s.layer]}</h3><p class="help">${s.mode === "pano" ? t.help.pano : s.mode === "grid" ? t.help.grid : t.help[s.layer]}</p>${(s.layer === "shade" || s.mode === "pano") && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}</section>
         </aside>
       </div>`;
   }
@@ -818,6 +870,122 @@ class NoxcastPanel extends HTMLElement {
       <p class="${g.deviates ? "note warn" : "note"}">${g.deviates ? c.geoHint : c.geoOk}</p><p class="help">${c.geoHelp}</p></section>`;
   }
 
+  // ------------------------------------------------------------ panorama
+
+  // directions in which the sun can reach one of the planes during the year, and the raster of what the module sees
+  _pano(arr) {
+    const d = this._derived(arr);
+    if (d.pano) return d.pano;
+    const { latitude: lat, longitude: lon } = this._data;
+    const year = new Date().getFullYear();
+    let lo = 360, hi = 0;
+    for (let day = 0; day < 366; day += 4) {
+      const start = Date.UTC(year, 0, 1) / 1000 + day * 86400;
+      for (let m = 0; m < 1440; m += 10) {
+        const p = sunPosition(lat, lon, start + m * 60);
+        if (p.el <= 0 || planes(arr).every((q) => cosIncidence(q.tilt, q.azimuth, p.az, p.el) <= 0)) continue;
+        lo = Math.min(lo, p.az); hi = Math.max(hi, p.az);
+      }
+    }
+    if (lo >= hi) { lo = d.az0; hi = d.az1; }
+    const az0 = Math.floor(lo / 10) * 10, az1 = Math.ceil(hi / 10) * 10, elMax = Math.min(90, d.elMax);
+    // per azimuth step the lowest and highest sun of the year: at one azimuth the sun stands higher the longer
+    // the day, so December and June bound it (where the December sun never gets, the horizon does)
+    const reach = Object.assign([], { az0 });
+    for (const [doy, side] of [[355, 0], [172, 1]]) {
+      const start = localMidnight(year, doy, this._data.time_zone) / 1000;
+      for (let m = 0; m < 1440; m += 1) {
+        const p = sunPosition(lat, lon, start + m * 60);
+        const i = Math.floor((p.az - az0) / PANO_STEP);
+        if (p.el <= 0 || i < 0 || p.az >= az1) continue;
+        const r = reach[i] || (reach[i] = [0, 0]);
+        r[side] = side ? Math.max(r[1], p.el) : (r[0] ? Math.min(r[0], p.el) : p.el);
+      }
+    }
+    for (let i = 0; i < (az1 - az0) / PANO_STEP; i++) {          // fill steps the one-minute path skipped
+      if (!reach[i] && reach[i - 1]) reach[i] = [...reach[i - 1]];
+      if (reach[i] && !reach[i][1] && reach[i - 1]) reach[i][1] = reach[i - 1][1];
+    }
+    for (const r of reach) if (r && r[0] > r[1]) r[0] = 0;                // azimuths the December sun never reaches
+    // runs of one kind per column: [kind, az, from el, to el]
+    const runs = [];
+    for (let az = az0; az < az1; az += PANO_STEP) {
+      let cur = null, from = 0;
+      for (let el = 0; el <= elMax; el += PANO_STEP) {
+        const k = el < elMax ? panoKind(arr, az + PANO_STEP / 2, el + PANO_STEP / 2, reach) : null;
+        if (k === cur) continue;
+        if (cur && cur !== "free" && cur !== "never") runs.push([cur, az, from, el]);
+        cur = k; from = el;
+      }
+    }
+    d.pano = { az0, az1, elMax, runs, reach };
+    return d.pano;
+  }
+
+  _panoSvg(arr) {
+    const t = this._t, P = this._pal, C = P.pano, pn = this._pano(arr);
+    const W = 840, H = W / (pn.az1 - pn.az0) * pn.elMax;     // one degree as wide as high, as the eye sees it
+    const g = { az0: pn.az0, az1: pn.az1, x: (az) => (az - pn.az0) / (pn.az1 - pn.az0) * W, y: (el) => H - el / pn.elMax * H };
+    const fills = { plane: "url(#nx-pplane)", obstacle: C.obstacle, facade: "url(#nx-pfac)", partial: C.partial, none: "url(#nx-hatch)" };
+    const paths = {};
+    const w = (g.x(pn.az0 + PANO_STEP) + 0.4).toFixed(2);
+    for (const [k, az, a, b] of pn.runs) paths[k] = (paths[k] || "") + `M${g.x(az).toFixed(2)},${g.y(b).toFixed(2)}h${w}V${g.y(a).toFixed(2)}h-${w}Z`;
+    const shapes = ["none", "partial", "plane", "facade", "obstacle"].filter((k) => paths[k]).map((k) => `<path d="${paths[k]}" fill="${fills[k]}"></path>`).join("");
+    const year = new Date().getFullYear(), tz = this._data.time_zone;
+    const sun = [[172, ""], [80, "6 4"], [355, "2 4"]].map(([doy, dash]) =>
+      `<polyline points="${this._path(arr, localMidnight(year, doy, tz), g)}" class="psun"${dash ? ` stroke-dasharray="${dash}"` : ""}></polyline>`).join("");
+    const names = { 0: "N", 45: "NO", 90: "O", 135: "SO", 180: "S", 225: "SW", 270: "W", 315: "NW", 360: "N" };
+    if (this._lang.startsWith("en")) Object.assign(names, { 45: "NE", 90: "E", 135: "SE" });
+    let axes = "";
+    for (let a = Math.ceil(pn.az0 / 45) * 45; a <= pn.az1; a += 45) axes += `<text x="${g.x(a).toFixed(0)}" y="${(H + 18).toFixed(0)}" text-anchor="middle" class="ax">${names[a % 360] || ""} ${a % 360}°</text>`;
+    for (let e = 10; e < pn.elMax; e += 10) axes += `<text x="-6" y="${(g.y(e) + 4).toFixed(0)}" text-anchor="end" class="ax">${e}°</text><line x1="0" x2="${W}" y1="${g.y(e).toFixed(1)}" y2="${g.y(e).toFixed(1)}" class="grid"></line>`;
+    const defs = `<defs>
+      <pattern id="nx-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${P.unlearned}"></rect><line x1="0" y1="0" x2="0" y2="6" stroke="${P.hatch}" stroke-width="2"></line></pattern>
+      <pattern id="nx-pfac" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${C.facadeBg}"></rect><line x1="0" y1="0" x2="0" y2="6" stroke="${C.obstacle}" stroke-width="2.5"></line></pattern>
+      <pattern id="nx-pplane" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="${C.plane}"></rect><circle cx="2.5" cy="2.5" r="0.8" fill="${C.dot}"></circle></pattern></defs>`;
+    return `<svg viewBox="-40 -8 ${W + 48} ${(H + 34).toFixed(0)}" class="mapsvg pano" id="nx-pano" data-id="${arr.id}" data-face="${((planes(arr)[0].azimuth >= pn.az0 ? planes(arr)[0].azimuth : planes(arr)[0].azimuth + 360) - pn.az0) / (pn.az1 - pn.az0)}" data-w="${W}" data-h="${H.toFixed(2)}" role="img" aria-label="${t.pano}">
+      ${defs}<rect width="${W}" height="${H.toFixed(1)}" fill="${C.sky}"></rect>${axes}${shapes}
+      <line x1="0" x2="${W}" y1="${H.toFixed(1)}" y2="${H.toFixed(1)}" stroke="var(--secondary-text-color)" stroke-width="1"></line>${sun}
+      <line id="nx-pv" class="pcur" y1="0" y2="${H.toFixed(1)}" opacity="0"></line><line id="nx-ph" class="pcur" x1="0" x2="${W}" opacity="0"></line></svg>`;
+  }
+
+  _panoLegend() {
+    const t = this._t, C = this._pal.pano, k = t.panoKinds;
+    const sw = (style) => `<span class="sw" style="${style}"></span>`;
+    const line = (dash) => `<svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" class="psun"${dash ? ` stroke-dasharray="${dash}"` : ""}></line></svg>`;
+    return `<div class="legend">
+      <span class="lg">${sw(`background:${C.sky}`)}${k.free}</span>
+      <span class="lg">${sw(`background:${C.obstacle}`)}${k.obstacle}</span>
+      <span class="lg">${sw(`background-color:${C.facadeBg};background-image:repeating-linear-gradient(45deg, ${C.obstacle} 0 2px, transparent 2px 6px)`)}${k.facade}</span>
+      <span class="lg">${sw(`background:${C.partial}`)}${k.partial}</span>
+      <span class="lg">${sw(`background-color:${C.plane};background-image:radial-gradient(${C.dot} 0.8px, transparent 1px);background-size:5px 5px`)}${k.plane}</span>
+      <span class="lg"><span class="sw hatch"></span>${k.none}</span>
+      <span class="lg">${line("")}${t.jun}</span><span class="lg">${line("6 4")}${t.equ}</span><span class="lg">${line("2 4")}${t.dec}</span></div>`;
+  }
+
+  // pointer over the panorama: direction, height and what the module sees there
+  _onPanoPointer(ev) {
+    const svg = ev.composedPath().find((n) => n.id === "nx-pano");
+    const read = this.shadowRoot.getElementById("nx-panoread");
+    if (!read) return;
+    const v = this.shadowRoot.getElementById("nx-pv"), h = this.shadowRoot.getElementById("nx-ph");
+    const hide = () => { read.textContent = this._t.panoIdle; if (v) v.setAttribute("opacity", 0); if (h) h.setAttribute("opacity", 0); };
+    if (!svg || ev.type === "pointerleave") { hide(); return; }
+    const arr = this._array(svg.dataset.id), pn = arr && this._pano(arr);
+    if (!pn) return;
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const W = Number(svg.dataset.w), H = Number(svg.dataset.h);
+    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H) { hide(); return; }
+    const az = pn.az0 + p.x / W * (pn.az1 - pn.az0), el = (H - p.y) / H * pn.elMax;
+    v.setAttribute("x1", p.x); v.setAttribute("x2", p.x); h.setAttribute("y1", p.y); h.setAttribute("y2", p.y);
+    v.setAttribute("opacity", 1); h.setAttribute("opacity", 1);
+    const names = this._lang.startsWith("en") ? ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] : ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
+    const a = Math.round(az) % 360;
+    read.textContent = this._t.panoAt.replace("{a}", a).replace("{d}", names[Math.round(a / 45) % 8]).replace("{e}", Math.round(el))
+      .replace("{k}", this._t.panoKinds[panoKind(arr, az, el, pn.reach)]);
+  }
+
   _legend(layer) {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
@@ -935,6 +1103,11 @@ class NoxcastPanel extends HTMLElement {
       .cell.sel { stroke: ${P.path}; stroke-width: 3; }
       .sp { fill: none; stroke: ${P.path}; stroke-opacity: 0.55; stroke-width: 1.5; }
       .sp-day { fill: none; stroke: var(--primary-color); stroke-width: 3; }
+      .psun { fill: none; stroke: ${P.pano.sun}; stroke-width: 2.5; }
+      .pano-wrap { overflow-x: auto; }
+      .pano { cursor: crosshair; touch-action: pan-x pan-y; min-width: 640px; }
+      .pcur { stroke: var(--primary-text-color); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+      .pano-read { margin-top: 8px; min-height: 18px; }
       .normal { fill: #8B5CF6; stroke: var(--card-background-color, #fff); stroke-width: 2; }
       .ax { fill: var(--secondary-text-color); font-size: 12px; }
       .grid { stroke: var(--divider-color); stroke-width: 0.5; }

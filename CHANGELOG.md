@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- A "Panorama" view next to "Map" and "Year grid" under "Learned": the view from the module, direction across and height
+  up at the same scale as the eye sees them. It shows the obstacles learned from the measurements, the horizon line
+  where measurements are still missing, the module's own plane (roof, wall, railing) and the sun paths of June,
+  March/September and December, so the learned shade can be compared with the real surroundings. If the edge of the own
+  plane looks clearly different on site, tilt or azimuth are configured wrong.
+
 ## [0.1.0b2] - 2026-11-03
 
 ### Added

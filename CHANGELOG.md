@@ -14,6 +14,14 @@ breaking changes.
 - Diagnostics: each excluded period has an "Include again" button. It takes the period back into learning, and
   Noxcast learns again in the background. Before, a period excluded by mistake could not be undone.
 
+### Changed
+- The panorama under "Learned" is now the view a camera on the module would see, and you can swivel it: drag to look
+  left, right, up and down, zoom with the mouse wheel or two fingers, and go back to the module's direction with one
+  button. As on a photo, straight edges stay straight, so house walls, corners and roof edges look as they do on site.
+  An obstacle just above the lowest sun of the year is continued, paler, down to the horizon, since houses stand on the
+  ground. The edge of the module's own plane is now exact, and a triangle on the horizon marks where the module faces.
+  The explanation beside the picture says what can be measured and what cannot.
+
 ### Fixed
 - Saving a consumer or a battery confirmed "PV array saved".
 - German texts call a PV array "PV-Gruppe" throughout; "Fläche" now only means one orientation within it.

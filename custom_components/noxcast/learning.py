@@ -52,6 +52,7 @@ class ConsumerConfig:
     run_power: float | None = None       # flexible: a run's power and duration, None = learned
     run_minutes: float | None = None
     kind: str = "profile"                # fixed: profile, program or session
+    start_share: float | None = None     # flexible: PV share (%) from which "start now" turns on, None = default
 
     @property
     def series_id(self) -> str:

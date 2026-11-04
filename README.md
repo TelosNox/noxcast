@@ -196,6 +196,7 @@ A consumer with its own sensor is taken out of the house load and forecast on it
 | Timing | *Fixed*: part of the load forecast. *Flexible*: you choose when it runs; Noxcast suggests the window |
 | Kind (fixed only) | *Profile*: own median per hour. *Program*: runs with an end (dishwasher); learned start times, runs per day, power curve. *Session*: on, then open-ended (PC, TV); learned on-probability and duration. *Regulated*: follows the outside temperature (heat pump, air conditioning) |
 | Run power, run minutes | Flexible only, optional: otherwise learned from history |
+| Start now from PV share | Flexible only, optional (default 70 %): threshold of the *start now* sensor |
 
 ### 4. Batteries (optional, needs the house load)
 
@@ -307,8 +308,10 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1); the
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
 `consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
 today**, **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
-charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**
-with the best window today and tomorrow as attributes.
+charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**,
+**Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
+when no run fits) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
+share from surplus and no more than 5 points less than the best window still to come today.
 
 ## Services
 

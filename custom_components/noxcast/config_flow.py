@@ -22,7 +22,7 @@ from .const import (
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
-    CONF_RUN_MINUTES, CONF_RUN_POWER,
+    CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_START_SHARE,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
     CONF_BATTERY_POWER, CONF_BATTERY_INVERT,
@@ -71,6 +71,9 @@ def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
                                                                   mode=selector.NumberSelectorMode.BOX)),
         vol.Optional(CONF_RUN_MINUTES, description={"suggested_value": defaults.get(CONF_RUN_MINUTES)}):
             selector.NumberSelector(selector.NumberSelectorConfig(min=5, max=1440, step=5, unit_of_measurement="min",
+                                                                  mode=selector.NumberSelectorMode.BOX)),
+        vol.Optional(CONF_START_SHARE, description={"suggested_value": defaults.get(CONF_START_SHARE)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%",
                                                                   mode=selector.NumberSelectorMode.BOX)),
     })
 

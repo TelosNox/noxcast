@@ -51,3 +51,12 @@ def test_learn_run_from_hourly_means():
 
 def test_learn_run_needs_runs():
     assert pl.learn_run("x", {0.0: 0.0, H: 500.0}) is None
+
+
+def test_start_now_needs_the_threshold_and_nearly_the_best_share():
+    w = lambda share: pl.Window(0, 3600, share, 0.0)
+    assert pl.start_now(w(0.8), w(0.82), 0.7)                 # good enough and within 5 points of the best
+    assert not pl.start_now(w(0.8), w(1.0), 0.7)              # a clearly better window comes later today
+    assert not pl.start_now(w(0.6), w(0.6), 0.7)              # below the threshold
+    assert pl.start_now(w(0.7), None, 0.7)                    # no run fits later today: the threshold decides
+    assert pl.start_now(w(0.0), w(0.0), 0.0)                  # threshold 0: any time is as good as the best

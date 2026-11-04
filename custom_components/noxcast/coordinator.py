@@ -30,7 +30,7 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
 )
 from . import archive as fc_archive
 from . import backtest as pv_backtest
@@ -63,7 +63,8 @@ def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
                                    sub.data.get(CONF_REMAINING_TIME) or None, sub.data.get(CONF_ELAPSED_TIME) or None,
                                    float(sub.data[CONF_RUN_POWER]) if sub.data.get(CONF_RUN_POWER) else None,
                                    float(sub.data[CONF_RUN_MINUTES]) if sub.data.get(CONF_RUN_MINUTES) else None,
-                                   sub.data.get(CONF_KIND, lf.KIND_PROFILE))
+                                   sub.data.get(CONF_KIND, lf.KIND_PROFILE),
+                                   float(sub.data[CONF_START_SHARE]) if sub.data.get(CONF_START_SHARE) is not None else None)
             for sub_id, sub in entry.subentries.items()
             if sub.subentry_type == SUBENTRY_CONSUMER and (sub.data.get(CONF_POWER_SENSOR) or sub.data.get(CONF_ENERGY_SENSOR))}
 

@@ -82,8 +82,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
         if coordinator.batteries:
             async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
-        async_add_entities([PlanSensor(coordinator, total_device, sid, c.name)
-                            for sid, c in coordinator.consumers.items() if c.timing == "flexible"])
+        flexible = [(sid, c.name) for sid, c in coordinator.consumers.items() if c.timing == "flexible"]
+        async_add_entities([PlanSensor(coordinator, total_device, sid, name) for sid, name in flexible]
+                           + [WindowSensor(coordinator, total_device, sid, name, day)
+                              for sid, name in flexible for day in ("today", "tomorrow")])
 
     for sub_id, arr in coordinator.arrays.items():
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
@@ -480,3 +482,38 @@ class PlanSensor(NoxcastEntity, SensorEntity):
                 "best_today": window(p["today"]), "best_tomorrow": window(p["tomorrow"]),
                 "run_power_w": run.power_w, "run_minutes": run.minutes,
                 "run_learned": not (self.coordinator.consumers[self._sid].run_power and self.coordinator.consumers[self._sid].run_minutes)}
+
+
+class WindowSensor(NoxcastEntity, SensorEntity):
+    """Start of a flexible consumer's best window today or tomorrow, for automations; unknown if no run fits."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:clock-start"
+
+    def __init__(self, coordinator, device: DeviceInfo, sid: str, name: str, day: str) -> None:
+        super().__init__(coordinator, f"{sid}_best_{day}", device)
+        self._sid, self._day = sid, day
+        self._attr_translation_key = f"flex_best_{day}"
+        self._attr_translation_placeholders = {"name": name}
+
+    def _w(self):
+        data = self.coordinator.data
+        p = data.plan.get(self._sid) if data is not None else None
+        return p, (p[self._day] if p else None)
+
+    @property
+    def available(self) -> bool:
+        return self._w()[0] is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        _, w = self._w()
+        return dt_util.utc_from_timestamp(w.start) if w else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        _, w = self._w()
+        if w is None:
+            return None
+        return {"schema_version": ATTR_SCHEMA_VERSION, "end": _iso(w.end), "pv_share": round(w.pv_share * 100),
+                "lost_share": round(w.lost_share * 100)}

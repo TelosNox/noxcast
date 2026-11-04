@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Per flexible consumer, the best window today and tomorrow as sensors with the start time, and a binary sensor
+  "Start now" that turns on while starting now gets at least a set PV share (default 70 %, per consumer) and nearly as
+  much as the best window still to come today. Automations can use them as triggers directly, without templates.
 - Diagnostics: each excluded period has an "Include again" button. It takes the period back into learning, and
   Noxcast learns again in the background. Before, a period excluded by mistake could not be undone.
 

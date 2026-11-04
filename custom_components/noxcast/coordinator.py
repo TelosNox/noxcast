@@ -622,6 +622,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.exclusions.append({"start": start.timestamp(), "end": end.timestamp(), "note": note})
         self._store.async_delay_save(self._store_data, 5)
 
+    async def async_remove_exclusion(self, start: float, end: float) -> bool:
+        """Drop the excluded period with these bounds (seconds, ±1 s); False if there is none."""
+        keep = [e for e in self.exclusions if abs(e["start"] - start) > 1 or abs(e["end"] - end) > 1]
+        if len(keep) == len(self.exclusions):
+            return False
+        self.exclusions = keep
+        self._store.async_delay_save(self._store_data, 5)
+        return True
+
     # ------------------------------------------------------------------ forecast
 
     @property

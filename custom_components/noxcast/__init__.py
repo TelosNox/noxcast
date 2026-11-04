@@ -17,7 +17,7 @@ from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .panel import async_setup_panel
 
-PLATFORMS = [Platform.IMAGE, Platform.SENSOR, Platform.WEATHER]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.IMAGE, Platform.SENSOR, Platform.WEATHER]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 EXCLUDE_SCHEMA = vol.Schema({

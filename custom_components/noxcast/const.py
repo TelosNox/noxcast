@@ -29,6 +29,8 @@ CONF_KIND = "kind"                        # fixed consumers: profile, program (r
 KIND_OPTIONS = ("profile", "program", "session", "regulated")
 CONF_RUN_POWER = "run_power"              # flexible consumers: power of a run (W), empty = learned
 CONF_RUN_MINUTES = "run_minutes"          # duration of a run (min), empty = learned
+CONF_START_SHARE = "start_share"          # flexible consumers: PV share (%) from which "start now" turns on
+START_SHARE_DEFAULT = 70
 
 # battery subentry: simulated against PV and the load forecast
 SUBENTRY_BATTERY = "battery"

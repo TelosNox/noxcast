@@ -12,9 +12,10 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from custom_components.noxcast import diagnostics, model, solar
+from custom_components.noxcast import diagnostics, model, plan, solar
 from custom_components.noxcast.const import DOMAIN, WS_SCHEMA_VERSION
 
 pytestmark = pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
@@ -500,7 +501,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                    "orientation_2": {"tilt": 20, "azimuth": 270, "peak_power": 1200}}),
         ("consumer", {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible"}),
         ("consumer", {"name": "Dryer", "power_sensor": "sensor.dryer", "timing": "flexible", "run_power": 1500,
-                      "run_minutes": 90}),
+                      "run_minutes": 90, "start_share": 50}),
         ("consumer", {"name": "Dishwasher", "energy_sensor": "sensor.dw", "timing": "fixed", "kind": "program",
                       "remaining_time": "sensor.dw_remaining", "elapsed_time": "sensor.dw_elapsed"}),
         ("consumer", {"name": "Heat pump", "power_sensor": "sensor.hp", "timing": "fixed", "kind": "regulated"}),
@@ -567,6 +568,17 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         await hass.async_block_till_done()
     data = c.data
     assert c.band and data.load and data.battery and data.plan
+    # per flexible consumer: best windows as timestamps, and "start now" by its own or the default threshold
+    reg = er.async_get(hass)
+    for sid, threshold in (("washer", 70), ("dryer", 50)):
+        p = data.plan[sid]
+        for day in ("today", "tomorrow"):
+            state = hass.states.get(reg.async_get_entity_id("sensor", DOMAIN, f"{sid}_best_{day}"))
+            w = p[day]
+            assert state.state == ("unknown" if w is None else dt_util.utc_from_timestamp(w.start).isoformat()), state
+        now = hass.states.get(reg.async_get_entity_id("binary_sensor", DOMAIN, f"{sid}_start_now"))
+        assert now.attributes["threshold"] == threshold
+        assert now.state == ("on" if plan.start_now(p["now"], p["today"], threshold / 100) else "off")
     for part in ("replay", "holdout"):
         assert c.pv_backtest[part]["total"]["status"] == "ok", c.pv_backtest
         assert set(c.pv_backtest[part]["arrays"]) == {"S", "EW"}

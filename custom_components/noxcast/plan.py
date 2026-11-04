@@ -110,6 +110,17 @@ def day_plan(runs: list[RunProfile], pv: Series, load: Series, lost: Series,
                      "tomorrow": tomorrow[r.name]["best"]} for r in runs}
 
 
+NEAR_BEST = 0.05                  # "start now" also needs a share this close to the best window still to come today
+
+
+def start_now(now: Window, best_today: Window | None, threshold: float) -> bool:
+    """Whether starting now is worth it: at least `threshold` of the run from surplus, and nearly as much
+    as the best window still to come today (or no such window fits before the day ends)."""
+    if now.pv_share < threshold:
+        return False
+    return best_today is None or now.pv_share >= best_today.pv_share - NEAR_BEST
+
+
 def run_profile(name: str, power_w: float | None, minutes: float | None, learned: dict | None) -> RunProfile | None:
     """A flexible consumer's run: configured values first, learned ones ({"power_w", "minutes"}) otherwise."""
     learned = learned or {}

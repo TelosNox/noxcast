@@ -33,6 +33,7 @@ const W_ICON = { sunny: "mdi:weather-sunny", "clear-night": "mdi:weather-night",
 const W_COLOR = { sunny: "#F2B233", "clear-night": "#F2B233", partlycloudy: "#C27A06", rainy: "#2F80C8", pouring: "#2F80C8",
   "lightning-rainy": "#2F80C8", snowy: "#2F80C8", "snowy-rainy": "#2F80C8", hail: "#2F80C8" };
 const W_REFRESH_MS = 15 * 60 * 1000;
+const W_RETRY_MS = [5000, 10000, 30000, 60000];
 
 class NoxcastWeatherCard extends HTMLElement {
   static getStubConfig() { return { days: 5 }; }
@@ -65,6 +66,7 @@ class NoxcastWeatherCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._listenReady();
     if (first) { this._loadSource(); this._refresh(); }
     const sig = [this._config.temperature, this._config.humidity].map((id) => id && hass.states[id] && hass.states[id].state).join("|")
       + (hass.themes && hass.themes.darkMode);
@@ -73,27 +75,58 @@ class NoxcastWeatherCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._timer) this._timer = setInterval(() => this._refresh(), W_REFRESH_MS);
-    if (this._hass) { this._resubscribe(); this._refresh(); }
+    if (this._hass) {
+      this._listenReady();
+      if (this._entity) this._resubscribe(); else this._loadSource();
+      this._refresh();
+    }
   }
 
   disconnectedCallback() {
     clearInterval(this._timer);
     this._timer = null;
+    clearTimeout(this._srcRetry);
+    this._srcRetry = null;
     this._unsubscribe();
+    if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
+    this._readyConn = null;
+  }
+
+  // after a reconnect (Home Assistant restarted) ask for the source again and subscribe anew
+  _listenReady() {
+    const conn = this._hass && this._hass.connection;
+    if (!conn || this._readyConn === conn) return;
+    if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
+    this._onReady = this._onReady || (() => { this._srcTries = 0; this._unsubscribe(); this._loadSource(); this._refresh(); });
+    conn.addEventListener("ready", this._onReady);
+    this._readyConn = conn;
   }
 
   get _t() { return W_TEXT[(this._hass.language || "en").slice(0, 2)] || W_TEXT.en; }
   get _lang() { return this._hass.language || "en"; }
   get _entity() { return this._srcWeather; }
 
+  // Noxcast's weather entity. Right after a Home Assistant start Noxcast may not be loaded yet (no answer, or
+  // no weather in it): asked again until it is there, instead of keeping "no weather" until the page reloads
   async _loadSource() {
+    clearTimeout(this._srcRetry);
+    this._srcRetry = null;
     try {
       const src = await ask(this._hass, { type: "noxcast/card_config" });
-      this._srcWeather = src && src.weather;
+      this._srcWeather = (src && src.weather) || null;
     } catch (err) {
       this._srcWeather = null;
     }
+    if (!this._srcWeather) this._retrySource();
+    this._render();
     this._resubscribe();
+  }
+
+  _retrySource() {
+    if (!this.isConnected || this._srcRetry) return;
+    const delay = W_RETRY_MS[Math.min(this._srcTries || 0, W_RETRY_MS.length - 1)];
+    this._srcTries = (this._srcTries || 0) + 1;
+    this._srcRetry = setTimeout(() => { this._srcRetry = null; if (this.isConnected) this._loadSource(); }, delay);
   }
 
   // PV per day from Noxcast; without Noxcast (or an older version) the card shows weather only
@@ -118,10 +151,12 @@ class NoxcastWeatherCard extends HTMLElement {
     try {
       this._unsub = await this._hass.connection.subscribeMessage((msg) => { this._days = msg.forecast || []; this._render(); },
         { type: "weather/subscribe_forecast", forecast_type: "daily", entity_id: id });
+      this._srcTries = 0;
     } catch (err) {
       this._subFor = null;
       this._days = null;
       this._render();
+      this._retrySource();                       // the entity may not exist yet right after a start
     }
   }
 

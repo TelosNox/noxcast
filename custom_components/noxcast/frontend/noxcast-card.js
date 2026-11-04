@@ -94,7 +94,7 @@ class NoxcastCard extends HTMLElement {
   async _loadSource() {
     try {
       this._src = await ask(this._hass, { type: "noxcast/card_config" });
-      this._srcPending = false;
+      this._srcPending = !this._src;              // null while Noxcast is still starting: asked again
     } catch (err) {
       // an older integration, or Noxcast not loaded yet: the card config alone, asked again after the next good refresh
       this._src = null;

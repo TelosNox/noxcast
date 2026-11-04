@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The weather card no longer stays on "No weather from Noxcast yet" after Home Assistant restarts. It asks again
+  until Noxcast is up and picks the weather up again after a reconnect, without reloading the page. The weather strip
+  of the day card now also appears when Noxcast was still starting while the card loaded.
+
 ## [0.1.0b4] - 2026-11-04
 
 ### Added

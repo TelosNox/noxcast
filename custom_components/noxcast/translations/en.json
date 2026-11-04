@@ -262,7 +262,7 @@
         "time_unit": "Time sensors must report minutes, hours or seconds."
       },
       "abort": {
-        "reconfigure_successful": "PV array saved."
+        "reconfigure_successful": "Consumer saved."
       }
     },
     "battery": {
@@ -338,7 +338,7 @@
         "sensor_missing": "The selected sensor does not exist."
       },
       "abort": {
-        "reconfigure_successful": "PV array saved."
+        "reconfigure_successful": "Battery saved."
       }
     }
   },

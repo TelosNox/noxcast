@@ -15,7 +15,7 @@ const DAY_TEXT = {
     steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme",
       result: "Prognose", corr: "Korrektur heute", expected: "Erwartung", actual: "Ist" },
     stepHelp: {
-      clear: (eff) => `Was die Fläche bei wolkenlosem Himmel liefern würde, mit dem gelernten Wirkungsgrad von ${eff}.`,
+      clear: (eff) => `Was die Gruppe bei wolkenlosem Himmel liefern würde, mit dem gelernten Wirkungsgrad von ${eff}.`,
       clouds: "Der Unterschied durch die Einstrahlung der Wetterquelle gegenüber klarem Himmel.",
       shade: "Direktlicht, das die gelernte Schattenkarte für diese Sonnenposition abhält.",
       reflection: "Zusätzliches Licht von beschienenen Flächen in der Umgebung.",

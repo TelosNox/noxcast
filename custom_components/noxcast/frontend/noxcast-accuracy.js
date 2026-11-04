@@ -6,7 +6,7 @@ const ACC_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     title: "Prognosegüte", days: "Tage", error: "Tagesfehler", bias: "Abweichung", noData: "Noch keine abgeschlossenen Tage im Archiv. Die Tagesprognose wird jeden Abend archiviert und nachts mit den Messwerten ergänzt.",
-    source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", all: "Alle Flächen",
+    source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", all: "Alle Gruppen",
     range: "Zeitraum", perDay: "Prognose und Ist pro Tag", forecast: "Prognose", actual: "Ist", calendar: "Kalender",
     byWeather: "Nach Wetterlage", clear: "klar", mixed: "wechselhaft", overcast: "bedeckt", compare: "Modelle einzeln",
     sameDays: "Hauptquelle an denselben Tagen", hourly: "Stundenverlauf", curtailed: "Akku voll (evtl. abgeregelt)", issued: "erstellt",

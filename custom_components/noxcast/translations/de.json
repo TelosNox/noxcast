@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Optional Akku-Sensoren, um Abregelung zu erkennen. PV-Flächen danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Optional Akku-Sensoren, um Abregelung zu erkennen. PV-Gruppen danach hinzufügen.",
         "data": {
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
@@ -262,7 +262,7 @@
         "time_unit": "Zeitsensoren müssen Minuten, Stunden oder Sekunden liefern."
       },
       "abort": {
-        "reconfigure_successful": "PV-Gruppe gespeichert."
+        "reconfigure_successful": "Verbraucher gespeichert."
       }
     },
     "battery": {
@@ -338,7 +338,7 @@
         "sensor_missing": "Der gewählte Sensor existiert nicht."
       },
       "abort": {
-        "reconfigure_successful": "PV-Gruppe gespeichert."
+        "reconfigure_successful": "Akku gespeichert."
       }
     }
   },

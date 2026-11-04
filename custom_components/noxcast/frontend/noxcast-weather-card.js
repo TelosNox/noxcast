@@ -206,5 +206,7 @@ class NoxcastWeatherCard extends HTMLElement {
 
 customElements.define("noxcast-weather-card", NoxcastWeatherCard);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "noxcast-weather-card", name: "Noxcast Wetter",
-  description: "The coming days one below the other, with the PV yield Noxcast expects per day", preview: true });
+const W_DE = (document.documentElement.lang || "en").startsWith("de");
+window.customCards.push({ type: "noxcast-weather-card", name: W_DE ? "Noxcast Wetter" : "Noxcast weather",
+  description: W_DE ? "Die nächsten Tage untereinander, mit dem PV-Ertrag, den Noxcast je Tag erwartet"
+    : "The coming days one below the other, with the PV yield Noxcast expects per day", preview: true });

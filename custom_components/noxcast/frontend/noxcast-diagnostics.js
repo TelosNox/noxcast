@@ -8,10 +8,12 @@ const DIAG_TEXT = {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     adminOnly: "Die Diagnose können nur Administratoren sehen.",
     ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", learnTook: "Lernen", backtestTook: "Rückrechnung", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
-    sensors: "Sensoren", arrays: "Gelernte Flächen", exclusions: "Ausgeschlossene Zeiträume", none: "keine",
+    sensors: "Sensoren", arrays: "Gelernte Gruppen", exclusions: "Ausgeschlossene Zeiträume", none: "keine", include: "Wieder einbeziehen",
+    includeAsk: "Diesen Zeitraum wieder beim Lernen einbeziehen? Danach wird neu gelernt, das dauert einige Minuten.",
+    included: "Wieder einbezogen. Neu gelernt wird im Hintergrund; „Aktualisieren“ zeigt den neuen Lernlauf.",
     entity: "Entität", role: "Rolle", state: "Zustand", stats: "Statistik", coverage: "Abdeckung", since: "seit",
     days: "Tage", complete: "vollständig", hours: "Stunden", samples: "Stunden gelernt", mapCoverage: "Karte", efficiency: "Wirkungsgrad",
-    checkArray: "Passt nicht zur Konfiguration – unter „Gelerntes“ an der Fläche prüfen",
+    checkArray: "Passt nicht zur Konfiguration – unter „Gelerntes“ an der Gruppe prüfen",
     ago: "vor", min: "min", h: "h", never: "noch nie", refresh: "Aktualisieren",
     help: "Abdeckung = Anteil der Stunden der letzten {days} Tage mit Langzeitstatistik. Unter 90 % lernt Noxcast mit Lücken; ohne Statistik (state_class fehlt) gar nicht.",
     roles: { pv: "PV-Leistung", curtailment_soc: "Ladestand (Abregelung)", house_load: "Hausverbrauch", consumer_power: "Verbraucher Leistung",
@@ -20,13 +22,15 @@ const DIAG_TEXT = {
     issues: { missing: "existiert nicht", unavailable: "ist nicht verfügbar", noStats: "hat keine Langzeitstatistik (state_class fehlt?)",
       lowCoverage: "Statistik nur zu {p} vorhanden", learnError: "Lernlauf fehlgeschlagen: {e}", archiveError: "Archiv {n}: {e}",
       weatherStale: "Wetterprognose seit {t} nicht aktualisiert", noLearning: "Noch kein Lernlauf",
-      arrayHints: "{n}: Die Messwerte passen nicht zur Konfiguration. Unter „Gelerntes“ an der Fläche steht, was zu prüfen ist." },
+      arrayHints: "{n}: Die Messwerte passen nicht zur Konfiguration. Unter „Gelerntes“ an der Gruppe steht, was zu prüfen ist." },
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
     adminOnly: "Only administrators can see the diagnostics.",
     ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", learnTook: "Learning", backtestTook: "Backtest", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
-    sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none",
+    sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none", include: "Include again",
+    includeAsk: "Include this period in learning again? Noxcast then learns again, which takes a few minutes.",
+    included: "Included again. Learning runs in the background; “Refresh” shows the new run.",
     entity: "Entity", role: "Role", state: "State", stats: "Statistics", coverage: "Coverage", since: "since",
     days: "days", complete: "complete", hours: "hours", samples: "hours learned", mapCoverage: "Map", efficiency: "Efficiency",
     checkArray: "Does not fit the configuration – check the array under “Learned”",
@@ -48,7 +52,12 @@ class NoxcastDiagnostics extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.shadowRoot.addEventListener("click", (ev) => { if (ev.composedPath().some((n) => n.dataset && n.dataset.refresh)) this._load(); });
+    this.shadowRoot.addEventListener("click", (ev) => {
+      const path = ev.composedPath();
+      const inc = path.find((n) => n.dataset && n.dataset.include);
+      if (inc) this._include(inc.dataset.start, inc.dataset.end);
+      else if (path.some((n) => n.dataset && n.dataset.refresh)) this._load();
+    });
   }
 
   set hass(hass) {
@@ -62,6 +71,18 @@ class NoxcastDiagnostics extends HTMLElement {
   get _dark() { return !!(this._hass && this._hass.themes && this._hass.themes.darkMode); }
   get _t() { return DIAG_TEXT[(this._hass.language || "en").slice(0, 2)] || DIAG_TEXT.en; }
   get _lang() { return this._hass.language || "en"; }
+
+  // take an excluded period back into learning; the server relearns in the background
+  async _include(start, end) {
+    if (!confirm(this._t.includeAsk)) return;
+    try {
+      await ask(this._hass, { type: "noxcast/remove_exclusion", start, end });
+      this._notice = this._t.included;
+    } catch (err) {
+      this._notice = String((err && err.message) || err);
+    }
+    this._load();
+  }
 
   async _load() {
     try {
@@ -129,8 +150,10 @@ class NoxcastDiagnostics extends HTMLElement {
     const arrays = e.arrays.map((a) => `<tr><td>${esc(a.name)}</td><td class="num">${(a.samples || 0).toLocaleString(this._lang)}</td>
       <td class="num">${a.coverage === null ? "–" : this._pct(a.coverage)}</td><td class="num${(a.hints || []).length ? " bad" : ""}"${(a.hints || []).length ? ` title="${esc(t.checkArray)}"` : ""}>${a.efficiency === null ? "–" : this._pct(a.efficiency)}${(a.hints || []).length ? " ⚠" : ""}</td></tr>`).join("");
     const excl = e.exclusions.length
-      ? `<ul class="plain">${e.exclusions.map((x) => `<li>${this._d(x.start)} – ${this._d(new Date(Date.parse(x.end) - 1000).toISOString())}${x.note ? ` · <span class="muted">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>`
+      ? `<ul class="plain">${e.exclusions.map((x) => `<li>${this._d(x.start)} – ${this._d(new Date(Date.parse(x.end) - 1000).toISOString())}${x.note ? ` · <span class="muted">${esc(x.note)}</span>` : ""}
+        <button class="incl" data-include="1" data-start="${esc(x.start)}" data-end="${esc(x.end)}">${t.include}</button></li>`).join("")}</ul>`
       : `<p class="muted">${t.none}</p>`;
+    const notice = this._notice ? `<p class="muted small">${esc(this._notice)}</p>` : "";
     return `
       <section class="card pad"><div class="figs">${tiles}</div></section>
       <section class="card pad"><h3>${t.problems}</h3>${list}</section>
@@ -139,7 +162,7 @@ class NoxcastDiagnostics extends HTMLElement {
         <p class="help">${t.help.replace("{days}", this._data.days)}</p></section>
       <div class="split">
         <section class="card pad grow"><h3>${t.arrays}</h3><table><thead><tr><th></th><th class="num">${t.samples}</th><th class="num">${t.mapCoverage}</th><th class="num">${t.efficiency}</th></tr></thead><tbody>${arrays}</tbody></table></section>
-        <section class="card pad grow"><h3>${t.exclusions}</h3>${excl}</section>
+        <section class="card pad grow"><h3>${t.exclusions}</h3>${excl}${notice}</section>
       </div>`;
   }
 
@@ -205,6 +228,9 @@ class NoxcastDiagnostics extends HTMLElement {
       .meter { width: 70px; height: 6px; border-radius: 3px; background: var(--nx-empty); overflow: hidden; display: inline-block; }
       .meter span { display: block; height: 100%; }
       .plain { margin: 0; padding-left: 18px; font-size: 13px; }
+      .plain li { margin: 2px 0; }
+      .incl { margin-left: 8px; background: none; border: 1px solid var(--divider-color); border-radius: 6px; padding: 2px 8px;
+        color: var(--primary-color); font: inherit; font-size: 12px; cursor: pointer; }
     </style>`;
   }
 }

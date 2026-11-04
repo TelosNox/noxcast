@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 PKG = Path(__file__).parent.parent / "custom_components" / "noxcast"
-SHELL = {"__init__", "config_flow", "coordinator", "diagnostics", "energy", "image", "panel", "sensor", "sources", "weather"}
+SHELL = {"__init__", "binary_sensor", "config_flow", "coordinator", "diagnostics", "energy", "image", "panel", "sensor", "sources", "weather"}
 
 
 def imports(name: str) -> tuple[set[str], set[str]]:

@@ -36,6 +36,7 @@ WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
 WS_DAY = f"{DOMAIN}/day"
 WS_CARD = f"{DOMAIN}/card_config"
+WS_REMOVE_EXCLUSION = f"{DOMAIN}/remove_exclusion"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -51,6 +52,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_battery)
     websocket_api.async_register_command(hass, ws_day)
     websocket_api.async_register_command(hass, ws_card_config)
+    websocket_api.async_register_command(hass, ws_remove_exclusion)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -212,6 +214,24 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
             learning_error=c.last_learning_error, archive_errors=c.archive_errors, arrays=c.arrays, learned=c.learned,
             exclusions=c.exclusions, archive=c.forecast_archive, fine=c.fine, sensors=sensors))
     _send(connection, msg, {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_REMOVE_EXCLUSION, vol.Required("start"): str, vol.Required("end"): str})
+@websocket_api.async_response
+async def ws_remove_exclusion(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Take an excluded period (its bounds as the diagnostics list them) back into learning, then relearn."""
+    start, end = dt_util.parse_datetime(msg["start"]), dt_util.parse_datetime(msg["end"])
+    if start is None or end is None:
+        connection.send_error(msg["id"], "invalid_format", "start and end must be ISO timestamps")
+        return
+    removed = False
+    for c in _coordinators(hass):
+        if await c.async_remove_exclusion(start.timestamp(), end.timestamp()):
+            removed = True
+            # a run takes minutes: answer now, the diagnostics show the new run once it is done
+            hass.async_create_background_task(c.async_learn(), "noxcast relearn after removing an exclusion")
+    _send(connection, msg, {"removed": removed})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_BATTERY})

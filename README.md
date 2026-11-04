@@ -44,10 +44,11 @@ the sun's paths in June, at the equinox and in December, so you can read off whe
 
 ![Learned shading map with a tree in the south-east and a house in the west](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/shade-map.png)
 
-The panorama shows the same as seen from the module: the obstacles at their true height and direction, and the
-module's own plane, behind which the sun cannot reach it.
+The panorama shows the same as a camera on the module would: straight edges stay straight, so the tree and the
+house look as they do on site. Drag to look around. The dotted area is the module's own plane, behind which the sun
+cannot reach it.
 
-![Panorama from the module: obstacles, partial shade and the sun paths of the year](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/panorama.png)
+![Panorama from the module: the tree, the obstacle continued down to the horizon, and the sun paths of the year](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/panorama.png)
 
 ### How an hour comes about
 

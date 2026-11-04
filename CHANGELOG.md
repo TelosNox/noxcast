@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0b4] - 2026-11-04
+
 ### Added
 - Per flexible consumer, the best window today and tomorrow as sensors with the start time, and a binary sensor
   "Start now" that turns on while starting now gets at least a set PV share (default 70 %, per consumer) and nearly as

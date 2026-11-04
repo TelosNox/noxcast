@@ -1,5 +1,7 @@
 # Noxcast
 
+**English** | [Deutsch](README.de.md)
+
 **A PV forecast for Home Assistant that learns your installation and explains every number.**
 
 Noxcast forecasts what your solar modules will produce today and in the next days, hour by hour. It starts from

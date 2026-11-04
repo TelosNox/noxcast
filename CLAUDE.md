@@ -7,6 +7,9 @@ optional parts of the same integration. See `docs/concept.md`.
 ## Language
 - Code, comments, docs, commit messages: English.
 - Conversation with the maintainer: German.
+- The README exists in English (`README.md`) and German (`README.de.md`). A change to one goes into the other in the
+  same PR, with the German terms of the German user interface. `tests/test_readme.py` checks that both have the same
+  headings, images and code. Changelog and `docs/` stay English only.
 
 ## License
 - GPL-3.0. Only add dependencies with GPL-3.0-compatible licenses (MIT, BSD, Apache-2.0, LGPL, GPL).

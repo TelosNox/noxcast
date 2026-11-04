@@ -7,6 +7,9 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The README is available in German as well: [README.de.md](README.de.md).
+
 ### Fixed
 - The weather card no longer stays on "No weather from Noxcast yet" after Home Assistant restarts. It asks again
   until Noxcast is up and picks the weather up again after a reconnect, without reloading the page.

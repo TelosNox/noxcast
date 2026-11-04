@@ -373,13 +373,27 @@ PINNED = ['63ab873ca37523af', '2a48ebeb5681f979', 'fcc3fd2cbc0ad4ce', '906e81897
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
     "midday": {"learned": "4065204970d1c433", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
-               "load": "a7700b7f3ce0a9c6", "diagnostics": "bab33893f6cf328c", "battery": "4a924f136495a769",
+               "load": "a7700b7f3ce0a9c6", "diagnostics": "bab33893f6cf328c",
+               "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "43bb94f6553f8228",
+                                        "learning": "2f874ea2aff4248b", "arrays": "3d75400a515756bc",
+                                        "exclusions": "cb2504d95155b647", "archive": "ea15254290e78e03",
+                                        "fine": "3c97057e8110e976", "sensors": "3f61ce471d286300"},
+               "battery": "4a924f136495a769",
                "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
     "morning": {"learned": "66236e6f0c3d4e7b", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
-                "load": "ed6dea904ab7ff60", "diagnostics": "6b79b97e56925278", "battery": "e0dc625e527929a8",
+                "load": "ed6dea904ab7ff60", "diagnostics": "6b79b97e56925278",
+                "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "7801445abb0321e7",
+                                         "learning": "e15b85939b125f67", "arrays": "23f53b0716470c53",
+                                         "exclusions": "cb2504d95155b647", "archive": "9f1b286055de683f",
+                                         "fine": "a33177516338839a", "sensors": "3f61ce471d286300"},
+                "battery": "e0dc625e527929a8",
                 "card_config": "9576395acefde089", "backtest": "ddbd4cd122996b8d", "day": "11f58e9a21f84166"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
+
+
+def _hash(value) -> str:
+    return hashlib.sha256(json.dumps(value).encode()).hexdigest()[:16]
 
 
 async def _ws_prints(client) -> dict:
@@ -391,7 +405,10 @@ async def _ws_prints(client) -> dict:
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
         for entry in msg["result"].get("entries", []) if cmd == "diagnostics" else []:     # durations are not results
             del entry["learning"]["seconds"], entry["learning"]["backtest_seconds"]
-        out[cmd] = hashlib.sha256(json.dumps(msg["result"]).encode()).hexdigest()[:16]
+        out[cmd] = _hash(msg["result"])
+        if cmd == "diagnostics":
+            # per section as well: this fingerprint differed now and then on CI, and the section names the cause
+            out["diagnostics_sections"] = {k: _hash(v) for e in msg["result"]["entries"] for k, v in e.items()}
     days = []
     for offset in range(-31, 3):
         await client.send_json_auto_id({"type": f"{DOMAIN}/day", "offset": offset})
@@ -399,7 +416,7 @@ async def _ws_prints(client) -> dict:
         assert msg["success"], (offset, msg)
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, offset
         days.append(msg["result"])
-    out["day"] = hashlib.sha256(json.dumps(days).encode()).hexdigest()[:16]
+    out["day"] = _hash(days)
     return out
 
 

@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The weather card no longer stays on "No weather from Noxcast yet" after Home Assistant restarts. It asks again
+  until Noxcast is up and picks the weather up again after a reconnect, without reloading the page.
+- The day card no longer shows an empty day after Home Assistant restarts. While Noxcast is still starting it asks again
+  within seconds instead of waiting for its next regular refresh, and then loads the house load, battery and weather
+  of the day as well.
+
 ## [0.1.0b4] - 2026-11-04
 
 ### Added

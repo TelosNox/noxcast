@@ -92,14 +92,17 @@ class NoxcastCard extends HTMLElement {
   }
 
   async _loadSource() {
+    const wasPending = this._srcPending;
     try {
       this._src = await ask(this._hass, { type: "noxcast/card_config" });
-      this._srcPending = false;
+      this._srcPending = !this._src;              // null while Noxcast is still starting: asked again
     } catch (err) {
       // an older integration, or Noxcast not loaded yet: the card config alone, asked again after the next good refresh
       this._src = null;
       this._srcPending = true;
     }
+    // the house load and battery history depend on these sensors: loaded again once they are known
+    if (wasPending && this._src) setTimeout(() => this._refresh(), 0);
     this._config = this._merged();
     this._flow = null;
     this._renderAll();
@@ -215,7 +218,12 @@ class NoxcastCard extends HTMLElement {
     const conn = this._hass && this._hass.connection;
     if (!conn || this._readyConn === conn) return;
     if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
-    this._onReady = this._onReady || (() => { this._tries = 0; this._refresh(); this._unsubWeather(); this._subscribeWeather(); });
+    this._onReady = this._onReady || (() => {
+      this._tries = 0;
+      this._refresh();
+      this._unsubWeather();
+      if (this._srcPending || !this._src) this._loadSource(); else this._subscribeWeather();
+    });
     conn.addEventListener("ready", this._onReady);
     this._readyConn = conn;
   }
@@ -307,10 +315,15 @@ class NoxcastCard extends HTMLElement {
   // ------------------------------------------------------------ data for the day band
 
   async _refresh() {
-    if (!this._hass || this._loading) return;
+    if (!this._hass) return;
+    if (this._loading) { this._again = true; return; }   // asked while loading (e.g. the sensors just arrived): once more after it
     this._loading = true;
+    this._again = false;
     try {
       const today = await ask(this._hass, { type: "noxcast/today" });
+      // right after a Home Assistant start Noxcast answers before its first computation: no day, no arrays.
+      // Asked again soon instead of showing an empty day until the next regular refresh
+      if (!today.day_start && !(today.arrays || []).length) throw new Error("Noxcast is still starting");
       this._outdated = today.v !== WS_SCHEMA;
       const stats = await this._history();
       // the day comes from Noxcast: just after midnight its new computation may still be running, then the
@@ -332,6 +345,7 @@ class NoxcastCard extends HTMLElement {
     } finally {
       this._loading = false;
     }
+    if (this._again) { this._again = false; setTimeout(() => this._refresh(), 0); }
     this._scheduleMidnight();
     this._renderBand();
   }

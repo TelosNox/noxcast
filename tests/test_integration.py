@@ -382,6 +382,10 @@ WS_PINNED = {
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 
 
+def _hash(value) -> str:
+    return hashlib.sha256(json.dumps(value).encode()).hexdigest()[:16]
+
+
 async def _ws_prints(client) -> dict:
     out = {}
     for cmd in WS_COMMANDS:
@@ -391,7 +395,10 @@ async def _ws_prints(client) -> dict:
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
         for entry in msg["result"].get("entries", []) if cmd == "diagnostics" else []:     # durations are not results
             del entry["learning"]["seconds"], entry["learning"]["backtest_seconds"]
-        out[cmd] = hashlib.sha256(json.dumps(msg["result"]).encode()).hexdigest()[:16]
+        out[cmd] = _hash(msg["result"])
+        if cmd == "diagnostics":
+            # per section as well: this fingerprint differed now and then on CI, and the section names the cause
+            out["diagnostics_sections"] = {k: _hash(v) for e in msg["result"]["entries"] for k, v in e.items()}
     days = []
     for offset in range(-31, 3):
         await client.send_json_auto_id({"type": f"{DOMAIN}/day", "offset": offset})
@@ -399,7 +406,7 @@ async def _ws_prints(client) -> dict:
         assert msg["success"], (offset, msg)
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, offset
         days.append(msg["result"])
-    out["day"] = hashlib.sha256(json.dumps(days).encode()).hexdigest()[:16]
+    out["day"] = _hash(days)
     return out
 
 

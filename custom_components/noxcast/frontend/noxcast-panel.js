@@ -51,7 +51,7 @@ const TEXT = {
     notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
     sunPathOn: "Sonnenbahn am", jun: "21. Juni", equ: "März/Sept.", dec: "21. Dez.",
     dayStrip: "Dieser Tag als Zeitleiste", selected: "Ausgewähltes Feld", sunHere: "Sonne steht hier", normal: "Sonne senkrecht auf den Modulen",
-    never: "nie im Lauf des Jahres", close: "Schließen", noData: "Noch keine PV-Gruppe gelernt.",
+    never: "nie im Lauf des Jahres", close: "Schließen", noData: "Noch keine PV-Gruppe. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → PV-Gruppe hinzufügen; Noxcast lernt sie dann sofort aus der Historie.",
     open: "Öffnen", months: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
     help: {
       shade: "Jedes Feld ist eine Sonnenposition. Die Farbe zeigt, wie viel Direktlicht dort ankommt. Folge einer Sonnenbahn von links nach rechts, um einen Tag abzulesen.",
@@ -112,7 +112,7 @@ const TEXT = {
     notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
     sunPathOn: "Sun path on", jun: "21 June", equ: "Mar/Sep", dec: "21 Dec",
     dayStrip: "This day as a timeline", selected: "Selected cell", sunHere: "Sun is here", normal: "Sun perpendicular to the modules",
-    never: "never during the year", close: "Close", noData: "No array learned yet.",
+    never: "never during the year", close: "Close", noData: "No PV array yet. Add one under Settings → Devices & services → Noxcast → ⋮ → Add PV array; Noxcast then learns it from the history right away.",
     open: "Open", months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     help: {
       shade: "Each cell is a sun position. The colour shows how much direct light arrives there. Follow a sun path from left to right to read a day.",

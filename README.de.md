@@ -318,6 +318,17 @@ Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster 
 jetzt gestarteter Lauf mindestens den eingestellten PV-Anteil aus Überschuss bekommt und höchstens 5 Punkte weniger
 als das beste Fenster, das heute noch kommt.
 
+## Reparaturen
+
+Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfernt jede Meldung, sobald sie behoben ist:
+
+| Meldung | Wann |
+|---|---|
+| Noch keine PV-Gruppe | Die Integration ist eingerichtet, aber keine PV-Gruppe hinzugefügt |
+| Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
+| Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
+| Konfiguration passt nicht | Die Messwerte einer PV-Gruppe passen nicht zu Spitzenleistung, Neigung, Azimut oder Sensor (siehe *Gelerntes*) |
+
 ## Dienste
 
 | Dienst | |

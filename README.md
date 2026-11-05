@@ -317,6 +317,17 @@ charge start** (attribute `grid`: grid energy until then). Per flexible consumer
 when no run fits) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.
 
+## Repairs
+
+Noxcast reports problems under Settings → System → Repairs, and removes each report once it is solved:
+
+| Issue | When |
+|---|---|
+| No PV array yet | The integration is set up, but no PV array is added |
+| Sensors missing | A configured entity does not exist (renamed or removed) |
+| No weather forecast | Open-Meteo could not be reached for more than a day |
+| Configuration does not fit | The measurements of a PV array do not fit its peak power, tilt, azimuth or sensor (see *Learned*) |
+
 ## Services
 
 | Service | |

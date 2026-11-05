@@ -36,6 +36,7 @@ def test_a_reason_in_the_description_waives_it():
     assert check.problem(CODE, BASE, BASE, "Moves code.\n\nNo changelog entry: nothing changes for users.") is None
     assert check.problem(CODE, BASE, BASE, "**No changelog entry**: internal.") is None
     assert check.problem(CODE, BASE, BASE, "There is no changelog entry needed.")    # only at the start of a line
+    assert check.problem(CODE, BASE, BASE, "No changelog entry")                     # the reason is missing
 
 
 def test_changes_outside_the_integration_need_none():

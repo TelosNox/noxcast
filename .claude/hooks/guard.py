@@ -86,19 +86,27 @@ def actions(command: str, cwd: Path) -> list[tuple[str, Path]]:
     return found
 
 
+def _section(text: str) -> bool:
+    return re.search(rf"^\s*{re.escape(REVIEW)}\s*$", text, re.M) is not None
+
+
+def _local_path(raw: str, place: Path) -> Path:
+    """A path as a shell on Windows writes it: /c/Users/... from Git Bash becomes C:/Users/..."""
+    raw = raw.strip("\"'")
+    if sys.platform == "win32" and (match := re.fullmatch(r"/([a-zA-Z])(/.*)?", raw)):
+        raw = f"{match[1]}:{match[2] or '/'}"
+    return (place / raw).resolve()
+
+
 def has_review(command: str, place: Path) -> bool:
-    """Whether the description of `gh pr create` holds a review section, inline or in --body-file / -F."""
-    if REVIEW in command:
-        return True
-    for words in _words(command):
-        for flag in ("--body-file", "-F"):
-            if words[:3] == ["gh", "pr", "create"] and flag in words[:-1]:
-                path = (place / words[words.index(flag) + 1]).resolve()
-                try:
-                    return REVIEW in path.read_text(encoding="utf-8")
-                except OSError:
-                    return False
-    return False
+    """Whether the description of `gh pr create` holds a `## Review` line, inline or in --body-file / -F."""
+    body_file = re.search(r"\bgh\s+pr\s+create\b.*?(?:--body-file|-F)(?:=|\s+)(\"[^\"]+\"|'[^']+'|\S+)", command, re.S)
+    if body_file:
+        try:
+            return _section(_local_path(body_file[1], place).read_text(encoding="utf-8"))
+        except OSError:
+            return False
+    return _section(command)
 
 
 def _git(place: Path, *args: str) -> str:
@@ -129,7 +137,7 @@ def problems(command: str, cwd: Path) -> list[str]:
             result.append("No commit on main: work reaches it only through a pull request. Commit on a branch.")
         elif action == "pr" and not has_review(command, place):
             result.append("No pull request without a review: run the noxcast-review skill and put its \"## Review\" "
-                          "section into the description.")
+                          "section into the description (a --body-file must be readable from the session's folder).")
         if action in {"commit", "push", "pr"}:
             try:
                 privacy, root = _privacy(place)

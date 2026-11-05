@@ -90,3 +90,6 @@ def test_a_pull_request_needs_a_review_section(tmp_path):
     (tmp_path / "body.md").write_text("Text\n\n## Review\nTier: Other\n", encoding="utf-8")
     assert guard.has_review("gh pr create --title x --body-file body.md", tmp_path)
     assert not guard.has_review("gh pr create --title x --body-file missing.md", tmp_path)
+    assert guard.has_review("gh pr create --title x --body-file=body.md", tmp_path)
+    assert not guard.has_review('gh pr create --body "## Reviewer notes"', tmp_path)
+    assert not guard.has_review("gh pr create --title '## Review' --body-file missing.md", tmp_path)

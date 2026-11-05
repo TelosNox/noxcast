@@ -11,14 +11,15 @@ review runs in a fresh context with a fixed checklist; a general "look over it" 
 
 ## 1. Scope and tier
 
-Look at `git diff --stat origin/main...HEAD` and pick the highest tier any changed file reaches:
+Look at `git diff --stat origin/main...HEAD` and pick the highest tier any changed file reaches. A file in
+`custom_components/` that the table does not name counts as Interface:
 
 | Tier | Files | Checklist points |
 |---|---|---|
-| Model | `model.py`, `shade.py`, `solar.py`, `effects.py`, `fine.py`, `conditions.py`, `band.py`, `intraday.py`, `learning.py`, `forecasting.py`, `weather.py`, `sources.py`, `load.py`, `battery.py`, `plan.py`, `flows.py` | all, and the backtest (step 3) for PV model changes |
-| Interface | `const.py`, `__init__.py`, `coordinator.py`, `archive.py`, `config_flow.py`, `sensor.py`, `binary_sensor.py`, `image.py`, `services.yaml`, `views.py`, `panel.py`, `explain.py`, `diagnostics.py`, `issues.py` | A, C, D, E, F |
-| Frontend and texts | `frontend/*.js`, `strings.json`, `translations/`, `README*.md`, `CHANGELOG.md` | A (card options and payloads only), D, E, F |
-| Other | tests, `docs/`, CI, `prototype/` | E, F |
+| Model | `model.py`, `shade.py`, `solar.py`, `effects.py`, `fine.py`, `conditions.py`, `band.py`, `intraday.py`, `learning.py`, `forecasting.py`, `weather.py`, `sources.py`, `load.py`, `battery.py`, `plan.py`, `flows.py`, `backtest.py`, `arraycheck.py`, `events.py` | all, and the backtest (step 3) for PV model changes |
+| Interface | `const.py`, `__init__.py`, `coordinator.py`, `archive.py`, `config_flow.py`, `sensor.py`, `binary_sensor.py`, `image.py`, `services.yaml`, `views.py`, `panel.py`, `explain.py`, `diagnostics.py`, `issues.py`, `energy.py`, `manifest.json` | A, C, D, E, F |
+| Frontend and texts | `frontend/*.js`, `visual.py`, `brand/`, `strings.json`, `translations/`, `README*.md`, `CHANGELOG.md` | A (card options and payloads only), D, E, F |
+| Other | tests, `docs/`, CI, `prototype/`, `.claude/` | E, F |
 
 ## 2. The review
 

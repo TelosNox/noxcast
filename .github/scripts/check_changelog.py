@@ -1,6 +1,6 @@
 """A pull request that changes the integration says in the changelog what changes for users, or says why not.
 
-Usage: check_changelog.py BASE, with the pull request's description in the environment variable PR_BODY.
+Usage: check_changelog.py [BASE], with the pull request's description in the environment variable PR_BODY.
 The integration is everything under custom_components/. Its changes need either a changed `## Unreleased` section
 (a release PR moves that section, which counts as well) or a line in the description that starts with
 "No changelog entry", followed by the reason.
@@ -14,7 +14,7 @@ import sys
 
 CHANGELOG = "CHANGELOG.md"
 INTEGRATION = "custom_components/"
-WAIVER = re.compile(r"^\W*no changelog entry\b", re.I | re.M)
+WAIVER = re.compile(r"^\W*no changelog entry\b\W*\w", re.I | re.M)      # with a reason after it
 
 
 def unreleased(changelog: str) -> str:
@@ -36,8 +36,9 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
-def main(base: str) -> int:
-    files = _git("diff", "--name-only", f"{base}...HEAD").splitlines()
+def main(base: str = "HEAD^1") -> int:
+    """BASE defaults to the first parent of the merge commit that a pull_request run checks out."""
+    files = _git("diff", "--name-only", "--no-renames", f"{base}...HEAD").splitlines()
     found = problem(files, _git("show", f"{base}:{CHANGELOG}"), _git("show", f"HEAD:{CHANGELOG}"),
                     os.environ.get("PR_BODY", ""))
     if found:
@@ -47,4 +48,4 @@ def main(base: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]))
+    sys.exit(main(*sys.argv[1:2]))

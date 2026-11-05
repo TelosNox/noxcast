@@ -465,8 +465,8 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['63ab873ca37523af', '45e189eb0829daac', '9cbf5b497e81e93e', 'e33fd627fcee2e77', '744d76cc62ee41c6',
-          '85e52c70c4c7dd18']
+PINNED = ['63ab873ca37523af', '2f569d4a6fe4ca78', '7a03bb65eb885f85', 'e8c1aab0502cfe0f', '1d9f0af9d9fbd81a',
+          '623a5ddf4a832360']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {

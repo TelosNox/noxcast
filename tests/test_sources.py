@@ -87,3 +87,13 @@ async def test_open_meteo_model_mean(hass: HomeAssistant, aioclient_mock) -> Non
     assert hours[0].code == 61 and hours[1].code == 95       # first model's code, a thunderstorm in any model
     assert hours[0].precip == 0.2 and hours[0].humidity == 75
 
+
+
+def test_one_more_weather_day_west_of_utc():
+    from datetime import timedelta
+
+    from custom_components.noxcast.coordinator import weather_days
+    assert weather_days(3, timedelta(hours=1)) == 7          # the week of the weather entity, complete east of UTC
+    assert weather_days(7, timedelta(0)) == 7
+    assert weather_days(7, timedelta(hours=-5)) == 8         # Open-Meteo's UTC days end before the last local day
+    assert weather_days(7, None) == 7

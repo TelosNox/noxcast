@@ -6,15 +6,17 @@ from datetime import timedelta
 import probatio as vol
 
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
+from . import issues
 from .panel import async_setup_panel
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.IMAGE, Platform.SENSOR, Platform.WEATHER]
@@ -80,6 +82,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> b
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    # repairs: recomputed after every update (also after learning) and once Home Assistant has started
+    @callback
+    def _update_issues(_hass: HomeAssistant | None = None) -> None:
+        issues.async_update_issues(hass, entry)
+
+    _update_issues()
+    entry.async_on_unload(coordinator.async_add_listener(_update_issues))
+    entry.async_on_unload(async_at_started(hass, _update_issues))
     # a change saved while this setup ran (e.g. a second subentry edited during the reload of the
     # first) found no listener; reload once more so it is not lost until the next restart
     if _config_state(entry) != built_from:
@@ -92,4 +102,6 @@ async def _async_reload(hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        issues.async_clear_issues(hass)
+    return unloaded

@@ -519,5 +519,23 @@
       "model_unknown": "Open-Meteo liefert für diese Modelle keine Daten.",
       "model_partial": "Open-Meteo liefert für mindestens eines dieser Modelle keine Daten."
     }
+  },
+  "issues": {
+    "no_arrays": {
+      "title": "Noxcast hat noch keine PV-Gruppe",
+      "description": "Noxcast sagt nichts voraus, solange es keine PV-Gruppe kennt. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → *PV-Gruppe hinzufügen*: die Module, die gemeinsam gemessen werden (meist ein MPPT-Eingang), mit Leistungssensor, Neigung, Azimut und Spitzenleistung. Noxcast lernt sie dann sofort aus der Historie."
+    },
+    "missing_sensors": {
+      "title": "Noxcast fehlen Sensoren",
+      "description": "Diese Entitäten sind in Noxcast eingetragen, existieren aber nicht: {sensors}.\n\nWahrscheinlich wurden sie umbenannt oder entfernt. Wähle in der PV-Gruppe, dem Verbraucher oder dem Akku, der sie nutzt, die neuen Entitäten aus (Einstellungen → Geräte & Dienste → Noxcast)."
+    },
+    "weather_unavailable": {
+      "title": "Noxcast bekommt keine Wettervorhersage",
+      "description": "Open-Meteo war seit über einem Tag nicht erreichbar, daher kann Noxcast die Prognose nicht aktualisieren. Prüfe die Internetverbindung von Home Assistant. Wenn du in den Optionen die Wettermodelle geändert hast, wird eines davon vielleicht nicht mehr angeboten. Die Prognose-Sensoren werden einige Stunden nach der letzten Aktualisierung unverfügbar."
+    },
+    "array_check": {
+      "title": "PV-Gruppe {name}: Konfiguration passt nicht zu den Messwerten",
+      "description": "Die Messwerte von **{name}** passen nicht zur Konfiguration: Spitzenleistung, Neigung, Azimut oder der Leistungssensor sind vielleicht falsch. Im Noxcast-Panel unter *Gelerntes* steht an der Gruppe, was zu prüfen ist. Bis es passt, sind gelernter Schatten und Wirkungsgrad fraglich."
+    }
   }
 }

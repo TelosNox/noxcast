@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Noxcast reports problems under Settings → System → Repairs: no PV array added yet, configured sensors that no longer
+  exist, no weather forecast for more than a day, and PV arrays whose measurements do not fit their configuration.
+  Each report disappears once the problem is solved. Before, these were visible only in the panel's diagnostics.
+- The panel tells how to add the first PV array instead of only saying that none is learned yet.
 - Noxcast has its own icon: a sun on its daily arc under a night sky, shown under Devices & services and in
   HACS.
 - Batteries of balcony systems can have the output limit of their inverter (e.g. 800 W, or 1600 W with several

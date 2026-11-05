@@ -519,5 +519,23 @@
       "model_unknown": "Open-Meteo returned no data for these models.",
       "model_partial": "Open-Meteo returned no data for at least one of these models."
     }
+  },
+  "issues": {
+    "no_arrays": {
+      "title": "Noxcast has no PV array yet",
+      "description": "Noxcast forecasts nothing until it knows at least one PV array. Add one under Settings → Devices & services → Noxcast → ⋮ → *Add PV array*: the modules measured together (usually one MPPT input) with their power sensor, tilt, azimuth and peak power. Noxcast then learns it from the history right away."
+    },
+    "missing_sensors": {
+      "title": "Noxcast is missing sensors",
+      "description": "These entities are configured in Noxcast but do not exist: {sensors}.\n\nThey were probably renamed or removed. Select the new entities in the PV array, consumer or battery that uses them (Settings → Devices & services → Noxcast)."
+    },
+    "weather_unavailable": {
+      "title": "Noxcast gets no weather forecast",
+      "description": "Open-Meteo could not be reached for more than a day, so Noxcast cannot update its forecast. Check the internet connection of Home Assistant. If you changed the weather models in the options, one of them may no longer be offered. The forecast sensors become unavailable a few hours after the last update."
+    },
+    "array_check": {
+      "title": "PV array {name}: configuration does not fit the measurements",
+      "description": "The measurements of **{name}** do not fit its configuration: peak power, tilt, azimuth or the power sensor may be wrong. In the Noxcast panel under *Learned*, the array shows what to check. Learned shade and efficiency stay questionable until it fits."
+    }
   }
 }

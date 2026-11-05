@@ -99,6 +99,13 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
     return configs
 
 
+def weather_days(forecast_days: int, utc_offset: timedelta | None) -> int:
+    """Days to ask Open-Meteo for. It counts days in UTC, so west of UTC the last local day would end
+    hours after its data: one more day there keeps it complete. East of UTC it is complete already."""
+    days = max(forecast_days, WEATHER_DAYS)
+    return days + 1 if utc_offset is not None and utc_offset < timedelta(0) else days
+
+
 class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     """Single writer for learned state; learning runs in the executor on immutable inputs."""
 
@@ -648,7 +655,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Open-Meteo forecast; when it fails, the last answer stands in for up to WEATHER_MAX_AGE."""
         try:
             mean, per_model = await async_open_meteo(self.hass, self.site.latitude, self.site.longitude,
-                                                     max(self.forecast_days, WEATHER_DAYS), self.weather_models)
+                                                     weather_days(self.forecast_days, dt_util.now().utcoffset()),
+                                                     self.weather_models)
         except Exception as err:  # noqa: BLE001
             age = dt_util.utcnow().timestamp() - self._weather[0] if self._weather else None
             if age is None or age > WEATHER_MAX_AGE.total_seconds():

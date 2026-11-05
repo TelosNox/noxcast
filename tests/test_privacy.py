@@ -81,3 +81,15 @@ def test_the_hook_recognises_what_a_command_does(command, expected):
 def test_the_hook_follows_cd_and_dash_c():
     assert guard.actions("cd sub && git switch x", ROOT) == [("switch", (ROOT / "sub").resolve())]
     assert guard.actions("git -C other commit -m x", ROOT) == [("commit", (ROOT / "other").resolve())]
+
+
+
+def test_a_pull_request_needs_a_review_section(tmp_path):
+    assert guard.has_review('gh pr create --title x --body "Text\n\n## Review\nTier: Other"', tmp_path)
+    assert not guard.has_review('gh pr create --title x --body "Text"', tmp_path)
+    (tmp_path / "body.md").write_text("Text\n\n## Review\nTier: Other\n", encoding="utf-8")
+    assert guard.has_review("gh pr create --title x --body-file body.md", tmp_path)
+    assert not guard.has_review("gh pr create --title x --body-file missing.md", tmp_path)
+    assert guard.has_review("gh pr create --title x --body-file=body.md", tmp_path)
+    assert not guard.has_review('gh pr create --body "## Reviewer notes"', tmp_path)
+    assert not guard.has_review("gh pr create --title '## Review' --body-file missing.md", tmp_path)

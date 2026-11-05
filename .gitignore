@@ -16,3 +16,4 @@ prototype/out/
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+!.claude/skills/

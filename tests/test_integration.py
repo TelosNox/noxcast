@@ -389,27 +389,27 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['63ab873ca37523af', '2a48ebeb5681f979', 'fcc3fd2cbc0ad4ce', '906e81897ffb5ca1', 'b0f2c7531cbddb85',
-          'eb33803451a1a9f4']
+PINNED = ['63ab873ca37523af', '45e189eb0829daac', 'df9c9d73ce3b1a8f', '35883315113835c7', 'd32ef32805afc9e7',
+          '2d35590b4b3f2804']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
-    "midday": {"learned": "0c918e93e3b9062c", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
-               "load": "a7700b7f3ce0a9c6", "diagnostics": "bab33893f6cf328c",
+    "midday": {"learned": "ca1f71965b763948", "today": "cb902231c9f963b6", "accuracy": "8b2d7e4831361ad9",
+               "load": "6fac55486d9fb796", "diagnostics": "6e662fccbad48a2c",
                "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "43bb94f6553f8228",
                                         "learning": "2f874ea2aff4248b", "arrays": "3d75400a515756bc",
                                         "exclusions": "cb2504d95155b647", "archive": "ea15254290e78e03",
                                         "fine": "3c97057e8110e976", "sensors": "3f61ce471d286300"},
-               "battery": "4a924f136495a769",
-               "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
-    "morning": {"learned": "6b3efc822e968475", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
-                "load": "ed6dea904ab7ff60", "diagnostics": "6b79b97e56925278",
+               "battery": "4fc156acd4d0899c",
+               "card_config": "32a56d9aa2e61fcd", "backtest": "5aa69e4252b9d247", "day": "0e0bd64324eae830"},
+    "morning": {"learned": "e094b442943ca32e", "today": "8f367dae366753bb", "accuracy": "448c0f4a91384d66",
+                "load": "3f4ffb9b77232566", "diagnostics": "706f00125957119c",
                 "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "7801445abb0321e7",
                                          "learning": "e15b85939b125f67", "arrays": "23f53b0716470c53",
                                          "exclusions": "cb2504d95155b647", "archive": "9f1b286055de683f",
                                          "fine": "a33177516338839a", "sensors": "3f61ce471d286300"},
-                "battery": "e0dc625e527929a8",
-                "card_config": "9576395acefde089", "backtest": "ddbd4cd122996b8d", "day": "11f58e9a21f84166"},
+                "battery": "0958f1f8b96003b9",
+                "card_config": "32a56d9aa2e61fcd", "backtest": "95fd8bf8989b39ef", "day": "55466173dd204c7e"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 

@@ -48,6 +48,8 @@ COUPLING_OPTIONS = ("dc", "ac")
 CONF_EFFICIENCY = "efficiency"            # round trip %, empty = default of the coupling
 CONF_MAX_CHARGE = "max_charge_w"
 CONF_MAX_DISCHARGE = "max_discharge_w"
+CONF_OUTPUT_LIMIT = "output_limit_w"    # W, cap of the inverter output for the battery and its PV array together
+CONF_BATTERY_ARRAY = "array"             # subentry id of the PV array behind the same inverter
 
 # array subentry
 SUBENTRY_ARRAY = "array"
@@ -101,7 +103,7 @@ MORNING_HOUR = 6                         # local hour at which today's forecast 
 ATTR_SCHEMA_VERSION = 1
 # schema of the websocket payloads ("v" in every answer, see views.py); the frontend checks it and asks
 # for a reload when a browser tab still runs the scripts of another version
-WS_SCHEMA_VERSION = 1
+WS_SCHEMA_VERSION = 2
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"
 SERVICE_RELEARN = "relearn"

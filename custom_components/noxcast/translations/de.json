@@ -287,6 +287,8 @@
             "efficiency": "Wirkungsgrad (Zyklus)",
             "max_charge_w": "Max. Ladeleistung",
             "max_discharge_w": "Max. Entladeleistung",
+            "output_limit_w": "Ausgangsgrenze des Wechselrichters",
+            "array": "PV-Gruppe am selben Wechselrichter",
             "battery_power": "Lade-/Entladeleistung",
             "battery_power_invert": "Leistung zählt Entladen positiv"
           },
@@ -297,6 +299,8 @@
             "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
             "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
             "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
+            "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden.",
+            "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
             "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
             "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
           }
@@ -317,6 +321,8 @@
             "efficiency": "Wirkungsgrad (Zyklus)",
             "max_charge_w": "Max. Ladeleistung",
             "max_discharge_w": "Max. Entladeleistung",
+            "output_limit_w": "Ausgangsgrenze des Wechselrichters",
+            "array": "PV-Gruppe am selben Wechselrichter",
             "battery_power": "Lade-/Entladeleistung",
             "battery_power_invert": "Leistung zählt Entladen positiv"
           },
@@ -327,6 +333,8 @@
             "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
             "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
             "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
+            "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden.",
+            "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
             "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
             "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
           }
@@ -335,7 +343,9 @@
       "error": {
         "limits_order": "Entladegrenze plus Reserve muss unter der Ladegrenze liegen.",
         "soc_unit": "Der Ladestand muss in % angegeben sein.",
-        "sensor_missing": "Der gewählte Sensor existiert nicht."
+        "sensor_missing": "Der gewählte Sensor existiert nicht.",
+        "output_needed": "Eine PV-Gruppe am selben Wechselrichter braucht die Ausgangsgrenze.",
+        "array_taken": "Hinter dieser PV-Gruppe hängt schon ein anderer Akku."
       },
       "abort": {
         "reconfigure_successful": "Akku gespeichert."

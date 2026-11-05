@@ -201,7 +201,9 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
     result.band = bd.forecast_band(band, site, result.weather, total, result.expected.get(TOTAL, {}),
                                    result.clear.get(TOTAL, {}), now, day_end)
     load_hours = result.load.hours if result.load is not None else None
-    result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end)
+    arrays = {sid: {**hours, **result.expected.get(sid, {})} for sid, hours in result.arrays.items()}
+    result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end,
+                                       arrays)
     if result.load is None or not runs:
         result.plan = {}
         return

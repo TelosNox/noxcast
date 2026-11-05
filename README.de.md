@@ -212,6 +212,7 @@ Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet un
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
 | Kopplung, Wirkungsgrad | DC (Standard 95 % im Zyklus) oder AC (90 %), oder eigener Wert |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert |
+| Ausgangsgrenze, PV-Gruppe | Optional, für Balkonkraftwerke: was der Wechselrichter einspeisen darf (z. B. 800 W), und die PV-Gruppe am selben Wechselrichter. PV und Akku liefern zusammen höchstens die Grenze; PV darüber kann nur den Akku laden. Ein Akku je Gruppe |
 
 Alle Akkus werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet).
 
@@ -416,6 +417,8 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 - Stunde für Stunde von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
   oberen Grenze und zur Ladeleistung, der Rest geht verloren (oder wird eingespeist); ein Defizit entlädt bis
   Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste nach Kopplung.
+- Mit Ausgangsgrenze liefert ein Akku höchstens die Grenze minus das, was seine PV-Gruppe in der Stunde liefert,
+  und PV der Gruppe über der Grenze geht in den Akku oder wird abgeregelt.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

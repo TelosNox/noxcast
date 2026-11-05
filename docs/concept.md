@@ -726,6 +726,11 @@ above load), not until midnight, so "battery empty at" is part of the result:
   points above `min_soc` where discharging stops in practice, e.g. a feed-in stop rule), capacity per battery.
 - Charge and discharge power limits: above them surplus is fed in or drawn from the grid although
   the battery still has room or charge.
+- Output limit of the inverter (balcony systems, e.g. 800 W or 1600 W with several phases), optionally
+  with the PV array behind the same inverter: PV and battery together deliver at most the limit. Per
+  hour the battery may deliver the limit minus the array's PV, and PV above the limit can only charge
+  the battery (or is curtailed), even while the house draws from the grid. All batteries stay one
+  storage; the caps of the systems add up per hour. One battery per array, so no PV counts twice.
 - Round-trip efficiency by coupling: DC-coupled batteries lose little (default about 95 %),
   AC-coupled ones more (about 90 %); configurable. Inverter losses are already inside the
   measured PV and house load and are not counted again.

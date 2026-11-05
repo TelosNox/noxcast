@@ -205,7 +205,8 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     tomorrow_end = day_end + 86400
     start = charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
     pv_arrays = pv_arrays or {}
-    hours = sorted(t for t in set(pv) | set(load) if t + H > now and t < start)
+    # caps for every hour ahead, also past the charge start: the consumer plan for tomorrow and the card use them
+    hours = sorted(t for t in set(pv) | set(load) if t + H > now)
     caps = limits(batteries, pv_arrays, hours)
     sim = simulate(storage, pv, load, now, start, caps)
     out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps}

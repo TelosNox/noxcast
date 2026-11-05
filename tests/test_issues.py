@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import PropertyMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
@@ -71,4 +71,13 @@ async def test_deleting_the_entry_clears_the_issues(hass: HomeAssistant) -> None
     issues.async_update_issues(hass, _entry())
     assert _ids(hass) == {issues.NO_ARRAYS}
     await noxcast.async_remove_entry(hass, SimpleNamespace())
+    assert _ids(hass) == set()
+
+
+async def test_disabling_the_entry_clears_the_issues_a_reload_keeps_them(hass: HomeAssistant) -> None:
+    issues.async_update_issues(hass, _entry())
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)):
+        assert await noxcast.async_unload_entry(hass, SimpleNamespace(disabled_by=None))
+        assert _ids(hass) == {issues.NO_ARRAYS}
+        assert await noxcast.async_unload_entry(hass, SimpleNamespace(disabled_by="user"))
     assert _ids(hass) == set()

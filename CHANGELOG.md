@@ -38,6 +38,8 @@ The last pre-release before the first stable version 0.1.0. The sections below l
   power and a shared inverter are in sections. Existing entries keep their values.
 
 ### Fixed
+- The weather entity's daily forecast shows the full week everywhere. West of UTC (e.g. in the Americas), and
+  east of it in the first hours after local midnight, the last day was missing.
 - Reconfiguring Noxcast (Settings → Devices & services → Noxcast → Reconfigure) reloads it once instead of twice and
   keeps working with Home Assistant 2026.12, which refuses the double reload. Home Assistant 2026.6 to 2026.11 log a
   warning about it.

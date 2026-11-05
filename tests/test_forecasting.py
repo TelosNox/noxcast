@@ -77,13 +77,17 @@ def test_consumers_are_planned_only_on_pv_that_reaches_the_house():
     t = DAY_START + 12 * 3600
     battery = bt.Battery(1000, 1.0, efficiency=1.0, output_w=800, array="a")
     sim = bt.simulate(battery, {t: 1000.0}, {t: 100.0}, t, t + 3600, caps := bt.limits([battery], {"a": {t: 1000.0}}, [t]))
-    house, lost = fc.usable({t: 1000.0}, {"sim": sim, "limits": caps})
+    house, lost = fc.usable({t: 1000.0}, {"sim": sim, "limits": caps}, t)
     assert house == {t: 800.0} and lost == {t: 700.0}          # full battery: the 200 are curtailed, not usable
     # the house draws more than the cap lets through: the battery takes the capped PV, nothing is usable
     battery = bt.Battery(1000, 0.5, efficiency=1.0, output_w=800, array="a")
     sim = bt.simulate(battery, {t: 1000.0}, {t: 1500.0}, t, t + 3600, caps)
-    assert fc.usable({t: 1000.0}, {"sim": sim, "limits": caps}) == ({t: 800.0}, {t: 0.0})
-    assert fc.usable({t: 1000.0}, None) == ({t: 1000.0}, {})
+    assert fc.usable({t: 1000.0}, {"sim": sim, "limits": caps}, t) == ({t: 800.0}, {t: 0.0})
+    assert fc.usable({t: 1000.0}, None, t) == ({t: 1000.0}, {})
+    # half of the running hour is left: half of the capped PV, which the battery with room takes completely
+    battery = bt.Battery(1000, 0.5, efficiency=1.0, output_w=800, array="a")
+    sim = bt.simulate(battery, {t: 1000.0}, {t: 100.0}, t + 1800, t + 3600, caps)
+    assert fc.usable({t: 1000.0}, {"sim": sim, "limits": caps}, t + 1800)[1] == {t: sim.hours[t]["lost"]}
 
 
 def test_load_forecast_counts_running_consumers():

@@ -89,11 +89,7 @@ async def test_open_meteo_model_mean(hass: HomeAssistant, aioclient_mock) -> Non
 
 
 
-def test_one_more_weather_day_west_of_utc():
-    from datetime import timedelta
-
+def test_one_more_weather_day_than_shown():
     from custom_components.noxcast.coordinator import weather_days
-    assert weather_days(3, timedelta(hours=1)) == 7          # the week of the weather entity, complete east of UTC
-    assert weather_days(7, timedelta(0)) == 7
-    assert weather_days(7, timedelta(hours=-5)) == 8         # Open-Meteo's UTC days end before the last local day
-    assert weather_days(7, None) == 7
+    # Open-Meteo's UTC days end before the last local day west of UTC, and east of it after local midnight
+    assert weather_days(3) == 8 and weather_days(7) == 8

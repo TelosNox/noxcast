@@ -99,11 +99,11 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
     return configs
 
 
-def weather_days(forecast_days: int, utc_offset: timedelta | None) -> int:
-    """Days to ask Open-Meteo for. It counts days in UTC, so west of UTC the last local day would end
-    hours after its data: one more day there keeps it complete. East of UTC it is complete already."""
-    days = max(forecast_days, WEATHER_DAYS)
-    return days + 1 if utc_offset is not None and utc_offset < timedelta(0) else days
+def weather_days(forecast_days: int) -> int:
+    """Days to ask Open-Meteo for. It counts days in UTC, so the last local day would end after its data west
+    of UTC, and east of UTC in the hours after local midnight: one more day keeps it complete. The PV forecast
+    stops at its horizon and the weather entity at a week, so the extra day shows nowhere."""
+    return max(forecast_days, WEATHER_DAYS) + 1
 
 
 class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
@@ -655,7 +655,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Open-Meteo forecast; when it fails, the last answer stands in for up to WEATHER_MAX_AGE."""
         try:
             mean, per_model = await async_open_meteo(self.hass, self.site.latitude, self.site.longitude,
-                                                     weather_days(self.forecast_days, dt_util.now().utcoffset()),
+                                                     weather_days(self.forecast_days),
                                                      self.weather_models)
         except Exception as err:  # noqa: BLE001
             age = dt_util.utcnow().timestamp() - self._weather[0] if self._weather else None

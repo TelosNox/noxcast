@@ -354,7 +354,9 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
                         "max_discharge_w": st.max_discharge_w},
             "hours": columns(((t, round(pv.get(t, 0.0), 1), round(load[t], 1), round(caps.capped.get(t, 0.0), 1),
-                               None if (w := caps.discharge.get(t)) is None else round(w, 1)) for t in hours),
+                               # as battery.day_simulation: without a cap of the hour, the storage's own discharge power
+                               None if (w := caps.discharge.get(t, st.max_discharge_w)) is None else round(w, 1))
+                              for t in hours),
                              "pv", "load", "capped", "discharge"),
             "day_end": b["day_end"], "charge_start": b["charge_start"],
             "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),

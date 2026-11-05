@@ -207,5 +207,18 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
     if result.load is None or not runs:
         result.plan = {}
         return
-    lost = {t: h["lost"] for t, h in result.battery["sim"].hours.items()} if result.battery else {}
-    result.plan = pl.day_plan(runs, dict(total), load_hours, lost, now, day_end)
+    house_pv, lost = usable(total, result.battery)
+    result.plan = pl.day_plan(runs, house_pv, load_hours, lost, now, day_end)
+
+
+def usable(total: Series, battery: dict | None) -> tuple[Series, Series]:
+    """PV that can reach the house, and per hour the surplus the battery would lose, for planning consumers.
+
+    PV above an inverter's output cap only charges the battery behind it; what it cannot take is curtailed.
+    Neither can run a consumer in the house.
+    """
+    if not battery:
+        return dict(total), {}
+    capped = battery["limits"].capped if battery.get("limits") else {}
+    house = {t: max(v - capped.get(t, 0.0), 0.0) for t, v in total.items()}
+    return house, {t: max(h["lost"] - h.get("curtailed", 0.0), 0.0) for t, h in battery["sim"].hours.items()}

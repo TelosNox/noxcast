@@ -72,6 +72,15 @@ def test_surplus_band_battery_and_plan():
     assert result.band is None and result.battery is None and result.plan == {}
 
 
+def test_consumers_are_planned_only_on_pv_that_reaches_the_house():
+    # 1000 Wh of PV, 300 above an inverter cap; the battery is full, so those 300 are curtailed
+    t = DAY_START + 12 * 3600
+    sim = bt.Simulation(hours={t: {"surplus": 900.0, "battery": 0.0, "lost": 900.0, "curtailed": 300.0, "grid": 0.0}})
+    house, lost = fc.usable({t: 1000.0}, {"sim": sim, "limits": bt.Limits({t: 300.0}, {})})
+    assert house == {t: 700.0} and lost == {t: 600.0}
+    assert fc.usable({t: 1000.0}, None) == ({t: 1000.0}, {})
+
+
 def test_load_forecast_counts_running_consumers():
     now = DAY_START + 9 * 3600
     profile = lf.Profile()

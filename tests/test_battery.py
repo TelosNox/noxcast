@@ -106,6 +106,7 @@ def test_capped_pv_that_does_not_fit_is_lost():
     sim = bt.simulate(b, flat(1000, [12]), flat(100, [12]), 12 * H, 13 * H, caps)
     # 700 Wh surplus of the house plus 200 Wh above the cap, the battery is full
     assert sim.lost_wh == 900 and sim.charged_wh == 0
+    assert sim.hours[12 * H]["curtailed"] == 200                # of it, the part that never reaches the house
 
 
 def test_caps_per_system_add_up_and_other_arrays_are_free():

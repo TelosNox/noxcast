@@ -12,5 +12,7 @@ venv/
 prototype/data/
 prototype/out/
 
-# Local tool settings and worktrees
-.claude/
+# Local tool settings and worktrees; the shared Claude Code settings and hooks are committed
+.claude/*
+!.claude/settings.json
+!.claude/hooks/

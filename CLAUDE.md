@@ -17,11 +17,18 @@ optional parts of the same integration. See `docs/concept.md`.
 ## Privacy
 - Never commit location data, sensor IDs, Home Assistant URLs, tokens or exported history.
   Personal values live in `*.local.json` (git-ignored); commit only `*.example.json`.
+- `.github/scripts/check_privacy.py` looks for tokens, Home Assistant addresses, private IP addresses and precise
+  coordinates (`tests/test_privacy.py` runs it on every tracked file), and the Claude Code hook also for the values
+  from the local files before every commit, push and pull request. A made-up value in a test is marked with
+  `privacy-ok` on its line.
 
 ## Git
 - Work reaches `main` only through a pull request. Finished work goes on a branch from `main` and gets a PR with
   squash auto-merge, without asking; this is the maintainer's standing approval for PR work.
 - Merging a PR does not publish anything for users. Only a release does (see below).
+- Several sessions share the main checkout. Code work runs in a worktree of its own
+  (`git worktree add .claude/worktrees/<topic> -b <prefix>/<topic> origin/main`); the main checkout never switches
+  branches. The hook in `.claude/hooks/guard.py` blocks a branch switch there and any commit on `main`.
 - Branch names: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `ci/`, `test/` or `release/`, then a short
   kebab-case topic.
 - The PR title becomes the squash commit on `main`: one sentence on what changes, from the user's point of view where

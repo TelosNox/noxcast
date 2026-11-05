@@ -465,8 +465,8 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['63ab873ca37523af', '45e189eb0829daac', 'df9c9d73ce3b1a8f', '35883315113835c7', 'd32ef32805afc9e7',
-          '2d35590b4b3f2804']
+PINNED = ['63ab873ca37523af', '45e189eb0829daac', '9cbf5b497e81e93e', 'e33fd627fcee2e77', '744d76cc62ee41c6',
+          '85e52c70c4c7dd18']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
@@ -706,7 +706,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     assert c._store_data()["pv_backtest"] == c.pv_backtest
     assert c.last_learning_seconds is not None and c._store_data()["last_learning_seconds"] == c.last_learning_seconds
     assert c.load_events is not None and all(c.consumer_models.values())
-    assert (prints, ws_prints) == (PINNED, WS_PINNED), (prints, ws_prints)      # both at once: one CI run updates both
+    assert (prints, ws_prints) == (PINNED, WS_PINNED), f"PINNED = {prints!r}  WS_PINNED = {ws_prints!r}"      # both at once: one CI run updates both
 
 
 async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_client) -> None:

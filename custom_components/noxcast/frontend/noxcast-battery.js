@@ -19,10 +19,10 @@ const BAT_TEXT = {
     help: "Alle Akkus zählen als ein Speicher. Überschuss ohne Platz wird eingespeist oder abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
     horizon: "(bis morgen 24 Uhr)", kwh: "kWh", h: "h", today: "heute", tomorrow: "morgen",
     pred: "Vorhersage und Wirklichkeit", predFull: "Voll: Abweichung", predEmpty: "Leer für die Nacht: Abweichung", predHit: "Voll ja/nein getroffen",
-    predHitEmpty: "Hält die Nacht ja/nein getroffen", notCharged: "nicht geladen", holds: "hält",
+    predHitEmpty: "Nacht getroffen", notCharged: "nicht geladen", holds: "hält",
     predicted: "Vorhersage", happened: "Ist", notReached: "nicht erreicht", open: "offen", maxSoc: "Höchster Ladestand",
     later: "später", earlier: "früher", min: "min",
-    predHelp: "Morgens, wenn die Tagesprognose festgeschrieben wird, merkt sich Noxcast, wann der Akku laut Simulation voll und wann er leer sein wird. Das Ist kommt aus den 5-Minuten-Statistiken der Ladestand-Sensoren (Home Assistant hält sie etwa zehn Tage). Hohle Punkte: Vorhersage, gefüllte: Ist. Leer heißt leer für die Nacht: ab wann der Akku an der unteren Grenze bleibt, bis er am nächsten Morgen wieder lädt; kurze Leerphasen davor zählen nicht. Tage, an denen der Akku gar nicht geladen hat, zählen nicht mit.",
+    predHelp: "Morgens, wenn die Tagesprognose festgeschrieben wird, merkt sich Noxcast, wann der Akku laut Simulation voll und wann er leer sein wird. Das Ist kommt aus den 5-Minuten-Statistiken der Ladestand-Sensoren (Home Assistant hält sie etwa zehn Tage). Hohle Punkte: Vorhersage, gefüllte: Ist. Leer heißt leer für die Nacht: ab wann der Akku an der unteren Grenze bleibt, bis er am nächsten Morgen wieder lädt; kurze Leerphasen davor zählen nicht. „Nacht getroffen“ zählt die Tage, an denen Vorhersage und Ist dasselbe sagen: leer, hält die Nacht oder gar nicht geladen.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -39,10 +39,10 @@ const BAT_TEXT = {
     help: "All batteries count as one storage. Surplus without room is fed in or curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
     horizon: "(until tomorrow midnight)", kwh: "kWh", h: "h", today: "today", tomorrow: "tomorrow",
     pred: "Prediction and reality", predFull: "Full: deviation", predEmpty: "Empty for the night: deviation", predHit: "Full yes/no right",
-    predHitEmpty: "Lasts the night yes/no right", notCharged: "not charged", holds: "lasts",
+    predHitEmpty: "Night right", notCharged: "not charged", holds: "lasts",
     predicted: "Prediction", happened: "Actual", notReached: "not reached", open: "open", maxSoc: "Highest state of charge",
     later: "later", earlier: "earlier", min: "min",
-    predHelp: "In the morning, when the day's forecast is fixed, Noxcast records when the simulation expects the battery to be full and when empty. The actual times come from the 5-minute statistics of the state of charge sensors (Home Assistant keeps them for about ten days). Hollow dots: prediction, filled: actual. Empty means empty for the night: from when the battery stays at its lower limit until it charges again the next morning; short empty phases before do not count. Days on which the battery did not charge at all are left out.",
+    predHelp: "In the morning, when the day's forecast is fixed, Noxcast records when the simulation expects the battery to be full and when empty. The actual times come from the 5-minute statistics of the state of charge sensors (Home Assistant keeps them for about ten days). Hollow dots: prediction, filled: actual. Empty means empty for the night: from when the battery stays at its lower limit until it charges again the next morning; short empty phases before do not count. \"Night right\" counts the days on which prediction and actual say the same: empty, lasts the night, or not charged at all.",
   },
 };
 
@@ -255,14 +255,14 @@ class NoxcastBattery extends HTMLElement {
     };
     const dFull = [], dEmpty = [];
     let hits = 0, judged = 0, nightHits = 0, nightJudged = 0;
-    // "empty" is comparable only for predictions of empty for the night, on days the battery charged at all
-    const night = (r) => r.predicted.night && r.actual.charged !== false;
+    // "empty" is comparable only for predictions of empty for the night; the night ends in one of three ways
+    const night = (x) => (x.charged === false ? "none" : x.empty_at ? "empty" : "lasts");
     for (const r of rows) {
       const p = r.predicted, a = r.actual;
       if (p.full_at && a.full_at) dFull.push((a.full_at - p.full_at) / 60);
-      if (night(r) && p.empty_at && a.empty_at) dEmpty.push((a.empty_at - p.empty_at) / 60);
+      if (p.night && p.empty_at && a.empty_at) dEmpty.push((a.empty_at - p.empty_at) / 60);
       if (a.day_complete) { judged++; if (!!p.full_at === !!a.full_at) hits++; }
-      if (night(r) && a.complete) { nightJudged++; if (!!p.empty_at === !!a.empty_at) nightHits++; }
+      if (p.night && a.complete) { nightJudged++; if (night(p) === night(a)) nightHits++; }
     }
     const mean = (v) => (v.length ? Math.round(v.reduce((x, y) => x + Math.abs(y), 0) / v.length) : null);
     const bias = (v) => (v.length ? Math.round(v.reduce((x, y) => x + y, 0) / v.length) : null);
@@ -290,9 +290,10 @@ class NoxcastBattery extends HTMLElement {
       svg += pair(p.full_at, a.full_at, r.date, "pfull", y - 4, a.day_complete);
       // an older prediction holds the first time empty after the morning, which is not comparable: no empty row
       if (p.night) {
-        if (a.charged === false) svg += `<text x="${x(7).toFixed(1)}" y="${y + 7}" class="ax">${t.notCharged}</text>`;
-        else if (p.empty_at || a.empty_at) svg += pair(p.empty_at, a.empty_at, r.date, "pempty", y + 4, a.complete, t.holds);
-        else if (a.complete) svg += `<text x="${x(24.5).toFixed(1)}" y="${y + 7}" class="ax">${t.holds}</text>`;
+        // "not charged" only once the window is over: until then the battery may still charge
+        const none = a.charged === false ? t.notCharged : t.holds;
+        if (p.empty_at || a.empty_at) svg += pair(p.empty_at, a.empty_at, r.date, "pempty", y + 4, a.complete, none);
+        else if (a.complete) svg += `<text x="${x(a.charged === false ? 7 : 24.5).toFixed(1)}" y="${y + 7}" class="ax">${none}</text>`;
       }
       const ms = `${p.max_soc === null ? "–" : Math.round(p.max_soc * 100)} / ${Math.round(a.max_soc * 100)} %`;
       svg += `<text x="${W - 4}" y="${y + 4}" text-anchor="end" class="ax"><title>${t.maxSoc}: ${t.predicted} / ${t.happened}</title>${ms}</text>`;

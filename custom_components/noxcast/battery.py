@@ -97,6 +97,7 @@ class Simulation:
     points: list[tuple[float, float]] = field(default_factory=list)   # (time, state of charge 0..1)
     full_at: float | None = None          # first time the upper limit is reached
     empty_at: float | None = None         # first time the lower limit is reached with load left over
+    empties: list[float] = field(default_factory=list)                  # every hour's time at the lower limit with load left
     lost_from: float | None = None        # first hour with surplus that does not fit
     lost_wh: float = 0.0                  # surplus that does not fit (fed in or curtailed)
     charged_wh: float = 0.0               # surplus taken by the battery (before losses)
@@ -164,8 +165,10 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
             limit = power * share if power is not None else math.inf
             give = min(need, avail, limit)
             e -= give / eta
-            if give < need and avail <= limit and sim.empty_at is None:
-                sim.empty_at = start + (give / need) * (min(t + H, end) - start)
+            if give < need and avail <= limit:
+                sim.empties.append(start + (give / need) * (min(t + H, end) - start))
+                if sim.empty_at is None:
+                    sim.empty_at = sim.empties[-1]
             sim.grid_wh += need - give
             hour.update(battery=round(hour["battery"] - give, 1), grid=round(need - give, 1))
         point = min(t + H, end)
@@ -256,25 +259,42 @@ LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts a
 PREDICTION_DAYS = 30            # predictions kept
 
 
-def night_empty(points: list[tuple[float, float]], low: float, interpolate: bool) -> tuple[bool, float | None]:
+def night_empty(points: list[tuple[float, float]], low: float,
+                empties: list[float] | None = None) -> tuple[bool, float | None]:
     """(charged, empty for the night) of a state of charge curve until the next charge start.
 
     Empty for the night is when the battery reaches its lower limit for the last time and stays there until
-    the end of the curve; empty phases before, on a day of changing weather, do not count. Charged is False
-    when the battery never got above the limit: then nothing ran empty. With interpolate, the time lies
-    between the last point above the limit and the next one (an hourly simulation); otherwise it is the
-    first sample at the limit (5-minute statistics).
+    the end of the curve; empty phases before, on a day of changing weather, do not count. A rise at the very
+    end that only goes up is the next morning's charge starting before the predicted charge start, not a
+    night the battery lasted: it is cut off. Charged is False when the battery never got above the limit
+    before: then nothing ran empty. empties: the simulation's times at the limit (see simulate), which place
+    the empty time within its hour; without them it is the first sample at the limit (5-minute statistics).
     """
-    above = [i for i, (_, s) in enumerate(points) if s > low + LIMIT_TOLERANCE]
+    near = low + LIMIT_TOLERANCE
+    at = [i for i, (_, s) in enumerate(points) if s <= near]
+    if at and at[-1] < len(points) - 1:
+        peak = -math.inf
+        for _, s in points[at[-1] + 1:]:
+            peak = max(peak, s)
+            if s < peak - LIMIT_TOLERANCE:
+                break
+        else:
+            points = points[:at[-1] + 1]                     # only rising after the last time at the limit
+    above = [i for i, (_, s) in enumerate(points) if s > near]
     if not above:
         return False, None
     i = above[-1]
     if i == len(points) - 1:
         return True, None                                    # still above the limit at the end: holds the night
     (t1, s1), (t2, s2) = points[i], points[i + 1]
-    if not interpolate or s1 <= s2:
+    if empties is None:
         return True, t2
-    return True, t1 + (s1 - (low + LIMIT_TOLERANCE)) / (s1 - s2) * (t2 - t1)
+    exact = next((e for e in empties if t1 <= e <= t2), None)
+    if exact is not None:
+        return True, exact
+    if s1 <= s2:
+        return True, t2
+    return True, t1 + (s1 - near) / (s1 - s2) * (t2 - t1)
 
 
 def prediction(sim: Simulation, storage: Battery, made: float, day_end: float, until: float) -> dict:
@@ -286,7 +306,7 @@ def prediction(sim: Simulation, storage: Battery, made: float, day_end: float, u
     morning, which is the morning itself when the battery is empty then.
     """
     today = [s for t, s in sim.points if t < day_end]
-    charged, empty = night_empty([(t, s) for t, s in sim.points if t <= until], storage.min_soc, True)
+    charged, empty = night_empty([(t, s) for t, s in sim.points if t <= until], storage.min_soc, sim.empties)
     return {"made": made, "until": until,
             "full_at": sim.full_at if sim.full_at is not None and sim.full_at < day_end else None,
             "empty_at": empty, "charged": charged, "night": True,
@@ -329,7 +349,7 @@ def outcome(soc: Series, pred: dict, day_end: float, step: float = 300.0) -> dic
     if not day:
         return None
     full = next((t for t, s in day if s >= pred["max"] - LIMIT_TOLERANCE), None)
-    charged, empty = night_empty(sorted((t, s) for t, s in soc.items() if made <= t < until), pred["min"], False)
+    charged, empty = night_empty(sorted((t, s) for t, s in soc.items() if made <= t < until), pred["min"])
     last = max(soc)
     return {"full_at": full, "empty_at": empty, "charged": charged, "max_soc": round(max(s for _, s in day), 4),
             "complete": last + step >= until, "day_complete": last + step >= day_end}

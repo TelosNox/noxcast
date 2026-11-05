@@ -8,6 +8,8 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Noxcast has its own icon: a sun on its daily arc under a night sky, shown under Devices & services and in
+  HACS.
 - Batteries of balcony systems can have the output limit of their inverter (e.g. 800 W, or 1600 W with several
   phases) and the PV array on the same inverter. The battery forecast then lets the battery deliver only what is
   left under the limit next to its PV, and PV above the limit charges the battery even while the house draws from

@@ -33,9 +33,9 @@ optional parts of the same integration. See `docs/concept.md`.
   kebab-case topic.
 - The PR title becomes the squash commit on `main`: one sentence on what changes, from the user's point of view where
   users notice it (e.g. "Battery forecast respects the output limit of balcony inverters").
-- Before `gh pr create`, run the `noxcast-review` skill (`.claude/skills/noxcast-review`): a fresh-context review
-  against compatibility, physics, explainability, texts, privacy and correctness, plus the backtest for PV model
-  changes. Its `## Review` section goes into the PR description; the hook refuses a PR without it.
+- A PR that changes the PV model (`PV_MODEL` in `.claude/hooks/guard.py`) has a `## Backtest` section in its
+  description: hold-out, in-sample and baseline per array from `main` and from the branch, or the reason why there
+  are none (`docs/concept.md`, PV backtest). The hook refuses such a PR without it.
 
 ## Code
 - Functional core, imperative shell (`docs/concept.md`, Architecture): computations are pure functions without Home
@@ -79,12 +79,16 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
    on `main`, and creates the release.
 
 ### How a release runs
-1. A release PR makes changes 1 and 2 and contains nothing else.
-2. A release is published only on the maintainer's explicit go, each time. A merged PR or a green CI is not one.
-3. If a release changes learning, stored data or a migration, a pre-release first runs on the maintainer's Home
+1. Before the release PR, the `noxcast-review` skill (`.claude/skills/noxcast-review`) reviews everything since the
+   last tag, split by area, in fresh subagents: compatibility, physics, explainability, texts, privacy, correctness.
+   Findings are fixed in PRs of their own. Its `## Review` section goes into the release PR; the hook refuses a PR
+   from a `release/...` branch without it.
+2. A release PR makes changes 1 and 2 of "What a release contains" and contains nothing else.
+3. A release is published only on the maintainer's explicit go, each time. A merged PR or a green CI is not one.
+4. If a release changes learning, stored data or a migration, a pre-release first runs on the maintainer's Home
    Assistant through at least one nightly learning run.
-4. Before publishing, check the release against the privacy rule above.
-5. A published tag or release is never moved, replaced or deleted. A mistake gets a new patch version.
+5. Before publishing, check the release against the privacy rule above.
+6. A published tag or release is never moved, replaced or deleted. A mistake gets a new patch version.
 
 ## Design principles
 - Every number must be explainable: physics first, learned parameters second, statistical

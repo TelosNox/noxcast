@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import load as lf
-from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS, TOTAL, Series
+from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS, MAX_FORECAST_DAYS, TOTAL, Series
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
 
@@ -69,14 +69,21 @@ FORECASTS = (
     ForecastDescription(key="energy_remaining_today", translation_key="energy_remaining_today", value=remaining_today,
                         series="expected", day_offset=0),
 )
+# the rest of the forecast horizon (forecast_days, up to 7 with today): created per configured day, off by default,
+# without P10 / P90, since the band is learned from day-ahead forecasts only
+LATER_DAYS = tuple(
+    ForecastDescription(key=f"energy_day_{n}", translation_key=f"energy_day_{n}", value=lambda h, n=n: day_energy(h, n),
+                        day_offset=n, entity_registry_enabled_default=False)
+    for n in range(3, MAX_FORECAST_DAYS))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     coordinator = entry.runtime_data
+    forecasts = FORECASTS + tuple(d for d in LATER_DAYS if d.day_offset < coordinator.forecast_days)
     total_device = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name="Noxcast", manufacturer="Noxcast",
                               entry_type=DeviceEntryType.SERVICE)
-    async_add_entities([ForecastSensor(coordinator, d, TOTAL, total_device) for d in FORECASTS]
+    async_add_entities([ForecastSensor(coordinator, d, TOTAL, total_device) for d in forecasts]
                        + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
     if coordinator.house_load:
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
@@ -91,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
                             entry_type=DeviceEntryType.SERVICE)
         async_add_entities(
-            [ForecastSensor(coordinator, d, sub_id, device) for d in FORECASTS]
+            [ForecastSensor(coordinator, d, sub_id, device) for d in forecasts]
             + [LearnedSensor(coordinator, sub_id, device, "efficiency", lambda la: round(la.efficiency * 100, 1)),
                LearnedSensor(coordinator, sub_id, device, "shading_coverage", lambda la: round(la.coverage * 100, 1)),
                LearnedSensor(coordinator, sub_id, device, "temp_coeff", lambda la: round(la.temp_coeff * 100, 3), "%/K"),

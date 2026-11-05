@@ -25,9 +25,9 @@ const DAY_TEXT = {
     },
     noSteps: "Für diese Stunde gibt es keine Herleitung (Sonne unter dem Horizont oder kein Wetter).",
     energy: "Der Tag in Energie", lossSide: "Vom klaren Himmel zum Ertrag", useSide: "Wohin die Energie ging",
-    pv: "PV", house: "Haus", battery: "Akku", grid: "Netz", houseGrid: "Haus / Netz", selfUse: "Eigenverbrauch", autarky: "Autarkie",
+    pv: "PV", house: "Haus", battery: "Akku", grid: "Netz", gridRest: "Netz (Rest)", houseGrid: "Haus / Netz", selfUse: "Eigenverbrauch", autarky: "Autarkie",
     devActual: "Abweichung Ist", devExpected: "Abweichung Erwartung",
-    energyHelp: "Links: die Schritte der Prognose über alle Stunden des Tages summiert, Verluste zweigen nach unten ab, Gewinne kommen von oben dazu; am Ende die Abweichung zum Ist. Rechts: geschätzt aus stündlichen Statistiken von PV, Hauslast und Akku-Ladestand (Änderung × Kapazität). Innerhalb einer Stunde versorgt PV zuerst das Haus, dann den Akku; was fehlt, kommt aus dem Akku und danach aus dem Netz.",
+    energyHelp: "Links: die Schritte der Prognose über alle Stunden des Tages summiert, Verluste zweigen nach unten ab, Gewinne kommen von oben dazu; am Ende die Abweichung zum Ist. Rechts: geschätzt aus stündlichen Statistiken von PV, Hauslast und Akku-Ladestand (Änderung × Kapazität). Innerhalb einer Stunde versorgt PV zuerst das Haus, dann den Akku; was fehlt, kommt aus dem Akku und danach aus dem Netz. Ohne Netzsensor ist die Einspeisung nicht gemessen, sondern der Rest der Bilanz: dazu zählt auch, was ein Akku ohne Ladestand oder ein Verbraucher ohne Messung aufnimmt („Netz (Rest)“).",
     history: "Wie sich die Prognose entwickelt hat", snapshots: "Stände", firstLast: "Erster / letzter Stand", jump: "Größte Änderung",
     final: "Ergebnis", at: "um", early: "früh", late: "spät",
     historyHelp: "Zu jeder vollen Stunde zwischen 5 und 21 Uhr hält Noxcast die Erwartung für den ganzen Tag fest (gemessene Stunden plus korrigierter Rest). Die Linien zeigen diese Stände von früh (violett) bis spät (gelb), gestrichelt die Prognose vom Vortag. Unten der Tageswert jedes Stands: je schneller er sich dem Ergebnis nähert, desto früher war der Tag absehbar.",
@@ -54,9 +54,9 @@ const DAY_TEXT = {
     },
     noSteps: "No derivation for this hour (sun below the horizon or no weather).",
     energy: "The day in energy", lossSide: "From clear sky to yield", useSide: "Where the energy went",
-    pv: "PV", house: "House", battery: "Battery", grid: "Grid", houseGrid: "House / grid", selfUse: "Self-consumption", autarky: "Self-sufficiency",
+    pv: "PV", house: "House", battery: "Battery", grid: "Grid", gridRest: "Grid (rest)", houseGrid: "House / grid", selfUse: "Self-consumption", autarky: "Self-sufficiency",
     devActual: "Deviation actual", devExpected: "Deviation expected",
-    energyHelp: "Left: the steps of the forecast summed over all hours of the day; losses branch off downwards, gains join from above; at the end the deviation to the actual value. Right: estimated from hourly statistics of PV, house load and battery state of charge (change × capacity). Within an hour PV supplies the house first, then the battery; what is missing comes from the battery and then from the grid.",
+    energyHelp: "Left: the steps of the forecast summed over all hours of the day; losses branch off downwards, gains join from above; at the end the deviation to the actual value. Right: estimated from hourly statistics of PV, house load and battery state of charge (change × capacity). Within an hour PV supplies the house first, then the battery; what is missing comes from the battery and then from the grid. Without a grid sensor the export is not measured but what is left of the balance: it includes what a battery without state of charge or an unmeasured consumer takes (“Grid (rest)”).",
     history: "How the forecast developed", snapshots: "Snapshots", firstLast: "First / last snapshot", jump: "Largest change",
     final: "Result", at: "at", early: "early", late: "late",
     historyHelp: "At every full hour between 5 am and 9 pm Noxcast records the expectation for the whole day (measured hours plus corrected rest). The lines show these snapshots from early (violet) to late (yellow), dashed the day-ahead forecast. Below, the day total of each snapshot: the faster it approaches the result, the earlier the day was foreseeable.",
@@ -433,6 +433,8 @@ class NoxcastDay extends HTMLElement {
     if (total < 50) return "";
     const order = ["pv", "battery", "grid"], sinks = ["house", "battery", "grid", "rest"];
     const names = { pv: t.pv, battery: t.battery, grid: t.grid, house: t.house, rest: t.houseGrid };
+    // without a grid sensor the export is the remainder of the balance, not a measurement
+    const sinkNames = { ...names, grid: f.grid ? t.grid : t.gridRest };
     const W = 400, X0 = 92, X1 = W - 92, nw = 12, gap = 12, Hn = 150, top = 8;
     const left = order.map((n) => [n, live.filter(([a]) => a === n).reduce((s, [, , v]) => s + v, 0)]).filter(([, v]) => v > 0);
     const right = sinks.map((n) => [n, live.filter(([, b]) => b === n).reduce((s, [, , v]) => s + v, 0)]).filter(([, v]) => v > 0);
@@ -446,11 +448,11 @@ class NoxcastDay extends HTMLElement {
       lOff.set(a, (lOff.get(a) || 0) + h); rOff.set(b, (rOff.get(b) || 0) + h);
       const xa = X0 + nw, xb = X1, mx = (xa + xb) / 2;
       defs += `<linearGradient id="sk-l${i}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${C[a]}"></stop><stop offset="1" stop-color="${C[b]}"></stop></linearGradient>`;
-      svg += `<path d="M${xa},${ya.toFixed(1)} C${mx},${ya.toFixed(1)} ${mx},${yb.toFixed(1)} ${xb},${yb.toFixed(1)} L${xb},${(yb + h).toFixed(1)} C${mx},${(yb + h).toFixed(1)} ${mx},${(ya + h).toFixed(1)} ${xa},${(ya + h).toFixed(1)} Z" fill="url(#sk-l${i})" class="skl-link"><title>${names[a]} → ${names[b]}: ${this._kwh(v)} ${t.kwh}</title></path>`;
+      svg += `<path d="M${xa},${ya.toFixed(1)} C${mx},${ya.toFixed(1)} ${mx},${yb.toFixed(1)} ${xb},${yb.toFixed(1)} L${xb},${(yb + h).toFixed(1)} C${mx},${(yb + h).toFixed(1)} ${mx},${(ya + h).toFixed(1)} ${xa},${(ya + h).toFixed(1)} Z" fill="url(#sk-l${i})" class="skl-link"><title>${names[a]} → ${sinkNames[b]}: ${this._kwh(v)} ${t.kwh}</title></path>`;
     });
-    const node = (map, x, anchor, tx) => [...map].map(([n, [y, v]]) => `<rect x="${x}" y="${y.toFixed(1)}" width="${nw}" height="${Math.max(1, v * k).toFixed(1)}" rx="3" fill="${C[n]}"></rect>
-      <text x="${tx}" y="${(y + v * k / 2 - 1).toFixed(1)}" text-anchor="${anchor}" class="skl">${names[n]}</text><text x="${tx}" y="${(y + v * k / 2 + 12).toFixed(1)}" text-anchor="${anchor}" class="skv">${this._kwh(v)} ${t.kwh}</text>`).join("");
-    svg += node(L, X0, "end", X0 - 8) + node(R, X1, "start", X1 + nw + 8);
+    const node = (map, x, anchor, tx, nm) => [...map].map(([n, [y, v]]) => `<rect x="${x}" y="${y.toFixed(1)}" width="${nw}" height="${Math.max(1, v * k).toFixed(1)}" rx="3" fill="${C[n]}"></rect>
+      <text x="${tx}" y="${(y + v * k / 2 - 1).toFixed(1)}" text-anchor="${anchor}" class="skl">${nm[n]}</text><text x="${tx}" y="${(y + v * k / 2 + 12).toFixed(1)}" text-anchor="${anchor}" class="skv">${this._kwh(v)} ${t.kwh}</text>`).join("");
+    svg += node(L, X0, "end", X0 - 8, names) + node(R, X1, "start", X1 + nw + 8, sinkNames);
     const pv = left.find(([n]) => n === "pv"), house = right.find(([n]) => n === "house");
     const figs = [];
     if (pv && pv[1] > 0 && f.load) figs.push([t.selfUse, Math.round((f.pv_home + f.pv_battery) / pv[1] * 100)]);

@@ -48,6 +48,10 @@ The last pre-release before the first stable version 0.1.0. The sections below l
   of the day as well.
 - Without a house load sensor, the day card no longer draws a battery forecast that only ever charges. It shows the
   measured state of charge and no estimate ahead, because the battery's discharge is not known.
+- Without a grid sensor, "Where the energy went" on the day card calls the export "Grid (rest)" instead of "Grid". It is
+  not measured but what is left of the balance, so it also contains what a battery without state of charge or an
+  unmeasured consumer took.
+- Diagnosis shows sensor states without needless decimals ("0 W" instead of "0.0 W").
 
 ## [0.1.0b4] - 2026-11-04
 

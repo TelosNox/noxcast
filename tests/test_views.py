@@ -305,3 +305,25 @@ def test_replay_of_an_archived_day():
     assert out["new"] == explain.hour_steps(SITE, GEO, model.LearnedArray(), weather)
     fc_ = model.forecast(SITE, GEO, la, weather)
     assert abs(out["roof"][A + 12 * H]["result"] - fc_[A + 12 * H]) < 0.05
+
+
+def test_learning_stage_steps():
+    la = lambda **kw: model.LearnedArray(**{"samples": 500, "first_sample": A - 200 * 86400, "learned_at": A,
+                                             "coverage": 0.8, **kw})
+    assert views.learning_stage(None) == "waiting"
+    assert views.learning_stage(la(samples=0)) == "waiting"
+    assert views.learning_stage(la(first_sample=A - 5 * 86400)) == "early"            # too few days
+    assert views.learning_stage(la(samples=50)) == "early"                            # too few hours
+    assert views.learning_stage(la(coverage=0.3)) == "growing"
+    assert views.learning_stage(la()) == "settled"
+
+
+def test_learning_status_payload():
+    arrays = {"r": SimpleNamespace(name="Roof"), "b": SimpleNamespace(name="Balcony")}
+    learned = {"r": model.LearnedArray(samples=500, first_sample=A - 30 * 86400, learned_at=A, coverage=0.4)}
+    nxt = datetime(2026, 7, 2, 1, 30, tzinfo=TZ)
+    out = views.learning_status(arrays, learned, datetime(2026, 7, 1, 1, 30, tzinfo=TZ), 95.0, None, False, nxt)
+    assert out["running"] is False and out["seconds"] == 95.0 and out["next"] == nxt.isoformat()
+    assert out["arrays"] == [
+        {"id": "r", "name": "Roof", "stage": "growing", "hours": 500, "days": 30, "coverage": 0.4},
+        {"id": "b", "name": "Balcony", "stage": "waiting", "hours": 0, "days": 0, "coverage": 0.0}]

@@ -37,6 +37,13 @@ const RAD = Math.PI / 180;
 const TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
+    status: { title: "Lernstand", running: "Lernlauf läuft – das dauert einige Minuten.", last: "Letzter Lernlauf {t}, Dauer {d}",
+      never: "Noch kein Lernlauf.", failed: "Letzter Lernlauf fehlgeschlagen: {e}", next: "Nächster automatisch {t}",
+      relearn: "Jetzt neu lernen", busy: "Läuft …",
+      stages: { waiting: "wartet auf den ersten Lernlauf",
+        early: "lernt noch: {h} Stunden aus {d} Tagen. Der Wirkungsgrad ist vorläufig, belastbar ab {D} Tagen und {H} Stunden.",
+        growing: "Wirkungsgrad belastbar ({h} Stunden aus {d} Tagen). Die Schattenkarte ist zu {c} gefüllt und wächst, während die Sonne ihren Weg durchs Jahr nimmt.",
+        settled: "eingelernt: {h} Stunden aus {d} Tagen, Schattenkarte zu {c} gefüllt." } },
     title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster", pano: "Panorama",
     panoKinds: { plane: "eigene Modulebene (Dach, Wand, Brüstung)", obstacle: "Hindernis, gemessen", facade: "Hindernis, aus der Horizontlinie",
       inferred: "Hindernis, nach unten ergänzt", partial: "Teilschatten", free: "frei", none: "noch keine Daten",
@@ -98,6 +105,13 @@ const TEXT = {
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
+    status: { title: "Learning", running: "Learning run in progress – this takes a few minutes.", last: "Last learning run {t}, took {d}",
+      never: "No learning run yet.", failed: "Last learning run failed: {e}", next: "Next one automatically {t}",
+      relearn: "Learn again now", busy: "Running …",
+      stages: { waiting: "waiting for the first learning run",
+        early: "still learning: {h} hours from {d} days. The efficiency is provisional, reliable from {D} days and {H} hours.",
+        growing: "efficiency reliable ({h} hours from {d} days). The shading map is {c} filled and grows as the sun's path moves through the year.",
+        settled: "learned: {h} hours from {d} days, shading map {c} filled." } },
     title: "Learned", overview: "Overview", map: "Map", grid: "Year grid", pano: "Panorama",
     panoKinds: { plane: "the module's own plane (roof, wall, railing)", obstacle: "obstacle, measured", facade: "obstacle, from the horizon line",
       inferred: "obstacle, continued downwards", partial: "partial shade", free: "free", none: "no data yet",
@@ -383,7 +397,7 @@ class NoxcastPanel extends HTMLElement {
     this._render();
     if (!this._data) this._load();
   }
-  disconnectedCallback() { this._stop(); clearTimeout(this._retry); }
+  disconnectedCallback() { this._stop(); clearTimeout(this._retry); clearTimeout(this._statusTimer); }
 
   // a reconnect (Home Assistant restarted, the app came back from the background) loads again
   _listenReady(conn) {
@@ -419,6 +433,52 @@ class NoxcastPanel extends HTMLElement {
       this._loading = false;
     }
     this._render();
+    this._loadStatus();
+  }
+
+  // learning runs and how far each array has come; polled while a run is going, then the learned data reloads
+  async _loadStatus() {
+    clearTimeout(this._statusTimer);
+    let st;
+    try { st = await ask(this._hass, { type: "noxcast/learning" }); } catch (err) { return; }
+    if (!st || st.v !== WS_SCHEMA) return;
+    const finished = this._status && this._status.running && !st.running;
+    this._status = st;
+    if (st.running && this.isConnected) this._statusTimer = setTimeout(() => this._loadStatus(), 10000);
+    if (finished) this._load(); else this._render();
+  }
+
+  async _relearn() {
+    try {
+      await ask(this._hass, { type: "noxcast/relearn" });
+      if (this._status) this._status.running = true;
+    } catch (err) {
+      this._statusError = String((err && err.message) || err);
+    }
+    this._render();
+    clearTimeout(this._statusTimer);
+    this._statusTimer = setTimeout(() => this._loadStatus(), 3000);
+  }
+
+  _renderStatus() {
+    const st = this._status;
+    if (!st) return "";
+    const t = this._t.status, lang = this._lang, tz = this._data.time_zone;
+    const when = (iso) => new Date(iso).toLocaleString(lang, { timeZone: tz, weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+    const took = (sec) => sec == null ? "–" : sec < 90 ? `${Math.round(sec)} s` : `${Math.round(sec / 60)} min`;
+    const pct = (v) => `${Math.round(v * 100)} %`;
+    const fill = (str, o) => str.replace(/\{(\w)\}/g, (_, k) => o[k]);
+    const lines = [st.running ? t.running : st.last ? fill(t.last, { t: when(st.last), d: took(st.seconds) }) : t.never];
+    if (st.error && !st.running) lines.push(`<span class="bad">${esc(fill(t.failed, { e: st.error }))}</span>`);
+    if (this._statusError) lines.push(`<span class="bad">${esc(this._statusError)}</span>`);
+    lines.push(fill(t.next, { t: when(st.next) }));
+    const th = st.thresholds || {};
+    const rows = st.arrays.map((a) => `<li><b>${esc(a.name)}</b>: ${esc(fill(t.stages[a.stage] || a.stage,
+      { h: a.hours.toLocaleString(lang), d: a.days, c: pct(a.coverage), D: th.days, H: th.hours }))}</li>`).join("");
+    const admin = this._hass.user && this._hass.user.is_admin;
+    const btn = admin ? `<button class="btn" data-action="relearn" ${st.running ? "disabled" : ""}>${st.running ? t.busy : t.relearn}</button>` : "";
+    return `<section class="card pad status"><h2>${t.title}</h2>
+      <p class="muted">${lines.join("<br>")}</p><ul class="stages">${rows}</ul>${btn}</section>`;
   }
 
   // ------------------------------------------------------------ derived data per array
@@ -602,7 +662,7 @@ class NoxcastPanel extends HTMLElement {
         <div class="minis">${maps}</div>
       </section>`;
     }).join("");
-    return `<div class="stack">${cards}${this._legend("shade")}</div>`;
+    return `<div class="stack">${this._renderStatus()}${cards}${this._legend("shade")}</div>`;
   }
 
   _renderArray(arr) {
@@ -1140,6 +1200,7 @@ class NoxcastPanel extends HTMLElement {
     else if (a === "close") s.sel = null;
     else if (a === "today") { s.doy = dayOfYear(new Date()); this._stop(); }
     else if (a === "play") { if (s.playing) this._stop(); else this._play(); }
+    else if (a === "relearn") { this._relearn(); return; }
     this._render();
   }
 
@@ -1207,6 +1268,12 @@ class NoxcastPanel extends HTMLElement {
       .minisvg { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--divider-color); }
       .mapsvg { width: 100%; height: auto; display: block; }
       .mapcard { padding: 12px; }
+      .status h2 { margin: 0 0 6px; }
+      .status p { margin: 0 0 8px; }
+      .stages { margin: 0; padding-left: 18px; }
+      .stages li { margin: 4px 0; }
+      .bad { color: var(--error-color, #db4437); }
+      .btn:disabled { opacity: .5; cursor: default; }
       .btn { margin-top: 12px; align-self: flex-start; min-height: 36px; padding: 0 14px; border-radius: 18px; cursor: pointer;
         border: 1px solid var(--primary-color); background: none; color: var(--primary-color); }
       .link { border: 0; background: none; color: var(--primary-color); cursor: pointer; padding: 0; font-size: 14px; }

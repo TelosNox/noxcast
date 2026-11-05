@@ -323,6 +323,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     # ------------------------------------------------------------------ learning
 
+    @property
+    def learning_running(self) -> bool:
+        return self._learn_lock.locked()
+
     async def async_learn(self, backtest: bool = False) -> bool:
         """Relearn all arrays from history. Keeps the previous state on failure.
 

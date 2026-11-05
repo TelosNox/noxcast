@@ -6,7 +6,7 @@ function of views.py build the payload and sends it with the schema version (see
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import views
-from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, WS_SCHEMA_VERSION
+from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +36,8 @@ WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
 WS_DAY = f"{DOMAIN}/day"
 WS_CARD = f"{DOMAIN}/card_config"
+WS_LEARNING = f"{DOMAIN}/learning"
+WS_RELEARN = f"{DOMAIN}/relearn"
 WS_REMOVE_EXCLUSION = f"{DOMAIN}/remove_exclusion"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
@@ -52,6 +54,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_battery)
     websocket_api.async_register_command(hass, ws_day)
     websocket_api.async_register_command(hass, ws_card_config)
+    websocket_api.async_register_command(hass, ws_learning)
+    websocket_api.async_register_command(hass, ws_relearn)
     websocket_api.async_register_command(hass, ws_remove_exclusion)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
@@ -312,3 +316,37 @@ async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection
                 _LOGGER.exception("Energy paths of %s failed", day)
         result["entries"].append(view)
     _send(connection, msg, result)
+
+
+def _next_learning(now: datetime) -> datetime:
+    """Next nightly learning run (LEARN_TIME, local)."""
+    local = dt_util.as_local(now)
+    run = local.replace(hour=LEARN_TIME[0], minute=LEARN_TIME[1], second=0, microsecond=0)
+    return run if run > local else dt_util.as_local(
+        datetime.combine(local.date() + timedelta(days=1), time(*LEARN_TIME), tzinfo=local.tzinfo))
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_LEARNING})
+@callback
+def ws_learning(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Learning runs and how far learning has come per array; None without a Noxcast entry."""
+    coordinators = _coordinators(hass)
+    if not coordinators:
+        _send(connection, msg, None)
+        return
+    c = coordinators[0]
+    _send(connection, msg, views.learning_status(c.arrays, c.learned, c.last_learning, c.last_learning_seconds,
+                                                 c.last_learning_error, c.learning_running, _next_learning(dt_util.utcnow())))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_RELEARN})
+@callback
+def ws_relearn(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Start learning in the background (it takes minutes); started is False while a run is already going."""
+    started = False
+    for c in _coordinators(hass):
+        if not c.learning_running:
+            c.config_entry.async_create_background_task(hass, c.async_learn(), "noxcast relearn from the panel")
+            started = True
+    _send(connection, msg, {"started": started})

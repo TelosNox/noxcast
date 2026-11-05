@@ -131,10 +131,13 @@ def _local_date(ts: float) -> str:
 @callback
 def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Learned state of all arrays of all Noxcast entries (the site is the Home Assistant location)."""
-    arrays = [a for c in _coordinators(hass) for a in views.learned_arrays(c.arrays, c.learned, c.last_learning)]
+    coordinators = _coordinators(hass)
+    arrays = [a for c in coordinators for a in views.learned_arrays(c.arrays, c.learned, c.last_learning)]
     _send(connection, msg, {
         "latitude": hass.config.latitude, "longitude": hass.config.longitude,
         "time_zone": hass.config.time_zone, "arrays": arrays,
+        # which optional panel sections have something to show: the house load and the batteries
+        "sections": {"load": any(c.house_load for c in coordinators), "battery": any(c.batteries for c in coordinators)},
     })
 
 

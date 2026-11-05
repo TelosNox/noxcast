@@ -819,3 +819,26 @@ async def test_later_days_follow_the_forecast_horizon(hass: HomeAssistant) -> No
             assert (entity_id is not None) is exists, (owner, n)
             if exists:
                 assert reg.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION
+
+
+async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The update listener reloads after a reconfigure; the flow must not reload as well (an error from HA 2026.12)."""
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+
+        reload = hass.config_entries.async_reload
+        with patch.object(hass.config_entries, "async_reload", wraps=reload) as reloads:
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id})
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 90})
+            await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
+    assert entry.data["soc_full_pct"] == 90
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+    assert reloads.call_count == 1
+    assert "update listener" not in caplog.text

@@ -7,11 +7,7 @@ breaking changes.
 
 ## Unreleased
 
-The first stable release. The sections below list what changed since the last pre-release. If you install Noxcast
-for the first time, everything in the pre-release sections further down is part of it as well: a PV forecast per
-array and in total for up to 7 days with a P10–P90 band, nightly learning of efficiency, shade, reflection and
-temperature loss from your own history, a day-ahead accuracy archive, and optionally a house load forecast, a battery
-simulation and the best time for flexible consumers, shown in a sidebar panel, a day card and a weather card.
+The last pre-release before the first stable version 0.1.0. The sections below list what changed since 0.1.0b4.
 
 ### Added
 - Forecast sensors for 3 to 6 days ahead, per array and in total, as far as the configured forecast days reach. They

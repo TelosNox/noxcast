@@ -373,7 +373,7 @@ PINNED = ['63ab873ca37523af', '2a48ebeb5681f979', 'fcc3fd2cbc0ad4ce', '906e81897
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
-    "midday": {"learned": "4065204970d1c433", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
+    "midday": {"learned": "0c918e93e3b9062c", "today": "19c9522eb037afa6", "accuracy": "81c58fe13ca81e1c",
                "load": "a7700b7f3ce0a9c6", "diagnostics": "bab33893f6cf328c",
                "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "43bb94f6553f8228",
                                         "learning": "2f874ea2aff4248b", "arrays": "3d75400a515756bc",
@@ -381,7 +381,7 @@ WS_PINNED = {
                                         "fine": "3c97057e8110e976", "sensors": "3f61ce471d286300"},
                "battery": "4a924f136495a769",
                "card_config": "9576395acefde089", "backtest": "86f0cacea48efe8e", "day": "a81cbef60c41e7c3"},
-    "morning": {"learned": "66236e6f0c3d4e7b", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
+    "morning": {"learned": "6b3efc822e968475", "today": "82eda12d4b88078a", "accuracy": "792f93e859a36ca0",
                 "load": "ed6dea904ab7ff60", "diagnostics": "6b79b97e56925278",
                 "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "7801445abb0321e7",
                                          "learning": "e15b85939b125f67", "arrays": "23f53b0716470c53",

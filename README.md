@@ -305,6 +305,7 @@ from Noxcast's own weather – the same that drives the forecast.
 | Expected today | ✓ | ✓ | Measured hours + corrected rest |
 | Forecast remaining today | ✓ | ✓ | |
 | Forecast tomorrow, day after | ✓ | ✓ | |
+| Forecast in 3 … 6 days | ✓ | ✓ | Only within *Forecast days*; disabled until you enable them; no P10–P90 |
 | System efficiency, shading map coverage, temperature coefficient, satellite agreement | | ✓ | Learned values |
 | Shade today (sensor and image), shading map (image) | | ✓ | |
 | Last learning run, forecast error (30 days) | ✓ | | Error per array and per weather model as attributes |

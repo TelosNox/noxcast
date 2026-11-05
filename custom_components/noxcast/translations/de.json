@@ -477,6 +477,18 @@
       "energy_day_after": {
         "name": "Prognose übermorgen"
       },
+      "energy_day_3": {
+        "name": "Prognose in 3 Tagen"
+      },
+      "energy_day_4": {
+        "name": "Prognose in 4 Tagen"
+      },
+      "energy_day_5": {
+        "name": "Prognose in 5 Tagen"
+      },
+      "energy_day_6": {
+        "name": "Prognose in 6 Tagen"
+      },
       "energy_remaining_today": {
         "name": "Prognose Rest heute"
       },

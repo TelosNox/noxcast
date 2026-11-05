@@ -306,6 +306,7 @@ Geräte **Noxcast (gesamt)** und **Noxcast *PV-Gruppe***:
 | Erwartung heute | ✓ | ✓ | Gemessene Stunden + korrigierter Rest |
 | Prognose Rest heute | ✓ | ✓ | |
 | Prognose morgen, übermorgen | ✓ | ✓ | |
+| Prognose in 3 … 6 Tagen | ✓ | ✓ | Nur innerhalb der *Prognosetage*; deaktiviert, bis du sie aktivierst; ohne P10–P90 |
 | Systemwirkungsgrad, Abdeckung Schattenkarte, Temperaturkoeffizient, Übereinstimmung Satellit | | ✓ | Gelernte Werte |
 | Schatten heute (Sensor und Bild), Schattenkarte (Bild) | | ✓ | |
 | Letzter Lernlauf, Prognosefehler (30 Tage) | ✓ | | Fehler je PV-Gruppe und je Wettermodell als Attribute |

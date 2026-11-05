@@ -796,3 +796,26 @@ async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:
     assert arr.geometry == model.ArrayGeometry(30.0, 180.0, 1000.0)
     assert coordinator._geometry_key(sub_id) == [ARRAY["power_sensors"], 30.0, 180.0, 1000.0, None, None,
                                                  True, False, model.HEATING_K]
+
+
+async def test_later_days_follow_the_forecast_horizon(hass: HomeAssistant) -> None:
+    """Days 3 to 6 get sensors only within forecast_days, disabled until the user turns them on."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
+                            data={"soc_full_pct": 95, "forecast_days": 5},
+                            subentries_data=[config_entries.ConfigSubentryData(
+                                data=ARRAY, subentry_type="array", title="Roof", unique_id=None)])
+    entry.add_to_hass(hass)
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    sub_id = next(iter(entry.runtime_data.arrays))
+    reg = er.async_get(hass)
+    for owner in (entry.entry_id, sub_id):
+        for n, exists in ((3, True), (4, True), (5, False), (6, False)):
+            entity_id = reg.async_get_entity_id("sensor", DOMAIN, f"{owner}_energy_day_{n}")
+            assert (entity_id is not None) is exists, (owner, n)
+            if exists:
+                assert reg.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION

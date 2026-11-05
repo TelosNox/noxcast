@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Forecast sensors for 3 to 6 days ahead, per array and in total, as far as the configured forecast days reach. They
+  are disabled at first: enable the ones you need under the Noxcast device. They have no P10–P90, since that band is
+  learned from day-ahead forecasts.
 - "Learned" starts with a learning status: when the last run was and how long it took, when the next one runs, and per
   PV array how far learning has come (efficiency still provisional, shading map still filling over the year, or
   learned), with the numbers behind it. Administrators can start a new learning run there and see when it is done.

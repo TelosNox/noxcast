@@ -211,6 +211,7 @@ A consumer with its own sensor is taken out of the house load and forecast on it
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | Coupling, efficiency | DC (default round trip 95 %) or AC (90 %), or own value |
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies |
+| Output limit, PV array | Optional, for balcony systems: what the inverter may feed in (e.g. 800 W) and the PV array on the same inverter. PV and battery together deliver at most the limit; PV above it can only charge the battery. One battery per array |
 
 All batteries are simulated as one storage (capacities add up, limits weighted by capacity).
 
@@ -417,6 +418,8 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 - Hour by hour from now until tomorrow's charge start (first hour with PV above load): surplus
   charges up to the upper limit and the charge power, the rest is lost (or fed in); a deficit
   discharges down to min SOC + reserve, the rest comes from the grid. Losses by coupling.
+- With an output limit, a battery delivers at most the limit minus what its PV array delivers in that
+  hour, and PV of the array above the limit goes into the battery or is curtailed.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

@@ -318,11 +318,14 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
         pv.update(data.expected.get(TOTAL, {}))
         load = data.load.hours
         hours = sorted(t for t in load if t + 3600 > now)
+        caps = b.get("limits") or bt.Limits()       # output caps: PV that only the battery can take, discharge limit per hour
         out.update({
             "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
                         "max_discharge_w": st.max_discharge_w},
-            "hours": columns(((t, round(pv.get(t, 0.0), 1), round(load[t], 1)) for t in hours), "pv", "load"),
+            "hours": columns(((t, round(pv.get(t, 0.0), 1), round(load[t], 1), round(caps.capped.get(t, 0.0), 1),
+                               None if (w := caps.discharge.get(t)) is None else round(w, 1)) for t in hours),
+                             "pv", "load", "capped", "discharge"),
             "day_end": b["day_end"], "charge_start": b["charge_start"],
             "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
                     "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh)},

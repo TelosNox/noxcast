@@ -178,7 +178,11 @@ def test_battery_entry_and_reviews():
     out = views.battery_entry(batteries, {}, d, A + 11.5 * H)
     assert list(out) == ["batteries", "storage", "hours", "day_end", "charge_start", "sim"]
     assert out["hours"] == {"t": [A + 11 * H, A + 12 * H, A + 13 * H], "pv": [320.0, 310.0, 400.0],
-                            "load": [100.0, 200.1, 300.0]}
+                            "load": [100.0, 200.1, 300.0], "capped": [0.0, 0.0, 0.0], "discharge": [None, None, None]}
+    # with an inverter output limit: PV above it per hour and what the batteries may deliver
+    d.battery["limits"] = bt.Limits({A + 12 * H: 50.04}, {A + 11 * H: 800.0, A + 12 * H: 0.0})
+    capped = views.battery_entry(batteries, {}, d, A + 11.5 * H)["hours"]
+    assert capped["capped"] == [0.0, 50.0, 0.0] and capped["discharge"] == [800.0, 0.0, None]
     assert out["sim"] == {"full": A + 14 * H, "empty": None, "lost_wh": 11, "grid_wh": 1, "charged_wh": 100}
     assert out["storage"]["max_charge_w"] == 2000 and out["storage"]["max_discharge_w"] is None
     stats = {"sensor.soc": [{"start": A, "min": 20.0, "max": 60.0}, {"start": datetime.fromtimestamp(A + H, timezone.utc),

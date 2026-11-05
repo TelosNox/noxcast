@@ -8,6 +8,11 @@ Energy flow per hour (Wh, for the part of the hour from now on):
   what does not fit is "lost" (fed in or curtailed, depending on the system). A deficit
   discharges down to the lower limit plus reserve and the discharge power; the rest comes from
   the grid. Losses: the round-trip efficiency is split evenly into charging and discharging.
+
+Output cap (balcony systems): a battery can sit with one PV array behind an inverter whose output is
+capped (800 W, 1600 W). PV and battery together deliver at most that much. PV above the cap cannot
+reach the house: it can only charge the battery, the rest is curtailed. And the battery delivers at
+most the cap minus what its PV delivers in that hour. Without an array the cap limits the battery alone.
 """
 from __future__ import annotations
 
@@ -31,6 +36,42 @@ class Battery:
     efficiency: float = 0.95          # round trip
     max_charge_w: float | None = None
     max_discharge_w: float | None = None
+    output_w: float | None = None     # cap of the inverter's output, for PV of `array` and battery together
+    array: str | None = None          # the PV array (subentry id) behind the same inverter
+
+
+@dataclass(frozen=True)
+class Limits:
+    """Per hour start (Wh of the full hour): PV that cannot reach the house, and what the batteries may deliver."""
+    capped: dict[float, float] = field(default_factory=dict)       # PV above the output caps: battery or curtailed
+    discharge: dict[float, float] = field(default_factory=dict)    # discharge limit of all batteries; empty = none
+
+
+def limits(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[float]) -> Limits:
+    """The output caps per hour, for the batteries with a known state of charge (those combine uses).
+
+    pv_arrays: Wh per hour start of each array. A battery without output cap keeps its discharge power
+    (or none); with a cap its PV first goes to the house up to the cap, the battery gets what is left.
+    """
+    known = [b for b in batteries if b.capacity_wh > 0 and b.soc is not None]
+    if not any(b.output_w for b in known):
+        return Limits()
+    capped: dict[float, float] = {}
+    discharge: dict[float, float] = {}
+    for t in hours:
+        over, give = 0.0, 0.0
+        for b in known:
+            own = b.max_discharge_w if b.max_discharge_w else math.inf
+            if b.output_w:
+                pv = pv_arrays.get(b.array, {}).get(t, 0.0) if b.array else 0.0
+                over += max(pv - b.output_w, 0.0)
+                own = min(own, max(b.output_w - pv, 0.0))
+            give += own
+        if over > 0:
+            capped[t] = over
+        if give < math.inf:
+            discharge[t] = give
+    return Limits(capped, discharge)
 
 
 def combine(batteries: list[Battery]) -> Battery | None:
@@ -77,8 +118,13 @@ class Simulation:
         return self.points[-1][1]
 
 
-def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float) -> Simulation:
-    """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour)."""
+def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
+             caps: Limits | None = None) -> Simulation:
+    """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour).
+
+    caps: the output caps (see limits); pv is all PV, the capped part goes to the battery only.
+    """
+    caps = caps or Limits()
     sim = Simulation()
     cap = battery.capacity_wh
     e = (battery.soc if battery.soc is not None else battery.min_soc) * cap
@@ -93,32 +139,35 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float)
         if share <= 0:
             t += H
             continue
-        net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share
-        hour = {"surplus": round(max(net, 0.0), 1), "battery": 0.0, "lost": 0.0, "grid": 0.0}
-        if net > 0:
-            sim.surplus_wh += net
+        capped = caps.capped.get(t, 0.0) * share                   # PV above an output cap: battery only
+        net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share - capped
+        surplus = max(net, 0.0) + capped
+        hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "grid": 0.0}
+        if surplus > 0:
+            sim.surplus_wh += surplus
             room = max(e_max - e, 0.0) / eta                       # surplus the battery can still take
             limit = battery.max_charge_w * share if battery.max_charge_w else math.inf
-            take = min(net, room, limit)
+            take = min(surplus, room, limit)
             e += take * eta
-            lost = net - take
-            if take < net and room <= limit and sim.full_at is None:
-                sim.full_at = start + (take / net) * (min(t + H, end) - start)
+            lost = surplus - take
+            if take < surplus and room <= limit and sim.full_at is None:
+                sim.full_at = start + (take / surplus) * (min(t + H, end) - start)
             if lost > 0.5 and sim.lost_from is None:
                 sim.lost_from = start
             sim.charged_wh += take
             sim.lost_wh += lost
             hour.update(battery=round(take, 1), lost=round(lost, 1))
-        elif net < 0:
+        if net < 0:                                                # capped PV may charge while the house draws
             need = -net
             avail = max(e - e_min, 0.0) * eta                      # load the battery can still cover
-            limit = battery.max_discharge_w * share if battery.max_discharge_w else math.inf
+            power = caps.discharge.get(t, battery.max_discharge_w) if caps.discharge else battery.max_discharge_w
+            limit = power * share if power is not None else math.inf
             give = min(need, avail, limit)
             e -= give / eta
             if give < need and avail <= limit and sim.empty_at is None:
                 sim.empty_at = start + (give / need) * (min(t + H, end) - start)
             sim.grid_wh += need - give
-            hour.update(battery=round(-give, 1), grid=round(need - give, 1))
+            hour.update(battery=round(hour["battery"] - give, 1), grid=round(need - give, 1))
         point = min(t + H, end)
         sim.points.append((point, e / cap))
         if e / cap > sim.max_soc + 1e-9:
@@ -140,11 +189,13 @@ def charge_start(pv: Series, load: Series, start: float, end: float) -> float | 
 
 
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
-                   band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float) -> dict | None:
+                   band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
+                   pv_arrays: dict[str, Series] | None = None) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
     the time full with PV at P10 and at P90. None without batteries or load forecast.
+    pv_arrays: PV per array, for batteries with an output cap behind an array.
     """
     if not batteries or load is None:
         return None
@@ -153,11 +204,20 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
         return None
     tomorrow_end = day_end + 86400
     start = charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
-    sim = simulate(storage, pv, load, now, start)
-    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end}
+    pv_arrays = pv_arrays or {}
+    hours = sorted(t for t in set(pv) | set(load) if t + H > now and t < start)
+    caps = limits(batteries, pv_arrays, hours)
+    sim = simulate(storage, pv, load, now, start, caps)
+    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps}
     if band_hours:
         # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
-        sims = [simulate(storage, {**pv, **{t: lh[i] for t, lh in band_hours.items()}}, load, now, start) for i in (0, 1)]
+        sims = []
+        for i in (0, 1):
+            variant = {**pv, **{t: lh[i] for t, lh in band_hours.items()}}
+            # each array scaled like the total, so the caps see the weak and the strong case too
+            scale = {t: variant[t] / pv[t] for t in band_hours if pv.get(t)}
+            arrays = {a: {t: v * scale.get(t, 1.0) for t, v in s.items()} for a, s in pv_arrays.items()}
+            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours)))
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
                                       for s in sims],
                        "full_at": [s.full_at for s in sims]}

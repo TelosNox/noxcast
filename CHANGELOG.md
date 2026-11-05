@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Batteries of balcony systems can have the output limit of their inverter (e.g. 800 W, or 1600 W with several
+  phases) and the PV array on the same inverter. The battery forecast then lets the battery deliver only what is
+  left under the limit next to its PV, and PV above the limit charges the battery even while the house draws from
+  the grid. Before, the forecast emptied such a battery faster than it can.
 - The README is available in German as well: [README.de.md](README.de.md).
 
 ### Fixed

@@ -331,6 +331,27 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
     data = hass.config_entries.async_get_entry(entry.entry_id).subentries[subentry.subentry_id].data
     assert "orientation_2" not in data and "orientation_4" not in data          # removed again: one plane
 
+    # a battery behind the array's inverter: the array needs the output limit, and takes one battery only
+    hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
+    battery = {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2, "max_soc": 100, "min_soc": 10, "reserve": 0,
+               "coupling": "dc", "array": subentry.subentry_id}
+
+    async def add_battery(data: dict):
+        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "battery"),
+                                                              context={"source": config_entries.SOURCE_USER})
+        assert [o["value"] for o in next(f for f in probatio.to_field_list(sub["data_schema"], custom_serializer=cv.custom_serializer)
+                                         if f["name"] == "array")["selector"]["select"]["options"]] == [subentry.subentry_id]
+        return await hass.config_entries.subentries.async_configure(sub["flow_id"], data)
+
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        assert (await add_battery(battery))["errors"] == {"output_limit_w": "output_needed"}
+        assert (await add_battery({**battery, "output_limit_w": 1600}))["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+        assert (await add_battery({**battery, "output_limit_w": 800}))["errors"] == {"array": "array_taken"}
+        await hass.async_block_till_done()
+    unit = hass.config_entries.async_get_entry(entry.entry_id).runtime_data._battery_units()[0]
+    assert unit.output_w == 1600 and unit.array == subentry.subentry_id
+
 
 def _canon(o):
     """Everything the coordinator computed as plain JSON, floats exact (repr), for a fingerprint."""

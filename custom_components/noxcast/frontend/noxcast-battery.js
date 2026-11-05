@@ -52,18 +52,21 @@ function simulate(st, hours, now, end) {
   let e = (st.soc ?? st.min) * cap;
   const eMax = st.max * cap, eMin = st.min * cap;
   const r = { points: [[now, e / cap]], full: null, empty: null, lost: 0, grid: 0 };
-  for (const [t, pv, load] of hours) {
+  // capped: PV above an inverter's output limit, only the battery can take it; discharge: limit of the hour (null = none)
+  for (const [t, pv, load, capped, discharge] of hours) {
     if (t + H <= now || t >= end) continue;
     const start = Math.max(t, now), stop = Math.min(t + H, end), share = (stop - start) / H;
-    const net = (pv - load) * share;
-    if (net > 0) {
+    const over = (capped || 0) * share, net = (pv - load) * share - over, surplus = Math.max(net, 0) + over;
+    if (surplus > 0) {
       const room = Math.max(eMax - e, 0) / eta, limit = st.max_charge_w ? st.max_charge_w * share : Infinity;
-      const take = Math.min(net, room, limit);
+      const take = Math.min(surplus, room, limit);
       e += take * eta;
-      if (take < net && room <= limit && r.full === null) r.full = start + (take / net) * (stop - start);
-      r.lost += net - take;
-    } else if (net < 0) {
-      const need = -net, avail = Math.max(e - eMin, 0) * eta, limit = st.max_discharge_w ? st.max_discharge_w * share : Infinity;
+      if (take < surplus && room <= limit && r.full === null) r.full = start + (take / surplus) * (stop - start);
+      r.lost += surplus - take;
+    }
+    if (net < 0) {
+      const power = discharge === undefined ? st.max_discharge_w : discharge;
+      const need = -net, avail = Math.max(e - eMin, 0) * eta, limit = power !== null && power !== undefined ? power * share : Infinity;
       const give = Math.min(need, avail, limit);
       e -= give / eta;
       if (give < need && avail <= limit && r.empty === null) r.empty = start + (give / need) * (stop - start);
@@ -137,9 +140,9 @@ class NoxcastBattery extends HTMLElement {
 
   _variant(e) {
     const v = this._v, a = v.start, b = v.start + v.minutes * 60;
-    const hours = tsRows(e.hours, "pv", "load").map(([ts, pv, load]) => {
+    const hours = tsRows(e.hours, "pv", "load", "capped", "discharge").map(([ts, pv, load, capped, discharge]) => {
       const overlap = Math.max(0, Math.min(ts + H, b) - Math.max(ts, a)) / H;
-      return [ts, pv, load + v.power * overlap];
+      return [ts, pv, load + v.power * overlap, capped, discharge];
     });
     return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, hours, this._data.now, this._end(e)), hours };
   }
@@ -149,7 +152,7 @@ class NoxcastBattery extends HTMLElement {
 
   _results(e) {
     const t = this._t, now = this._data.now;
-    const base = simulate(e.storage, tsRows(e.hours, "pv", "load"), now, this._end(e)), { sim, hours } = this._variant(e);
+    const base = simulate(e.storage, tsRows(e.hours, "pv", "load", "capped", "discharge"), now, this._end(e)), { sim, hours } = this._variant(e);
     const v = this._v, energy = v.power * v.minutes / 60;
     const extra = sim.grid - base.grid;
     const row = (label, a, b, fmt, goodIfLower) => {

@@ -390,6 +390,18 @@
       "energy_day_after": {
         "name": "Forecast day after tomorrow"
       },
+      "energy_day_3": {
+        "name": "Forecast in 3 days"
+      },
+      "energy_day_4": {
+        "name": "Forecast in 4 days"
+      },
+      "energy_day_5": {
+        "name": "Forecast in 5 days"
+      },
+      "energy_day_6": {
+        "name": "Forecast in 6 days"
+      },
       "energy_remaining_today": {
         "name": "Forecast remaining today"
       },

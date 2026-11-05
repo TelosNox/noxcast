@@ -33,6 +33,9 @@ optional parts of the same integration. See `docs/concept.md`.
   kebab-case topic.
 - The PR title becomes the squash commit on `main`: one sentence on what changes, from the user's point of view where
   users notice it (e.g. "Battery forecast respects the output limit of balcony inverters").
+- Before `gh pr create`, run the `noxcast-review` skill (`.claude/skills/noxcast-review`): a fresh-context review
+  against compatibility, physics, explainability, texts, privacy and correctness, plus the backtest for PV model
+  changes. Its `## Review` section goes into the PR description; the hook refuses a PR without it.
 
 ## Code
 - Functional core, imperative shell (`docs/concept.md`, Architecture): computations are pure functions without Home
@@ -55,7 +58,8 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 - `CHANGELOG.md` follows Keep a Changelog: `## Unreleased` on top, then `## [X.Y.Z] - date` per version, grouped
   into Added, Changed, Fixed and Removed.
 - Every PR that users can notice adds its entry to `Unreleased` in the same PR. Internal refactoring and tests need
-  no entry.
+  no entry. The `changelog` workflow fails a PR that changes `custom_components/` without changing `Unreleased`,
+  unless a line of its description starts with "No changelog entry:" and the reason.
 - Entries are in English and written for users: what changes for them, not how the code changed.
 - A breaking change is marked **Breaking** and says what the user has to do.
 

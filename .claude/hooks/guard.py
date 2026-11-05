@@ -4,6 +4,7 @@
   branch. Code work runs in a worktree of its own.
 - No commit on `main`: work reaches it only through a pull request.
 - No commit, push or pull request with private data (`.github/scripts/check_privacy.py`).
+- No pull request without a `## Review` section from the noxcast-review skill (`.claude/skills/noxcast-review`).
 
 A blocked command exits with 2; the reason goes to stderr, which Claude Code shows to the session.
 Finding the directory a command runs in is best effort: a leading `cd` and `git -C` are understood.
@@ -18,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+REVIEW = "## Review"
 WORKTREE_HINT = "git worktree add .claude/worktrees/<topic> -b <prefix>/<topic> origin/main"
 
 
@@ -84,6 +86,21 @@ def actions(command: str, cwd: Path) -> list[tuple[str, Path]]:
     return found
 
 
+def has_review(command: str, place: Path) -> bool:
+    """Whether the description of `gh pr create` holds a review section, inline or in --body-file / -F."""
+    if REVIEW in command:
+        return True
+    for words in _words(command):
+        for flag in ("--body-file", "-F"):
+            if words[:3] == ["gh", "pr", "create"] and flag in words[:-1]:
+                path = (place / words[words.index(flag) + 1]).resolve()
+                try:
+                    return REVIEW in path.read_text(encoding="utf-8")
+                except OSError:
+                    return False
+    return False
+
+
 def _git(place: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(place), *args], capture_output=True, text=True, check=False).stdout.strip()
 
@@ -110,6 +127,9 @@ def problems(command: str, cwd: Path) -> list[str]:
                           f"worktree of its own: {WORKTREE_HINT}")
         elif action == "commit" and _git(place, "branch", "--show-current") == "main":
             result.append("No commit on main: work reaches it only through a pull request. Commit on a branch.")
+        elif action == "pr" and not has_review(command, place):
+            result.append("No pull request without a review: run the noxcast-review skill and put its \"## Review\" "
+                          "section into the description.")
         if action in {"commit", "push", "pr"}:
             try:
                 privacy, root = _privacy(place)

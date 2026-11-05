@@ -489,9 +489,12 @@ orientation changes the geometry key and starts relearning.
     counts as reached). Empty for the night is when the battery reaches its lower limit for the last time
     before the next charge start and stays there (`battery.night_empty`): a battery that is empty in the
     morning, or runs empty and charges again on a day of changing weather, is judged by the evening.
-    Days on which it never got above the limit are marked "not charged" and left out. Shown as a
-    dumbbell per day with the mean deviation of the full and the empty-for-the-night times and how often
-    "full or not" and "lasts the night or not" were right. Predictions stored before `night` existed
+    A rise at the end of the window that only goes up is the next morning's charge starting before the
+    predicted charge start and is cut off. The simulated time comes from the hour in which the battery
+    reaches the limit (`Simulation.empties`), not from the line between hourly points. Days on which it
+    never got above the limit are "not charged". Shown as a dumbbell per day with the mean deviation of
+    the full and the empty-for-the-night times and how often "full or not" and the night's end (empty,
+    lasts the night, not charged) were right. Predictions stored before `night` existed
     hold the first time empty after the morning and get no empty comparison. Short-term statistics are
     kept for about ten days, so older predictions have no comparison.
   - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run (with its duration and the backtest's, to see what

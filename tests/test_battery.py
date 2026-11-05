@@ -87,11 +87,25 @@ def test_empty_for_the_night_is_the_last_time_the_battery_runs_empty():
     # empty in the morning, a little charge at noon, empty again, charged once more, empty for the night at 19:00
     soc = {6: 0.1, 11: 0.1, 12: 0.4, 13: 0.2, 14: 0.1, 15: 0.3, 16: 0.5, 18: 0.3, 19: 0.1, 23: 0.1, 30: 0.1}
     curve = [(h * H, s) for h, s in soc.items()]
-    assert bt.night_empty(curve, 0.1, False) == (True, 19 * H)
-    charged, at = bt.night_empty(curve, 0.1, True)          # hourly simulation: where it crosses the limit
+    assert bt.night_empty(curve, 0.1) == (True, 19 * H)
+    charged, at = bt.night_empty(curve, 0.1, [])            # hourly simulation without its times: linear
     assert charged and 18 * H < at < 19 * H
-    assert bt.night_empty([(h * H, 0.1) for h in range(6, 30)], 0.1, False) == (False, None)    # never charged
-    assert bt.night_empty([(6 * H, 0.1), (12 * H, 0.8), (30 * H, 0.3)], 0.1, True) == (True, None)  # holds the night
+    # the simulation's own time at the limit wins over the line between the hourly points; earlier ones do not count
+    assert bt.night_empty(curve, 0.1, [6 * H, 14 * H, 18.5 * H, 19 * H, 20 * H]) == (True, 18.5 * H)
+    assert bt.night_empty([(h * H, 0.1) for h in range(6, 30)], 0.1) == (False, None)    # never charged
+    assert bt.night_empty([(6 * H, 0.1), (12 * H, 0.8), (30 * H, 0.3)], 0.1, []) == (True, None)  # holds the night
+
+
+def test_a_charge_starting_before_the_predicted_charge_start_is_not_a_night_the_battery_lasted():
+    # empty at 21:00, the sun charges from 08:20 while the predicted charge start is 09:00
+    day = {6: 0.1, 12: 0.8, 18: 0.4, 21: 0.1, 32: 0.1, 32.5: 0.14, 33 - 1 / 12: 0.2}
+    assert bt.night_empty([(h * H, s) for h, s in day.items()], 0.1) == (True, 21 * H)
+    # empty all day, only the next morning's early charge: not charged
+    flat = {6: 0.1, 18: 0.1, 32: 0.1, 32.5: 0.15}
+    assert bt.night_empty([(h * H, s) for h, s in flat.items()], 0.1) == (False, None)
+    # charged and discharging all night, but never down to the limit: lasts the night
+    lasts = {6: 0.1, 12: 0.9, 24: 0.5, 32: 0.3, 32.5: 0.35}
+    assert bt.night_empty([(h * H, s) for h, s in lasts.items()], 0.1) == (True, None)
 
 
 def test_output_cap_limits_battery_and_pv_together():

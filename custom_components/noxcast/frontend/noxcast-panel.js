@@ -442,8 +442,11 @@ class NoxcastPanel extends HTMLElement {
   async _loadStatus() {
     clearTimeout(this._statusTimer);
     let st;
-    try { st = await ask(this._hass, { type: "noxcast/learning" }); } catch (err) { return; }
-    if (!st || st.v !== WS_SCHEMA) return;
+    const retry = () => {                      // Home Assistant may restart during a run: keep asking until it answers
+      if (this._status && this._status.running && this.isConnected) this._statusTimer = setTimeout(() => this._loadStatus(), 10000);
+    };
+    try { st = await ask(this._hass, { type: "noxcast/learning" }); } catch (err) { retry(); return; }
+    if (!st || st.v !== WS_SCHEMA) { retry(); return; }
     const finished = this._status && this._status.running && !st.running;
     this._status = st;
     if (st.running && this.isConnected) this._statusTimer = setTimeout(() => this._loadStatus(), 10000);

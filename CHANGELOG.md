@@ -14,13 +14,14 @@ history, a day-ahead accuracy archive, and optionally a house load forecast, a b
 flexible consumers, shown in a sidebar panel, a day card and a weather card. Changes since 0.1.0b5:
 
 ### Fixed
-- "Prediction and reality" in Battery & surplus compares when the battery is empty for the night: from
-  when it stays at its lower limit until it charges again. Before, a battery that was empty in the morning showed
-  "empty" at the morning in prediction and actual, so the evening was never compared. Days on which the battery
-  did not charge are marked and left out, and "lasts the night" is counted like "full". Predictions stored
-  before this version get no empty comparison.
+- "Prediction and reality" in Battery & surplus compares when the battery is empty for the night: from when it
+  stays at its lower limit until it charges again. Before, a battery that was empty in the morning showed "empty" in
+  the morning in prediction and actual, so the evening was never compared. Days on which the battery stayed at its
+  lower limit all day are marked "not charged". A new figure shows how often the prediction got the night right:
+  empty, lasts the night, or not charged. Predictions stored before this version get no empty comparison.
 - While a learning run started with "Learn again now" is going, the panel no longer rebuilds the whole page every
   few seconds. Only the learning status updates; the rest is redrawn once when the run is done.
+  If Home Assistant restarts during the run, the status picks up again instead of staying on "running".
 
 ## [0.1.0b5] - 2026-11-05
 

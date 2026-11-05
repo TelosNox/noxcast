@@ -324,7 +324,7 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
             context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id})
         fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         expanded = {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"}
-        assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True}
+        assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True, "advanced": False}
         done = await hass.config_entries.subentries.async_configure(form["flow_id"], {**ARRAY, "orientation_2": {}})
         assert done["type"] is FlowResultType.ABORT
         await hass.async_block_till_done()
@@ -333,24 +333,100 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
 
     # a battery behind the array's inverter: the array needs the output limit, and takes one battery only
     hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
-    battery = {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2, "max_soc": 100, "min_soc": 10, "reserve": 0,
-               "coupling": "dc", "array": subentry.subentry_id}
+    battery = {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2, "coupling": "dc",
+               "limits": {"max_soc": 100, "min_soc": 10, "reserve": 0}, "inverter": {"array": subentry.subentry_id}}
 
     async def add_battery(data: dict):
         sub = await hass.config_entries.subentries.async_init((entry.entry_id, "battery"),
                                                               context={"source": config_entries.SOURCE_USER})
-        assert [o["value"] for o in next(f for f in probatio.to_field_list(sub["data_schema"], custom_serializer=cv.custom_serializer)
-                                         if f["name"] == "array")["selector"]["select"]["options"]] == [subentry.subentry_id]
+        fields = probatio.to_field_list(sub["data_schema"], custom_serializer=cv.custom_serializer)
+        inverter = next(f for f in fields if f["name"] == "inverter")["schema"]
+        assert [o["value"] for o in next(f for f in inverter if f["name"] == "array")["selector"]["select"]["options"]] \
+            == [subentry.subentry_id]
         return await hass.config_entries.subentries.async_configure(sub["flow_id"], data)
 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
-        assert (await add_battery(battery))["errors"] == {"output_limit_w": "output_needed"}
-        assert (await add_battery({**battery, "output_limit_w": 1600}))["type"] is FlowResultType.CREATE_ENTRY
+        assert (await add_battery(battery))["errors"] == {"base": "output_needed"}
+        with_limit = {**battery, "inverter": {"array": subentry.subentry_id, "output_limit_w": 1600}}
+        assert (await add_battery(with_limit))["type"] is FlowResultType.CREATE_ENTRY
         await hass.async_block_till_done()
-        assert (await add_battery({**battery, "output_limit_w": 800}))["errors"] == {"array": "array_taken"}
+        assert (await add_battery(with_limit))["errors"] == {"base": "array_taken"}
         await hass.async_block_till_done()
     unit = hass.config_entries.async_get_entry(entry.entry_id).runtime_data._battery_units()[0]
     assert unit.output_w == 1600 and unit.array == subentry.subentry_id
+    stored = next(s for s in hass.config_entries.async_get_entry(entry.entry_id).subentries.values()
+                  if s.subentry_type == "battery").data
+    assert stored["min_soc"] == 10 and stored["output_limit_w"] == 1600 and "inverter" not in stored   # flat as before
+
+
+async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
+    """Mounting and sections are only for the form: arrays, consumers and batteries are stored as before."""
+    import probatio
+    from homeassistant.helpers import config_validation as cv
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    hass.states.async_set("sensor.washer", "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    hass.states.async_set("sensor.washer_left", "30", {"unit_of_measurement": "min"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+
+        async def flow(kind: str, *steps: dict, subentry_id: str | None = None):
+            context = {"source": config_entries.SOURCE_USER} if subentry_id is None else \
+                {"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry_id}
+            res = await hass.config_entries.subentries.async_init((entry.entry_id, kind), context=context)
+            for data in steps:
+                res = await hass.config_entries.subentries.async_configure(res["flow_id"], data)
+            await hass.async_block_till_done()
+            return res
+
+        def data(kind: str) -> tuple[str, dict]:
+            sub = next(s for s in hass.config_entries.async_get_entry(entry.entry_id).subentries.values()
+                       if s.subentry_type == kind)
+            return sub.subentry_id, dict(sub.data)
+
+        # an array: the mounting becomes the heating; an own value in K wins
+        assert (await flow("array", {**ARRAY, "mounting": "roof"}))["type"] is FlowResultType.CREATE_ENTRY
+        sid, stored = data("array")
+        assert stored["heating"] == 50.0 and "mounting" not in stored and "advanced" not in stored
+        res = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, "array"), context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": sid})
+        fields = probatio.to_field_list(res["data_schema"], custom_serializer=cv.custom_serializer)
+        assert next(f for f in fields if f["name"] == "mounting")["default"] == "roof"
+        await hass.config_entries.subentries.async_configure(
+            res["flow_id"], {**ARRAY, "mounting": "roof", "advanced": {"heating": 42, "valid_since": "2026-01-01"}})
+        await hass.async_block_till_done()
+        assert data("array")[1]["heating"] == 42 and data("array")[1]["valid_since"] == "2026-01-01"
+
+        # a consumer: the second step shows only the fields of its timing
+        first = await flow("consumer", {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible"})
+        assert first["step_id"] == "flexible"
+        names = [f["name"] for f in probatio.to_field_list(first["data_schema"], custom_serializer=cv.custom_serializer)]
+        assert "kind" not in names and "start_share" in names
+        await hass.config_entries.subentries.async_configure(
+            first["flow_id"], {"run_power": 2000, "remaining_time": "sensor.washer_left"})
+        await hass.async_block_till_done()
+        cid, stored = data("consumer")
+        assert stored == {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible", "run_power": 2000,
+                          "remaining_time": "sensor.washer_left"}
+        # reconfigured as fixed: the flexible fields go, the fixed ones come
+        done = await flow("consumer", {"name": "Washer", "power_sensor": "sensor.washer", "timing": "fixed"},
+                          {"kind": "program"}, subentry_id=cid)
+        assert done["type"] is FlowResultType.ABORT
+        assert data("consumer")[1] == {"name": "Washer", "power_sensor": "sensor.washer", "timing": "fixed",
+                                       "kind": "program"}
+
+        # a battery with the sections left closed keeps the default limits
+        hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
+        assert (await flow("battery", {"name": "Home", "soc_sensor": "sensor.soc", "capacity": 5, "coupling": "ac"})
+                )["type"] is FlowResultType.CREATE_ENTRY
+        stored = data("battery")[1]
+        assert stored["max_soc"] == 100 and stored["min_soc"] == 0 and stored["reserve"] == 0
+        assert not set(stored) & {"limits", "power", "inverter"}
 
 
 def _canon(o):

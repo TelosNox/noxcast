@@ -182,15 +182,16 @@ An array is what is measured together, usually one MPPT input or one inverter.
 | Power sensors | One or more; they are summed |
 | Tilt, azimuth, peak power | Of the modules (azimuth 180° = south) |
 | Further orientations 2–4 | Optional: modules on the same sensors that face another way (e.g. east + south + west on one input, vertical east + west). Each with tilt, azimuth and its own peak power; the array's peak is the sum |
-| Valid since | Optional: ignore history before this date (e.g. after a rebuild) |
-| Temperature coefficient | Optional: datasheet Pmax coefficient in %/K; otherwise learned |
-| Heating | Optional: cell heating in K at 1000 W/m² (default 30 K; roof without rear ventilation higher, free-standing lower) |
+| Valid since (*Advanced*) | Optional: ignore history before this date (e.g. after a rebuild) |
+| Temperature coefficient (*Advanced*) | Optional: datasheet Pmax coefficient in %/K; otherwise learned |
+| Mounting | Free behind (balcony, rack; 30 K cell heating at 1000 W/m²), parallel on the roof (50 K) or integrated into the roof (60 K). An own value in K goes under *Advanced* |
 
 Learning starts right away from the existing history and then runs every night (01:30).
 
 ### 3. Consumers (optional, for the load forecast)
 
-A consumer with its own sensor is taken out of the house load and forecast on its own.
+A consumer with its own sensor is taken out of the house load and forecast on its own. The form has two steps: the
+sensor and the timing first, then only the fields of that timing.
 
 | Field | Meaning |
 |---|---|
@@ -202,6 +203,9 @@ A consumer with its own sensor is taken out of the house load and forecast on it
 | Start now from PV share | Flexible only, optional (default 70 %): threshold of the *start now* sensor |
 
 ### 4. Batteries (optional, needs the house load)
+
+Name, state of charge sensor, capacity and coupling are on top; limits, power and a shared inverter are in sections
+that stay closed until they hold a value.
 
 | Field | Meaning |
 |---|---|

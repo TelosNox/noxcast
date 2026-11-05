@@ -74,17 +74,13 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit",
-            "temp_coeff": "Temperaturkoeffizient (Datenblatt)",
-            "heating": "Erwärmung der Module"
+            "mounting": "Montage"
           },
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
-            "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung.",
-            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
-            "heating": "Wie stark sich die Zellen bei 1000 W/m² über die Lufttemperatur erwärmen. Hängt von der Montage ab: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln 45–55 K, ins Dach integriert etwa 60 K. Leer = 30 K."
+            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K."
           },
           "sections": {
             "orientation_2": {
@@ -119,6 +115,20 @@
               },
               "data_description": {
                 "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "advanced": {
+              "name": "Erweitert",
+              "description": "Meist nicht nötig.",
+              "data": {
+                "valid_since": "Konfiguration gültig seit",
+                "temp_coeff": "Temperaturkoeffizient (Datenblatt)",
+                "heating": "Erwärmung der Module"
+              },
+              "data_description": {
+                "valid_since": "Ältere Historie ignorieren, z. B. nach Umzug oder neuer Ausrichtung.",
+                "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
+                "heating": "Eigener Wert statt der Montage: wie stark sich die Zellen bei 1000 W/m² über die Luft erwärmen. Leer = aus der Montage."
               }
             }
           }
@@ -131,14 +141,11 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "valid_since": "Konfiguration gültig seit",
-            "temp_coeff": "Temperaturkoeffizient (Datenblatt)",
-            "heating": "Erwärmung der Module"
+            "mounting": "Montage"
           },
           "data_description": {
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
-            "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
-            "heating": "Wie stark sich die Zellen bei 1000 W/m² über die Lufttemperatur erwärmen. Hängt von der Montage ab: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln 45–55 K, ins Dach integriert etwa 60 K. Leer = 30 K."
+            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K."
           },
           "sections": {
             "orientation_2": {
@@ -173,6 +180,19 @@
               },
               "data_description": {
                 "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "advanced": {
+              "name": "Erweitert",
+              "description": "Meist nicht nötig.",
+              "data": {
+                "valid_since": "Konfiguration gültig seit",
+                "temp_coeff": "Temperaturkoeffizient (Datenblatt)",
+                "heating": "Erwärmung der Module"
+              },
+              "data_description": {
+                "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
+                "heating": "Eigener Wert statt der Montage: wie stark sich die Zellen bei 1000 W/m² über die Luft erwärmen. Leer = aus der Montage."
               }
             }
           }
@@ -199,56 +219,64 @@
       "step": {
         "user": {
           "title": "Verbraucher",
-          "description": "Ein Gerät mit eigenem Leistungssensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert.",
+          "description": "Ein Gerät mit eigenem Sensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert. Im nächsten Schritt folgen die Felder zur Zeitbindung.",
           "data": {
             "name": "Name",
             "power_sensor": "Leistungssensor",
-            "timing": "Zeitbindung",
             "energy_sensor": "Energiesensor",
-            "remaining_time": "Restlaufzeit",
-            "elapsed_time": "Verstrichene Zeit",
-            "run_power": "Leistung eines Laufs",
-            "run_minutes": "Dauer eines Laufs",
-            "kind": "Art",
-            "start_share": "Jetzt starten ab PV-Anteil"
+            "timing": "Zeitbindung"
           },
           "data_description": {
-            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
             "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
             "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
-            "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
-            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
-            "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt. Geregelt: folgt der Außentemperatur (Klima, Wärmepumpe); gelernt aus einem Jahr Verlauf und dem Temperaturarchiv.",
-            "start_share": "Flexible Verbraucher: Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %."
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
           }
         },
         "reconfigure": {
           "title": "Verbraucher",
-          "description": "Ein Gerät mit eigenem Leistungssensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert.",
+          "description": "Ein Gerät mit eigenem Sensor. Seine Leistung wird aus der Grundlast herausgerechnet und getrennt prognostiziert. Im nächsten Schritt folgen die Felder zur Zeitbindung.",
           "data": {
             "name": "Name",
             "power_sensor": "Leistungssensor",
-            "timing": "Zeitbindung",
             "energy_sensor": "Energiesensor",
-            "remaining_time": "Restlaufzeit",
-            "elapsed_time": "Verstrichene Zeit",
-            "run_power": "Leistung eines Laufs",
-            "run_minutes": "Dauer eines Laufs",
-            "kind": "Art",
-            "start_share": "Jetzt starten ab PV-Anteil"
+            "timing": "Zeitbindung"
           },
           "data_description": {
-            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft.",
             "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
             "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
-            "remaining_time": "Optional, für Programme: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
-            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms.",
+            "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
+          }
+        },
+        "fixed": {
+          "title": "{name}: fest",
+          "description": "Läuft unabhängig vom Überschuss und gehört zur Lastprognose.",
+          "data": {
+            "kind": "Art",
+            "remaining_time": "Restlaufzeit",
+            "elapsed_time": "Verstrichene Zeit"
+          },
+          "data_description": {
+            "kind": "Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV). Geregelt: folgt der Außentemperatur (Wärmepumpe, Klima).",
+            "remaining_time": "Optional: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
+          }
+        },
+        "flexible": {
+          "title": "{name}: flexibel",
+          "description": "Du bestimmst, wann es läuft; Noxcast schlägt das Fenster vor. Leere Werte werden aus dem Verlauf gelernt.",
+          "data": {
+            "run_power": "Leistung eines Laufs",
+            "run_minutes": "Dauer eines Laufs",
+            "start_share": "Jetzt starten ab PV-Anteil",
+            "remaining_time": "Restlaufzeit",
+            "elapsed_time": "Verstrichene Zeit"
+          },
+          "data_description": {
             "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
             "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "kind": "Nur bei fester Zeitbindung. Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und wie lange es üblicherweise anbleibt. Geregelt: folgt der Außentemperatur (Klima, Wärmepumpe); gelernt aus einem Jahr Verlauf und dem Temperaturarchiv.",
-            "start_share": "Flexible Verbraucher: Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %."
+            "start_share": "Flexible Verbraucher: Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %.",
+            "remaining_time": "Optional: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
           }
         }
       },
@@ -278,31 +306,57 @@
             "name": "Name",
             "soc_sensor": "Ladestand",
             "capacity": "Kapazität",
-            "max_soc": "Ladegrenze oben",
-            "max_soc_entity": "Ladegrenze als Entität",
-            "min_soc": "Entladegrenze unten",
-            "min_soc_entity": "Entladegrenze als Entität",
-            "reserve": "Reserve über der Entladegrenze",
-            "coupling": "Kopplung",
-            "efficiency": "Wirkungsgrad (Zyklus)",
-            "max_charge_w": "Max. Ladeleistung",
-            "max_discharge_w": "Max. Entladeleistung",
-            "output_limit_w": "Ausgangsgrenze des Wechselrichters",
-            "array": "PV-Gruppe am selben Wechselrichter",
-            "battery_power": "Lade-/Entladeleistung",
-            "battery_power_invert": "Leistung zählt Entladen positiv"
+            "coupling": "Kopplung"
           },
           "data_description": {
-            "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
-            "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
-            "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
-            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
-            "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
-            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
-            "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden.",
-            "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
-            "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
-            "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
+            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %)."
+          },
+          "sections": {
+            "limits": {
+              "name": "Grenzen",
+              "description": "Lade- und Entladegrenzen. Standard: 0–100 %, keine Reserve.",
+              "data": {
+                "max_soc": "Ladegrenze oben",
+                "max_soc_entity": "Ladegrenze als Entität",
+                "min_soc": "Entladegrenze unten",
+                "min_soc_entity": "Entladegrenze als Entität",
+                "reserve": "Reserve über der Entladegrenze"
+              },
+              "data_description": {
+                "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+                "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
+                "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
+              }
+            },
+            "power": {
+              "name": "Leistung",
+              "description": "Leistungssensor, Wirkungsgrad und Leistungsgrenzen. Alles optional.",
+              "data": {
+                "battery_power": "Lade-/Entladeleistung",
+                "battery_power_invert": "Leistung zählt Entladen positiv",
+                "efficiency": "Wirkungsgrad (Zyklus)",
+                "max_charge_w": "Max. Ladeleistung",
+                "max_discharge_w": "Max. Entladeleistung"
+              },
+              "data_description": {
+                "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
+                "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
+                "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+                "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+              }
+            },
+            "inverter": {
+              "name": "Gemeinsamer Wechselrichter",
+              "description": "Nur für einen Akku am selben Wechselrichter wie eine PV-Gruppe (Balkonkraftwerk).",
+              "data": {
+                "array": "PV-Gruppe am selben Wechselrichter",
+                "output_limit_w": "Ausgangsgrenze des Wechselrichters"
+              },
+              "data_description": {
+                "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
+                "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden."
+              }
+            }
           }
         },
         "reconfigure": {
@@ -312,31 +366,57 @@
             "name": "Name",
             "soc_sensor": "Ladestand",
             "capacity": "Kapazität",
-            "max_soc": "Ladegrenze oben",
-            "max_soc_entity": "Ladegrenze als Entität",
-            "min_soc": "Entladegrenze unten",
-            "min_soc_entity": "Entladegrenze als Entität",
-            "reserve": "Reserve über der Entladegrenze",
-            "coupling": "Kopplung",
-            "efficiency": "Wirkungsgrad (Zyklus)",
-            "max_charge_w": "Max. Ladeleistung",
-            "max_discharge_w": "Max. Entladeleistung",
-            "output_limit_w": "Ausgangsgrenze des Wechselrichters",
-            "array": "PV-Gruppe am selben Wechselrichter",
-            "battery_power": "Lade-/Entladeleistung",
-            "battery_power_invert": "Leistung zählt Entladen positiv"
+            "coupling": "Kopplung"
           },
           "data_description": {
-            "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
-            "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
-            "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp.",
-            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %).",
-            "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
-            "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat.",
-            "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden.",
-            "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
-            "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
-            "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist."
+            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %)."
+          },
+          "sections": {
+            "limits": {
+              "name": "Grenzen",
+              "description": "Lade- und Entladegrenzen. Standard: 0–100 %, keine Reserve.",
+              "data": {
+                "max_soc": "Ladegrenze oben",
+                "max_soc_entity": "Ladegrenze als Entität",
+                "min_soc": "Entladegrenze unten",
+                "min_soc_entity": "Entladegrenze als Entität",
+                "reserve": "Reserve über der Entladegrenze"
+              },
+              "data_description": {
+                "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+                "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
+                "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
+              }
+            },
+            "power": {
+              "name": "Leistung",
+              "description": "Leistungssensor, Wirkungsgrad und Leistungsgrenzen. Alles optional.",
+              "data": {
+                "battery_power": "Lade-/Entladeleistung",
+                "battery_power_invert": "Leistung zählt Entladen positiv",
+                "efficiency": "Wirkungsgrad (Zyklus)",
+                "max_charge_w": "Max. Ladeleistung",
+                "max_discharge_w": "Max. Entladeleistung"
+              },
+              "data_description": {
+                "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
+                "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
+                "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+                "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
+              }
+            },
+            "inverter": {
+              "name": "Gemeinsamer Wechselrichter",
+              "description": "Nur für einen Akku am selben Wechselrichter wie eine PV-Gruppe (Balkonkraftwerk).",
+              "data": {
+                "array": "PV-Gruppe am selben Wechselrichter",
+                "output_limit_w": "Ausgangsgrenze des Wechselrichters"
+              },
+              "data_description": {
+                "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
+                "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden."
+              }
+            }
           }
         }
       },
@@ -371,6 +451,13 @@
         "program": "Programm",
         "session": "Sitzung",
         "regulated": "Geregelt"
+      }
+    },
+    "mounting": {
+      "options": {
+        "free": "Frei hinterlüftet (Balkon, Aufständerung)",
+        "roof": "Dachparallel",
+        "integrated": "Ins Dach integriert"
       }
     }
   },

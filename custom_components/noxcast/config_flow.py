@@ -51,31 +51,53 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
     })
 
 
+def _flatten(user_input: dict[str, Any], sections: tuple[str, ...]) -> dict[str, Any]:
+    """Form sections are only for display: their fields are stored at the top level as before."""
+    out = {k: v for k, v in user_input.items() if k not in sections}
+    for key in sections:
+        out.update(user_input.get(key) or {})
+    return out
+
+
+def _entity(defaults: dict[str, Any], key: str, domain: str | list[str] = "sensor") -> tuple:
+    return (vol.Optional(key, description={"suggested_value": defaults.get(key)}),
+            selector.EntitySelector(selector.EntitySelectorConfig(domain=domain)))
+
+
+def _number(defaults: dict[str, Any], key: str, lo: float, hi: float, step: float, unit: str) -> tuple:
+    return (vol.Optional(key, description={"suggested_value": defaults.get(key)}),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=lo, max=hi, step=step, unit_of_measurement=unit,
+                                                                  mode=selector.NumberSelectorMode.BOX)))
+
+
 def _consumer_schema(defaults: dict[str, Any]) -> vol.Schema:
-    return vol.Schema({
-        vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
-        vol.Optional(CONF_POWER_SENSOR, description={"suggested_value": defaults.get(CONF_POWER_SENSOR)}):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-        vol.Optional(CONF_ENERGY_SENSOR, description={"suggested_value": defaults.get(CONF_ENERGY_SENSOR)}):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-        vol.Optional(CONF_REMAINING_TIME, description={"suggested_value": defaults.get(CONF_REMAINING_TIME)}):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-        vol.Optional(CONF_ELAPSED_TIME, description={"suggested_value": defaults.get(CONF_ELAPSED_TIME)}):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-        vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])):
-            selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING)),
-        vol.Required(CONF_KIND, default=defaults.get(CONF_KIND, KIND_OPTIONS[0])):
-            selector.SelectSelector(selector.SelectSelectorConfig(options=list(KIND_OPTIONS), translation_key=CONF_KIND)),
-        vol.Optional(CONF_RUN_POWER, description={"suggested_value": defaults.get(CONF_RUN_POWER)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=50000, step=10, unit_of_measurement="W",
-                                                                  mode=selector.NumberSelectorMode.BOX)),
-        vol.Optional(CONF_RUN_MINUTES, description={"suggested_value": defaults.get(CONF_RUN_MINUTES)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=5, max=1440, step=5, unit_of_measurement="min",
-                                                                  mode=selector.NumberSelectorMode.BOX)),
-        vol.Optional(CONF_START_SHARE, description={"suggested_value": defaults.get(CONF_START_SHARE)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%",
-                                                                  mode=selector.NumberSelectorMode.BOX)),
-    })
+    """First step: what the consumer is and how it is measured."""
+    return vol.Schema(dict([
+        (vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")), selector.TextSelector()),
+        _entity(defaults, CONF_POWER_SENSOR),
+        _entity(defaults, CONF_ENERGY_SENSOR),
+        (vol.Required(CONF_TIMING, default=defaults.get(CONF_TIMING, TIMING_OPTIONS[0])),
+         selector.SelectSelector(selector.SelectSelectorConfig(options=list(TIMING_OPTIONS), translation_key=CONF_TIMING))),
+    ]))
+
+
+def _consumer_fixed_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema(dict([
+        (vol.Required(CONF_KIND, default=defaults.get(CONF_KIND, KIND_OPTIONS[0])),
+         selector.SelectSelector(selector.SelectSelectorConfig(options=list(KIND_OPTIONS), translation_key=CONF_KIND))),
+        _entity(defaults, CONF_REMAINING_TIME),
+        _entity(defaults, CONF_ELAPSED_TIME),
+    ]))
+
+
+def _consumer_flexible_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema(dict([
+        _number(defaults, CONF_RUN_POWER, 10, 50000, 10, "W"),
+        _number(defaults, CONF_RUN_MINUTES, 5, 1440, 5, "min"),
+        _number(defaults, CONF_START_SHARE, 0, 100, 5, "%"),
+        _entity(defaults, CONF_REMAINING_TIME),
+        _entity(defaults, CONF_ELAPSED_TIME),
+    ]))
 
 
 def _power_sensor_error(hass: HomeAssistant, entity_id: str | None) -> str | None:
@@ -114,8 +136,39 @@ def _orientation_schema(defaults: dict[str, Any]) -> vol.Schema:
     })
 
 
+# mounting -> cell heating in K at 1000 W/m²: free behind about 30, on the roof 45–55, in the roof about 60
+MOUNTING = {"free": 30.0, "roof": 50.0, "integrated": 60.0}
+ARRAY_ADVANCED = "advanced"
+
+
+def _mounting(heating: float | None) -> tuple[str, float | None]:
+    """Mounting shown for a stored heating, and the heating left as own value (None when a mounting fits)."""
+    if heating is None:
+        return "free", None
+    for name, k in MOUNTING.items():
+        if float(heating) == k:
+            return name, None
+    return "free", float(heating)
+
+
 def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """defaults: stored (flat) data, or the form's own input when it is shown again with an error."""
     number = selector.NumberSelectorMode.BOX
+    if ARRAY_ADVANCED in defaults or "mounting" in defaults:          # the form's input
+        mounting = defaults.get("mounting", "free")
+        advanced = dict(defaults.get(ARRAY_ADVANCED) or {})
+    else:
+        mounting, own = _mounting(defaults.get(CONF_HEATING))
+        advanced = {CONF_VALID_SINCE: defaults.get(CONF_VALID_SINCE), CONF_TEMP_COEFF: defaults.get(CONF_TEMP_COEFF),
+                    CONF_HEATING: own}
+    advanced_schema = vol.Schema({
+        vol.Optional(CONF_VALID_SINCE, description={"suggested_value": advanced.get(CONF_VALID_SINCE)}):
+            selector.DateSelector(),
+        vol.Optional(CONF_TEMP_COEFF, description={"suggested_value": advanced.get(CONF_TEMP_COEFF)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=-1, max=0, step=0.01, unit_of_measurement="%/K", mode=number)),
+        vol.Optional(CONF_HEATING, description={"suggested_value": advanced.get(CONF_HEATING)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=15, max=80, step=1, unit_of_measurement="K", mode=number)),
+    })
     orientations = {
         vol.Optional(key): section(_orientation_schema(defaults.get(key) or {}),
                                    {"collapsed": not defaults.get(key)})
@@ -128,13 +181,10 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Required(CONF_TILT, default=defaults.get(CONF_TILT, 30)): _tilt_selector(),
         vol.Required(CONF_AZIMUTH, default=defaults.get(CONF_AZIMUTH, 180)): _azimuth_selector(),
         vol.Required(CONF_PEAK_POWER, default=defaults.get(CONF_PEAK_POWER, 800)): _peak_selector(),
-        vol.Optional(CONF_VALID_SINCE, description={"suggested_value": defaults.get(CONF_VALID_SINCE)}):
-            selector.DateSelector(),
-        vol.Optional(CONF_TEMP_COEFF, description={"suggested_value": defaults.get(CONF_TEMP_COEFF)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=-1, max=0, step=0.01, unit_of_measurement="%/K", mode=number)),
-        vol.Optional(CONF_HEATING, description={"suggested_value": defaults.get(CONF_HEATING)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=15, max=80, step=1, unit_of_measurement="K", mode=number)),
+        vol.Required("mounting", default=mounting):
+            selector.SelectSelector(selector.SelectSelectorConfig(options=list(MOUNTING), translation_key="mounting")),
         **orientations,
+        vol.Optional(ARRAY_ADVANCED): section(advanced_schema, {"collapsed": all(v is None for v in advanced.values())}),
     })
 
 
@@ -186,10 +236,13 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ConsumerSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a consumer with its own power sensor."""
+    """Add or reconfigure a consumer with its own sensor: first what it is, then only the fields of its timing."""
+
+    _data: dict[str, Any]
+    _old: dict[str, Any]
 
     def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
-        """A power or an energy sensor is needed; time sensors must report a duration."""
+        """A power or an energy sensor is needed."""
         if user_input is None:
             return {}
         power, energy = user_input.get(CONF_POWER_SENSOR), user_input.get(CONF_ENERGY_SENSOR)
@@ -205,8 +258,12 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
                 return {CONF_ENERGY_SENSOR: "energy_unit"}
             if state.attributes.get("state_class") not in ("total", "total_increasing"):
                 return {CONF_ENERGY_SENSOR: "energy_state_class"}
+        return {}
+
+    def _time_errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
+        """Time sensors must report a duration."""
         for key in (CONF_REMAINING_TIME, CONF_ELAPSED_TIME):
-            if user_input.get(key):
+            if user_input and user_input.get(key):
                 state = self.hass.states.get(user_input[key])
                 if state is None:
                     return {key: "sensor_missing"}
@@ -215,18 +272,37 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
         return {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        errors = self._errors(user_input)
-        if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
-        return self.async_show_form(step_id="user", data_schema=_consumer_schema(user_input or {}), errors=errors)
+        self._old = {}
+        return await self._basics("user", user_input)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        subentry = self._get_reconfigure_subentry()
+        self._old = dict(self._get_reconfigure_subentry().data)
+        return await self._basics("reconfigure", user_input)
+
+    async def _basics(self, step: str, user_input: dict[str, Any] | None) -> SubentryFlowResult:
         errors = self._errors(user_input)
         if user_input is not None and not errors:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME], data=user_input)
-        return self.async_show_form(step_id="reconfigure", data_schema=_consumer_schema(user_input or dict(subentry.data)),
-                                    errors=errors)
+            self._data = dict(user_input)
+            return await (self.async_step_flexible() if user_input[CONF_TIMING] == "flexible" else self.async_step_fixed())
+        return self.async_show_form(step_id=step, data_schema=_consumer_schema(user_input or self._old), errors=errors)
+
+    async def async_step_fixed(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return await self._details("fixed", _consumer_fixed_schema, user_input)
+
+    async def async_step_flexible(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return await self._details("flexible", _consumer_flexible_schema, user_input)
+
+    async def _details(self, step: str, schema, user_input: dict[str, Any] | None) -> SubentryFlowResult:
+        """Only the fields of the chosen timing are stored; those of the other timing are dropped."""
+        errors = self._time_errors(user_input)
+        if user_input is not None and not errors:
+            data = {**self._data, **user_input}
+            if self.source == "reconfigure":
+                return self.async_update_and_abort(self._get_entry(), self._get_reconfigure_subentry(),
+                                                   title=data[CONF_NAME], data=data)
+            return self.async_create_entry(title=data[CONF_NAME], data=data)
+        return self.async_show_form(step_id=step, data_schema=schema(user_input or self._old), errors=errors,
+                                    description_placeholders={"name": self._data[CONF_NAME]})
 
 
 class ArraySubentryFlow(ConfigSubentryFlow):
@@ -249,8 +325,13 @@ class ArraySubentryFlow(ConfigSubentryFlow):
 
 
 def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Unused orientation sections (the form sends them empty) are not stored."""
-    return {k: v for k, v in user_input.items() if k not in CONF_ORIENTATIONS or any(x is not None for x in (v or {}).values())}
+    """Unused orientation sections (the form sends them empty) are not stored. The advanced section and the
+    mounting become the stored fields as before: an own heating in K wins over the mounting's."""
+    data = _flatten(user_input, (ARRAY_ADVANCED,))
+    mounting = data.pop("mounting", "free")
+    if data.get(CONF_HEATING) is None:
+        data[CONF_HEATING] = MOUNTING.get(mounting, MOUNTING["free"])
+    return {k: v for k, v in data.items() if k not in CONF_ORIENTATIONS or any(x is not None for x in (v or {}).values())}
 
 
 def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> dict[str, str]:
@@ -261,6 +342,7 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     """
     if user_input is None:
         return {}
+    user_input = _flatten(user_input, (ARRAY_ADVANCED,))
     sensors = user_input.get(CONF_POWER_SENSORS) or []
     if not sensors:
         return {CONF_POWER_SENSORS: "sensor_required"}
@@ -269,7 +351,7 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
             return {CONF_POWER_SENSORS: err}
     valid = user_input.get(CONF_VALID_SINCE)
     if valid and (dt_util.parse_date(valid) is None or dt_util.parse_date(valid) > dt_util.now().date()):
-        return {CONF_VALID_SINCE: "date_in_future"}
+        return {"base": "date_in_future"}
     seen = [(float(user_input[CONF_TILT]), float(user_input[CONF_AZIMUTH]) % 360)] \
         if user_input.get(CONF_TILT) is not None and user_input.get(CONF_AZIMUTH) is not None else []
     for key in CONF_ORIENTATIONS:
@@ -344,39 +426,60 @@ class NoxcastOptionsFlow(OptionsFlow):
         return {}
 
 
+# the battery form: what is needed on top, the rest in sections that open when they hold a value
+BATTERY_SECTIONS = ("limits", "power", "inverter")
+BATTERY_DEFAULTS = {CONF_MAX_SOC: 100, CONF_MIN_SOC: 0, CONF_RESERVE: 0}
+
+
 def _battery_schema(d: dict[str, Any], arrays: dict[str, str]) -> vol.Schema:
-    """arrays: subentry id -> name of the PV arrays, to pick the one behind the same inverter."""
+    """d: stored (flat) data; arrays: subentry id -> name of the PV arrays, to pick the one behind the same inverter."""
     box = selector.NumberSelectorMode.BOX
     pct = selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=box)
-
-    def opt(key, sel):
-        return vol.Optional(key, description={"suggested_value": d.get(key)}), sel
-
-    fields = [
+    soc_entity = ["sensor", "number", "input_number"]
+    limits = dict([
+        (vol.Required(CONF_MAX_SOC, default=d.get(CONF_MAX_SOC, 100)), selector.NumberSelector(pct)),
+        _entity(d, CONF_MAX_SOC_ENTITY, soc_entity),
+        (vol.Required(CONF_MIN_SOC, default=d.get(CONF_MIN_SOC, 0)), selector.NumberSelector(pct)),
+        _entity(d, CONF_MIN_SOC_ENTITY, soc_entity),
+        (vol.Required(CONF_RESERVE, default=d.get(CONF_RESERVE, 0)),
+         selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%", mode=box))),
+    ])
+    power = dict([
+        _entity(d, CONF_BATTERY_POWER),
+        (vol.Optional(CONF_BATTERY_INVERT, default=d.get(CONF_BATTERY_INVERT, False)), selector.BooleanSelector()),
+        _number(d, CONF_EFFICIENCY, 50, 100, 1, "%"),
+        _number(d, CONF_MAX_CHARGE, 10, 100000, 10, "W"),
+        _number(d, CONF_MAX_DISCHARGE, 10, 100000, 10, "W"),
+    ])
+    inverter = dict([
+        (vol.Optional(CONF_BATTERY_ARRAY, description={"suggested_value": d.get(CONF_BATTERY_ARRAY)}),
+         selector.SelectSelector(selector.SelectSelectorConfig(
+             options=[selector.SelectOptionDict(value=sid, label=name) for sid, name in arrays.items()],
+             mode=selector.SelectSelectorMode.DROPDOWN))),
+        _number(d, CONF_OUTPUT_LIMIT, 10, 100000, 10, "W"),
+    ])
+    used = {
+        "limits": d.get(CONF_MAX_SOC_ENTITY) or d.get(CONF_MIN_SOC_ENTITY)
+        or any(d.get(k, v) != v for k, v in BATTERY_DEFAULTS.items()),
+        "power": d.get(CONF_BATTERY_POWER) or any(d.get(k) for k in (CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE)),
+        "inverter": d.get(CONF_BATTERY_ARRAY) or d.get(CONF_OUTPUT_LIMIT),
+    }
+    return vol.Schema(dict([
         (vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")), selector.TextSelector()),
         (vol.Required(CONF_SOC_SENSOR, default=d.get(CONF_SOC_SENSOR)),
          selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
-        opt(CONF_BATTERY_POWER, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
-        (vol.Optional(CONF_BATTERY_INVERT, default=d.get(CONF_BATTERY_INVERT, False)), selector.BooleanSelector()),
         (vol.Required(CONF_CAPACITY, default=d.get(CONF_CAPACITY, 5)),
          selector.NumberSelector(selector.NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWh", mode=box))),
-        (vol.Required(CONF_MAX_SOC, default=d.get(CONF_MAX_SOC, 100)), selector.NumberSelector(pct)),
-        opt(CONF_MAX_SOC_ENTITY, selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"]))),
-        (vol.Required(CONF_MIN_SOC, default=d.get(CONF_MIN_SOC, 0)), selector.NumberSelector(pct)),
-        opt(CONF_MIN_SOC_ENTITY, selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"]))),
-        (vol.Required(CONF_RESERVE, default=d.get(CONF_RESERVE, 0)),
-         selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%", mode=box))),
         (vol.Required(CONF_COUPLING, default=d.get(CONF_COUPLING, COUPLING_OPTIONS[0])),
          selector.SelectSelector(selector.SelectSelectorConfig(options=list(COUPLING_OPTIONS), translation_key=CONF_COUPLING))),
-        opt(CONF_EFFICIENCY, selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%", mode=box))),
-        opt(CONF_MAX_CHARGE, selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="W", mode=box))),
-        opt(CONF_MAX_DISCHARGE, selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="W", mode=box))),
-        opt(CONF_OUTPUT_LIMIT, selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=100000, step=10, unit_of_measurement="W", mode=box))),
-        opt(CONF_BATTERY_ARRAY, selector.SelectSelector(selector.SelectSelectorConfig(
-            options=[selector.SelectOptionDict(value=sid, label=name) for sid, name in arrays.items()],
-            mode=selector.SelectSelectorMode.DROPDOWN))),
-    ]
-    return vol.Schema(dict(fields))
+        *[(vol.Optional(name), section(vol.Schema(fields), {"collapsed": not used[name]}))
+          for name, fields in (("limits", limits), ("power", power), ("inverter", inverter))],
+    ]))
+
+
+def _battery_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Stored flat as before; a section left out keeps the defaults of its required fields."""
+    return {**BATTERY_DEFAULTS, **_flatten(user_input, BATTERY_SECTIONS)}
 
 
 class BatterySubentryFlow(ConfigSubentryFlow):
@@ -386,36 +489,40 @@ class BatterySubentryFlow(ConfigSubentryFlow):
         return {sid: sub.title for sid, sub in self._get_entry().subentries.items() if sub.subentry_type == SUBENTRY_ARRAY}
 
     def _errors(self, user_input: dict[str, Any] | None, own: str | None = None) -> dict[str, str]:
+        """Problems of fields inside a section are shown on top of the form."""
         if user_input is None:
             return {}
+        user_input = _battery_data(user_input)
         state = self.hass.states.get(user_input.get(CONF_SOC_SENSOR) or "")
         if state is None:
             return {CONF_SOC_SENSOR: "sensor_missing"}
         if state.attributes.get("unit_of_measurement") != "%":
             return {CONF_SOC_SENSOR: "soc_unit"}
         if float(user_input.get(CONF_MIN_SOC, 0)) + float(user_input.get(CONF_RESERVE, 0)) >= float(user_input.get(CONF_MAX_SOC, 100)):
-            return {CONF_MIN_SOC: "limits_order"}
+            return {"base": "limits_order"}
         if (array := user_input.get(CONF_BATTERY_ARRAY)):
             if not user_input.get(CONF_OUTPUT_LIMIT):
-                return {CONF_OUTPUT_LIMIT: "output_needed"}
+                return {"base": "output_needed"}
             # one inverter per array: two batteries behind the same array would share its PV twice
             if any(sid != own and sub.subentry_type == SUBENTRY_BATTERY and sub.data.get(CONF_BATTERY_ARRAY) == array
                    for sid, sub in self._get_entry().subentries.items()):
-                return {CONF_BATTERY_ARRAY: "array_taken"}
+                return {"base": "array_taken"}
         return {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errors = self._errors(user_input)
         if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
-        return self.async_show_form(step_id="user", data_schema=_battery_schema(user_input or {}, self._arrays()),
+            return self.async_create_entry(title=user_input[CONF_NAME], data=_battery_data(user_input))
+        return self.async_show_form(step_id="user", data_schema=_battery_schema(_battery_data(user_input or {}), self._arrays()),
                                     errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
         errors = self._errors(user_input, subentry.subentry_id)
         if user_input is not None and not errors:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME], data=user_input)
+            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
+                                               data=_battery_data(user_input))
         return self.async_show_form(step_id="reconfigure",
-                                    data_schema=_battery_schema(user_input or dict(subentry.data), self._arrays()),
+                                    data_schema=_battery_schema(_battery_data(user_input) if user_input else dict(subentry.data),
+                                                                self._arrays()),
                                     errors=errors)

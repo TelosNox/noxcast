@@ -183,15 +183,16 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 | Leistungssensoren | Einer oder mehrere; sie werden addiert |
 | Neigung, Azimut, Spitzenleistung | Der Module (Azimut 180° = Süd) |
 | Weitere Ausrichtung 2–4 | Optional: Module an denselben Sensoren, die in eine andere Richtung zeigen (z. B. Ost + Süd + West an einem Eingang, senkrecht Ost + West). Jede mit Neigung, Azimut und eigener Spitzenleistung; die Spitzenleistung der PV-Gruppe ist die Summe |
-| Konfiguration gültig seit | Optional: Verlauf vor diesem Datum ignorieren (z. B. nach einem Umbau) |
-| Temperaturkoeffizient | Optional: Pmax-Koeffizient aus dem Datenblatt in %/K; sonst gelernt |
-| Erwärmung der Module | Optional: Erwärmung der Zellen in K bei 1000 W/m² (Standard 30 K; Dach ohne Hinterlüftung höher, frei stehend niedriger) |
+| Konfiguration gültig seit (*Erweitert*) | Optional: Verlauf vor diesem Datum ignorieren (z. B. nach einem Umbau) |
+| Temperaturkoeffizient (*Erweitert*) | Optional: Pmax-Koeffizient aus dem Datenblatt in %/K; sonst gelernt |
+| Montage | Frei hinterlüftet (Balkon, Aufständerung; 30 K Erwärmung der Zellen bei 1000 W/m²), dachparallel (50 K) oder ins Dach integriert (60 K). Ein eigener Wert in K steht unter *Erweitert* |
 
 Gelernt wird sofort aus dem vorhandenen Verlauf und danach jede Nacht (01:30).
 
 ### 3. Verbraucher (optional, für die Lastprognose)
 
-Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet und für sich prognostiziert.
+Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet und für sich prognostiziert. Das Formular
+hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitbindung.
 
 | Feld | Bedeutung |
 |---|---|
@@ -203,6 +204,9 @@ Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet un
 | Jetzt starten ab PV-Anteil | Nur flexibel, optional (Standard 70 %): Schwelle des Sensors *jetzt starten* |
 
 ### 4. Akkus (optional, braucht den Hausverbrauch)
+
+Name, Ladestand-Sensor, Kapazität und Kopplung stehen oben; Grenzen, Leistung und ein gemeinsamer Wechselrichter stehen in
+Abschnitten, die zu bleiben, bis sie einen Wert enthalten.
 
 | Feld | Bedeutung |
 |---|---|

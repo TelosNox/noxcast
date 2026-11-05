@@ -23,6 +23,12 @@ breaking changes.
   the grid. Before, the forecast emptied such a battery faster than it can.
 - The README is available in German as well: [README.de.md](README.de.md).
 
+### Changed
+- Shorter forms. A PV array asks for its mounting (free behind, on the roof, in the roof) instead of a cell heating in
+  K; the date, the temperature coefficient and an own heating value are under "Advanced". A consumer is set up in two
+  steps, and the second shows only the fields of its timing. A battery shows name, sensor, capacity and coupling; limits,
+  power and a shared inverter are in sections. Existing entries keep their values.
+
 ### Fixed
 - The weather card no longer stays on "No weather from Noxcast yet" after Home Assistant restarts. It asks again
   until Noxcast is up and picks the weather up again after a reconnect, without reloading the page.

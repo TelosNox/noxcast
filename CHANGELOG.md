@@ -16,6 +16,11 @@ breaking changes.
 - The day card no longer shows an empty day after Home Assistant restarts. While Noxcast is still starting it asks again
   within seconds instead of waiting for its next regular refresh, and then loads the house load, battery and weather
   of the day as well.
+- Without a house load sensor, the day card no longer draws a battery forecast that only ever charges. It shows the
+  measured state of charge and no estimate ahead, because the battery's discharge is not known.
+
+### Changed
+- The sidebar panel shows the Load and Battery tabs only when a house load sensor or a battery is set up.
 
 ## [0.1.0b4] - 2026-11-04
 

@@ -517,9 +517,13 @@ class NoxcastPanel extends HTMLElement {
     const t = this._t, s = this._state;
     const titles = SECTION_TITLES[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_TITLES.en;
     const lang = (this._hass && this._hass.language || "en").slice(0, 2);
+    // load and battery only when set up in the integration (sections unknown while loading: all shown)
+    const known = (this._data && this._data.sections) || {};
+    const keys = ["learned", ...SECTIONS.map(([k]) => k)].filter((k) => known[k] !== false);
+    if (!keys.includes(s.section)) { s.section = "learned"; s.sel = null; }
     const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
     const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
-    const tabs = ["learned", ...SECTIONS.map(([k]) => k)].map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span>${titles[k]}</span></button>`).join("");
+    const tabs = keys.map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span>${titles[k]}</span></button>`).join("");
     if (s.section !== "learned") {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}

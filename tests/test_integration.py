@@ -117,6 +117,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     arr = msg["result"]["arrays"][0]
     assert arr["name"] == "Roof" and arr["learned"]["efficiency"] > 0.8 and "cells" in arr["learned"]
     assert arr["planes"] == [{"tilt": 30, "azimuth": 180, "peak_w": 1000}]
+    assert msg["result"]["sections"] == {"load": False, "battery": False}   # no house load, no battery: tabs hidden
     await client.send_json_auto_id({"type": "noxcast/accuracy"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["arrays"][0]["name"] == "Roof"

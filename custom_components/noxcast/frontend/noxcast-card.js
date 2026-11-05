@@ -911,7 +911,9 @@ class NoxcastCard extends HTMLElement {
           for (let i = 1; i < pts.length; i++) if (pts[i][0] >= ts) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (ts - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0] || 1);
           return pts[pts.length - 1][1];
         } };
-      } else sim = this._simulate(bat, now, t1, exp, load);
+      } else if (dayH.some((h) => h + H > now && load(h) !== null)) sim = this._simulate(bat, now, t1, exp, load);
+      // without a known house load the level ahead cannot be estimated: only the measured level is drawn
+      else sim = { points: [], full: null, at: () => null };
       const zone = (h) => {                       // red: at the limit with surplus (lost), orange: within 5 % of it
         const f = h + H <= now ? m.socAt(h + H / 2) : sim.at(h + H / 2);
         if (f === null) return null;

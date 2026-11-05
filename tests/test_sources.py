@@ -19,7 +19,7 @@ HOURLY = {"shortwave_radiation": [0, 300, 400], "direct_normal_irradiance": [0, 
 
 
 def _failure(url: str) -> aiohttp.ClientResponseError:
-    request = Mock(real_url=f"{url}?latitude=12.345&longitude=6.789&apikey=SECRET")
+    request = Mock(real_url=f"{url}?latitude=12.345&longitude=6.789&apikey=SECRET")  # privacy-ok: made-up values
     failure = aiohttp.ClientResponseError(request, (), status=503, message="Service Unavailable")
     assert "latitude" in str(failure) and "SECRET" in str(failure)    # what the error would show on its own
     return failure

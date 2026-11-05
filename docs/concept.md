@@ -736,6 +736,22 @@ above load), not until midnight, so "battery empty at" is part of the result:
   AC-coupled ones more (about 90 %); configurable. Inverter losses are already inside the
   measured PV and house load and are not counted again.
 
+**Open: coupling of several storage systems.** "All batteries stay one storage" is a simplification that
+only holds where energy can flow freely between them. Two cases depend on how the systems are built and
+are not modelled yet:
+
+- PV above the output limit of one system (e.g. a balcony system) can only charge that system's own
+  battery. The combined storage lets it charge every battery, so with a full balcony battery and an empty
+  house battery the simulation books energy as charged that is really curtailed. Whether one system can
+  charge another depends on whether the energy can flow AC through the house grid.
+- Whether a battery behind a balcony inverter can charge from the house's surplus (AC charging) depends
+  on the system; many cannot, some are built exactly that way. The simulation assumes they can.
+
+Modelling this means configuring each storage system with what it can take in (own PV only, AC from the
+house, from which other system) and simulating the systems separately, coupled where that is possible.
+Until then the combined storage is kept; the error affects installations with an output limit and a
+second battery, and is visible as a too-early "full" and too little curtailment.
+
 ### Planning flexible consumers
 
 The forecast gives the surplus without flexible consumers. Each flexible consumer has a run

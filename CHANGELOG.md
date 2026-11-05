@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0] - 2026-11-05
+
 The first stable release. It contains everything from the pre-releases 0.1.0b1 to 0.1.0b5, listed in
 [CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md): a PV forecast per array and in total for
 up to 7 days with a P10–P90 band, nightly learning of efficiency, shade, reflection and temperature loss from your own

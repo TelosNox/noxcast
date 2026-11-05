@@ -129,6 +129,16 @@ class NoxcastDiagnostics extends HTMLElement {
       <div class="bar"><button class="chip" data-refresh="1">${t.refresh}</button></div>${body}</div>`;
   }
 
+  // a sensor state as Home Assistant shows it, without the trailing zeros of a raw "0.0 W"; whole watts
+  // and percent are enough to see that a sensor works, kW and kWh keep two decimals
+  _state(s) {
+    if (s.state === null) return "–";
+    const v = Number(s.state), unit = s.unit || "";
+    if (s.state === "" || !Number.isFinite(v)) return `${esc(s.state)} ${esc(unit)}`;
+    const digits = /^(w|%|wh)$/i.test(unit) ? 0 : 2;
+    return `${v.toLocaleString(this._lang, { maximumFractionDigits: digits })} ${esc(unit)}`;
+  }
+
   _entry(e) {
     const t = this._t, issues = this._issues(e);
     const tiles = [
@@ -143,7 +153,7 @@ class NoxcastDiagnostics extends HTMLElement {
     const owners = [...new Set(e.sensors.map((s) => s.owner))];
     const rows = owners.map((o) => `<tr class="group"><td colspan="5">${esc(o)}</td></tr>${e.sensors.filter((s) => s.owner === o).map((s) => `
       <tr><td><span class="mono">${escId(s.entity_id)}</span><div class="muted small">${t.roles[s.role] || s.role}</div></td>
-        <td class="num">${s.state === null ? "–" : `${esc(s.state)} ${esc(s.unit || "")}`}</td>
+        <td class="num">${this._state(s)}</td>
         <td class="muted small">${esc(s.state_class || "")}</td>
         <td>${STAT_ROLES.has(s.role) ? (s.statistics ? this._meter(s.coverage) : `<span class="bad">✕</span>`) : ""}</td>
         <td class="muted small">${s.first ? `${t.since} ${this._d(s.first)}` : ""}</td></tr>`).join("")}`).join("");

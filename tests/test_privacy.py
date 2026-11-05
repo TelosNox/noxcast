@@ -84,12 +84,35 @@ def test_the_hook_follows_cd_and_dash_c():
 
 
 
-def test_a_pull_request_needs_a_review_section(tmp_path):
-    assert guard.has_review('gh pr create --title x --body "Text\n\n## Review\nTier: Other"', tmp_path)
-    assert not guard.has_review('gh pr create --title x --body "Text"', tmp_path)
-    (tmp_path / "body.md").write_text("Text\n\n## Review\nTier: Other\n", encoding="utf-8")
-    assert guard.has_review("gh pr create --title x --body-file body.md", tmp_path)
-    assert not guard.has_review("gh pr create --title x --body-file missing.md", tmp_path)
-    assert guard.has_review("gh pr create --title x --body-file=body.md", tmp_path)
-    assert not guard.has_review('gh pr create --body "## Reviewer notes"', tmp_path)
-    assert not guard.has_review("gh pr create --title '## Review' --body-file missing.md", tmp_path)
+def test_the_description_is_read_inline_or_from_a_file(tmp_path):
+    assert "## Review" in guard.pr_body('gh pr create --title x --body "Text\n\n## Review\nTier: Model"', tmp_path)
+    (tmp_path / "body.md").write_text("Text\n\n## Review\n", encoding="utf-8")
+    for command in ("gh pr create --title x --body-file body.md", "gh pr create --title x --body-file=body.md",
+                    "gh pr create -F body.md"):
+        assert guard.pr_body(command, tmp_path) == "Text\n\n## Review\n"
+    assert guard.pr_body("gh pr create --title '## Review' --body-file missing.md", tmp_path) == ""
+
+
+def test_a_release_needs_a_review():
+    assert guard.pr_problem("Release 0.1.0", "release/0.1.0", ["CHANGELOG.md"])
+    assert guard.pr_problem("Release\n\n## Reviewer notes", "release/0.1.0", [])
+    assert guard.pr_problem("Release\n\n## Review\nTier: all", "release/0.1.0", []) is None
+
+
+def test_a_pv_model_change_needs_a_backtest():
+    model = ["custom_components/noxcast/shade.py", "tests/test_shade.py"]
+    assert "shade.py" in guard.pr_problem("Better shade", "feat/shade", model)
+    assert guard.pr_problem("Better shade\n\n## Backtest\nRoof: 9.8 % -> 8.1 %", "feat/shade", model) is None
+    assert guard.pr_problem("Card colours", "feat/card", ["custom_components/noxcast/frontend/noxcast-card.js"]) is None
+
+
+def test_the_head_branch_is_read_without_owner_and_quotes():
+    for command in ("gh pr create --head release/0.1.0", "gh pr create --head=TelosNox:release/0.1.0",
+                    'gh pr create -H "release/0.1.0" --title x'):
+        assert guard.pr_head(command) == "release/0.1.0"
+    assert guard.pr_head("gh pr create --title x") is None
+
+
+def test_a_description_on_stdin_is_read_from_the_command(tmp_path):
+    command = "gh pr create --title x --body-file - <<'EOF'\nText\n\n## Review\nEOF"
+    assert guard.has_section(guard.pr_body(command, tmp_path), "## Review")

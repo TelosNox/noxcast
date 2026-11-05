@@ -4,7 +4,9 @@
   branch. Code work runs in a worktree of its own.
 - No commit on `main`: work reaches it only through a pull request.
 - No commit, push or pull request with private data (`.github/scripts/check_privacy.py`).
-- No pull request without a `## Review` section from the noxcast-review skill (`.claude/skills/noxcast-review`).
+- A release pull request (branch `release/...`) needs the `## Review` section of the noxcast-review skill
+  (`.claude/skills/noxcast-review`); any other pull request that changes the PV model needs a `## Backtest` section
+  with the numbers or the reason why there are none (`docs/concept.md`, PV backtest).
 
 A blocked command exits with 2; the reason goes to stderr, which Claude Code shows to the session.
 Finding the directory a command runs in is best effort: a leading `cd` and `git -C` are understood.
@@ -20,6 +22,9 @@ import sys
 from pathlib import Path
 
 REVIEW = "## Review"
+BACKTEST = "## Backtest"
+PV_MODEL = {f"custom_components/noxcast/{name}.py" for name in (
+    "model", "shade", "solar", "effects", "fine", "conditions", "band", "intraday", "learning", "forecasting")}
 WORKTREE_HINT = "git worktree add .claude/worktrees/<topic> -b <prefix>/<topic> origin/main"
 
 
@@ -86,8 +91,8 @@ def actions(command: str, cwd: Path) -> list[tuple[str, Path]]:
     return found
 
 
-def _section(text: str) -> bool:
-    return re.search(rf"^\s*{re.escape(REVIEW)}\s*$", text, re.M) is not None
+def has_section(text: str, heading: str) -> bool:
+    return re.search(rf"^\s*{re.escape(heading)}\s*$", text, re.M) is not None
 
 
 def _local_path(raw: str, place: Path) -> Path:
@@ -98,15 +103,36 @@ def _local_path(raw: str, place: Path) -> Path:
     return (place / raw).resolve()
 
 
-def has_review(command: str, place: Path) -> bool:
-    """Whether the description of `gh pr create` holds a `## Review` line, inline or in --body-file / -F."""
+def pr_body(command: str, place: Path) -> str:
+    """The description `gh pr create` is given, inline or from --body-file / -F; empty if the file cannot be read."""
     body_file = re.search(r"\bgh\s+pr\s+create\b.*?(?:--body-file|-F)(?:=|\s+)(\"[^\"]+\"|'[^']+'|\S+)", command, re.S)
+    if body_file and body_file[1].strip("\"'") in {"-", "/dev/stdin"}:
+        return command                                          # a heredoc on stdin is part of the command text
     if body_file:
         try:
-            return _section(_local_path(body_file[1], place).read_text(encoding="utf-8"))
+            return _local_path(body_file[1], place).read_text(encoding="utf-8")
         except OSError:
-            return False
-    return _section(command)
+            return ""
+    return command
+
+
+def pr_head(command: str) -> str | None:
+    """The branch given with --head / -H, without quotes and without an owner: prefix."""
+    head = re.search(r"\bgh\s+pr\s+create\b.*?(?:--head|-H)(?:=|\s+)(\"[^\"]+\"|'[^']+'|\S+)", command, re.S)
+    return head[1].strip("\"'").split(":")[-1] if head else None
+
+
+def pr_problem(body: str, branch: str, files: list[str]) -> str | None:
+    """What a pull request's description lacks: the release review, or the backtest of a PV model change."""
+    if branch.startswith("release/"):
+        if not has_section(body, REVIEW):
+            return ("A release needs its review: run the noxcast-review skill on everything since the last tag and put "
+                    f"its \"{REVIEW}\" section into the description.")
+    elif PV_MODEL & set(files) and not has_section(body, BACKTEST):
+        return (f"This pull request changes the PV model ({', '.join(sorted(PV_MODEL & set(files)))}). Put a "
+                f"\"{BACKTEST}\" section into the description: hold-out, in-sample and baseline per array from main and "
+                "from the branch (prototype/backtest.py), or the reason why there are none.")
+    return None
 
 
 def _git(place: Path, *args: str) -> str:
@@ -135,9 +161,13 @@ def problems(command: str, cwd: Path) -> list[str]:
                           f"worktree of its own: {WORKTREE_HINT}")
         elif action == "commit" and _git(place, "branch", "--show-current") == "main":
             result.append("No commit on main: work reaches it only through a pull request. Commit on a branch.")
-        elif action == "pr" and not has_review(command, place):
-            result.append("No pull request without a review: run the noxcast-review skill and put its \"## Review\" "
-                          "section into the description (a --body-file must be readable from the session's folder).")
+        elif action == "pr":
+            head = pr_head(command)
+            branch = head or _git(place, "branch", "--show-current")
+            ref = "HEAD" if not head else head if _git(place, "rev-parse", "--verify", "--quiet", head) else f"origin/{head}"
+            files = _git(place, "diff", "--name-only", f"origin/main...{ref}").splitlines()
+            if found := pr_problem(pr_body(command, place), branch, files):
+                result.append(found + " (A --body-file must be readable from the session's folder.)")
         if action in {"commit", "push", "pr"}:
             try:
                 privacy, root = _privacy(place)

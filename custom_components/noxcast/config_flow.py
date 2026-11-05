@@ -219,7 +219,8 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = await _validate_main(self, user_input)
             if not errors:
-                return self.async_update_reload_and_abort(entry, data=user_input)
+                # the update listener reloads; reloading here as well is an error from Home Assistant 2026.12
+                return self.async_update_and_abort(entry, data=user_input)
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
                                     errors=errors)
 

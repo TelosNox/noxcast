@@ -33,6 +33,9 @@ breaking changes.
   power and a shared inverter are in sections. Existing entries keep their values.
 
 ### Fixed
+- Reconfiguring Noxcast (Settings → Devices & services → Noxcast → Reconfigure) reloads it once instead of twice and
+  keeps working with Home Assistant 2026.12, which refuses the double reload. Home Assistant 2026.6 to 2026.11 log a
+  warning about it.
 - The weather card no longer stays on "No weather from Noxcast yet" after Home Assistant restarts. It asks again
   until Noxcast is up and picks the weather up again after a reconnect, without reloading the page.
 - The day card no longer shows an empty day after Home Assistant restarts. While Noxcast is still starting it asks again

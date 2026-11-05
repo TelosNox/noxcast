@@ -8,6 +8,11 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
+- "Prediction and reality" in Battery & surplus compares when the battery is empty for the night: from
+  when it stays at its lower limit until it charges again. Before, a battery that was empty in the morning showed
+  "empty" at the morning in prediction and actual, so the evening was never compared. Days on which the battery
+  did not charge are marked and left out, and "lasts the night" is counted like "full". Predictions stored
+  before this version get no empty comparison.
 - While a learning run started with "Learn again now" is going, the panel no longer rebuilds the whole page every
   few seconds. Only the learning status updates; the rest is redrawn once when the run is done.
 

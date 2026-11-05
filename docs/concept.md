@@ -483,12 +483,17 @@ orientation changes the geometry key and starts relearning.
     full and the days at the lower limit. The what-if runs in the browser with the same rules as
     `battery.simulate`.
     Prediction and reality: the first simulation after the morning fix is kept per day (store,
-    30 days: full and empty time, highest state of charge, limits, the next charge start) and
-    compared with the 5-minute statistics of the state of charge sensors (all batteries as one,
-    weighted by capacity; within 2 percentage points of a limit counts as reached). Shown as a
-    dumbbell per day with the mean deviation of the full and empty times and how often "full or
-    not" was right. Short-term statistics are kept for about ten days, so older predictions have
-    no comparison.
+    30 days: full time, empty-for-the-night time, whether the battery charges at all, highest state of
+    charge, limits, the next charge start) and compared with the 5-minute statistics of the state of
+    charge sensors (all batteries as one, weighted by capacity; within 2 percentage points of a limit
+    counts as reached). Empty for the night is when the battery reaches its lower limit for the last time
+    before the next charge start and stays there (`battery.night_empty`): a battery that is empty in the
+    morning, or runs empty and charges again on a day of changing weather, is judged by the evening.
+    Days on which it never got above the limit are marked "not charged" and left out. Shown as a
+    dumbbell per day with the mean deviation of the full and the empty-for-the-night times and how often
+    "full or not" and "lasts the night or not" were right. Predictions stored before `night` existed
+    hold the first time empty after the morning and get no empty comparison. Short-term statistics are
+    kept for about ten days, so older predictions have no comparison.
   - **Diagnostics** (`noxcast/diagnostics`): weather source, last learning run (with its duration and the backtest's, to see what
     they cost on the real machine) and archive at a glance;
     notes on missing or unavailable sensors, missing statistics, low statistics coverage (last 30

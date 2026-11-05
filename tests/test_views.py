@@ -200,7 +200,7 @@ def test_battery_entry_and_reviews():
     short = {"sensor.soc": [{"start": A + i * 300, "mean": 50.0 + i} for i in range(60)]}
     review = views.prediction_review(log, short, {"sensor.soc": 5000.0}, lambda key: A + 86400)
     assert review == [{"date": "2026-07-01", "predicted": log["2026-07-01"],
-                       "actual": {"full_at": A + 38 * 300, "empty_at": None, "max_soc": 1.09, "complete": False,
+                       "actual": {"full_at": A + 38 * 300, "empty_at": None, "charged": True, "max_soc": 1.09, "complete": False,
                                   "day_complete": False}}]
 
 

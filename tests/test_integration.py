@@ -706,7 +706,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     assert c._store_data()["pv_backtest"] == c.pv_backtest
     assert c.last_learning_seconds is not None and c._store_data()["last_learning_seconds"] == c.last_learning_seconds
     assert c.load_events is not None and all(c.consumer_models.values())
-    assert (prints, ws_prints) == (PINNED, WS_PINNED), (prints, ws_prints)      # both at once: one CI run updates both
+    assert (prints, ws_prints) == (PINNED, WS_PINNED), f"PINNED = {prints!r}  WS_PINNED = {ws_prints!r}"      # both at once: one CI run updates both
 
 
 async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_client) -> None:

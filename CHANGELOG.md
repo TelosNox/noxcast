@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- While a learning run started with "Learn again now" is going, the panel no longer rebuilds the whole page every
+  few seconds. Only the learning status updates; the rest is redrawn once when the run is done.
+
 ## [0.1.0b5] - 2026-11-05
 
 The last pre-release before the first stable version 0.1.0. The sections below list what changed since 0.1.0b4.

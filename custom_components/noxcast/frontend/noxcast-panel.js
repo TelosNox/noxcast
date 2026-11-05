@@ -447,7 +447,13 @@ class NoxcastPanel extends HTMLElement {
     const finished = this._status && this._status.running && !st.running;
     this._status = st;
     if (st.running && this.isConnected) this._statusTimer = setTimeout(() => this._loadStatus(), 10000);
-    if (finished) this._load(); else this._render();
+    if (finished) this._load(); else this._updateStatus();
+  }
+
+  // only the status box: rebuilding the whole panel every few seconds would scroll it back and redraw the maps
+  _updateStatus() {
+    const slot = this.shadowRoot && this.shadowRoot.getElementById("nx-status");
+    if (slot) slot.innerHTML = this._renderStatus();
   }
 
   async _relearn() {
@@ -458,7 +464,7 @@ class NoxcastPanel extends HTMLElement {
     } catch (err) {
       this._statusError = String((err && err.message) || err);
     }
-    this._render();
+    this._updateStatus();
     clearTimeout(this._statusTimer);
     this._statusTimer = setTimeout(() => this._loadStatus(), 3000);
   }
@@ -577,6 +583,13 @@ class NoxcastPanel extends HTMLElement {
 
   _render() {
     if (!this.shadowRoot) return;
+    // the new content replaces the old at once: hold the height for a frame, so the page does not shrink and
+    // scroll back to the top in between
+    const height = this.offsetHeight;
+    if (height) {
+      this.style.minHeight = `${height}px`;
+      requestAnimationFrame(() => { this.style.minHeight = ""; });
+    }
     const t = this._t, s = this._state;
     const titles = SECTION_TITLES[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_TITLES.en;
     const short = SECTION_SHORT[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_SHORT.en;
@@ -666,7 +679,7 @@ class NoxcastPanel extends HTMLElement {
         <div class="minis">${maps}</div>
       </section>`;
     }).join("");
-    return `<div class="stack">${this._renderStatus()}${cards}${this._legend("shade")}</div>`;
+    return `<div class="stack"><div id="nx-status" class="status-slot">${this._renderStatus()}</div>${cards}${this._legend("shade")}</div>`;
   }
 
   _renderArray(arr) {
@@ -1265,6 +1278,7 @@ class NoxcastPanel extends HTMLElement {
         border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color)); box-shadow: var(--ha-card-box-shadow, none); }
       .pad { padding: 16px; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
+      .status-slot { display: contents; }
       .row { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }
       .figs { flex: 0 1 220px; min-width: 200px; display: flex; flex-direction: column; }
       h2 { margin: 0 0 8px; font-size: 18px; font-weight: 500; }

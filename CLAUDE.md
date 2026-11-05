@@ -22,6 +22,19 @@ optional parts of the same integration. See `docs/concept.md`.
 - Work reaches `main` only through a pull request. Finished work goes on a branch from `main` and gets a PR with
   squash auto-merge, without asking; this is the maintainer's standing approval for PR work.
 - Merging a PR does not publish anything for users. Only a release does (see below).
+- Branch names: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `ci/`, `test/` or `release/`, then a short
+  kebab-case topic.
+- The PR title becomes the squash commit on `main`: one sentence on what changes, from the user's point of view where
+  users notice it (e.g. "Battery forecast respects the output limit of balcony inverters").
+
+## Code
+- Functional core, imperative shell (`docs/concept.md`, Architecture): computations are pure functions without Home
+  Assistant imports; the coordinator, `panel.py` and the other shell modules only fetch, store and publish.
+  `tests/test_boundaries.py` enforces this. A new module is part of the core unless it is added to `SHELL` there.
+- Comments explain why, not what.
+- `ruff check .` must pass (CI job `lint`, rules pinned in `pyproject.toml`). Lines may exceed 120 characters where
+  splitting hurts readability; the limit is not enforced.
+- Tests run only in CI (GitHub Actions). Push and read the results there.
 
 ## Releases
 Noxcast is delivered in releases. HACS offers users the latest release, not the latest commit on `main`.
@@ -69,3 +82,8 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 - Data quality before modelling: curtailment (full battery / zero export / inverter limit),
   outages, snow and partial hours are excluded from learning.
 - Hourly mean values belong to the sun position at the middle of the hour.
+- Clear sky is the upper bound. Uncertainty bands, intraday corrections and similar adjustments vary the cloud part
+  (clearness between overcast and clear), never act as a factor on PV power. The clear-sky output with the learned
+  model (shade, efficiency) may be exceeded by a few percent at most, for model errors.
+- Every model change proves itself in the backtest (`backtest.py`, `docs/concept.md`, PV backtest) before it is
+  merged; the PR says what changed in the metrics.

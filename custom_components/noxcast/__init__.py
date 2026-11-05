@@ -102,6 +102,9 @@ async def _async_reload(hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    if unloaded := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        issues.async_clear_issues(hass)
-    return unloaded
+    # repairs stay: a reload recomputes them, and deleting them would forget which ones the user ignored
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
+    issues.async_clear_issues(hass)

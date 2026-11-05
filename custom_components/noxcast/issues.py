@@ -1,7 +1,8 @@
 """Repairs issues: problems a user should see without opening the panel's diagnostics.
 
 Each issue exists exactly while its condition holds; it is recomputed after every forecast update
-(which also follows every learning run) and removed when the entry unloads.
+(which also follows every learning run) and removed when the entry is deleted. A reload or restart keeps
+them, because deleting an issue also forgets that the user ignored it.
 """
 from __future__ import annotations
 
@@ -53,11 +54,14 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
 def async_update_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
     """Create the issues that hold now and delete the ones that no longer do."""
     wanted = wanted_issues(hass, entry)
+    keep = set(wanted)
+    if not hass.is_running:               # sensors are not checked yet: an existing issue may still hold
+        keep.add(MISSING_SENSORS)
     for issue_id, (severity, placeholders) in wanted.items():
         ir.async_create_issue(hass, DOMAIN, issue_id, is_fixable=False, is_persistent=False, severity=severity,
                               translation_key=ARRAY_CHECK.rstrip("_") if issue_id.startswith(ARRAY_CHECK) else issue_id,
                               translation_placeholders=placeholders)
-    async_clear_issues(hass, keep=set(wanted))
+    async_clear_issues(hass, keep=keep)
 
 
 @callback

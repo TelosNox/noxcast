@@ -221,4 +221,10 @@ def usable(total: Series, battery: dict | None) -> tuple[Series, Series]:
         return dict(total), {}
     capped = battery["limits"].capped if battery.get("limits") else {}
     house = {t: max(v - capped.get(t, 0.0), 0.0) for t, v in total.items()}
-    return house, {t: max(h["lost"] - h.get("curtailed", 0.0), 0.0) for t, h in battery["sim"].hours.items()}
+
+    def curtailed(t: float, h: dict) -> float:
+        # the battery takes capped PV first, since nothing else can; with the house drawing at the same time
+        # its net flow is smaller than what it took, and then all that is lost is capped PV anyway
+        return min(h["lost"], max(capped.get(t, 0.0) - max(h["battery"], 0.0), 0.0))
+
+    return house, {t: max(h["lost"] - curtailed(t, h), 0.0) for t, h in battery["sim"].hours.items()}

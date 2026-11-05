@@ -104,7 +104,7 @@ class Simulation:
     surplus_wh: float = 0.0               # PV above load
     max_soc: float = 0.0
     max_soc_at: float | None = None
-    hours: dict[float, dict] = field(default_factory=dict)              # per hour: surplus, battery, lost (curtailed of it), grid, soc
+    hours: dict[float, dict] = field(default_factory=dict)              # per hour: surplus, battery, lost, grid, soc
 
     def soc_at(self, ts: float) -> float | None:
         """State of charge at a time, linear between the simulated points."""
@@ -142,7 +142,7 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
         capped = caps.capped.get(t, 0.0) * share                   # PV above an output cap: battery only
         net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share - capped
         surplus = max(net, 0.0) + capped
-        hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "curtailed": 0.0, "grid": 0.0}
+        hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "grid": 0.0}
         if surplus > 0:
             sim.surplus_wh += surplus
             room = max(e_max - e, 0.0) / eta                       # surplus the battery can still take
@@ -156,9 +156,7 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
                 sim.lost_from = start
             sim.charged_wh += take
             sim.lost_wh += lost
-            # the battery takes capped PV first, since nothing else can; what it cannot take is curtailed,
-            # it never reaches the house
-            hour.update(battery=round(take, 1), lost=round(lost, 1), curtailed=round(max(capped - take, 0.0), 1))
+            hour.update(battery=round(take, 1), lost=round(lost, 1))
         if net < 0:                                                # capped PV may charge while the house draws
             need = -net
             avail = max(e - e_min, 0.0) * eta                      # load the battery can still cover

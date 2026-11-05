@@ -524,9 +524,10 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     import math
     import random
 
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
     from custom_components.noxcast import archive
+    from custom_components.noxcast.const import LEARN_TIME
     from custom_components.noxcast.coordinator import NoxcastCoordinator
 
     tz = dt_util.get_default_time_zone()
@@ -672,8 +673,13 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         ws_prints["midday"] = await _ws_prints(client)
         freezer.move_to(times[3])
         assert c.pv_backtest is None                # only the nightly run starts it, not a learning run
-        await c._async_nightly(times[3])
-        await c._backtest_task
+        # the scheduled nightly run itself: called directly, its timer still fired later, as a second learning run
+        # racing the websocket fingerprints below
+        assert (times[3].astimezone(tz).hour, times[3].astimezone(tz).minute) == LEARN_TIME
+        async_fire_time_changed(hass, times[3])
+        # timer jobs run as background tasks: the nightly run, its backtest and the 01:30 refresh
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert c._backtest_task is not None and c._backtest_task.done()
         await c.async_refresh()
         prints.append(_fingerprint(c))
         freezer.move_to(times[4])

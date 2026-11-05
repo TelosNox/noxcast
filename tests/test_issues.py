@@ -39,7 +39,8 @@ async def test_issues_follow_their_conditions(hass: HomeAssistant) -> None:
     check = reg.async_get_issue(DOMAIN, "array_check_r")
     assert check.translation_key == "array_check" and check.translation_placeholders == {"name": "Roof"}
 
-    entry = _entry(arrays={"r": ROOF}, learned={"r": SimpleNamespace(hints=[])})       # all fixed
+    # direction and season can come from shade: no repair for them, as no badge in the panel
+    entry = _entry(arrays={"r": ROOF}, learned={"r": SimpleNamespace(hints=["direction", "season"])})
     issues.async_update_issues(hass, entry)
     assert _ids(hass) == set()
 

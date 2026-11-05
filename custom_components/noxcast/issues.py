@@ -16,6 +16,9 @@ NO_ARRAYS = "no_arrays"
 MISSING_SENSORS = "missing_sensors"
 WEATHER_UNAVAILABLE = "weather_unavailable"
 ARRAY_CHECK = "array_check_"          # + subentry id
+# only the hints that are configuration errors for sure, as the panel's "Check" badge: direction and season
+# can come from shade as well, so they stay in the panel and the diagnostics
+CERTAIN_HINTS = {"peak", "high"}
 
 
 def _battery_names(entry: NoxcastConfigEntry) -> dict[str, str]:
@@ -41,7 +44,7 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
         out[WEATHER_UNAVAILABLE] = (ir.IssueSeverity.ERROR, {})
     for sid, arr in c.arrays.items():
         la = c.learned.get(sid)
-        if la is not None and la.hints:
+        if la is not None and CERTAIN_HINTS & set(la.hints):
             out[ARRAY_CHECK + sid] = (ir.IssueSeverity.WARNING, {"name": arr.name})
     return out
 

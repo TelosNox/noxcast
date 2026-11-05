@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+The first stable release. The sections below list what changed since the last pre-release. If you install Noxcast
+for the first time, everything in the pre-release sections further down is part of it as well: a PV forecast per
+array and in total for up to 7 days with a P10–P90 band, nightly learning of efficiency, shade, reflection and
+temperature loss from your own history, a day-ahead accuracy archive, and optionally a house load forecast, a battery
+simulation and the best time for flexible consumers, shown in a sidebar panel, a day card and a weather card.
+
 ### Added
 - Forecast sensors for 3 to 6 days ahead, per array and in total, as far as the configured forecast days reach. They
   are disabled at first: enable the ones you need under the Noxcast device. They have no P10–P90, since that band is
@@ -27,6 +33,7 @@ breaking changes.
 - The README is available in German as well: [README.de.md](README.de.md).
 
 ### Changed
+- The sidebar panel shows the Load and Battery tabs only when a house load sensor or a battery is set up.
 - On a phone, the panel's sections sit in a row of their own below the menu, each with its icon and a short name,
   so every section can be told apart without trying them.
 - Shorter forms. A PV array asks for its mounting (free behind, on the roof, in the roof) instead of a cell heating in
@@ -45,9 +52,6 @@ breaking changes.
   of the day as well.
 - Without a house load sensor, the day card no longer draws a battery forecast that only ever charges. It shows the
   measured state of charge and no estimate ahead, because the battery's discharge is not known.
-
-### Changed
-- The sidebar panel shows the Load and Battery tabs only when a house load sensor or a battery is set up.
 
 ## [0.1.0b4] - 2026-11-04
 

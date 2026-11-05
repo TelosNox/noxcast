@@ -11,8 +11,8 @@ Optional: a house load forecast, a battery simulation and the best time for the 
 
 ![The day view: forecast, expectation and actual of two arrays, with the P10–P90 range and the weather of each hour](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/day.png)
 
-**Status:** early version, pre-releases only so far; breaking changes are possible and listed in the
-[changelog](CHANGELOG.md). All screenshots show demo data.
+**Status:** version 0.x: stable releases, still young. While the version starts with 0, a minor version can bring
+breaking changes; each one is marked in the [changelog](CHANGELOG.md) with what you have to do. All screenshots show demo data.
 
 **Languages:** Noxcast is available in English and German (Deutsch). Setup, entities, panel and cards follow the
 language of your Home Assistant user; other languages fall back to English.
@@ -331,7 +331,7 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | No PV array yet | The integration is set up, but no PV array is added |
 | Sensors missing | A configured entity does not exist (renamed or removed) |
 | No weather forecast | Open-Meteo could not be reached for more than a day |
-| Configuration does not fit | The measurements of a PV array do not fit its peak power, tilt, azimuth or sensor (see *Learned*) |
+| Configuration does not fit | A PV array delivers more than its configured modules can: peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
 
 ## Services
 

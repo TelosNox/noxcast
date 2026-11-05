@@ -123,3 +123,12 @@ def test_cap_without_array_limits_the_battery_alone_and_no_cap_changes_nothing()
     assert bt.limits([a], {}, [12 * H]).discharge == {12 * H: 800}
     plain = bt.Battery(2000, 0.5, max_discharge_w=500)
     assert bt.limits([plain], {}, [12 * H]) == bt.Limits()
+
+
+def test_caps_reach_past_the_charge_start():
+    # the plan for tomorrow and the card need the caps after the battery starts charging again, too
+    b = bt.Battery(2000, 0.5, efficiency=1.0, output_w=800, array="a")
+    pv = {h * H: (1000.0 if h in (12, 36) else 0.0) for h in range(10, 40)}
+    load = {h * H: 100.0 for h in range(10, 40)}
+    out = bt.day_simulation([b], pv, load, None, 10 * H, 24 * H, {"a": pv})
+    assert out["charge_start"] == 36 * H and out["limits"].capped[36 * H] == 200

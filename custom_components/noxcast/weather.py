@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .conditions import day_summary, hour_condition
-from .const import DOMAIN
+from .const import DOMAIN, WEATHER_DAYS
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .model import WeatherHour
 from .solar import sun_position
@@ -109,7 +109,7 @@ class NoxcastWeather(CoordinatorEntity[NoxcastCoordinator], WeatherEntity):
                                 native_templow=None if s["temp_min"] is None else round(s["temp_min"], 1),
                                 native_precipitation=s["precip"], cloud_coverage=s["cloud"],
                                 native_wind_speed=None if s["wind"] is None else round(s["wind"], 1)))
-        return out
+        return out[:WEATHER_DAYS]                           # the weather source is asked for one day more
 
     @callback
     def _handle_coordinator_update(self) -> None:

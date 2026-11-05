@@ -551,7 +551,8 @@ orientation changes the geometry key and starts relearning.
 
 - One integration, `noxcast`. PV generation is mandatory; load and planning are optional
   parts enabled via config subentries.
-- Internal modules: `pv/`, `load/`, `plan/`, plus shared weather access, storage, backtesting
+- One flat package: PV (`model.py`, `shade.py`, `solar.py`, …), load (`load.py`), battery and
+  planning (`battery.py`, `plan.py`, `flows.py`), plus shared weather access, storage, backtesting
   and diagnostics.
 - Functional core, imperative shell: every computation is a pure function without Home Assistant
   imports, testable on plain data. `learning.py` learns arrays, archive values, load and consumer

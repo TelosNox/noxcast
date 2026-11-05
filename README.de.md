@@ -11,8 +11,8 @@ kommt. Optional: eine Lastprognose fürs Haus, eine Akku-Simulation und der best
 
 ![Die Tagesansicht: Prognose, Erwartung und Ist zweier PV-Gruppen, mit dem P10–P90-Band und dem Wetter jeder Stunde](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/day.png)
 
-**Stand:** frühe Version, bisher nur Vorabversionen; inkompatible Änderungen sind möglich und stehen im
-[Changelog](CHANGELOG.md) (englisch). Alle Screenshots zeigen Demodaten.
+**Stand:** Version 0.x: stabile Releases, noch jung. Solange die Version mit 0 beginnt, kann eine Minor-Version
+inkompatible Änderungen bringen; jede ist im [Changelog](CHANGELOG.md) (englisch) markiert, mit dem, was du tun musst. Alle Screenshots zeigen Demodaten.
 
 **Sprachen:** Noxcast gibt es auf Deutsch und Englisch. Einrichtung, Entitäten, Panel und Karten folgen der Sprache
 deines Home-Assistant-Benutzers; andere Sprachen fallen auf Englisch zurück.
@@ -332,7 +332,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Noch keine PV-Gruppe | Die Integration ist eingerichtet, aber keine PV-Gruppe hinzugefügt |
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
-| Konfiguration passt nicht | Die Messwerte einer PV-Gruppe passen nicht zu Spitzenleistung, Neigung, Azimut oder Sensor (siehe *Gelerntes*) |
+| Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
 
 ## Dienste
 

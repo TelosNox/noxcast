@@ -677,9 +677,9 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         # racing the websocket fingerprints below
         assert (times[3].astimezone(tz).hour, times[3].astimezone(tz).minute) == LEARN_TIME
         async_fire_time_changed(hass, times[3])
-        await hass.async_block_till_done()
-        assert c._backtest_task is not None
-        await c._backtest_task
+        # timer jobs run as background tasks: the nightly run, its backtest and the 01:30 refresh
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert c._backtest_task is not None and c._backtest_task.done()
         await c.async_refresh()
         prints.append(_fingerprint(c))
         freezer.move_to(times[4])

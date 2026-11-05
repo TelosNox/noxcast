@@ -74,17 +74,13 @@
             "tilt": "Tilt",
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
-            "valid_since": "Configuration valid since",
-            "temp_coeff": "Temperature coefficient (datasheet)",
-            "heating": "Module heating"
+            "mounting": "Mounting"
           },
           "data_description": {
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
-            "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules.",
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
-            "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
+            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K."
           },
           "sections": {
             "orientation_2": {
@@ -119,6 +115,20 @@
               },
               "data_description": {
                 "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "advanced": {
+              "name": "Advanced",
+              "description": "Usually not needed.",
+              "data": {
+                "valid_since": "Configuration valid since",
+                "temp_coeff": "Temperature coefficient (datasheet)",
+                "heating": "Module heating"
+              },
+              "data_description": {
+                "valid_since": "Ignore older history, e.g. after moving or re-orienting the modules.",
+                "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
+                "heating": "Own value instead of the mounting: how much the cells heat above the air at 1000 W/m². Empty = from the mounting."
               }
             }
           }
@@ -131,14 +141,11 @@
             "tilt": "Tilt",
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
-            "valid_since": "Configuration valid since",
-            "temp_coeff": "Temperature coefficient (datasheet)",
-            "heating": "Module heating"
+            "mounting": "Mounting"
           },
           "data_description": {
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
-            "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
-            "heating": "How much the cells heat above the air temperature at 1000 W/m². Depends on the mounting: free behind (balcony, rack) about 30 K, parallel on a tiled roof 45–55 K, integrated into the roof about 60 K. Empty = 30 K."
+            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K."
           },
           "sections": {
             "orientation_2": {
@@ -173,6 +180,19 @@
               },
               "data_description": {
                 "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "advanced": {
+              "name": "Advanced",
+              "description": "Usually not needed.",
+              "data": {
+                "valid_since": "Configuration valid since",
+                "temp_coeff": "Temperature coefficient (datasheet)",
+                "heating": "Module heating"
+              },
+              "data_description": {
+                "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
+                "heating": "Own value instead of the mounting: how much the cells heat above the air at 1000 W/m². Empty = from the mounting."
               }
             }
           }
@@ -199,56 +219,64 @@
       "step": {
         "user": {
           "title": "Consumer",
-          "description": "A device with its own power sensor. Its power is removed from the base load and forecast separately.",
+          "description": "A device with its own sensor. Its power is taken out of the base load and forecast on its own. Next step: the fields for its timing.",
           "data": {
             "name": "Name",
             "power_sensor": "Power sensor",
-            "timing": "Timing",
             "energy_sensor": "Energy sensor",
-            "remaining_time": "Remaining time",
-            "elapsed_time": "Elapsed time",
-            "run_power": "Run power",
-            "run_minutes": "Run duration",
-            "kind": "Kind",
-            "start_share": "Start now from PV share"
+            "timing": "Timing"
           },
           "data_description": {
-            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs.",
             "power_sensor": "Power of the device (W). Either this or an energy sensor.",
             "energy_sensor": "Instead of power: energy in kWh (meter or per program, total/total_increasing).",
-            "remaining_time": "Optional, for programs: the device's remaining time. A running program then counts until it ends.",
-            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
-            "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
-            "run_minutes": "Duration of a typical run. Empty = learned from its history.",
-            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on. Regulated: follows the outside temperature (air conditioning, heat pump); learned from a year of history and the temperature archive.",
-            "start_share": "Flexible consumers: the sensor “start now” turns on when a run started now gets at least this share from surplus and about as much as the best window still to come today. Empty = 70 %."
+            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs."
           }
         },
         "reconfigure": {
           "title": "Consumer",
-          "description": "A device with its own power sensor. Its power is removed from the base load and forecast separately.",
+          "description": "A device with its own sensor. Its power is taken out of the base load and forecast on its own. Next step: the fields for its timing.",
           "data": {
             "name": "Name",
             "power_sensor": "Power sensor",
-            "timing": "Timing",
             "energy_sensor": "Energy sensor",
-            "remaining_time": "Remaining time",
-            "elapsed_time": "Elapsed time",
-            "run_power": "Run power",
-            "run_minutes": "Run duration",
-            "kind": "Kind",
-            "start_share": "Start now from PV share"
+            "timing": "Timing"
           },
           "data_description": {
-            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs.",
             "power_sensor": "Power of the device (W). Either this or an energy sensor.",
             "energy_sensor": "Instead of power: energy in kWh (meter or per program, total/total_increasing).",
-            "remaining_time": "Optional, for programs: the device's remaining time. A running program then counts until it ends.",
-            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program.",
+            "timing": "Fixed: runs regardless of surplus and is part of the load forecast. Flexible: its moment should follow the surplus, so it only counts while it runs."
+          }
+        },
+        "fixed": {
+          "title": "{name}: fixed",
+          "description": "Runs regardless of the surplus and is part of the load forecast.",
+          "data": {
+            "kind": "Kind",
+            "remaining_time": "Remaining time",
+            "elapsed_time": "Elapsed time"
+          },
+          "data_description": {
+            "kind": "Profile: median per hour (like base load). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV). Regulated: follows the outside temperature (heat pump, air conditioning).",
+            "remaining_time": "Optional: remaining time of the device. A running program then counts until its end.",
+            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program."
+          }
+        },
+        "flexible": {
+          "title": "{name}: flexible",
+          "description": "You choose when it runs; Noxcast suggests the window. Empty values are learned from the history.",
+          "data": {
+            "run_power": "Run power",
+            "run_minutes": "Run duration",
+            "start_share": "Start now from PV share",
+            "remaining_time": "Remaining time",
+            "elapsed_time": "Elapsed time"
+          },
+          "data_description": {
             "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
             "run_minutes": "Duration of a typical run. Empty = learned from its history.",
-            "kind": "Only for fixed timing. Profile: median per hour (base-like loads). Program: runs with an end, learned start times and runs per day (dishwasher). Session: on, then open-ended (PC, TV); learned on-probability and how long it usually stays on. Regulated: follows the outside temperature (air conditioning, heat pump); learned from a year of history and the temperature archive.",
-            "start_share": "Flexible consumers: the sensor “start now” turns on when a run started now gets at least this share from surplus and about as much as the best window still to come today. Empty = 70 %."
+            "start_share": "Flexible consumers: the sensor “start now” turns on when a run started now gets at least this share from surplus and about as much as the best window still to come today. Empty = 70 %.",
+            "remaining_time": "Optional: remaining time of the device. A running program then counts until its end.",
+            "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program."
           }
         }
       },
@@ -278,31 +306,57 @@
             "name": "Name",
             "soc_sensor": "State of charge",
             "capacity": "Capacity",
-            "max_soc": "Upper limit",
-            "max_soc_entity": "Upper limit as entity",
-            "min_soc": "Lower limit",
-            "min_soc_entity": "Lower limit as entity",
-            "reserve": "Reserve above the lower limit",
-            "coupling": "Coupling",
-            "efficiency": "Round-trip efficiency",
-            "max_charge_w": "Max. charge power",
-            "max_discharge_w": "Max. discharge power",
-            "output_limit_w": "Output limit of the inverter",
-            "array": "PV array behind the same inverter",
-            "battery_power": "Charge / discharge power",
-            "battery_power_invert": "Power counts discharging as positive"
+            "coupling": "Coupling"
           },
           "data_description": {
-            "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
-            "min_soc_entity": "Optional: the current discharge limit from the device.",
-            "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
-            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
-            "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
-            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room.",
-            "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery.",
-            "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
-            "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
-            "battery_power_invert": "Switch on if the power sensor is positive while discharging."
+            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %)."
+          },
+          "sections": {
+            "limits": {
+              "name": "Limits",
+              "description": "Charge and discharge limits. Defaults: 0–100 %, no reserve.",
+              "data": {
+                "max_soc": "Upper limit",
+                "max_soc_entity": "Upper limit as entity",
+                "min_soc": "Lower limit",
+                "min_soc_entity": "Lower limit as entity",
+                "reserve": "Reserve above the lower limit"
+              },
+              "data_description": {
+                "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
+                "min_soc_entity": "Optional: the current discharge limit from the device.",
+                "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
+              }
+            },
+            "power": {
+              "name": "Power",
+              "description": "Power sensor, efficiency and power limits. All optional.",
+              "data": {
+                "battery_power": "Charge / discharge power",
+                "battery_power_invert": "Power counts discharging as positive",
+                "efficiency": "Round-trip efficiency",
+                "max_charge_w": "Max. charge power",
+                "max_discharge_w": "Max. discharge power"
+              },
+              "data_description": {
+                "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
+                "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
+                "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+                "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+              }
+            },
+            "inverter": {
+              "name": "Shared inverter",
+              "description": "Only for a battery on the same inverter as a PV array (balcony systems).",
+              "data": {
+                "array": "PV array behind the same inverter",
+                "output_limit_w": "Output limit of the inverter"
+              },
+              "data_description": {
+                "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
+                "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery."
+              }
+            }
           }
         },
         "reconfigure": {
@@ -312,31 +366,57 @@
             "name": "Name",
             "soc_sensor": "State of charge",
             "capacity": "Capacity",
-            "max_soc": "Upper limit",
-            "max_soc_entity": "Upper limit as entity",
-            "min_soc": "Lower limit",
-            "min_soc_entity": "Lower limit as entity",
-            "reserve": "Reserve above the lower limit",
-            "coupling": "Coupling",
-            "efficiency": "Round-trip efficiency",
-            "max_charge_w": "Max. charge power",
-            "max_discharge_w": "Max. discharge power",
-            "output_limit_w": "Output limit of the inverter",
-            "array": "PV array behind the same inverter",
-            "battery_power": "Charge / discharge power",
-            "battery_power_invert": "Power counts discharging as positive"
+            "coupling": "Coupling"
           },
           "data_description": {
-            "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
-            "min_soc_entity": "Optional: the current discharge limit from the device.",
-            "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule.",
-            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %).",
-            "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
-            "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room.",
-            "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery.",
-            "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
-            "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
-            "battery_power_invert": "Switch on if the power sensor is positive while discharging."
+            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %)."
+          },
+          "sections": {
+            "limits": {
+              "name": "Limits",
+              "description": "Charge and discharge limits. Defaults: 0–100 %, no reserve.",
+              "data": {
+                "max_soc": "Upper limit",
+                "max_soc_entity": "Upper limit as entity",
+                "min_soc": "Lower limit",
+                "min_soc_entity": "Lower limit as entity",
+                "reserve": "Reserve above the lower limit"
+              },
+              "data_description": {
+                "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
+                "min_soc_entity": "Optional: the current discharge limit from the device.",
+                "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
+              }
+            },
+            "power": {
+              "name": "Power",
+              "description": "Power sensor, efficiency and power limits. All optional.",
+              "data": {
+                "battery_power": "Charge / discharge power",
+                "battery_power_invert": "Power counts discharging as positive",
+                "efficiency": "Round-trip efficiency",
+                "max_charge_w": "Max. charge power",
+                "max_discharge_w": "Max. discharge power"
+              },
+              "data_description": {
+                "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
+                "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
+                "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+                "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
+              }
+            },
+            "inverter": {
+              "name": "Shared inverter",
+              "description": "Only for a battery on the same inverter as a PV array (balcony systems).",
+              "data": {
+                "array": "PV array behind the same inverter",
+                "output_limit_w": "Output limit of the inverter"
+              },
+              "data_description": {
+                "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
+                "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery."
+              }
+            }
           }
         }
       },
@@ -371,6 +451,13 @@
         "program": "Program",
         "session": "Session",
         "regulated": "Regulated"
+      }
+    },
+    "mounting": {
+      "options": {
+        "free": "Free behind (balcony, rack)",
+        "roof": "Parallel on the roof",
+        "integrated": "Integrated into the roof"
       }
     }
   },

@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.1.0b5] - 2026-11-05
+
 The last pre-release before the first stable version 0.1.0. The sections below list what changed since 0.1.0b4.
 
 ### Added

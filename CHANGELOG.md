@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+The first stable release. It contains everything from the pre-releases 0.1.0b1 to 0.1.0b5, listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md): a PV forecast per array and in total for
+up to 7 days with a P10–P90 band, nightly learning of efficiency, shade, reflection and temperature loss from your own
+history, a day-ahead accuracy archive, and optionally a house load forecast, a battery simulation and the best time for
+flexible consumers, shown in a sidebar panel, a day card and a weather card. Changes since 0.1.0b5:
+
 ### Fixed
 - "Prediction and reality" in Battery & surplus compares when the battery is empty for the night: from when it
   stays at its lower limit until it charges again. Before, a battery that was empty in the morning showed "empty" in

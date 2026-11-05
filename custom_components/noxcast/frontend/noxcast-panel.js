@@ -451,6 +451,7 @@ class NoxcastPanel extends HTMLElement {
   }
 
   async _relearn() {
+    this._statusError = null;                  // an error of an earlier attempt no longer holds
     try {
       await ask(this._hass, { type: "noxcast/relearn" });
       if (this._status) this._status.running = true;

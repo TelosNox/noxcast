@@ -272,9 +272,9 @@
             "elapsed_time": "Elapsed time"
           },
           "data_description": {
-            "run_power": "Flexible consumers: power of a typical run. Empty = learned from its history.",
+            "run_power": "Power of a typical run. Empty = learned from its history.",
             "run_minutes": "Duration of a typical run. Empty = learned from its history.",
-            "start_share": "Flexible consumers: the sensor “start now” turns on when a run started now gets at least this share from surplus and about as much as the best window still to come today. Empty = 70 %.",
+            "start_share": "The sensor “start now” turns on when a run started now gets at least this share from surplus and about as much as the best window still to come today. Empty = 70 %.",
             "remaining_time": "Optional: remaining time of the device. A running program then counts until its end.",
             "elapsed_time": "Optional: time the program has run. With the energy sensor it gives the power of the running program."
           }
@@ -634,7 +634,7 @@
     },
     "array_check": {
       "title": "PV array {name}: configuration does not fit the measurements",
-      "description": "The measurements of **{name}** do not fit its configuration: peak power, tilt, azimuth or the power sensor may be wrong. In the Noxcast panel under *Learned*, the array shows what to check. Learned shade and efficiency stay questionable until it fits."
+      "description": "The measurements of **{name}** do not fit its configuration: peak power, tilt, azimuth or the power sensor may be wrong. In the Noxcast panel under *Learned*, the array shows what to check. Learned shade and efficiency stay questionable until it fits. After a correction, this report goes away with the next learning run (at night, or *Learn again now* in the panel)."
     }
   }
 }

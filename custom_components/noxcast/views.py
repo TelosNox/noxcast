@@ -75,6 +75,36 @@ def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning
     return out
 
 
+# how far learning has come per array: explainable steps, not a score
+EARLY_DAYS = 14             # fewer days of data: the efficiency is still provisional
+EARLY_HOURS = 100           # fewer usable hours: the same
+SETTLED_COVERAGE = 0.6      # below: the shading map still fills as the sun's path moves through the year
+
+
+def learning_stage(la: LearnedArray | None) -> str:
+    """waiting (no run yet), early (efficiency provisional), growing (shading map filling), settled."""
+    if la is None or not la.samples:
+        return "waiting"
+    days = (la.learned_at - la.first_sample) / 86400 if la.learned_at and la.first_sample else 0
+    if days < EARLY_DAYS or la.samples < EARLY_HOURS:
+        return "early"
+    return "growing" if la.coverage < SETTLED_COVERAGE else "settled"
+
+
+def learning_status(arrays: dict, learned: dict[str, LearnedArray], last: datetime | None, seconds: float | None,
+                    error: str | None, running: bool, next_run: datetime) -> dict:
+    """Learning runs and, per array, how far learning has come."""
+    rows = []
+    for sid, arr in arrays.items():
+        la = learned.get(sid)
+        days = (la.learned_at - la.first_sample) / 86400 if la and la.learned_at and la.first_sample else 0
+        rows.append({"id": sid, "name": arr.name, "stage": learning_stage(la), "hours": la.samples if la else 0,
+                     "days": round(days), "coverage": round(la.coverage, 3) if la else 0.0})
+    return {"running": running, "last": last.isoformat() if last else None, "seconds": seconds, "error": error,
+            "next": next_run.isoformat(), "arrays": rows,
+            "thresholds": {"days": EARLY_DAYS, "hours": EARLY_HOURS, "coverage": SETTLED_COVERAGE}}
+
+
 def learned_dict(la: LearnedArray) -> dict:
     """The learned state as stored, with months and sun sectors named: "YYYY-MM" / "SE" -> {"efficiency", "hours"}."""
     out = la.as_dict()

@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- "Learned" starts with a learning status: when the last run was and how long it took, when the next one runs, and per
+  PV array how far learning has come (efficiency still provisional, shading map still filling over the year, or
+  learned), with the numbers behind it. Administrators can start a new learning run there and see when it is done.
 - Noxcast reports problems under Settings → System → Repairs: no PV array added yet, configured sensors that no longer
   exist, no weather forecast for more than a day, and PV arrays whose measurements do not fit their configuration.
   Each report disappears once the problem is solved. Before, these were visible only in the panel's diagnostics.

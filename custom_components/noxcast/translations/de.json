@@ -272,9 +272,9 @@
             "elapsed_time": "Verstrichene Zeit"
           },
           "data_description": {
-            "run_power": "Flexible Verbraucher: Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
+            "run_power": "Leistung eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
             "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
-            "start_share": "Flexible Verbraucher: Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %.",
+            "start_share": "Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %.",
             "remaining_time": "Optional: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
             "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
           }
@@ -634,7 +634,7 @@
     },
     "array_check": {
       "title": "PV-Gruppe {name}: Konfiguration passt nicht zu den Messwerten",
-      "description": "Die Messwerte von **{name}** passen nicht zur Konfiguration: Spitzenleistung, Neigung, Azimut oder der Leistungssensor sind vielleicht falsch. Im Noxcast-Panel unter *Gelerntes* steht an der Gruppe, was zu prüfen ist. Bis es passt, sind gelernter Schatten und Wirkungsgrad fraglich."
+      "description": "Die Messwerte von **{name}** passen nicht zur Konfiguration: Spitzenleistung, Neigung, Azimut oder der Leistungssensor sind vielleicht falsch. Im Noxcast-Panel unter *Gelerntes* steht an der Gruppe, was zu prüfen ist. Bis es passt, sind gelernter Schatten und Wirkungsgrad fraglich. Nach einer Korrektur verschwindet die Meldung mit dem nächsten Lernlauf (nachts oder mit *Jetzt neu lernen* im Panel)."
     }
   }
 }

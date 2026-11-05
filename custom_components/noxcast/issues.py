@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
 from . import views
-from .const import CONF_SOC_SENSORS, DOMAIN
+from .const import CONF_BATTERY_POWER, CONF_SOC_SENSORS, DOMAIN
 from .coordinator import NoxcastConfigEntry
 
 NO_ARRAYS = "no_arrays"
@@ -36,7 +36,10 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
     if hass.is_running:
         roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers,
                                    c.batteries, _battery_names(entry))
-        missing = sorted({entity_id for entity_id, _, _ in roles if hass.states.get(entity_id) is None})
+        # the card's grid and battery power sensors are no inputs of the forecast, so sensor_roles leaves them out
+        shown = [c.grid] + [d.get(CONF_BATTERY_POWER) for d in c.batteries.values()]
+        ids = {entity_id for entity_id, _, _ in roles} | {e for e in shown if e}
+        missing = sorted(e for e in ids if hass.states.get(e) is None)
         if missing:
             out[MISSING_SENSORS] = (ir.IssueSeverity.ERROR, {"sensors": ", ".join(missing)})
     # the stored forecast stands in for a day; a failed update means even that is too old

@@ -10,9 +10,9 @@ from custom_components.noxcast import issues
 from custom_components.noxcast.const import DOMAIN
 
 
-def _entry(arrays=None, learned=None, ok=True, soc=None):
+def _entry(arrays=None, learned=None, ok=True, soc=None, grid=None, batteries=None):
     c = SimpleNamespace(arrays=arrays or {}, learned=learned or {}, last_update_success=ok, house_load=None,
-                        consumers={}, batteries={})
+                        consumers={}, batteries=batteries or {}, grid=grid)
     return SimpleNamespace(runtime_data=c, data={"soc_sensors": soc or []}, subentries={})
 
 
@@ -38,6 +38,12 @@ async def test_issues_follow_their_conditions(hass: HomeAssistant) -> None:
     assert missing.translation_placeholders == {"sensors": "sensor.gone"}           # the existing one is not listed
     check = reg.async_get_issue(DOMAIN, "array_check_r")
     assert check.translation_key == "array_check" and check.translation_placeholders == {"name": "Roof"}
+
+    # the card's grid and battery power sensors count as well
+    entry = _entry(arrays={"r": ROOF}, grid="sensor.grid", batteries={"b": {"battery_power": "sensor.bat_w"}})
+    issues.async_update_issues(hass, entry)
+    missing = ir.async_get(hass).async_get_issue(DOMAIN, issues.MISSING_SENSORS)
+    assert missing.translation_placeholders == {"sensors": "sensor.bat_w, sensor.grid"}
 
     # direction and season can come from shade: no repair for them, as no badge in the panel
     entry = _entry(arrays={"r": ROOF}, learned={"r": SimpleNamespace(hints=["direction", "season"])})

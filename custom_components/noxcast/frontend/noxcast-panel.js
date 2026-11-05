@@ -23,12 +23,14 @@ const SECTION_LEADS = {
     battery: "Where today's and tomorrow's surplus goes and what changes with more capacity or another consumer.",
     diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
 };
-// Home Assistant icons of the sections; on a phone only the active tab shows its title
+// Home Assistant icons of the sections; on a phone the tabs get their own row, each with its icon over a short title
 const SECTION_ICONS = { learned: "mdi:brain", day: "mdi:calendar-today", accuracy: "mdi:target", load: "mdi:home-lightning-bolt",
   battery: "mdi:battery-charging", diagnostics: "mdi:stethoscope" };
 
 const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
   en: { day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
+const SECTION_SHORT = { de: { day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", diagnostics: "Diagnose" },
+  en: { day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", diagnostics: "Data" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
@@ -576,6 +578,7 @@ class NoxcastPanel extends HTMLElement {
     if (!this.shadowRoot) return;
     const t = this._t, s = this._state;
     const titles = SECTION_TITLES[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_TITLES.en;
+    const short = SECTION_SHORT[(this._hass && this._hass.language || "en").slice(0, 2)] || SECTION_SHORT.en;
     const lang = (this._hass && this._hass.language || "en").slice(0, 2);
     // load and battery only when set up in the integration (sections unknown while loading: all shown)
     const known = (this._data && this._data.sections) || {};
@@ -583,7 +586,7 @@ class NoxcastPanel extends HTMLElement {
     if (!keys.includes(s.section)) { s.section = "learned"; s.sel = null; }
     const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
     const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
-    const tabs = keys.map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span>${titles[k]}</span></button>`).join("");
+    const tabs = keys.map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span class="long">${titles[k]}</span><span class="short">${short[k]}</span></button>`).join("");
     if (s.section !== "learned") {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}
@@ -1242,12 +1245,16 @@ class NoxcastPanel extends HTMLElement {
       .navtabs { min-width: 0; }
       .navtab { display: inline-flex; align-items: center; gap: 6px; flex: none; }
       .navtab ha-icon { --mdc-icon-size: 18px; }
+      .navtab .short { display: none; }
       @media (max-width: 720px) {
-        .toolbar { gap: 8px; padding: 0 8px; }
-        .brand span { display: none; }
-        .navtab:not(.on) span { display: none; }
-        .navtabs { gap: 2px; }
-        .navtab:not(.on) { padding: 6px 8px !important; }
+        /* the tabs get a row of their own below the menu, all visible at once: icon over a short title */
+        .toolbar { flex-wrap: wrap; height: auto; min-height: var(--header-height, 56px); gap: 0 8px; padding: 0 8px; }
+        .navtabs { order: 3; flex: 1 0 100%; gap: 0; overflow-x: visible; }
+        .navtabs .navtab { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; padding: 5px 2px 4px !important;
+          border-radius: 16px; font-size: 11px; }
+        .navtab ha-icon { --mdc-icon-size: 22px; }
+        .navtab .long { display: none; }
+        .navtab .short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
       }
       .content { padding: 16px; max-width: 1400px; margin: 0 auto; box-sizing: border-box; }
       .muted { color: var(--secondary-text-color); }

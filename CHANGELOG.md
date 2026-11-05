@@ -27,6 +27,8 @@ breaking changes.
 - The README is available in German as well: [README.de.md](README.de.md).
 
 ### Changed
+- On a phone, the panel's sections sit in a row of their own below the menu, each with its icon and a short name,
+  so every section can be told apart without trying them.
 - Shorter forms. A PV array asks for its mounting (free behind, on the roof, in the roof) instead of a cell heating in
   K; the date, the temperature coefficient and an own heating value are under "Advanced". A consumer is set up in two
   steps, and the second shows only the fields of its timing. A battery shows name, sensor, capacity and coupling; limits,

@@ -603,7 +603,7 @@
           "api_key": "API-Schlüssel"
         },
         "data_description": {
-          "weather_models": "Open-Meteo-Modelle, stundenweise gemittelt. Voreinstellung ICON + ECMWF IFS: In einem Test der Vortagsprognose über zehn Monate war ihr Mittel besser als jedes einzelne Modell. Bei mehreren Modellen wird jedes zusätzlich einzeln archiviert, damit die Prognosegüte sie vergleichen kann. Welche Modelle zu deiner Anlage passen, zeigt \"Wettermodelle vergleichen\" in der Prognosegüte.",
+          "weather_models": "Open-Meteo-Modelle, stundenweise gemittelt. Voreinstellung ICON + ECMWF IFS: In einem Test der Vortagsprognose über zehn Monate war ihr Mittel besser als jedes einzelne Modell. Bei mehreren Modellen wird jedes zusätzlich einzeln archiviert, damit die Prognosegüte sie vergleichen kann. Welche Modelle zu deiner Anlage passen, zeigt „Wettermodelle vergleichen“ in der Prognosegüte.",
           "archive_temperature": "Nötig, um den Temperaturverlust zu lernen. Ohne steckt die mittlere Temperatur im Wirkungsgrad.",
           "satellite": "Wählt klare Stunden zum Lernen anhand der Satellitenstrahlung aus. Optional; die Qualität schwankt je nach Region.",
           "api_key": "Nur für kommerziellen oder selbst gehosteten Zugang."

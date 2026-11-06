@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The hint on the weather models option has correct English word order, and the German one uses German quotation
+  marks.
+
 ## [0.2.0b1] - 2026-11-06
 
 The first pre-release of 0.2.0. The sections below list what changed since 0.1.0.

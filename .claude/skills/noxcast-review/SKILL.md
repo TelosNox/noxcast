@@ -46,8 +46,8 @@ each with file:line, the concrete scenario that goes wrong, and how sure it is. 
   `LEARNED_VERSION`, `band.VERSION`, `backtest.VERSION`), config entries (`VERSION`, `MINOR_VERSION` with a
   migration in `__init__.py`), service names and fields, card options.
 - Changed without a version step or migration? Stepped more than once where once would do? Does a user lose
-  something learned, and does the changelog say so? A breaking change is marked **Breaking** with what the user has
-  to do, and the version step fits it (`CLAUDE.md`, Versioning).
+  something learned, and does the changelog say so? A breaking change sits in the `### Breaking` group at the top
+  of `Unreleased` with what the user has to do, and the version step fits it (`CLAUDE.md`, Versioning).
 
 **B. Physics and model**
 - Clear sky with the learned model is the upper bound. Bands, intraday corrections and similar adjustments vary

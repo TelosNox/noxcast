@@ -124,3 +124,12 @@ async def test_a_refusal_says_why_and_whether_it_is_the_limit(hass: HomeAssistan
         await sources.async_previous_runs(hass, 12.345, 6.789, "x", day, day)   # privacy-ok: made up
     assert str(err.value) == f"previous-runs-api.open-meteo.com answered {status} {reason}"
     assert err.value.status == status and err.value.limited is limited and "12.345" not in str(err.value)
+
+
+async def test_a_refusal_leaves_out_numbers_it_repeats(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(sources.PREVIOUS_RUNS_URL, status=400,
+                       json={"error": True, "reason": "Latitude must be in range of -90 to 90. Given: 912.345."})  # privacy-ok
+    day = datetime(2026, 10, 24).date()
+    with pytest.raises(sources.SourceError) as err:
+        await sources.async_previous_runs(hass, 912.345, 6.789, "x", day, day)   # privacy-ok: made up
+    assert "912.345" not in str(err.value) and "Given: …" in str(err.value)

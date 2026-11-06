@@ -65,6 +65,17 @@ def test_the_current_choice_is_kept_when_it_is_best():
     assert rec["verdict"] == "current_best" and rec["current_rank"] == 1
 
 
+def test_the_current_choice_matches_in_any_order_and_only_it_and_the_best_keep_their_details():
+    weather = {"low": _hours(lambda t: 0.8), "high": _hours(lambda t: 1.2), "noisy": _hours(_noise(1, 0.4))}
+    result = _run(weather, ["high", "low"])                  # configured in the other order
+    assert result["current"] == ["low", "high"] and len(result["combos"]) == 6
+    assert result["recommendation"]["verdict"] == "current_best"
+    with_details = [c["models"] for c in result["combos"] if "months" in c]
+    assert with_details == [["low", "high"]]
+    noisy = _run(weather, ["noisy"])
+    assert [c["models"] for c in noisy["combos"] if "classes" in c] == [["low", "high"], ["noisy"]]
+
+
 def test_models_that_differ_by_chance_lead_to_no_change():
     # equally good models: one of the many combinations is always best, but not on unseen days
     weather = {f"m{i}": _hours(_noise(10 + i, 0.3)) for i in range(5)}

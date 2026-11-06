@@ -36,17 +36,19 @@ const ACC_TEXT = {
     mcAdmin: "Starten können nur Administratoren.",
     mcFailed: (e) => `Letzter Versuch abgebrochen: ${e.replace(/[.\s]+$/, "")}. Das vorige Ergebnis bleibt, ein neuer Versuch ist sofort möglich.`,
     mcLimited: "Open-Meteo hat das Abfragelimit gemeldet. Die Prognose nutzt bis zu 24 Stunden lang die letzte Antwort; den Vergleich später erneut starten. Fragt weitere Software über dieselbe Internetverbindung bei Open-Meteo ab, teilt sie sich das Kontingent.",
-    mcQuota: (n, calls) => `Ein Vergleich fragt ${n} Modelle je einmal für ein Jahr ab, nacheinander mit Pausen. Das kostet etwa ${calls} Aufrufe vom kostenlosen Kontingent von Open-Meteo (10.000 am Tag je Internetanschluss), die laufende Prognose braucht etwa 50 am Tag. Das Ergebnis ändert sich über Wochen kaum: Sinnvoll ist ein Vergleich etwa vierteljährlich oder nach Änderungen an der Anlage. Nach einem erfolgreichen Vergleich ist der nächste frühestens nach 7 Tagen möglich.`,
+    mcQuota: (n, calls) => `Ein Vergleich fragt ${n} Modelle je einmal für ein Jahr ab, nacheinander mit Pausen. Das kostet etwa ${calls} Aufrufe vom kostenlosen Kontingent von Open-Meteo (10.000 am Tag je Internetanschluss), Prognose und nächtliches Lernen brauchen etwa 100 bis 200 am Tag. Das Ergebnis ändert sich über Wochen kaum: Sinnvoll ist ein Vergleich etwa vierteljährlich oder nach Änderungen an der Anlage. Nach einem erfolgreichen Vergleich ist der nächste frühestens nach 7 Tagen möglich.`,
     mcFew: (n, k) => `Zu wenig Tage zum Vergleichen: ${n} von ${k}. Es zählen Tage mit Messwerten, die auch das Lernen nutzt.`,
     mcBest: (m, n) => `Deine Auswahl (${m}) ist die beste von ${n} Kombinationen. Kein Wechsel nötig.`,
     mcKeep: (b, e, m, f, r) => `${b} liegt mit ${e} vorn, deine Auswahl (${m}) mit ${f} auf Platz ${r}. Der Vorsprung ist nicht verlässlich: Auf Tagen, die bei der Auswahl nicht verwendet wurden, gewinnt die jeweils beste Kombination nicht sicher genug. Kein Wechsel nötig.`,
-    mcChange: (b, e, m, f, s1, s2) => `${b} wäre besser: Tagesfehler ${e} statt ${f} mit deiner Auswahl (${m}). Auf Tagen, die bei der Auswahl nicht verwendet wurden, gewinnt sie in ${s1} und ${s2} der Stichproben.`,
+    mcChange: (b, e, m, f, s1, s2) => `${b} wäre besser: Tagesfehler ${e} statt ${f} mit deiner Auswahl (${m}). Die auf einer Hälfte der Tage beste Kombination gewinnt auch auf der anderen Hälfte, in ${s1} und ${s2} der Stichproben.`,
     mcWhere: "Die Wettermodelle stellst du unter Einstellungen → Geräte & Dienste → Noxcast → Konfigurieren ein.",
     mcUnscored: (m) => `Deine Auswahl (${m}) ließ sich nicht bewerten, weil ein Modell darin hier keine ausreichenden Daten hat.`,
+    mcStale: (m) => `Seit diesem Vergleich hast du die Wettermodelle geändert (jetzt ${m}); die Empfehlung bezieht sich auf die damalige Auswahl. Ein neuer Vergleich für die aktuelle Auswahl ist möglich.`,
+    mcRefused: { running: "Ein Vergleich läuft bereits.", cooldown: "Der nächste Vergleich ist noch gesperrt.", not_learned: "Erst nach dem ersten Lernlauf möglich." },
     mcYours: "deine Auswahl", mcShowAll: (n) => `Alle ${n} anzeigen`, mcShowLess: "Weniger anzeigen",
     mcByWeather: "Nach Wetterlage", mcByMonth: "Nach Monat", mcBestShort: "Beste",
     mcSkipped: "Nicht bewertet", mcNoData: "keine Daten für diesen Standort", mcCoverage: (p) => `nur ${p} der Stunden`,
-    mcHelp: "Grundlage ist die Prognose, die jedes Modell 24 Stunden vor jeder Stunde abgegeben hat (Archiv früherer Modellläufe von Open-Meteo), gerechnet mit dem heute gelernten Modell. Bewertet werden nur Stunden, die auch das Lernen nutzt, und für alle Modelle dieselben. Die echte Prognose für einen Tag entsteht am Abend davor, mit kürzerem Vorlauf; die Fehler hier liegen daher etwas höher als oben, an der Reihenfolge der Modelle ändert das nichts. Damit nicht der Zufall gewinnt, wird ein Wechsel nur empfohlen, wenn die auf der einen Hälfte der Tage beste Kombination auch auf der anderen Hälfte gewinnt, in beide Richtungen.",
+    mcHelp: "Grundlage ist die Prognose, die jedes Modell 24 Stunden vor jeder Stunde abgegeben hat (Archiv früherer Modellläufe von Open-Meteo), gerechnet mit dem heute gelernten Modell. Bewertet werden nur Stunden, die auch das Lernen nutzt, und für alle Modelle dieselben. Die echte Prognose für einen Tag entsteht am Abend davor, mit kürzerem Vorlauf; die Fehler hier liegen daher etwas höher als oben; da alle Modelle denselben Vorlauf haben, sollte sich ihre Reihenfolge kaum ändern. Die Wetterlage eines Tages folgt hier aus der gemessenen Erzeugung im Verhältnis zur Erzeugung bei klarem Himmel. Damit nicht der Zufall gewinnt, wird ein Wechsel nur empfohlen, wenn die auf der einen Hälfte der Tage beste Kombination auch auf der anderen Hälfte gewinnt, in beide Richtungen.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -81,17 +83,19 @@ const ACC_TEXT = {
     mcAdmin: "Only administrators can start it.",
     mcFailed: (e) => `Last attempt stopped: ${e.replace(/[.\s]+$/, "")}. The previous result stays; a new attempt is possible right away.`,
     mcLimited: "Open-Meteo reported its request limit. The forecast uses the last answer for up to 24 hours; start the comparison again later. Other software asking Open-Meteo over the same internet connection shares the quota.",
-    mcQuota: (n, calls) => `A comparison asks for ${n} models once each for a year, one after the other with pauses. That costs about ${calls} calls of Open-Meteo's free quota (10,000 a day per internet connection); the running forecast needs about 50 a day. The result hardly changes over weeks: a comparison about every quarter or after changes to the installation is enough. After a successful comparison the next one is possible after 7 days at the earliest.`,
+    mcQuota: (n, calls) => `A comparison asks for ${n} models once each for a year, one after the other with pauses. That costs about ${calls} calls of Open-Meteo's free quota (10,000 a day per internet connection); the forecast and the nightly learning need about 100 to 200 a day. The result hardly changes over weeks: a comparison about every quarter or after changes to the installation is enough. After a successful comparison the next one is possible after 7 days at the earliest.`,
     mcFew: (n, k) => `Not enough days to compare: ${n} of ${k}. Days count with measurements that learning uses as well.`,
     mcBest: (m, n) => `Your choice (${m}) is the best of ${n} combinations. No change needed.`,
     mcKeep: (b, e, m, f, r) => `${b} leads with ${e}, your choice (${m}) ranks ${r} with ${f}. The lead is not reliable: on days not used for picking, the best combination does not win clearly enough. No change needed.`,
-    mcChange: (b, e, m, f, s1, s2) => `${b} would be better: daily error ${e} instead of ${f} with your choice (${m}). On days not used for picking it wins in ${s1} and ${s2} of the resamples.`,
+    mcChange: (b, e, m, f, s1, s2) => `${b} would be better: daily error ${e} instead of ${f} with your choice (${m}). The combination best on one half of the days also wins on the other half, in ${s1} and ${s2} of the resamples.`,
     mcWhere: "Weather models are set under Settings → Devices & services → Noxcast → Configure.",
     mcUnscored: (m) => `Your choice (${m}) could not be scored, because one of its models lacks enough data here.`,
+    mcStale: (m) => `You changed the weather models since this comparison (now ${m}); the recommendation refers to the choice then. A new comparison for the current choice is possible.`,
+    mcRefused: { running: "A comparison is already running.", cooldown: "The next comparison is not possible yet.", not_learned: "Possible after the first learning run." },
     mcYours: "your choice", mcShowAll: (n) => `Show all ${n}`, mcShowLess: "Show fewer",
     mcByWeather: "By weather", mcByMonth: "By month", mcBestShort: "Best",
     mcSkipped: "Not scored", mcNoData: "no data for this location", mcCoverage: (p) => `only ${p} of the hours`,
-    mcHelp: "The basis is the forecast each model issued 24 hours before every hour (Open-Meteo's archive of earlier model runs), computed with today's learned model. Only hours that learning uses count, the same ones for all models. The real forecast for a day is made the evening before, with a shorter lead time; the errors here are therefore somewhat higher than above, the order of the models stays the same. So that chance does not win, a change is recommended only when the combination that is best on one half of the days also wins on the other half, in both directions.",
+    mcHelp: "The basis is the forecast each model issued 24 hours before every hour (Open-Meteo's archive of earlier model runs), computed with today's learned model. Only hours that learning uses count, the same ones for all models. The real forecast for a day is made the evening before, with a shorter lead time; the errors here are therefore somewhat higher than above; as all models have the same lead, their order should hardly change. The weather of a day here follows from the measured output against the output under a clear sky. So that chance does not win, a change is recommended only when the combination that is best on one half of the days also wins on the other half, in both directions.",
   },
 };
 
@@ -160,22 +164,22 @@ class NoxcastAccuracy extends HTMLElement {
   async _startCompare() {
     this._mcStarting = true;
     this._render();
-    await ask(this._hass, { type: "noxcast/compare_weather_models" }).catch((err) => { this._mcError = String((err && err.message) || err); });
+    this._mcError = null;
+    const answer = await ask(this._hass, { type: "noxcast/compare_weather_models" }).catch((err) => { this._mcError = String((err && err.message) || err); });
+    if (answer && !answer.started) this._mcError = (answer.reasons || []).map((r) => this._t.mcRefused[r] || r).join(" ");
     this._mcStarting = false;
     this._loadModels();
   }
 
   // ------------------------------------------------------------ evaluation
 
-  // "primary" (the issued forecast) and every model in the archive, in order of appearance; a day made from one
-  // model alone counts for that model as well
+  // "primary" (the issued forecast) and every model archived on its own, in order of appearance. A day made
+  // from one model alone counts for that model's chip (_fc), but adds no chip: with a single model throughout,
+  // it would only repeat the issued forecast
   get _sources() {
     const entry = this._data && (this._data.entries || [])[0];
     const out = new Set(["primary"]);
-    for (const d of (entry && entry.days) || []) {
-      if ((d.models || []).length === 1) out.add(d.models[0]);
-      for (const h of d.hours) for (const k of Object.keys(h.alt || {})) out.add(k);
-    }
+    for (const d of (entry && entry.days) || []) for (const h of d.hours) for (const k of Object.keys(h.alt || {})) out.add(k);
     return [...out];
   }
 
@@ -415,7 +419,8 @@ class NoxcastAccuracy extends HTMLElement {
     const last = r && r.first ? t.mcLast(day(r.computed_at), r.days, iso(r.first), iso(r.last)) : r ? day(r.computed_at) : t.mcNever;
     const head = `<div class="mchead"><span class="small">${last}${status ? `<br><span class="muted">${status}</span>` : ""}</span>
       <button class="btn" data-act="compare"${can ? "" : " disabled"}>${t.mcStart}</button></div>`;
-    const failed = st.error ? `<p class="note warn">${esc(t.mcFailed(st.error))}${st.limited ? `<br>${t.mcLimited}` : ""}</p>` : "";
+    const failed = (st.error ? `<p class="note warn">${esc(t.mcFailed(st.error))}${st.limited ? `<br>${t.mcLimited}` : ""}</p>` : "")
+      + (this._mcError ? `<p class="note warn">${esc(this._mcError)}</p>` : "");
     // a call counts per two weeks of data: a year is about 26
     const quota = `<p class="help">${t.mcQuota(entry.candidates.length, entry.candidates.length * 26)}</p>`;
     const intro = `<p class="help" style="margin-top:0">${t.mcIntro}</p>`;
@@ -427,6 +432,8 @@ class NoxcastAccuracy extends HTMLElement {
 
     const combos = r.combos, mine = combos.find((c) => c.models.join("+") === r.current.join("+"));
     const best = combos[0], rec = r.recommendation, name = (c) => esc(this._names(c.models));
+    const same = (a, b) => [...a].sort().join("+") === [...b].sort().join("+");
+    const stale = same(r.current, entry.current) ? "" : `<p class="note">${t.mcStale(esc(this._names(entry.current)))}</p>`;
     let verdict;
     if (!rec || !mine) verdict = `<p class="note">${t.mcUnscored(esc(this._names(r.current)))}</p>`;
     else if (rec.verdict === "current_best") verdict = `<p class="note good">${t.mcBest(name(mine), combos.length)}</p>`;
@@ -450,7 +457,7 @@ class NoxcastAccuracy extends HTMLElement {
     const cls = `<table><thead><tr><th></th>${pair.map((c) => `<th class="num" title="${name(c)}">${label(c)}</th>`).join("")}<th class="num">${t.days}</th></tr></thead><tbody>
       ${["clear", "mixed", "overcast"].map((k) => `<tr><td>${t[k]}</td>${pair.map((c) => `<td class="num">${pc(c.classes[k].day_error)} <span class="muted small">${pc(c.classes[k].bias, true)}</span></td>`).join("")}
       <td class="num">${pair[0].classes[k].days}</td></tr>`).join("")}</tbody></table>`;
-    return `<section class="card pad"><h3>${t.mcTitle}</h3>${intro}${head}${failed}${verdict}${table}
+    return `<section class="card pad"><h3>${t.mcTitle}</h3>${intro}${head}${failed}${stale}${verdict}${table}
       <div class="split" style="margin-top:12px">
         <div class="grow"><h3>${t.mcByWeather}</h3>${cls}</div>
         <div class="grow"><h3>${t.mcByMonth}</h3>${this._monthChart(pair, label)}</div>

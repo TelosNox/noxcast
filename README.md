@@ -406,7 +406,7 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
   scored on the same hours learning uses. A change is recommended only when the combination best on one half of
   the days also beats your choice on the other half, both ways, in 95 % of bootstrap resamples. The models are not
   changed automatically. A run costs about 300 of the roughly 10,000 daily calls Open-Meteo's free use allows per
-  internet connection; the forecast needs about 50 a day. After a successful run the next one waits 7 days; a run
+  internet connection; the forecast and the nightly learning need about 100 to 200 a day. After a successful run the next one waits 7 days; a run
   stopped by an error or Open-Meteo's request limit can be repeated at once.
 
 ### Archive and accuracy

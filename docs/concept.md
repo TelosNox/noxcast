@@ -648,8 +648,8 @@ compared model has a forecast. A model missing more than 10 % of them (regional 
 area, a short archive) is listed as skipped instead of shrinking the comparison.
 
 - **Lead time:** the issued forecast for a day is made the evening before, so its hours lie up to a day ahead;
-  `previous_day1` has 24. The errors are therefore somewhat higher than in the archive; the order of the
-  models is not affected, as all have the same lead.
+  `previous_day1` has 24. The errors are therefore somewhat higher than in the archive; as all models have the
+  same lead, their order should hardly change (high-resolution models may gain at shorter lead).
 - **Recommendation:** with dozens of combinations one is always best on the days it is picked on. For each
   half of the days (even, odd) the best combination is picked on the other half and compared with the
   current choice on the held-out half; a change is recommended only when it wins there in at least 95 % of
@@ -657,7 +657,8 @@ area, a short archive) is listed as skipped instead of shrinking the comparison.
   keeps the current choice. Nothing is changed automatically; the panel names where the models are set.
 - **Requests:** started only by an administrator in the panel, never on a schedule. One request per model
   (about 26 Open-Meteo call units for a year with four variables), 5 s apart, about 300 units for all
-  offered models, against 10,000 a day for free use and about 50 a day for the forecast. A refusal for the
+  offered models, against 10,000 a day for free use and roughly 100 to 200 a day for the forecast (48 requests)
+  and the nightly learning (the temperature archive over two years alone is about 50 units). A refusal for the
   request limit (HTTP 429 or a reason naming the limit) stops the run at once; a model Open-Meteo refuses
   for itself (4xx) is skipped with the reason. Only a usable result is stored (`model_compare` in the main
   store) and starts a waiting time of 7 days; a failed run can be repeated at once.

@@ -687,8 +687,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return "running", None
         if not self.learned:
             return "not_learned", None
-        # only a usable result starts the waiting time: "not enough data" may be repeated once there is more
-        done = (self.model_compare or {}).get("computed_at") if (self.model_compare or {}).get("status") == hc.OK else None
+        # only a usable result for the models chosen now starts the waiting time: "not enough data" may be
+        # repeated once there is more, and after a change of models the comparison may be run for the new choice
+        last = self.model_compare or {}
+        done = last.get("computed_at") if last.get("status") == hc.OK and set(last.get("current") or []) == set(
+            self.weather_models) else None
         if done is not None and dt_util.utcnow().timestamp() < done + COMPARE_COOLDOWN.total_seconds():
             return "cooldown", done + COMPARE_COOLDOWN.total_seconds()
         return None, None
@@ -724,7 +727,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     weather[model] = await async_previous_runs(self.hass, self.site.latitude, self.site.longitude,
                                                                model, start, end)
                 except SourceError as err:
-                    if err.limited or err.status is None or err.status >= 500 or err.status == 408:
+                    # the limit, a blocked address or key, and server errors concern every model: stop
+                    if err.limited or err.status is None or err.status >= 500 or err.status in (401, 403, 408):
                         raise
                     weather[model], refused[model] = [], str(err)
                 state["done"] = i + 1
@@ -747,6 +751,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for item in result["skipped"]:
             if item["model"] in refused:
                 item["error"] = refused[item["model"]]
+        if result["status"] != hc.OK and (self.model_compare or {}).get("status") == hc.OK:
+            # a usable result is not replaced by "too few days" (e.g. after the history was cut short)
+            state.update(running=False, error=f"{result['status']}: {result.get('days', 0)} of {result.get('needed', 0)} days")
+            return
         self.model_compare = result
         state.update(running=False, error=None)
         self._store.async_delay_save(self._store_data, 5)

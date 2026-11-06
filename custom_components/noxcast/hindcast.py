@@ -11,9 +11,11 @@ full battery, exclusions) in which every compared model has a forecast. A model 
 them (regional models outside their area, models with a short archive) is listed as skipped with the
 reason instead of shrinking the comparison for all.
 
-With dozens of combinations one is always best, if only by chance. A change is recommended only when
-the best combination beats the current choice on both halves of the days (even and odd) and in at least
-RECOMMEND_SHARE of the bootstrap resamples of the days; otherwise the current choice stays.
+With dozens of combinations one is always best, if only by chance. A change is recommended only when the
+combination picked as best on one half of the days (even or odd) beats the current choice on the other half in
+at least RECOMMEND_SHARE of the bootstrap resamples of those days, in both directions; otherwise the current
+choice stays. Days are classed by what the arrays delivered against their clear-sky output (measured, the same
+for every combination), not by a forecast.
 """
 from __future__ import annotations
 
@@ -82,7 +84,8 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
 
     {"version", "computed_at", "status", "current", "first", "last", "days", "hours", "combos": [...], "skipped":
     [...], "recommendation"}; combos sorted by daily error, each {"models", "day_error", "hour_error", "bias",
-    "hour_mae_wh", "days", "hours", "halves", "classes", "months"}.
+    "hour_mae_wh", "days", "hours"}; the best and the current choice also "classes" and "months". The current
+    choice is named in the order of the compared models, so a pair matches whatever order it was configured in.
     """
     day_of = bt.local_day(tz)
     head = {"version": VERSION, "computed_at": now, "current": list(current)}
@@ -132,8 +135,11 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
     clearness = {d: a / c for d, (a, c) in sky_day.items() if c > 0}
 
     combos: list[tuple[str, ...]] = [(m,) for m in valid] + list(combinations(valid, 2))
-    if current and all(m in valid for m in current) and tuple(current) not in combos:
-        combos.append(tuple(current))
+    if current and all(m in valid for m in current):
+        current = [m for m in valid if m in current]          # the mean does not depend on the order
+        head["current"] = current
+        if tuple(current) not in combos:
+            combos.append(tuple(current))
     ordered = sorted(common)
     paths = sun_paths(site, ordered)                  # the same for every combination: computed once
     results, per_day = [], {}
@@ -149,13 +155,14 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
         months = sorted({d.strftime("%Y-%m") for d in days})
         results.append({
             "models": list(combo), **bt.score(pairs, day_of),
-            "halves": [_part(days, lambda d: d.toordinal() % 2 == 0)["day_error"],
-                       _part(days, lambda d: d.toordinal() % 2 == 1)["day_error"]],
             "classes": {name: _part(days, lambda d, lo=lo, hi=hi: d in clearness and lo <= clearness[d] < hi)
                         for name, lo, hi in CLASSES},
             "months": {mo: _part(days, lambda d, mo=mo: d.strftime("%Y-%m") == mo) for mo in months},
         })
     results.sort(key=lambda r: (r["day_error"] is None, r["day_error"] or 0.0, len(r["models"])))
+    for r in results[1:]:                    # where they differ is shown for the best and the current choice only
+        if r["models"] != current:
+            del r["classes"], r["months"]
     return {**head, **span, "status": OK, "days": n_days, "hours": len(common), "combos": results,
             "skipped": skipped, "recommendation": _recommend(results, per_day, current)}
 

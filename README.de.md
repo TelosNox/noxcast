@@ -407,7 +407,7 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
   empfohlen, wenn die auf der einen Hälfte der Tage beste Kombination deine Auswahl auch auf der anderen Hälfte
   schlägt, in beide Richtungen, in 95 % der Bootstrap-Stichproben. Die Modelle werden nicht automatisch geändert. Ein
   Lauf kostet etwa 300 der rund 10.000 Aufrufe, die die kostenlose Nutzung von Open-Meteo je Internetanschluss und Tag
-  erlaubt; die Prognose braucht etwa 50 am Tag. Nach einem erfolgreichen Lauf wartet der nächste 7 Tage; ein Lauf, den
+  erlaubt; Prognose und nächtliches Lernen brauchen etwa 100 bis 200 am Tag. Nach einem erfolgreichen Lauf wartet der nächste 7 Tage; ein Lauf, den
   ein Fehler oder das Abfragelimit von Open-Meteo abgebrochen hat, kann sofort wiederholt werden.
 
 ### Archiv und Genauigkeit

@@ -837,6 +837,16 @@ async def test_weather_model_comparison_waits_only_after_success(hass: HomeAssis
         again = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert again.model_compare == json.loads(json.dumps(c.model_compare)) and again.compare_blocked()[0] == "cooldown"
 
+        # other models chosen since: the comparison may run for them; too few days do not replace the usable result
+        hass.config_entries.async_update_entry(entry, options={**entry.options, "weather_models": ["gfs_seamless"]})
+        await hass.async_block_till_done()
+        c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert c.model_compare["status"] == "ok" and c.compare_blocked() == (None, None)
+        usable = c.model_compare
+        assert c.async_start_compare() is None
+        await c._compare_task
+        assert c.model_compare is usable and c.compare_state["error"].startswith("not_enough_data")
+
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:
     """An array stored before orientations existed keeps its geometry and geometry key (no relearning)."""

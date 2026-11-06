@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import date, datetime
 from urllib.parse import urlsplit
 
@@ -44,7 +45,8 @@ async def _reason(resp: aiohttp.ClientResponse) -> str:
     except Exception:  # noqa: BLE001 – no JSON: the status says enough
         return ""
     reason = body.get("reason") if isinstance(body, dict) else None
-    return str(reason)[:200] if reason else ""
+    # a validation error may repeat a parameter: leave out decimal numbers such as coordinates
+    return re.sub(r"-?\d+\.\d+", "…", str(reason))[:200] if reason else ""
 
 
 async def _async_get_json(hass: HomeAssistant, url: str, params: dict, timeout: float) -> dict:

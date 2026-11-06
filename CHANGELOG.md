@@ -16,6 +16,9 @@ breaking changes.
   its request limit, and after a successful run the next one is possible after 7 days.
 
 ### Changed
+- The weather card shows today the same yield as the sensor "Expected today" (measured so far plus the corrected
+  rest of the day) instead of a running weather forecast that appeared nowhere else. The new card option
+  `pv_today: forecast` shows the morning forecast instead, as the sensor "Forecast today" does.
 - The weather source chips in the accuracy view name the models of the issued forecast ("Issued (ICON + ECMWF
   IFS)" instead of "Main source") and say when the models were changed within the period. With a single model its
   chip includes the days it made the forecast alone. The "Open-Meteo" chip of days archived next to a weather

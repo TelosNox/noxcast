@@ -166,7 +166,13 @@ def day_totals(data, days: int, today: date, day_start: Callable[[date], float])
 
     Today counts its forecast too (past hours as they were forecast), not the expected curve, so the days
     stay comparable. A day needs almost all of its hours, so a horizon cut off mid-day does not show as a bad day.
+    Today also carries the energy of the expected curve (actual + corrected rest) and of the morning forecast, the
+    two numbers the sensors and the day card show for today; None on later days or before they exist.
     """
+    def energy(hours: dict, a: float, b: float) -> int | None:
+        values = [v for t, v in hours.items() if a <= t < b]
+        return round(sum(values)) if values else None
+
     out = []
     band = (data.band or {}).get("days", {})
     for offset in range(days):
@@ -179,7 +185,9 @@ def day_totals(data, days: int, today: date, day_start: Callable[[date], float])
         clear = sum(v for t, v in data.clear.get(TOTAL, {}).items() if a <= t < b)
         p = band.get(offset) or band.get(str(offset))
         out.append({"date": day.isoformat(), "start": a, "wh": round(sum(values)), "clear_wh": round(clear) or None,
-                    "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None})
+                    "p10": round(p[0] * 1000) if p else None, "p90": round(p[1] * 1000) if p else None,
+                    "expected_wh": energy(data.expected.get(TOTAL, {}), a, b) if offset == 0 else None,
+                    "morning_wh": energy(data.morning.get(TOTAL, {}), a, b) if offset == 0 else None})
     return out
 
 

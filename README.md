@@ -293,6 +293,7 @@ from Noxcast's own weather – the same that drives the forecast.
 | `days` | `5` | 1–7 days of weather; PV only within the forecast horizon |
 | `show_pv` | `true` | PV yield per day |
 | `pv_bar` | `line` | Share of the clear-sky yield as `line`, `fill` or `none` |
+| `pv_today` | `expected` | Today's yield as `expected` (sensor "Expected today") or `forecast` (sensor "Forecast today") |
 | `temperature`, `humidity`, `name` | – | Optional measured outside values above the days |
 | `look` | `noxcast` | `noxcast` or `plain` |
 

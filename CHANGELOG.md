@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+## [0.2.0b2] - 2026-11-06
+
+The second pre-release of 0.2.0. The section below lists what changed since 0.2.0b1.
+
 ### Fixed
 - The learning status in the panel no longer flickers during a run: only its text, the stages and the button change
   until the run is done.

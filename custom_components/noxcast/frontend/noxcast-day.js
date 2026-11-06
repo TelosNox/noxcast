@@ -579,7 +579,7 @@ class NoxcastDay extends HTMLElement {
     const pts = (m) => span.map((h) => `${((h + HOUR / 2 - h0) / (h1 - h0) * 100).toFixed(1)},${(22 - (m.get(h) || 0) / max * 20).toFixed(1)}`).join(" ");
     const spark = (r) => {
       const c = DAY_COLORS[r.i % 6];
-      const ref = withRef && r.ref > 0 ? `<polyline points="${pts(r.r)}" class="sparkref"></polyline>` : "";
+      const ref = withRef && r.ref > 0 ? `<polyline points="${pts(r.r)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></polyline>` : "";
       return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><polyline points="0,22 ${pts(r.m)} 100,22" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${ref}</svg>`;
     };
     const devCell = (d) => (d === null ? "–" : `<span class="${Math.abs(d) < 0.05 ? "" : d < 0 ? "bad" : "good"}">${this._pct(d)}</span>`);

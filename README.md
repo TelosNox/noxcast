@@ -303,7 +303,7 @@ from Noxcast's own weather – the same that drives the forecast.
 |---|---|---|---|
 | Forecast today | ✓ | ✓ | Fixed at 06:00 |
 | Expected today | ✓ | ✓ | Measured hours + corrected rest |
-| Forecast remaining today | ✓ | ✓ | |
+| Expected remaining today | ✓ | ✓ | Rest of *Expected today* |
 | Forecast tomorrow, day after | ✓ | ✓ | |
 | Forecast in 3 … 6 days | ✓ | ✓ | Only within *Forecast days*; disabled until you enable them; no P10–P90 |
 | System efficiency, shading map coverage, temperature coefficient, satellite agreement | | ✓ | Learned values |

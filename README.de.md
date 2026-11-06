@@ -304,7 +304,7 @@ Geräte **Noxcast (gesamt)** und **Noxcast *PV-Gruppe***:
 |---|---|---|---|
 | Prognose heute | ✓ | ✓ | Um 06:00 fixiert |
 | Erwartung heute | ✓ | ✓ | Gemessene Stunden + korrigierter Rest |
-| Prognose Rest heute | ✓ | ✓ | |
+| Erwartung Rest heute | ✓ | ✓ | Rest von *Erwartung heute* |
 | Prognose morgen, übermorgen | ✓ | ✓ | |
 | Prognose in 3 … 6 Tagen | ✓ | ✓ | Nur innerhalb der *Prognosetage*; deaktiviert, bis du sie aktivierst; ohne P10–P90 |
 | Systemwirkungsgrad, Abdeckung Schattenkarte, Temperaturkoeffizient, Übereinstimmung Satellit | | ✓ | Gelernte Werte |

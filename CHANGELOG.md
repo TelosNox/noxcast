@@ -17,6 +17,9 @@ breaking changes.
 - The small charts under "Groups" in the day view cover the same daylight hours as the main chart instead of the
   whole day, share one scale so their heights compare, and show the group's own forecast (6 am today, day-ahead for
   past days) as a dashed line.
+- "Forecast remaining today" is now called "Expected remaining today" ("Erwartung Rest heute" in German). It has
+  always been the rest of "Expected today", recomputed with every update, not the rest of the forecast fixed at
+  6 am. Existing entity IDs stay as they are; only the displayed name changes.
 
 ## [0.1.0] - 2026-11-05
 

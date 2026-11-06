@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The learning status in the panel no longer flickers during a run: only its text, the stages and the button change
+  until the run is done.
+- The forecast accuracy view no longer flickers while a weather model comparison is going: only its progress and
+  button change until the result is there.
+- The weather card updates only the outside values when the temperature or humidity sensor reports, instead of
+  rebuilding the whole card.
+
 ## [0.2.0b1] - 2026-11-06
 
 The first pre-release of 0.2.0. The sections below list what changed since 0.1.0.

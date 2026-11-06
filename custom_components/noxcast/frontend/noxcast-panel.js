@@ -453,10 +453,22 @@ class NoxcastPanel extends HTMLElement {
     if (finished) this._load(); else this._updateStatus();
   }
 
-  // only the status box: rebuilding the whole panel every few seconds would scroll it back and redraw the maps
+  // only what changed in the status box: rebuilding the whole panel every few seconds would scroll it back and
+  // redraw the maps, and rebuilding the box would make it flicker while the run only moves on
   _updateStatus() {
     const slot = this.shadowRoot && this.shadowRoot.getElementById("nx-status");
-    if (slot) slot.innerHTML = this._renderStatus();
+    if (!slot) return;
+    const box = slot.querySelector(".status"), parts = this._statusParts();
+    if (!box || !parts) { slot.innerHTML = this._renderStatus(); return; }
+    // compared with what was written, not with innerHTML: the browser serialises escaped text differently
+    const set = (sel, html) => { const el = box.querySelector(sel); if (el && el._nx !== html) { el.innerHTML = html; el._nx = html; } };
+    set(".status-lines", parts.lines);
+    set(".stages", parts.rows);
+    const button = box.querySelector(".btn");
+    if (button && parts.button) {
+      if (button.disabled !== parts.button.disabled) button.disabled = parts.button.disabled;
+      if (button.textContent !== parts.button.text) button.textContent = parts.button.text;
+    }
   }
 
   async _relearn() {
@@ -473,8 +485,18 @@ class NoxcastPanel extends HTMLElement {
   }
 
   _renderStatus() {
+    const parts = this._statusParts();
+    if (!parts) return "";
+    const b = parts.button;
+    const btn = b ? `<button class="btn" data-action="relearn" ${b.disabled ? "disabled" : ""}>${b.text}</button>` : "";
+    return `<section class="card pad status"><h2>${this._t.status.title}</h2>
+      <p class="muted status-lines">${parts.lines}</p><ul class="stages">${parts.rows}</ul>${btn}</section>`;
+  }
+
+  // the parts of the status box that change while a run goes on
+  _statusParts() {
     const st = this._status;
-    if (!st) return "";
+    if (!st) return null;
     const t = this._t.status, lang = this._lang, tz = this._data.time_zone;
     const when = (iso) => new Date(iso).toLocaleString(lang, { timeZone: tz, weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
     const took = (sec) => sec == null ? "–" : sec < 90 ? `${Math.round(sec)} s` : `${Math.round(sec / 60)} min`;
@@ -488,9 +510,7 @@ class NoxcastPanel extends HTMLElement {
     const rows = st.arrays.map((a) => `<li><b>${esc(a.name)}</b>: ${esc(fill(t.stages[a.stage] || a.stage,
       { h: a.hours.toLocaleString(lang), d: a.days, c: pct(a.coverage), D: th.days, H: th.hours }))}</li>`).join("");
     const admin = this._hass.user && this._hass.user.is_admin;
-    const btn = admin ? `<button class="btn" data-action="relearn" ${st.running ? "disabled" : ""}>${st.running ? t.busy : t.relearn}</button>` : "";
-    return `<section class="card pad status"><h2>${t.title}</h2>
-      <p class="muted">${lines.join("<br>")}</p><ul class="stages">${rows}</ul>${btn}</section>`;
+    return { lines: lines.join("<br>"), rows, button: admin ? { disabled: !!st.running, text: st.running ? t.busy : t.relearn } : null };
   }
 
   // ------------------------------------------------------------ derived data per array

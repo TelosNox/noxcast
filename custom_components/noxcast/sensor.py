@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -66,7 +67,7 @@ FORECASTS = (
                         value=lambda h: day_energy(h, 0), series="expected", day_offset=0),
     ForecastDescription(key="energy_tomorrow", translation_key="energy_tomorrow", value=lambda h: day_energy(h, 1), day_offset=1),
     ForecastDescription(key="energy_day_after", translation_key="energy_day_after", value=lambda h: day_energy(h, 2), day_offset=2),
-    ForecastDescription(key="energy_remaining_today", translation_key="energy_remaining_today", value=remaining_today,
+    ForecastDescription(key="energy_expected_remaining_today", translation_key="energy_expected_remaining_today", value=remaining_today,
                         series="expected", day_offset=0),
 )
 # the rest of the forecast horizon (forecast_days, up to 7 with today): created per configured day, off by default,
@@ -80,6 +81,11 @@ LATER_DAYS = tuple(
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     coordinator = entry.runtime_data
+    # 0.1.0 named the rest of the expectation "energy_remaining_today"; its entities would stay behind as orphans
+    registry = er.async_get(hass)
+    for old in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if old.domain == "sensor" and old.unique_id.endswith("_energy_remaining_today"):
+            registry.async_remove(old.entity_id)
     forecasts = FORECASTS + tuple(d for d in LATER_DAYS if d.day_offset < coordinator.forecast_days)
     total_device = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name="Noxcast", manufacturer="Noxcast",
                               entry_type=DeviceEntryType.SERVICE)
@@ -161,7 +167,7 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
         band = data.band if data is not None and self._sub_id is TOTAL else None
         if band:
             key = self.entity_description.key
-            value = band["rest"] if key == "energy_remaining_today" else band["days"].get(
+            value = band["rest"] if key == "energy_expected_remaining_today" else band["days"].get(
                 {"energy_expected_today": 0, "energy_tomorrow": 1, "energy_day_after": 2}.get(key, -1))
             if value:
                 attrs["p10"], attrs["p90"] = value

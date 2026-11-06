@@ -489,7 +489,7 @@
       "energy_day_6": {
         "name": "Forecast in 6 days"
       },
-      "energy_remaining_today": {
+      "energy_expected_remaining_today": {
         "name": "Expected remaining today"
       },
       "efficiency": {

@@ -786,6 +786,29 @@ async def test_later_days_follow_the_forecast_horizon(hass: HomeAssistant) -> No
                 assert reg.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION
 
 
+async def test_expected_remaining_replaces_the_old_sensor(hass: HomeAssistant) -> None:
+    """The rest of today is the rest of the expectation: new unique ID, the 0.1.0 entities are removed."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
+                            data={"soc_full_pct": 95},
+                            subentries_data=[config_entries.ConfigSubentryData(
+                                data=ARRAY, subentry_type="array", title="Roof", unique_id=None)])
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    sub_id = next(iter(entry.subentries))
+    old = [reg.async_get_or_create("sensor", DOMAIN, f"{owner}_energy_remaining_today", config_entry=entry,
+                                   config_subentry_id=sid).entity_id
+           for owner, sid in ((entry.entry_id, None), (sub_id, sub_id))]
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert all(reg.async_get(entity_id) is None for entity_id in old)
+    for owner in (entry.entry_id, sub_id):
+        assert reg.async_get_entity_id("sensor", DOMAIN, f"{owner}_energy_expected_remaining_today") is not None
+
+
 async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The update listener reloads after a reconfigure; the flow must not reload as well (an error from HA 2026.12)."""
     weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]

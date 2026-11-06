@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
+- The forecast error sensor no longer blocks Home Assistant for about a second at start and on every update
+  ("Updating state ... took 0.9 seconds" in the log). Its figures are now computed in the background at start and
+  after the nightly learning run, which is when new actual values arrive.
 - When Open-Meteo is busy (often "503 Service Unavailable" on the full and half hour), Noxcast tries again one to
   three minutes later instead of waiting for the next update. The log shows one warning per outage, only when the
   retry fails too, and a note when Open-Meteo answers again.

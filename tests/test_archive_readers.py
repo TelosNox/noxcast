@@ -108,3 +108,16 @@ def test_errors_and_sources_from_stored_archive():
     assert archive.daily_error(a, since, "roof", source="icon") == (0.6969773490568419, 9)
     assert archive.alt_sources(a) == ["icon"]
     assert list(archive.day_totals(a)) == [(FIRST + timedelta(days=d)).isoformat() for d in range(DAYS - 1)]
+
+
+def test_error_report_matches_the_single_errors():
+    a = stored()
+    since = FIRST
+    report = archive.error_report(a, since, {"roof": "Roof"})
+    error, days = archive.daily_error(a, since)
+    icon, n = archive.daily_error(a, since, source="icon")
+    assert report == {"error": round(error * 100, 1), "days": days,
+                      "per_array": {"Roof": round(archive.daily_error(a, since, "roof")[0] * 100, 1)},
+                      "comparison": {"icon": {"error": round(icon * 100, 1), "days": n, "primary_error": 14.7}}}
+    assert archive.error_report({}, since, {"roof": "Roof"}) == \
+        {"error": None, "days": 0, "per_array": {"Roof": None}, "comparison": {}}

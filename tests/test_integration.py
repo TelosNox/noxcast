@@ -935,3 +935,47 @@ async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogC
     assert entry.state is config_entries.ConfigEntryState.LOADED
     assert reloads.call_count == 1
     assert "update listener" not in caplog.text
+
+
+async def test_open_meteo_failure_is_retried_and_logged_once(hass: HomeAssistant, caplog, freezer) -> None:
+    import logging
+
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    freezer.move_to(dt_util.start_of_local_day() + timedelta(hours=12, minutes=5))   # away from the :00/:30 refresh
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    fetch = AsyncMock(return_value=(weather, {}))
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", fetch), \
+         patch("custom_components.noxcast.coordinator.random.uniform", return_value=90.0):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        coordinator = result["result"].runtime_data
+        await hass.async_block_till_done()
+        caplog.set_level(logging.INFO, logger="custom_components.noxcast")
+
+        def warnings():
+            return [r for r in caplog.records if r.levelno >= logging.WARNING and "Open-Meteo" in r.getMessage()]
+
+        fetch.side_effect = RuntimeError("503 Service Unavailable")
+        calls = fetch.await_count
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success and not warnings()      # the last answer stands in, retry pending
+        await coordinator.async_refresh()                               # another failure before the retry: no warning
+        calls += 1
+        assert not warnings()
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=91))
+        await hass.async_block_till_done()
+        assert fetch.await_count == calls + 2 and len(warnings()) == 1
+        await coordinator.async_refresh()                               # still down: no retry, no second warning
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=200))
+        await hass.async_block_till_done()
+        assert fetch.await_count == calls + 3 and len(warnings()) == 1
+
+        fetch.side_effect = None
+        await coordinator.async_refresh()
+        assert "Open-Meteo answers again" in caplog.text
+        fetch.side_effect = RuntimeError("503")
+        await coordinator.async_refresh()                               # a new outage: retried again, not logged
+        assert len(warnings()) == 1 and coordinator._weather_retry is not None
+        await hass.config_entries.async_unload(result["result"].entry_id)
+        assert coordinator._weather_retry is None

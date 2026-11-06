@@ -8,12 +8,13 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import random
 import time
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -24,7 +25,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -151,6 +152,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._factors: dict[str, float] | None = None
         # last Open-Meteo answer: (fetched at, mean of the models, each model); stands in during outages
         self._weather: tuple[float, list[WeatherHour], dict[str, list[WeatherHour]]] | None = None
+        self._weather_retry = None                # cancels the pending retry after a failed fetch
+        self._weather_retrying = False            # the refresh running now is that retry
+        self._weather_warned = False              # the current outage is in the log already
         self._learn_lock = asyncio.Lock()
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         # separate file: larger and written less often than the learned state
@@ -236,6 +240,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         entry.async_on_unload(async_track_time_change(
             self.hass, self._async_scheduled_refresh, minute=UPDATE_MINUTES, second=0))
         entry.async_on_unload(async_at_started(self.hass, self._async_started))
+        entry.async_on_unload(self._cancel_weather_retry)
 
     async def _async_scheduled_refresh(self, _now: datetime) -> None:
         await self.async_refresh()
@@ -790,12 +795,49 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             age = dt_util.utcnow().timestamp() - self._weather[0] if self._weather else None
             if age is None or age > WEATHER_MAX_AGE.total_seconds():
                 raise
-            _LOGGER.warning("Open-Meteo failed (%s); using the forecast from %.1f h ago", err, age / 3600)
+            self._weather_failed(err, age)
             return self._weather
+        if self._weather_warned:
+            _LOGGER.info("Open-Meteo answers again")
+        self._weather_warned = False
+        self._cancel_weather_retry()
         fetched = (dt_util.utcnow().timestamp(), mean, per_model)
         if mean:
             self._weather = fetched
         return fetched
+
+    def _weather_failed(self, err: Exception, age: float) -> None:
+        """One retry a few minutes later; the log hears of an outage once, when the retry fails too.
+
+        The updates run on the full and half hour, when Open-Meteo is busiest and often answers 503; a moment
+        later it usually answers again. The random delay keeps installations from retrying all at once.
+        """
+        if self._weather_warned:
+            _LOGGER.debug("Open-Meteo still failing (%s); forecast from %.1f h ago", err, age / 3600)
+        elif self._weather_retrying:
+            self._weather_warned = True
+            _LOGGER.warning("Open-Meteo failed (%s); using the forecast from %.1f h ago until it answers again",
+                            err, age / 3600)
+        elif self._weather_retry is None:
+            delay = random.uniform(*WEATHER_RETRY)
+            _LOGGER.debug("Open-Meteo failed (%s); retrying in %.0f s", err, delay)
+            self._weather_retry = async_call_later(self.hass, delay, self._async_weather_retry)
+        else:
+            _LOGGER.debug("Open-Meteo failed (%s); a retry is pending", err)
+
+    async def _async_weather_retry(self, _now: datetime) -> None:
+        self._weather_retry = None
+        self._weather_retrying = True
+        try:
+            await self.async_refresh()
+        finally:
+            self._weather_retrying = False
+
+    @callback
+    def _cancel_weather_retry(self) -> None:
+        if self._weather_retry is not None:
+            self._weather_retry()
+            self._weather_retry = None
 
     async def _async_today_actual(self, day_start: float, now: float
                                   ) -> tuple[dict[str, Series], dict[str, tuple[float, float, float]]]:

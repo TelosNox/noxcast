@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+## [0.2.0b1] - 2026-11-06
+
+The first pre-release of 0.2.0. The sections below list what changed since 0.1.0.
+
 ### Added
 - "Compare weather models" in the forecast accuracy view: on request, Noxcast fetches what every offered weather
   model forecast one day ahead over the past year, runs it through your learned model and compares each model and

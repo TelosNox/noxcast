@@ -294,6 +294,7 @@ erwartet, aus Noxcasts eigenem Wetter – demselben, das die Prognose antreibt.
 | `days` | `5` | 1–7 Tage Wetter; PV nur innerhalb des Prognosehorizonts |
 | `show_pv` | `true` | PV-Ertrag je Tag |
 | `pv_bar` | `line` | Anteil am Ertrag bei klarem Himmel als `line`, `fill` oder `none` |
+| `pv_today` | `expected` | Ertrag heute als `expected` (Sensor „Erwartung heute“) oder `forecast` (Sensor „Prognose heute“) |
 | `temperature`, `humidity`, `name` | – | Optional gemessene Außenwerte über den Tagen |
 | `look` | `noxcast` | `noxcast` oder `plain` |
 

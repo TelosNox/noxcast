@@ -6,6 +6,7 @@
 // days: 5                              # 1 to 10; days beyond the Noxcast horizon show weather only
 // show_pv: true                        # PV yield per day where Noxcast has a forecast
 // pv_bar: line                         # share of the clear-sky yield: line (row edge), fill (row background), none
+// pv_today: expected                   # today: expected (actual + corrected rest) or forecast (fixed in the morning)
 // temperature: sensor.outdoor_temp     # optional: measured outside values above the days
 // humidity: sensor.outdoor_humidity
 // name: Außen                          # label of the measured values
@@ -17,11 +18,13 @@ const W_TEXT = {
     days: "Tage", show_pv: "PV-Ertrag pro Tag", temperature: "Außentemperatur (optional)",
     humidity_s: "Außenfeuchte (optional)", name: "Bezeichnung der Außenwerte", look: "Aussehen",
     pv_bar: "Balken: Anteil am Ertrag bei klarem Himmel", line: "Linie am Zeilenrand", fill: "Zeilenhintergrund", none: "Kein Balken",
+    pv_today: "PV-Ertrag heute", expected: "Erwartung (Ist + korrigierter Rest)", forecast: "Prognose vom Morgen",
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden" },
   en: { outside: "Outside", humidity: "humidity", kwh: "kWh", noWeather: "No weather from Noxcast yet",
     days: "Days", show_pv: "PV yield per day", temperature: "Outside temperature (optional)",
     humidity_s: "Outside humidity (optional)", name: "Label of the outside values", look: "Look",
     pv_bar: "Bar: share of the clear-sky yield", line: "Line at the row edge", fill: "Row background", none: "No bar",
+    pv_today: "PV yield today", expected: "Expected (actual + corrected rest)", forecast: "Forecast from the morning",
     outdated: "Noxcast was updated – please reload the page" },
 };
 
@@ -45,6 +48,7 @@ class NoxcastWeatherCard extends HTMLElement {
         { name: "days", selector: { number: { min: 1, max: 10, step: 1, mode: "box" } } },
         { name: "show_pv", selector: { boolean: {} } },
         { name: "pv_bar", selector: { select: { mode: "dropdown", options: ["line", "fill", "none"].map((value) => ({ value, label: t[value] })) } } },
+        { name: "pv_today", selector: { select: { mode: "dropdown", options: ["expected", "forecast"].map((value) => ({ value, label: t[value] })) } } },
         { name: "temperature", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
         { name: "humidity", selector: { entity: { domain: "sensor", device_class: "humidity" } } },
         { name: "name", selector: { text: {} } },
@@ -55,7 +59,7 @@ class NoxcastWeatherCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { days: 5, show_pv: true, pv_bar: "line", look: "noxcast", ...(config || {}) };
+    this._config = { days: 5, show_pv: true, pv_bar: "line", pv_today: "expected", look: "noxcast", ...(config || {}) };
     if (this._hass) { this._resubscribe(); this._render(); }
   }
 
@@ -175,6 +179,14 @@ class NoxcastWeatherCard extends HTMLElement {
 
   _num(v, d = 0) { return num(v, this._lang, d); }
 
+  // today the same number as the sensor "expected today" or "forecast today", so the card does not show a third one;
+  // the running weather forecast only until the morning forecast or the expected curve exists
+  _wh(pv, isToday) {
+    if (!isToday) return pv.wh;
+    const v = this._config.pv_today === "forecast" ? pv.morning_wh : pv.expected_wh;
+    return v == null ? pv.wh : v;
+  }
+
   _render() {
     if (!this.shadowRoot || !this._hass) return;
     const t = this._t, c = this._config, dark = this._hass.themes && this._hass.themes.darkMode;
@@ -189,16 +201,17 @@ class NoxcastWeatherCard extends HTMLElement {
       const date = this._date(Date.parse(f.datetime));
       const label = new Date(f.datetime).toLocaleDateString(this._lang, { weekday: "short", timeZone: this._tz || this._hass.config.time_zone });
       const pv = c.show_pv && this._pv && this._pv.get(date);
+      const wh = pv ? this._wh(pv, date === today) : null;
       const rain = Number(f.precipitation) >= 0.5 ? `${this._num(f.precipitation, Number(f.precipitation) < 10 ? 1 : 0)} mm` : "";
       // the day's forecast as a share of its clear-sky yield; cloud enhancement can exceed it slightly
-      const share = pv && pv.clear_wh ? `${Math.min(100, (100 * pv.wh) / pv.clear_wh).toFixed(1)}%` : null;
+      const share = pv && pv.clear_wh ? `${Math.min(100, (100 * wh) / pv.clear_wh).toFixed(1)}%` : null;
       const shown = share !== null && bar !== "none";
       return `<div class="day${shown ? ` bar-${bar}" style="--share:${share}` : ""}">
         <span class="d">${esc(label)}</span>
         <ha-icon icon="${W_ICON[f.condition] || "mdi:weather-cloudy"}" style="color:${W_COLOR[f.condition] || "var(--secondary-text-color)"}"></ha-icon>
         <span class="tmp">${f.temperature == null ? "–" : `${Math.round(f.temperature)}°`} <span class="lo">${f.templow == null ? "" : `${Math.round(f.templow)}°`}</span></span>
         <span class="rain">${rain}</span>
-        <span class="pv" style="color:${pvColor}">${pv ? `${this._num(pv.wh / 1000, 1)} <small>${t.kwh}</small>` : ""}</span>
+        <span class="pv" style="color:${pvColor}">${pv ? `${this._num(wh / 1000, 1)} <small>${t.kwh}</small>` : ""}</span>
       </div>`;
     }).join("");
     const head = temp || hum ? `<div class="head">

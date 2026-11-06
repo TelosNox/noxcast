@@ -156,14 +156,14 @@ class NoxcastAccuracy extends HTMLElement {
     clearTimeout(this._mcPoll);
     const data = await ask(this._hass, { type: "noxcast/weather_models" }).catch(() => null);
     this._mc = data && data.v === WS_SCHEMA ? data : null;
-    this._render();
+    this._updateModels();
     const entry = this._mc && (this._mc.entries || [])[0];
     if (entry && entry.state.running) this._mcPoll = setTimeout(() => { if (this.isConnected) this._loadModels(); }, 5000);
   }
 
   async _startCompare() {
     this._mcStarting = true;
-    this._render();
+    this._updateModels();
     this._mcError = null;
     const answer = await ask(this._hass, { type: "noxcast/compare_weather_models" }).catch((err) => { this._mcError = String((err && err.message) || err); });
     if (answer && !answer.started) this._mcError = (answer.reasons || []).map((r) => this._t.mcRefused[r] || r).join(" ");
@@ -267,7 +267,7 @@ class NoxcastAccuracy extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else {
       const all = this._days(this._s.source), days = this._inRange(all);
-      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>${this._backtest()}${this._models()}`;
+      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>${this._backtest()}${this._modelsSlot()}`;
     }
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${this._controls()}${body}</div>`;
   }
@@ -300,7 +300,7 @@ class NoxcastAccuracy extends HTMLElement {
       <section class="card pad"><h3>${t.perDay}</h3>${this._bars(days)}</section>
       ${this._split(days)}
       ${this._backtest()}
-      ${this._models()}
+      ${this._modelsSlot()}
       <section class="card pad">${sel ? this._hourly(sel) : `<h3>${t.hourly}</h3><p class="muted">${t.pick}</p>`}</section>
       <div class="split">
         <section class="card pad"><h3>${t.calendar}</h3>${this._calendar(days)}</section>
@@ -401,24 +401,58 @@ class NoxcastAccuracy extends HTMLElement {
     return `<section class="card pad"><h3>${t.backtest}</h3><div class="figs">${figs.join("")}</div>${table}<p class="help">${t.btHelp}</p></section>`;
   }
 
-  // which weather models suit the installation: the hindcast of every model and pair (hindcast.py)
-  _models() {
-    const t = this._t, entry = this._mc && (this._mc.entries || [])[0];
+  // the comparison polls every few seconds while it runs. Rebuilding the whole view each time would make it flicker
+  // and redraw every chart: while nothing but the progress changes, only the status line and the button are updated,
+  // and the section is rebuilt only when what it shows changes (a result, an error, the view of the pairs)
+  _modelsSlot() {
+    this._mcShown = this._mcKey();
+    return `<div id="nx-models" class="slot">${this._models()}</div>`;
+  }
+
+  _mcKey() {
+    const entry = this._mc && (this._mc.entries || [])[0];
     if (!entry) return "";
-    const st = entry.state, r = entry.result, admin = !!(this._hass.user && this._hass.user.is_admin);
-    const pc = (v, signed = false) => (v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${(v * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+    const r = entry.result, st = entry.state;
+    return JSON.stringify([r && r.computed_at, r && r.status, entry.current, entry.candidates.length, st.error, st.limited, this._mcError, this._s.allCombos]);
+  }
+
+  _updateModels() {
+    const slot = this.shadowRoot.getElementById("nx-models");
+    if (!slot) { this._render(); return; }
+    const key = this._mcKey(), status = this.shadowRoot.getElementById("nx-mc-status"), button = slot.querySelector('[data-act="compare"]');
+    if (key === this._mcShown && status && button) {
+      const head = this._mcHead((this._mc.entries || [])[0]);
+      status.innerHTML = head.text;
+      button.disabled = !head.can;
+      return;
+    }
+    this._mcShown = key;
+    slot.innerHTML = this._models();
+  }
+
+  // the status line above the comparison and whether it can be started now
+  _mcHead(entry) {
+    const t = this._t, st = entry.state, r = entry.result, admin = !!(this._hass.user && this._hass.user.is_admin);
     const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang, { day: "numeric", month: "short", year: "numeric" });
     const iso = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(this._lang, { day: "numeric", month: "short", year: "numeric" });
-
     let status;
     if (st.running || this._mcStarting) status = t.mcRunning(st.done || 0, st.total || entry.candidates.length);
     else if (entry.blocked === "cooldown") status = t.mcCooldown(day(entry.until));
     else if (entry.blocked === "not_learned") status = t.mcNotLearned;
     else if (!admin) status = t.mcAdmin;
-    const can = admin && !entry.blocked && !this._mcStarting;
     const last = r && r.first ? t.mcLast(day(r.computed_at), r.days, iso(r.first), iso(r.last)) : r ? day(r.computed_at) : t.mcNever;
-    const head = `<div class="mchead"><span class="small">${last}${status ? `<br><span class="muted">${status}</span>` : ""}</span>
-      <button class="btn" data-act="compare"${can ? "" : " disabled"}>${t.mcStart}</button></div>`;
+    return { text: `${last}${status ? `<br><span class="muted">${status}</span>` : ""}`, can: admin && !entry.blocked && !this._mcStarting };
+  }
+
+  // which weather models suit the installation: the hindcast of every model and pair (hindcast.py)
+  _models() {
+    const t = this._t, entry = this._mc && (this._mc.entries || [])[0];
+    if (!entry) return "";
+    const st = entry.state, r = entry.result;
+    const pc = (v, signed = false) => (v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${(v * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+    const h = this._mcHead(entry);
+    const head = `<div class="mchead"><span class="small" id="nx-mc-status">${h.text}</span>
+      <button class="btn" data-act="compare"${h.can ? "" : " disabled"}>${t.mcStart}</button></div>`;
     const failed = (st.error ? `<p class="note warn">${esc(t.mcFailed(st.error))}${st.limited ? `<br>${t.mcLimited}` : ""}</p>` : "")
       + (this._mcError ? `<p class="note warn">${esc(this._mcError)}</p>` : "");
     // a call counts per two weeks of data: a year is about 26
@@ -591,7 +625,7 @@ class NoxcastAccuracy extends HTMLElement {
     const el = ev.composedPath().find((n) => n.dataset && (n.dataset.set || n.dataset.day || n.dataset.act));
     if (!el) return;
     if (el.dataset.act === "compare") { this._startCompare(); return; }
-    if (el.dataset.act === "combos") { this._s.allCombos = !this._s.allCombos; this._render(); return; }
+    if (el.dataset.act === "combos") { this._s.allCombos = !this._s.allCombos; this._updateModels(); return; }
     if (el.dataset.set) {
       const v = el.dataset.val;
       this._s[el.dataset.set] = el.dataset.set === "range" ? Number(v) : v;
@@ -617,6 +651,7 @@ class NoxcastAccuracy extends HTMLElement {
         --nx-empty: ${d ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.05)"}; --nx-hatch: ${d ? "rgba(224,87,74,.35)" : "rgba(200,58,46,.22)"};
         --nx-rail: ${d ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)"}; --nx-wx: #22C7E8; --nx-md: #8B5CF6; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
+      .slot { display: contents; }
       .split { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
       .grow { flex: 1 1 380px; min-width: 0; }
       .card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);

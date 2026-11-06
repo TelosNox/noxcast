@@ -72,9 +72,12 @@ class NoxcastWeatherCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._listenReady();
     if (first) { this._loadSource(); this._refresh(); }
-    const sig = [this._config.temperature, this._config.humidity].map((id) => id && hass.states[id] && hass.states[id].state).join("|")
-      + (hass.themes && hass.themes.darkMode);
-    if (sig !== this._sig) { this._sig = sig; this._render(); }
+    // an outside sensor reports every minute or so: only its values are replaced then, rebuilding the card would
+    // make the days and their icons flicker
+    const sig = [this._config.temperature, this._config.humidity].map((id) => id && hass.states[id] && hass.states[id].state).join("|");
+    const dark = !!(hass.themes && hass.themes.darkMode), slot = this.shadowRoot.getElementById("nx-head");
+    if (dark !== this._darkShown || !slot) { this._sig = sig; this._render(); }
+    else if (sig !== this._sig) { this._sig = sig; slot.innerHTML = this._head(); }
   }
 
   connectedCallback() {
@@ -187,13 +190,24 @@ class NoxcastWeatherCard extends HTMLElement {
     return v == null ? pv.wh : v;
   }
 
-  _render() {
-    if (!this.shadowRoot || !this._hass) return;
-    const t = this._t, c = this._config, dark = this._hass.themes && this._hass.themes.darkMode;
+  // the measured outside values above the days
+  _head() {
+    const t = this._t, c = this._config;
     const st = (id) => (id && this._hass.states[id]) || null;
     const temp = st(c.temperature), hum = st(c.humidity);
     const tv = temp && !isNaN(parseFloat(temp.state)) ? parseFloat(temp.state) : null;
     const hv = hum && !isNaN(parseFloat(hum.state)) ? parseFloat(hum.state) : null;
+    return temp || hum ? `<div class="head">
+        <span class="lbl">${esc(c.name || t.outside)}</span>
+        ${tv === null ? "" : `<span class="now">${this._num(tv, 1)}°</span>`}
+        ${hv === null ? "" : `<span class="hum">${this._num(hv)} % ${t.humidity}</span>`}
+      </div>` : "";
+  }
+
+  _render() {
+    if (!this.shadowRoot || !this._hass) return;
+    const t = this._t, c = this._config, dark = this._hass.themes && this._hass.themes.darkMode;
+    this._darkShown = !!dark;
     const today = this._date(Date.now());
     const pvColor = dark ? "#F2B233" : "#9A6400";
     const bar = c.show_pv ? c.pv_bar || "line" : "none";
@@ -214,11 +228,7 @@ class NoxcastWeatherCard extends HTMLElement {
         <span class="pv" style="color:${pvColor}">${pv ? `${this._num(wh / 1000, 1)} <small>${t.kwh}</small>` : ""}</span>
       </div>`;
     }).join("");
-    const head = temp || hum ? `<div class="head">
-        <span class="lbl">${esc(c.name || t.outside)}</span>
-        ${tv === null ? "" : `<span class="now">${this._num(tv, 1)}°</span>`}
-        ${hv === null ? "" : `<span class="hum">${this._num(hv)} % ${t.humidity}</span>`}
-      </div>` : "";
+    const head = `<div id="nx-head" class="slot">${this._head()}</div>`;
     const body = (this._outdated ? `<div class="muted">${t.outdated}</div>` : "")
       + (this._entity ? `<div class="rows ${bar}">${rows}</div>` : `<div class="muted">${t.noWeather}</div>`);
     this.shadowRoot.innerHTML = `<style>
@@ -227,6 +237,7 @@ class NoxcastWeatherCard extends HTMLElement {
         background: linear-gradient(var(--ha-card-background, var(--card-background-color, #fff)), var(--ha-card-background, var(--card-background-color, #fff))) padding-box,
           linear-gradient(135deg, rgba(245,165,36,.55), rgba(127,127,127,.14) 28%, rgba(127,127,127,.14) 72%, rgba(139,92,246,.55)) border-box;
         box-shadow: 0 18px 40px -24px rgba(40,24,80,.35); }
+      .slot { display: contents; }
       .head { display: flex; flex-direction: column; }
       .lbl { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--secondary-text-color); }
       .now { font-size: 44px; font-weight: 500; letter-spacing: -.02em; line-height: 1.1; }

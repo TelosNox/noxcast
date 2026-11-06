@@ -167,11 +167,13 @@ def day_totals(data, days: int, today: date, day_start: Callable[[date], float])
     Today counts its forecast too (past hours as they were forecast), not the expected curve, so the days
     stay comparable. A day needs almost all of its hours, so a horizon cut off mid-day does not show as a bad day.
     Today also carries the energy of the expected curve (actual + corrected rest) and of the morning forecast, the
-    two numbers the sensors and the day card show for today; None on later days or before they exist.
+    two numbers the sensors and the day card show for today, under the same rule of almost all hours; None on later
+    days or before they exist. The weather card shows one of them for today, so its bar there is not strictly
+    comparable with the other days.
     """
     def energy(hours: dict, a: float, b: float) -> int | None:
         values = [v for t, v in hours.items() if a <= t < b]
-        return round(sum(values)) if values else None
+        return round(sum(values)) if len(values) >= 20 else None
 
     out = []
     band = (data.band or {}).get("days", {})

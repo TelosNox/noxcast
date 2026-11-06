@@ -97,10 +97,12 @@ def test_day_totals_need_most_hours_and_take_the_band():
     out = views.day_totals(data(), 4, DAY, day_start)
     assert [d["date"] for d in out] == ["2026-07-01", "2026-07-02", "2026-07-03"]     # the fourth day has no hours
     assert out[0] == {"date": "2026-07-01", "start": A, "wh": 4001, "clear_wh": 6001, "p10": None, "p90": None,
-                      "expected_wh": 310, "morning_wh": None}                         # no morning total in the data
+                      "expected_wh": None, "morning_wh": None}                        # too few hours, as for the sensors
     assert out[1]["p10"] == 2000 and out[1]["p90"] == 5000                           # band keys as stored (str)
     assert out[1]["expected_wh"] is None and out[1]["morning_wh"] is None            # today only
-    assert views.day_totals(data(morning={None: {A + 12 * H: 300.4}}), 1, DAY, day_start)[0]["morning_wh"] == 300
+    full = {A + h * H: 100.4 for h in range(24)}
+    assert views.day_totals(data(morning={None: full}), 1, DAY, day_start)[0]["morning_wh"] == 2410
+    assert views.day_totals(data(expected={None: full}), 1, DAY, day_start)[0]["expected_wh"] == 2410
 
 
 def test_load_entry_and_model_summaries():

@@ -20,8 +20,10 @@ breaking changes.
 - **Breaking:** "Forecast remaining today" is now "Expected remaining today" ("Erwartung Rest heute" in German),
   with a new entity ID such as `sensor.noxcast_expected_remaining_today` (in German
   `sensor.noxcast_erwartung_rest_heute`), per array as well. It has always been the rest of "Expected today",
-  recomputed with every update, not the rest of the forecast fixed at 6 am. The old sensors are removed; replace
-  their entity IDs in automations and dashboards. Their history stays under the old ID.
+  recomputed with every update, not the rest of the forecast fixed at 6 am. The old sensors
+  (`sensor.noxcast_forecast_remaining_today`, in German `sensor.noxcast_prognose_rest_heute`) are removed with
+  their customisations; replace their entity IDs in automations and dashboards. Their recorded history stays under
+  the old ID until the recorder purges it.
 
 ## [0.1.0] - 2026-11-05
 

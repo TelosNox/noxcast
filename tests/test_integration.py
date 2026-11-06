@@ -797,13 +797,14 @@ async def test_expected_remaining_replaces_the_old_sensor(hass: HomeAssistant) -
                                 data=ARRAY, subentry_type="array", title="Roof", unique_id=None)])
     entry.add_to_hass(hass)
     reg = er.async_get(hass)
-    old = reg.async_get_or_create("sensor", DOMAIN, f"{entry.entry_id}_energy_remaining_today", config_entry=entry,
-                                  suggested_object_id="noxcast_prognose_rest_heute")
+    sub_id = next(iter(entry.subentries))
+    old = [reg.async_get_or_create("sensor", DOMAIN, f"{owner}_energy_remaining_today", config_entry=entry,
+                                   config_subentry_id=sid).entity_id
+           for owner, sid in ((entry.entry_id, None), (sub_id, sub_id))]
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert reg.async_get(old.entity_id) is None
-    sub_id = next(iter(entry.runtime_data.arrays))
+    assert all(reg.async_get(entity_id) is None for entity_id in old)
     for owner in (entry.entry_id, sub_id):
         assert reg.async_get_entity_id("sensor", DOMAIN, f"{owner}_energy_expected_remaining_today") is not None
 

@@ -152,6 +152,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # last Open-Meteo answer: (fetched at, mean of the models, each model); stands in during outages
         self._weather: tuple[float, list[WeatherHour], dict[str, list[WeatherHour]]] | None = None
         self._weather_retry = None                # cancels the pending retry after a failed fetch
+        self._weather_retrying = False            # the refresh running now is that retry
         self._weather_warned = False              # the current outage is in the log already
         self._learn_lock = asyncio.Lock()
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
@@ -797,20 +798,26 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         The updates run on the full and half hour, when Open-Meteo is busiest and often answers 503; a moment
         later it usually answers again. The random delay keeps installations from retrying all at once.
         """
-        if self._weather_retry is None and not self._weather_warned:
-            delay = random.uniform(*WEATHER_RETRY)
-            _LOGGER.debug("Open-Meteo failed (%s); retrying in %.0f s", err, delay)
-            self._weather_retry = async_call_later(self.hass, delay, self._async_weather_retry)
-        elif not self._weather_warned:
+        if self._weather_warned:
+            _LOGGER.debug("Open-Meteo still failing (%s); forecast from %.1f h ago", err, age / 3600)
+        elif self._weather_retrying:
             self._weather_warned = True
             _LOGGER.warning("Open-Meteo failed (%s); using the forecast from %.1f h ago until it answers again",
                             err, age / 3600)
+        elif self._weather_retry is None:
+            delay = random.uniform(*WEATHER_RETRY)
+            _LOGGER.debug("Open-Meteo failed (%s); retrying in %.0f s", err, delay)
+            self._weather_retry = async_call_later(self.hass, delay, self._async_weather_retry)
         else:
-            _LOGGER.debug("Open-Meteo still failing (%s); forecast from %.1f h ago", err, age / 3600)
+            _LOGGER.debug("Open-Meteo failed (%s); a retry is pending", err)
 
     async def _async_weather_retry(self, _now: datetime) -> None:
-        await self.async_refresh()
         self._weather_retry = None
+        self._weather_retrying = True
+        try:
+            await self.async_refresh()
+        finally:
+            self._weather_retrying = False
 
     @callback
     def _cancel_weather_retry(self) -> None:

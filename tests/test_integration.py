@@ -937,11 +937,12 @@ async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogC
     assert "update listener" not in caplog.text
 
 
-async def test_open_meteo_failure_is_retried_and_logged_once(hass: HomeAssistant, caplog) -> None:
+async def test_open_meteo_failure_is_retried_and_logged_once(hass: HomeAssistant, caplog, freezer) -> None:
     import logging
 
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
+    freezer.move_to(dt_util.start_of_local_day() + timedelta(hours=12, minutes=5))   # away from the :00/:30 refresh
     weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
     fetch = AsyncMock(return_value=(weather, {}))
     with patch("custom_components.noxcast.coordinator.async_open_meteo", fetch), \
@@ -959,6 +960,9 @@ async def test_open_meteo_failure_is_retried_and_logged_once(hass: HomeAssistant
         calls = fetch.await_count
         await coordinator.async_refresh()
         assert coordinator.last_update_success and not warnings()      # the last answer stands in, retry pending
+        await coordinator.async_refresh()                               # another failure before the retry: no warning
+        calls += 1
+        assert not warnings()
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=91))
         await hass.async_block_till_done()
         assert fetch.await_count == calls + 2 and len(warnings()) == 1

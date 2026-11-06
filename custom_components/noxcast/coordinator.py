@@ -24,7 +24,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, ARCHIVE_DAYS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -133,6 +133,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.consumer_models: dict[str, dict] = {}   # learned program and session model per consumer
         self.load_events: dict | None = None         # recurring device runs in the house load (suggestions)
         self.band: dict | None = None                # learned forecast uncertainty (band.learn_band)
+        self.forecast_error: dict | None = None      # archive.error_report, renewed when actuals are added
         self.load_backtest: dict | None = None
         self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
         self._backtest_task: asyncio.Task | None = None
@@ -226,6 +227,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self.fine = {}
         if self.band is None and self.forecast_archive and self.learned:     # stored in an older form
             self.band = await self.hass.async_add_executor_job(self._learn_band)
+        await self._async_forecast_error()
 
         entry = self.config_entry
         entry.async_on_unload(async_track_time_change(
@@ -413,6 +415,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             ln.record_archive, self.forecast_archive, self.site, self.arrays, learned, history, now.timestamp(), soc_full)
         self.learned.update(learned)          # applied in one step on the event loop
         self.band = await self.hass.async_add_executor_job(self._learn_band)
+        await self._async_forecast_error()
         if self.house_load:
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
@@ -448,6 +451,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow())
         return await self.hass.async_add_executor_job(
             ln.learning_hours, self.site, self.arrays, dict(self.learned), history, soc_full, exclusions)
+
+    async def _async_forecast_error(self) -> None:
+        """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""
+        since = dt_util.now().date() - timedelta(days=ERROR_DAYS)
+        try:
+            self.forecast_error = await self.hass.async_add_executor_job(
+                fc_archive.error_report, dict(self.forecast_archive), since,
+                {sid: a.name for sid, a in self.arrays.items()})
+        except Exception:  # noqa: BLE001
+            # a diagnostic figure: it must not stop setup or the rest of the learning run
+            _LOGGER.warning("Forecast error could not be computed from the archive", exc_info=True)
 
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""

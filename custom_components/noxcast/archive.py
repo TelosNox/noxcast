@@ -246,11 +246,40 @@ def day_totals(archive: dict, array_id: str | None = None, source: str | None = 
 def daily_error(archive: dict, since: date, array_id: str | None = None,
                 source: str | None = None) -> tuple[float | None, int]:
     """Relative daily energy error |forecast − actual| / actual over complete days since a date."""
-    days = {k: v for k, v in day_totals(archive, array_id, source).items() if k >= since.isoformat()}
+    return _error({k: v for k, v in day_totals(archive, array_id, source).items() if k >= since.isoformat()})
+
+
+def _error(days: dict[str, tuple[float, float]]) -> tuple[float | None, int]:
     actual = sum(a for _, a in days.values())
     if not days or actual <= 0:
         return None, len(days)
     return sum(abs(f - a) for f, a in days.values()) / actual, len(days)
+
+
+def _percent(error: float | None) -> float | None:
+    return None if error is None else round(error * 100, 1)
+
+
+def error_report(archive: dict, since: date, arrays: dict[str, str]) -> dict:
+    """The forecast error sensor: error in % over complete days since a date, per array and per alternative source.
+
+    arrays: {array id: name}. Each source's totals are computed once; the archive holds months of days, so
+    recomputing them per day or per value took about a second.
+    """
+    def recent(totals: dict) -> dict:
+        return {k: v for k, v in totals.items() if k >= since.isoformat()}
+
+    primary = recent(day_totals(archive))
+    error, days = _error(primary)
+    per_array = {name: _percent(_error(recent(day_totals(archive, sid)))[0]) for sid, name in arrays.items()}
+    comparison = {}
+    for name in alt_sources(archive, since):        # each model, on the days it has
+        alt = recent(day_totals(archive, source=name))
+        alt_error, n = _error(alt)
+        if n:
+            comparison[name] = {"error": _percent(alt_error), "days": n,
+                                "primary_error": _percent(_error({k: v for k, v in primary.items() if k in alt})[0])}
+    return {"error": _percent(error), "days": days, "per_array": per_array, "comparison": comparison}
 
 
 def add_history(archive: dict, day: date, stamp: float, total: Series) -> bool:

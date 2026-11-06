@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The forecast error sensor no longer blocks Home Assistant for about a second at start and on every update
+  ("Updating state ... took 0.9 seconds" in the log). Its figures are now computed in the background at start and
+  after the nightly learning run, which is when new actual values arrive.
+
 ## [0.2.0b2] - 2026-11-06
 
 The second pre-release of 0.2.0. The section below lists what changed since 0.2.0b1.

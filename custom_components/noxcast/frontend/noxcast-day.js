@@ -594,9 +594,9 @@ class NoxcastDay extends HTMLElement {
     return from.size === 1 ? [...from][0] : "mixed";
   }
 
-  // the name of the forecast the steps add up to
+  // the name of the forecast the steps add up to; steps of different origin are just "Forecast"
   _resultKey(from) {
-    return { morning: "morning", day_ahead: "dayAhead", replay: "replay" }[from] || (this._phase === "today" ? "latest" : "result");
+    return { morning: "morning", day_ahead: "dayAhead", replay: "replay" }[from] || (this._phase === "today" && from === "current" ? "latest" : "result");
   }
 
   _waterfall(e) {

@@ -158,6 +158,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def async_load(self) -> None:
         """Restore learned state. A damaged store is ignored – everything can be relearned from history."""
+        stored: dict = {}
         try:
             stored = await self._store.async_load() or {}
             self.exclusions = [e for e in stored.get("exclusions", []) if {"start", "end"} <= set(e)]
@@ -194,11 +195,18 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self._today.morning_fixed = fixed
                 self._today.morning = {sid: {float(t): float(v) for t, v in hours.items()}
                                        for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
-                self._today.morning_steps = {sid: {float(t): explain.unpacked(v) for t, v in hours.items()}
-                                             for sid, hours in morning.get("steps", {}).items() if sid in self.arrays}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._today.hours = {}, {}
+        # only for the day view: unreadable steps must not cost what was learned
+        if self._today.morning_fixed is not None:
+            try:
+                self._today.morning_steps = {
+                    sid: {float(t): explain.unpacked(v) for t, v in hours.items()}
+                    for sid, hours in (stored.get("morning") or {}).get("steps", {}).items() if sid in self.arrays}
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Stored derivation of the morning forecast could not be read", exc_info=True)
+                self._today.morning_steps = {}
         try:
             self.forecast_archive = fc_archive.from_store(await self._archive_store.async_load())
         except Exception:  # noqa: BLE001
@@ -714,8 +722,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         now = utc_now.timestamp()
         actual, running = await self._async_today_actual(day_start, now)
+        learned = dict(self.learned)        # the same model for the forecast and its archived steps
         result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
-            fc.pv, self.site, self.arrays, self.learned, weather, models, self._today, actual, running, utc_now,
+            fc.pv, self.site, self.arrays, learned, weather, models, self._today, actual, running, utc_now,
             local_now, day_start, day_end)
         result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
         result.outlook = outlook
@@ -736,7 +745,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}
         # how tomorrow's forecast comes about, archived with it (the same weather and model as result)
         steps = await self.hass.async_add_executor_job(
-            explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, dict(self.learned),
+            explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, learned,
             [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]])
         self._archive_forecast(weather, result, alt, models, steps)
         self._store.async_delay_save(self._store_data, 60)

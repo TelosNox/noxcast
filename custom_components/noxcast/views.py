@@ -432,7 +432,7 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
     live = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours)
     out = []
     for sid, arr in arrays.items():
-        stored = {h.ts: explain.unpacked(h.steps[sid]) for h in arch if sid in h.steps}
+        stored = {h.ts: explain.unpacked(h.steps[sid]) for h in arch if len(h.steps.get(sid) or ()) == len(explain.STEPS)}
         if current and a <= now < b and data.morning_steps.get(sid):
             steps, source = data.morning_steps[sid], "morning"
         elif not current and stored:

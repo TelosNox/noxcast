@@ -13,7 +13,8 @@ const DAY_TEXT = {
     chart: "Tagesverlauf", weather: "Wetter", clearness: "Klarheit", effects: "Effekte", shade: "Schatten", refl: "Reflexion",
     waterfall: "Wie die Stunde zustande kommt", all: "Alle", hourHint: "Stunde im Diagramm anklicken",
     steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme",
-      result: "Prognose", corr: "Korrektur heute", expected: "Erwartung", actual: "Ist" },
+      result: "Prognose", morning: "Prognose 6 Uhr", dayAhead: "Prognose Vortag", latest: "Prognose aktuell", replay: "Modell heute",
+      weather: "Neueres Wetter", corr: "Korrektur heute", expected: "Erwartung", actual: "Ist" },
     stepHelp: {
       clear: (eff) => `Was die Gruppe bei wolkenlosem Himmel liefern würde, mit dem gelernten Wirkungsgrad von ${eff}.`,
       clouds: "Der Unterschied durch die Einstrahlung der Wetterquelle gegenüber klarem Himmel.",
@@ -21,7 +22,9 @@ const DAY_TEXT = {
       reflection: "Zusätzliches Licht von beschienenen Flächen in der Umgebung.",
       direction: "Was die Richtungsfaktoren an Geometrie- und Modellfehlern ausgleichen.",
       heat: "Leistungsverlust oder -gewinn durch die Zelltemperatur bei der vorhergesagten Lufttemperatur.",
+      weather: "Was die seit 6 Uhr abgerufenen Wetterdaten an der Prognose dieser Stunde geändert haben.",
       corr: "Die Korrektur aus den gemessenen Stunden von heute (klarer oder trüber als vorhergesagt).",
+      replay: "Dieser Tag wurde ohne Herleitung archiviert: nachgerechnet mit dem archivierten Wetter und dem heutigen Modell, daher kann der Wert von der Prognose im Diagramm abweichen.",
     },
     noSteps: "Für diese Stunde gibt es keine Herleitung (Sonne unter dem Horizont oder kein Wetter).",
     energy: "Der Tag in Energie", lossSide: "Vom klaren Himmel zum Ertrag", useSide: "Wohin die Energie ging",
@@ -42,7 +45,8 @@ const DAY_TEXT = {
     chart: "Course of the day", weather: "Weather", clearness: "Clearness", effects: "Effects", shade: "Shade", refl: "Reflection",
     waterfall: "How the hour comes about", all: "All", hourHint: "Click an hour in the chart",
     steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat",
-      result: "Forecast", corr: "Correction today", expected: "Expected", actual: "Actual" },
+      result: "Forecast", morning: "Forecast 6 am", dayAhead: "Day-ahead forecast", latest: "Latest forecast", replay: "Today's model",
+      weather: "Newer weather", corr: "Correction today", expected: "Expected", actual: "Actual" },
     stepHelp: {
       clear: (eff) => `What the array would give under a cloudless sky, with the learned efficiency of ${eff}.`,
       clouds: "The difference the weather source's irradiance makes compared with a clear sky.",
@@ -50,7 +54,9 @@ const DAY_TEXT = {
       reflection: "Additional light from sunlit surfaces nearby.",
       direction: "What the direction factors make up for in geometry and model errors.",
       heat: "Loss or gain from the cell temperature at the forecast air temperature.",
+      weather: "What the weather data fetched since 6 am changed in the forecast of this hour.",
       corr: "The correction from today's measured hours (clearer or duller than forecast).",
+      replay: "This day was archived without its derivation: recomputed from the archived weather with today's model, so the value can differ from the forecast in the chart.",
     },
     noSteps: "No derivation for this hour (sun below the horizon or no weather).",
     energy: "The day in energy", lossSide: "From clear sky to yield", useSide: "Where the energy went",
@@ -411,7 +417,7 @@ class NoxcastDay extends HTMLElement {
       }
       if (key === "heat" || (i === steps.length - 1 && key !== "dev") || (steps[i + 1] && steps[i + 1][0] === "dev")) {
         labels += `<line x1="${(xi + 4).toFixed(1)}" x2="${(xi + 4).toFixed(1)}" y1="${(top - 4).toFixed(1)}" y2="${(bot + 4).toFixed(1)}" class="skm"></line>`;
-        if (end !== null) labels += `<text x="${(xi + 8).toFixed(1)}" y="${(top - 6).toFixed(1)}" class="skv">${t.forecast} ${this._kwh(sum.result)}</text>`;
+        if (end !== null) labels += `<text x="${(xi + 8).toFixed(1)}" y="${(top - 6).toFixed(1)}" class="skv">${t.steps[this._resultKey(this._stepsFrom(e.arrays))]} ${this._kwh(sum.result)}</text>`;
       }
     });
     svg += seg(X1);
@@ -582,6 +588,17 @@ class NoxcastDay extends HTMLElement {
     </div></section>`;
   }
 
+  // where the steps of the arrays come from (views.day_view "steps_from"); "mixed" if they differ
+  _stepsFrom(arrays) {
+    const from = new Set(arrays.map((a) => a.steps_from || "current"));
+    return from.size === 1 ? [...from][0] : "mixed";
+  }
+
+  // the name of the forecast the steps add up to
+  _resultKey(from) {
+    return { morning: "morning", day_ahead: "dayAhead", replay: "replay" }[from] || (this._phase === "today" ? "latest" : "result");
+  }
+
   _waterfall(e) {
     return `<section class="card pad grow"><div id="wfbody">${this._waterfallBody(e)}</div></section>`;
   }
@@ -595,11 +612,22 @@ class NoxcastDay extends HTMLElement {
     const head = `<h3>${t.waterfall}${h !== null ? ` · ${this._hm(h)}–${this._hm(h + HOUR)}` : ""}</h3><div class="chips">${chips}</div>`;
     if (h === null || !steps.length) return `${head}<p class="muted">${h === null ? t.hourHint : t.noSteps}</p>`;
     const sum = (k) => steps.reduce((a, s) => a + (s[k] || 0), 0);
-    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat"].map((k) => [k, sum(k), "step"]), ["result", sum("result"), "total"]];
+    const from = this._stepsFrom(arrays);
+    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat"].map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
     const at = (key, a) => new Map(tsRows(a[key], "wh")).get(h);
-    if (phase === "today" && h + HOUR > now) {
-      const exp = arrays.reduce((a, arr) => a + (at("expected", arr) || 0), 0);
-      if (Math.abs(exp - sum("result")) >= 1) items.push(["corr", exp - sum("result"), "step"], ["expected", exp, "total"]);
+    if (phase === "today") {
+      // the steps explain the 6 am forecast; newer weather and today's correction lead on to the expectation
+      let level = sum("result");
+      const fc = arrays.map((a) => at("forecast", a));
+      if (from === "morning" && fc.every((v) => v !== undefined)) {
+        const latest = fc.reduce((a, v) => a + v, 0);
+        if (Math.abs(latest - level) >= 1) items.push(["weather", latest - level, "step"], ["latest", latest, "total"]);
+        level = latest;
+      }
+      if (h + HOUR > now) {
+        const exp = arrays.reduce((a, arr) => a + (at("expected", arr) || 0), 0);
+        if (Math.abs(exp - level) >= 1) items.push(["corr", exp - level, "step"], ["expected", exp, "total"]);
+      }
     }
     const act = arrays.map((a) => at("actual", a)).filter((v) => v !== undefined);
     if (act.length === arrays.length && (phase === "past" || h + HOUR <= now)) items.push(["actual", act.reduce((a, v) => a + v, 0), "actual"]);
@@ -615,11 +643,11 @@ class NoxcastDay extends HTMLElement {
       const x0 = x(Math.min(a, b)), x1 = x(Math.max(a, b));
       svg += `<text x="${L - 8}" y="${yy + 15}" text-anchor="end" class="wl">${t.steps[key]}</text>
         <rect x="${x0.toFixed(1)}" y="${yy + 3}" width="${Math.max(1.5, x1 - x0).toFixed(1)}" height="${rowH - 10}" rx="5" class="wf ${cls}"></rect>
-        <text x="${(x1 + 6).toFixed(1)}" y="${yy + 15}" class="wv ${cls}">${kind === "step" && v > 0 ? "+" : kind === "step" && v < 0 ? "−" : ""}${Math.abs(Math.round(v))} W</text>`;
+        <text x="${(x1 + 6).toFixed(1)}" y="${yy + 15}" class="wv ${cls}">${kind === "step" && v > 0 ? "+" : kind === "step" && v < 0 ? "−" : ""}${Math.abs(Math.round(v))} Wh</text>`;
       if (i < n - 1 && kind !== "actual") svg += `<line x1="${x(level).toFixed(1)}" x2="${x(level).toFixed(1)}" y1="${yy + rowH - 7}" y2="${yy + rowH + 3}" class="wc"></line>`;
     });
     const eff = arrays.length === 1 ? `${this._num(arrays[0].efficiency * 100, 1)} %` : `${this._num(arrays.reduce((a, arr) => a + arr.efficiency, 0) / arrays.length * 100, 1)} %`;
-    const notes = items.filter(([k, v, kind]) => (kind === "start" || (kind === "step" && Math.abs(v) >= 5)) && t.stepHelp[k])
+    const notes = items.filter(([k, v, kind]) => (kind === "start" || (kind === "step" && Math.abs(v) >= 5) || k === "replay") && t.stepHelp[k])
       .map(([k]) => `<li><b>${t.steps[k]}</b> ${k === "clear" ? t.stepHelp.clear(eff) : t.stepHelp[k]}</li>`).join("");
     return `${head}<svg viewBox="0 0 ${W} ${n * rowH + 8}" class="wfall" role="img" aria-label="${t.waterfall}">${svg}</svg><ul class="notes">${notes}</ul>`;
   }

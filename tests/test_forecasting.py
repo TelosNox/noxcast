@@ -9,6 +9,7 @@ lf = load("load")
 bt = load("battery")
 pl = load("plan")
 model = load("model")
+explain = load("explain")
 solar = load("solar")
 
 SITE = solar.Site(48.0, 8.0, 300.0)
@@ -46,15 +47,21 @@ def test_morning_fix_totals_and_held_hours():
     later, today, _ = run(7, today)
     assert today.morning_fixed == DAY + timedelta(hours=7) and later.morning["a"] == today.morning["a"]
     assert max(today.morning["a"]) < DAY_END
+    # the steps are fixed with the morning values and add up to them
+    steps = today.morning_steps["a"]
+    assert steps and later.morning_steps is today.morning_steps
+    assert all(abs(s["result"] - today.morning["a"][t]) < 0.1 for t, s in steps.items())
+    assert all(abs(sum(s[k] for k in explain.STEPS) - s["result"]) < 0.5 for s in steps.values())
     # the next hour keeps the fixed morning; hours that have begun keep their held value
     nxt, today2, _ = run(8, today, {"a": {DAY_START + 7 * 3600: 0.0}})
     assert nxt.morning["a"] == later.morning["a"] and today2.morning_fixed == today.morning_fixed
+    assert today2.morning_steps == today.morning_steps
     assert nxt.held["a"][DAY_START + 7 * 3600] == later.held["a"][DAY_START + 7 * 3600]
     assert nxt.expected["a"][DAY_START + 7 * 3600] == 0.0       # measured
     # a new day drops the fix until the morning hour
     _, today3, _ = fc.pv(SITE, ARRAYS, {}, weather(), {}, today2, {}, {}, DAY + timedelta(hours=27),
                          DAY + timedelta(hours=27), DAY_END, DAY_END + 86400)
-    assert today3.morning_fixed is None and today3.morning == {}
+    assert today3.morning_fixed is None and today3.morning == {} and today3.morning_steps == {}
 
 
 def test_surplus_band_battery_and_plan():

@@ -443,8 +443,13 @@ orientation changes the geometry key and starts relearning.
     reflection periods per group. A table per group with its deviation, correction and share.
     For a chosen hour a waterfall shows how its forecast comes about (`explain.py`): clear sky with
     the learned efficiency, then clouds, shade, reflection, direction factor and heat, the steps
-    adding up to the forecast, followed by today's correction and the actual value. Past days come
-    from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
+    adding up to the forecast, in Wh of that hour. The steps explain the reference the day is
+    measured against, not a recomputation: they are stored with it, at the 6 o'clock fix for today
+    and with the day-ahead forecast in the archive (`steps`), so a newer weather report or a model
+    learned since does not change them. Today the waterfall goes on with the change from newer weather
+    (the latest forecast), today's correction (the expectation, for hours still ahead) and the
+    actual value. Days archived without steps are replayed from the archived weather with the
+    current model and say so. Past days come from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
     whole day (all arrays) is recorded in the archive (`history`); the day view draws these
     snapshots as a fan of curves from early to late next to the day-ahead forecast, and the day
     total of each snapshot over time, so it shows when the day became foreseeable and where the
@@ -569,8 +574,8 @@ orientation changes the geometry key and starts relearning.
   (PV, intraday correction, load, band, battery, plan). The coordinator only schedules, fetches
   (statistics, weather, states), stores and publishes. Likewise `panel.py` only adapts the
   websocket commands: it gathers the inputs and sends what `views.py` builds from them (named,
-  versioned payloads, see Outputs); the steps
-  of an archived day under the current learned model come from `explain.replay`.
+  versioned payloads, see Outputs); the steps of a forecast come from `explain.hour_steps` when it
+  is made (morning fix, archive snapshot) and from `explain.replay` for a day archived without them.
 - Stable public interface: versioned entity IDs and attribute schema.
 - Contracts inside: a time series is `Series` (`const.py`: period start in UTC seconds -> value), the
   sum of all arrays has the key `TOTAL`. Learned state carries `LEARNED_VERSION`: it is only a cache of

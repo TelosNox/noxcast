@@ -37,6 +37,7 @@ from . import backtest as pv_backtest
 from . import band as bd
 from . import fine as fn
 from . import events as ev
+from . import explain
 from . import flows as fl
 from . import battery as bt
 from . import forecasting as fc
@@ -193,6 +194,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self._today.morning_fixed = fixed
                 self._today.morning = {sid: {float(t): float(v) for t, v in hours.items()}
                                        for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
+                self._today.morning_steps = {sid: {float(t): explain.unpacked(v) for t, v in hours.items()}
+                                             for sid, hours in morning.get("steps", {}).items() if sid in self.arrays}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._today.hours = {}, {}
@@ -322,7 +325,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      "events": self.load_events}
             if self.load_profile else None,
             "morning": {"fixed": today.morning_fixed.isoformat() if today.morning_fixed else None,
-                        "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in today.morning.items()}},
+                        "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in today.morning.items()},
+                        "steps": {sid: {str(t): explain.packed(st) for t, st in h.items()}
+                                  for sid, h in today.morning_steps.items()}},
             # only the mean: the single models serve the archive, which can skip an outage
             "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,
@@ -615,7 +620,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
                           alt: dict[str, tuple[dict, dict]] | None = None,
-                          alt_weather: dict[str, list[WeatherHour]] | None = None) -> None:
+                          alt_weather: dict[str, list[WeatherHour]] | None = None,
+                          steps: dict[str, dict[float, dict]] | None = None) -> None:
         """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
         tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
         a = tomorrow.timestamp()
@@ -628,7 +634,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
                                result.arrays, alt, wx(weather),
-                               {name: wx(series) for name, series in (alt_weather or {}).items()}):
+                               {name: wx(series) for name, series in (alt_weather or {}).items()},
+                               {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()}):
             fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self._archive_store.async_delay_save(self._archive_data, 300)
 
@@ -727,7 +734,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._log_battery(result.battery, local_now, now)
 
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}
-        self._archive_forecast(weather, result, alt, models)
+        # how tomorrow's forecast comes about, archived with it (the same weather and model as result)
+        steps = await self.hass.async_add_executor_job(
+            explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, dict(self.learned),
+            [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]])
+        self._archive_forecast(weather, result, alt, models, steps)
         self._store.async_delay_save(self._store_data, 60)
         return result
 

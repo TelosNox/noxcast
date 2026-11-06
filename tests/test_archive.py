@@ -23,6 +23,15 @@ def test_snapshot_needs_full_day_and_keeps_actuals():
     assert a[DAY.isoformat()]["hours"][str(int(T0))]["actual"] == {"roof": 40.0}
 
 
+def test_snapshot_keeps_the_steps_of_lit_hours():
+    a = {}
+    steps = {"roof": {T0 + 12 * 3600: [400.04, -100.0, 0.0, 0.0, 0.0, -20.0]}}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)}}, steps=steps)
+    hours = archive.day(a, DAY).hours
+    assert hours[12].steps == {"roof": [400.0, -100.0, 0.0, 0.0, 0.0, -20.0]} and hours[11].steps == {}
+    assert "steps" not in a[DAY.isoformat()]["hours"][str(int(T0))]
+
+
 def test_daily_error_and_prune():
     a = {}
     archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)},

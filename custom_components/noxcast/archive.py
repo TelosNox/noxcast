@@ -6,7 +6,7 @@ from long-term statistics during the nightly learning run.
 
 Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
          "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
-         "forecast": {array_id: Wh}, "actual": {array_id: Wh},
+         "forecast": {array_id: Wh}, "actual": {array_id: Wh}, "steps": {array_id: [Wh, ...]},
          "alt": {source: {"ghi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
          "sat_ghi": W/m², "measured": {array_id: Wh}}},
          "history": {"<snapshot ts>": {"<ts>": Wh}}}}
@@ -23,6 +23,11 @@ predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archi
 several (e.g. ICON and ECMWF IFS), so each model can be compared with their mean and the actual
 values. Days archived before Open-Meteo became the only source hold "open_meteo" there, next to a
 weather entity as primary source.
+
+"steps" holds how the forecast of an hour comes about (explain.packed: clear sky, clouds, shade,
+reflection, direction, heat; their sum is the forecast), only for hours with light, so the day view
+explains the forecast that was made and not a replay with the model learned since. Days archived
+before it have none.
 
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
@@ -64,6 +69,7 @@ class Hour:
     curtailed: bool                      # possibly curtailed (full battery): actual is no measure of the sun
     sat_ghi: float | None                # satellite-measured GHI, W/m²
     measured: dict[str, float] | None    # array id -> model output from sat_ghi, Wh
+    steps: dict[str, list[float]]        # array id -> steps of the forecast (explain.packed), {} if not archived
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +89,7 @@ class Day:
 def _hour(key: str, h: dict) -> Hour:
     return Hour(float(key), h.get("ghi"), h.get("temp"), h.get("wx", {}), h.get("forecast", {}), h.get("actual"),
                 {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {})) for name, s in h.get("alt", {}).items()},
-                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"))
+                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}))
 
 
 def _day(key: str, d: dict) -> Day:
@@ -135,10 +141,12 @@ def details(cloud: float | None = None, sun: float | None = None, wind: float | 
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
              forecasts: dict[str, Series],
              alt: dict[str, tuple[Series, dict[str, Series]]] | None = None,
-             wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None) -> bool:
+             wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None,
+             steps: dict[str, dict[float, list[float]]] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
 
-    wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source.
+    wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source;
+    steps: per array and hour the steps of the forecast (explain.packed).
     """
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
@@ -148,6 +156,9 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
         }
         if ghi > 0 and (wx or {}).get(ts):
             hour["wx"] = wx[ts]
+        packed = {sid: [round(v, 1) for v in by_hour[ts]] for sid, by_hour in (steps or {}).items() if ts in by_hour}
+        if packed:
+            hour["steps"] = packed
         for name, (alt_ghi, alt_fc) in (alt or {}).items():
             if ts in alt_ghi:
                 hour.setdefault("alt", {})[name] = entry = {

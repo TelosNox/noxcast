@@ -414,10 +414,14 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
              a: float, b: float, now: float) -> dict:
     """One day [a, b): per array the forecasts, actual, steps of each hour; weather; band; history.
 
-    Past days come from the day-ahead archive (forecast, actual, weather of the forecast), their steps
-    replayed with the current learned model (explain.replay). Today and the coming days come from the
-    current data; today's past hours fall back to the archived weather, since a weather source may no
-    longer report them.
+    Past days come from the day-ahead archive (forecast, actual, weather of the forecast). Today and the
+    coming days come from the current data; today's past hours fall back to the archived weather, since a
+    weather source may no longer report them.
+
+    The steps explain the forecast the day is measured against, "steps_from" says which: "morning" (today,
+    stored at the morning fix), "day_ahead" (a past day, stored in the archive), "current" (a coming day,
+    or today before the morning fix: the current weather) or "replay" (a past day archived without steps:
+    its weather replayed with the current learned model, which may differ from the forecast then).
     """
     current = data is not None and b > now                 # today and the coming days
     arch = archive_day.hours if archive_day else []
@@ -425,11 +429,18 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
     if current:
         weather.update({w.start: w for w in data.weather if a <= w.start < b})
     hours = [weather[t] for t in sorted(weather) if a <= t < b]
-    steps = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours)
+    live = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours)
     out = []
     for sid, arr in arrays.items():
+        stored = {h.ts: explain.unpacked(h.steps[sid]) for h in arch if sid in h.steps}
+        if current and a <= now < b and data.morning_steps.get(sid):
+            steps, source = data.morning_steps[sid], "morning"
+        elif not current and stored:
+            steps, source = stored, "day_ahead"
+        else:
+            steps, source = live[sid], "current" if current else "replay"
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
-                 "steps": {str(int(t)): s for t, s in steps[sid].items()},
+                 "steps": {str(int(t)): s for t, s in sorted(steps.items()) if a <= t < b}, "steps_from": source,
                  "efficiency": (learned.get(sid) or LearnedArray()).efficiency}
         entry["day_ahead"] = columns(((h.ts, h.forecast[sid]) for h in arch if sid in h.forecast), "wh")
         entry["actual"] = columns(((h.ts, h.actual[sid]) for h in arch if sid in (h.actual or {})), "wh")

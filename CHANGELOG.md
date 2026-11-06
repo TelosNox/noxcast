@@ -14,6 +14,9 @@ breaking changes.
   ("Newer weather", "Latest forecast"), today's correction and the actual value. The values are in Wh, the energy of
   that hour. The derivation is stored from this version on: days archived before are recomputed with today's model
   and marked "Today's model".
+- The small charts under "Groups" in the day view cover the same daylight hours as the main chart instead of the
+  whole day, share one scale so their heights compare, and show the group's own forecast (6 am today, day-ahead for
+  past days) as a dashed line.
 
 ## [0.1.0] - 2026-11-05
 

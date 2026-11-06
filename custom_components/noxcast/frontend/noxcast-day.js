@@ -186,6 +186,15 @@ class NoxcastDay extends HTMLElement {
     return out;
   }
 
+  // the hours worth drawing: an hour before the first yield (or clear-sky light) to two after the last
+  _daylight(e) {
+    const d = this._data, hours = this._hours();
+    const sky = new Map(tsRows(e.weather, "ghi", "clear").map(([ts, , c]) => [ts, c]));
+    const lit = hours.filter((h) => e.arrays.some((a) => (this._main(a).get(h) || 0) > 1 || (this._reference(a).get(h) || 0) > 1) || (sky.get(h) || 0) > 20);
+    const h0 = lit.length ? Math.max(d.start, lit[0] - HOUR) : d.start + 5 * HOUR, h1 = lit.length ? Math.min(d.end, lit[lit.length - 1] + 2 * HOUR) : d.end - 3 * HOUR;
+    return { h0, h1, span: hours.filter((h) => h >= h0 && h < h1) };
+  }
+
   _defaultHour(e) {
     const now = this._data.now, hour = now - (now % HOUR);
     if (this._phase === "today" && e.arrays.some((a) => (a.steps || {})[String(hour)])) return hour;
@@ -275,12 +284,10 @@ class NoxcastDay extends HTMLElement {
   }
 
   _chart(e) {
-    const t = this._t, d = this._data, hours = this._hours(), now = d.now, phase = this._phase;
+    const t = this._t, d = this._data, now = d.now, phase = this._phase;
     const W = 960, X0 = 40, X1 = W - 10, Hp = 240, top = 12;
     const sky = new Map(tsRows(e.weather, "ghi", "clear", "temp").map(([ts, g, c, temp]) => [ts, [g, c, temp]]));
-    const lit = hours.filter((h) => e.arrays.some((a) => (this._main(a).get(h) || 0) > 1 || (this._reference(a).get(h) || 0) > 1) || (sky.get(h) && sky.get(h)[1] > 20));
-    const h0 = lit.length ? Math.max(d.start, lit[0] - HOUR) : d.start + 5 * HOUR, h1 = lit.length ? Math.min(d.end, lit[lit.length - 1] + 2 * HOUR) : d.end - 3 * HOUR;
-    const span = hours.filter((h) => h >= h0 && h < h1);
+    const { h0, h1, span } = this._daylight(e);
     const x = (ts) => X0 + (ts - h0) / (h1 - h0) * (X1 - X0);
     const mains = e.arrays.map((a) => this._main(a)), refs = e.arrays.map((a) => this._reference(a));
     const held = e.arrays.map((a) => new Map(tsRows(a.held, "wh")));
@@ -562,13 +569,18 @@ class NoxcastDay extends HTMLElement {
     const t = this._t, phase = this._phase;
     const rows = e.arrays.map((arr, i) => {
       const m = this._main(arr), r = this._reference(arr), main = this._sum(m), ref = this._sum(r);
-      return { arr, i, m, main, ref, dev: ref > 0 && phase !== "future" ? (main - ref) / ref : null };
+      return { arr, i, m, r, main, ref, dev: ref > 0 && phase !== "future" ? (main - ref) / ref : null };
     });
     const total = rows.reduce((a, r) => a + r.main, 0);
-    const spark = (m, i) => {
-      const hs = this._hours(), max = Math.max(1, ...hs.map((h) => m.get(h) || 0));
-      const p = hs.map((h, k) => `${(k / (hs.length - 1) * 100).toFixed(1)},${(22 - (m.get(h) || 0) / max * 20).toFixed(1)}`).join(" ");
-      return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><polyline points="0,22 ${p} 100,22" fill="${DAY_COLORS[i % 6]}" fill-opacity=".25" stroke="${DAY_COLORS[i % 6]}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline></svg>`;
+    // same hours as the main chart and one scale for all groups, so the courses line up and their heights compare
+    const { h0, h1, span } = this._daylight(e);
+    const withRef = phase !== "future";
+    const max = Math.max(1, ...rows.flatMap((r) => span.flatMap((h) => [r.m.get(h) || 0, withRef ? r.r.get(h) || 0 : 0])));
+    const pts = (m) => span.map((h) => `${((h + HOUR / 2 - h0) / (h1 - h0) * 100).toFixed(1)},${(22 - (m.get(h) || 0) / max * 20).toFixed(1)}`).join(" ");
+    const spark = (r) => {
+      const c = DAY_COLORS[r.i % 6];
+      const ref = withRef && r.ref > 0 ? `<polyline points="${pts(r.r)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></polyline>` : "";
+      return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><polyline points="0,22 ${pts(r.m)} 100,22" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${ref}</svg>`;
     };
     const devCell = (d) => (d === null ? "–" : `<span class="${Math.abs(d) < 0.05 ? "" : d < 0 ? "bad" : "good"}">${this._pct(d)}</span>`);
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
@@ -579,7 +591,7 @@ class NoxcastDay extends HTMLElement {
       ${rows.map((r) => `<div class="gitem">
         <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${esc(r.arr.name)}</div>
           <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main)} ${t.kwh}</b></div></div>
-        ${spark(r.m, r.i)}
+        ${spark(r)}
         <div class="gfigs">
           ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, devCell(r.dev)) : ""}
           ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
@@ -707,6 +719,7 @@ class NoxcastDay extends HTMLElement {
       .gname { display: flex; align-items: center; gap: 6px; font-weight: 500; }
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
       .spark { width: 100%; height: 26px; margin: 4px 0 2px; }
+      .sparkref { fill: none; stroke: var(--primary-text-color); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: .6; vector-effect: non-scaling-stroke; }
       .glist { display: flex; flex-direction: column; }
       .gitem { padding: 10px 0; border-top: 1px solid var(--divider-color); } .gitem:first-child { border-top: 0; padding-top: 2px; }
       .ghead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }

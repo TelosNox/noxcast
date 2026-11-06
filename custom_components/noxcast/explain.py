@@ -8,6 +8,9 @@ one after the other; each step is the difference to the previous run:
 
 The order is fixed, so the steps always add up to the forecast. Shade before reflection, since
 reflection is learned where the module itself gets little direct light.
+
+The steps of a forecast that is kept (the morning fix, the day-ahead archive) are stored with it
+(packed()), so the view explains that very forecast, not a replay with newer weather or a newer model.
 """
 from __future__ import annotations
 
@@ -45,6 +48,18 @@ def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: l
         step["result"] = round(values[-1], 1)
         out[w.start] = step
     return out
+
+
+def packed(step: dict) -> list[float]:
+    """The steps of an hour as stored: the values in STEPS order (the forecast is their sum)."""
+    return [step[k] for k in STEPS]
+
+
+def unpacked(values: list[float]) -> dict:
+    """The steps of an hour from their stored form, with the forecast as "result"."""
+    step = dict(zip(STEPS, values, strict=True))
+    step["result"] = round(sum(values), 1)
+    return step
 
 
 def archived_weather(day: Day | None) -> list[WeatherHour]:

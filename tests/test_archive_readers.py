@@ -83,6 +83,16 @@ def test_day_view_of_a_past_day():
     assert roof["day_ahead"]["wh"][:3] == [0.0, 18.8, 37.5]
     assert roof["actual"]["t"][-2:] == [1782925200.0, 1782928800.0] and roof["actual"]["wh"][-2:] == [61.8, 41.2]
     assert len(roof["day_ahead"]["t"]) == 16 and len(roof["actual"]["wh"]) == 15 and len(roof["steps"]) == 16
+    assert roof["steps_from"] == "replay"                   # archived without steps: replayed with today's model
+    # archived with steps: exactly those, whatever the model says today
+    h = str(int(roof["day_ahead"]["t"][5]))
+    a[key]["hours"][h]["steps"] = {"roof": [400.0, -100.0, -10.0, 5.0, 0.0, -20.0]}
+    view = views.day_view(SITE, {"roof": SimpleNamespace(name="Roof", geometry=GEO)},
+                          {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(a, key), None, start, start + 86400, start + 5 * 86400)
+    roof = view["arrays"][0]
+    assert roof["steps_from"] == "day_ahead" and list(roof["steps"]) == [h]
+    assert roof["steps"][h] == {"clear": 400.0, "clouds": -100.0, "shade": -10.0, "reflection": 5.0, "direction": 0.0,
+                                "heat": -20.0, "result": 275.0}
     assert {k: v[:2] for k, v in view["weather"].items()} == {
         "t": [1782878400.0, 1782882000.0], "ghi": [0.0, 30.0], "clear": [84.6, 234.6], "temp": [None, 15.0]}
     empty = {"t": [], "ghi": [], "clear": [], "temp": []}

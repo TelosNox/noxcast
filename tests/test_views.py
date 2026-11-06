@@ -225,7 +225,7 @@ def test_day_view_of_today_merges_archive_and_current_data():
     view = views.day_view(SITE, arrays(), {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(arc, DAY), d,
                           A, A + 86400, A + 12.5 * H)
     roof, wall = view["arrays"]
-    assert list(roof) == ["id", "name", "peak_w", "steps", "efficiency", "day_ahead", "actual", "forecast", "morning",
+    assert list(roof) == ["id", "name", "peak_w", "steps", "steps_from", "efficiency", "day_ahead", "actual", "forecast", "morning",
                           "held", "expected", "correction", "periods"]
     none = {"t": [], "wh": []}
     assert roof["day_ahead"] == {"t": [A + 4 * H, A + 5 * H, A + 12 * H], "wh": [9.0, 9.0, 9.0]} and wall["day_ahead"] == none
@@ -240,10 +240,20 @@ def test_day_view_of_today_merges_archive_and_current_data():
         {**{h.start: h for h in explain.archived_weather(archive.day(arc, DAY))},
          **{w.start: w for w in d.weather if A <= w.start < A + 86400}}.items())]
     steps = explain.hour_steps(SITE, GEO, model.LearnedArray(efficiency=0.9), hours)
-    assert roof["steps"] == {str(int(t)): s for t, s in steps.items()}
+    assert roof["steps"] == {str(int(t)): s for t, s in steps.items()} and roof["steps_from"] == "current"
+    # after the morning fix the steps stored with it, even where newer weather says otherwise
+    fixed = {A + 12 * H: explain.unpacked([500.0, -150.0, -20.0, 0.0, 0.0, -30.0])}
+    d.morning_steps = {"roof": fixed}
+    view = views.day_view(SITE, arrays(), {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(arc, DAY), d,
+                          A, A + 86400, A + 12.5 * H)
+    roof, wall = view["arrays"]
+    assert roof["steps_from"] == "morning" and roof["steps"] == {str(int(A + 12 * H)): fixed[A + 12 * H]}
+    assert roof["steps"][str(int(A + 12 * H))]["result"] == 300.0 and wall["steps_from"] == "current"
     # a coming day: no archive, only the forecast
     later = views.day_view(SITE, arrays(), {}, None, d, A + 86400, A + 2 * 86400, A + 12.5 * H)
-    assert list(later["arrays"][0]) == ["id", "name", "peak_w", "steps", "efficiency", "day_ahead", "actual", "forecast"]
+    assert list(later["arrays"][0]) == ["id", "name", "peak_w", "steps", "steps_from", "efficiency", "day_ahead", "actual",
+                                        "forecast"]
+    assert later["arrays"][0]["steps_from"] == "current"
     assert views.day_pv(view) == {A + 10 * H: 200.0}
     assert views.day_pv({"arrays": [{"actual": {"t": [1.0], "wh": [2.0]}}, {"actual": {"t": [1.0, 2.0], "wh": [3.0, 1.0]}},
                                     {}]}) == {1.0: 5.0, 2.0: 1.0}

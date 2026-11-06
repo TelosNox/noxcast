@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- "How the hour comes about" in the day view now explains the forecast the chart compares with: today the
+  6 am forecast, for past days the day-ahead forecast. Before, it recomputed the hour with the latest weather and
+  model, so its "Forecast" matched no line in the chart. Today it continues with what newer weather changed
+  ("Newer weather", "Latest forecast"), today's correction and the actual value. The values are in Wh, the energy of
+  that hour. The derivation is stored from this version on: days archived before are recomputed with today's model
+  and marked "Today's model".
+
 ## [0.1.0] - 2026-11-05
 
 The first stable release. It contains everything from the pre-releases 0.1.0b1 to 0.1.0b5, listed in

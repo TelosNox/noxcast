@@ -87,6 +87,7 @@ COMPARE_DAYS = 365
 COMPARE_COOLDOWN = timedelta(days=7)      # after a successful run; a failed one may be repeated at once
 COMPARE_PAUSE = 5.0                       # seconds between the models' requests, spreading them out
 WEATHER_MAX_AGE = timedelta(hours=24)    # a stored forecast stands in this long when Open-Meteo cannot be reached
+WEATHER_RETRY = (60, 180)                # seconds: a failed weather fetch is retried once within this range
 DEFAULT_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_MODEL = "satellite_radiation_seamless"

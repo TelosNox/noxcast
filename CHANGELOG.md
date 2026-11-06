@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- When Open-Meteo is busy (often "503 Service Unavailable" on the full and half hour), Noxcast tries again one to
+  three minutes later instead of waiting for the next update. The log shows one warning per outage, only when the
+  retry fails too, and a note when Open-Meteo answers again.
+
 ## [0.2.0b2] - 2026-11-06
 
 The second pre-release of 0.2.0. The section below lists what changed since 0.2.0b1.

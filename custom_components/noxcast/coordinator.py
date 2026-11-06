@@ -455,9 +455,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_forecast_error(self) -> None:
         """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""
         since = dt_util.now().date() - timedelta(days=ERROR_DAYS)
-        self.forecast_error = await self.hass.async_add_executor_job(
-            fc_archive.error_report, dict(self.forecast_archive), since,
-            {sid: a.name for sid, a in self.arrays.items()})
+        try:
+            self.forecast_error = await self.hass.async_add_executor_job(
+                fc_archive.error_report, dict(self.forecast_archive), since,
+                {sid: a.name for sid, a in self.arrays.items()})
+        except Exception:  # noqa: BLE001
+            # a diagnostic figure: it must not stop setup or the rest of the learning run
+            _LOGGER.warning("Forecast error could not be computed from the archive", exc_info=True)
 
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""

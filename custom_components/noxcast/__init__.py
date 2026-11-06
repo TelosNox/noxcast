@@ -14,7 +14,7 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
+from .const import CONF_WEATHER_MODELS, DISCONTINUED_MODELS, DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from . import issues
 from .panel import async_setup_panel
@@ -63,14 +63,25 @@ def _config_state(entry: NoxcastConfigEntry) -> tuple:
     return (dict(entry.data), dict(entry.options), {sid: (sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
 
 
+def replace_discontinued(models: list[str]) -> list[str]:
+    """The weather models with discontinued ones replaced by their successor, each once, order kept."""
+    return list(dict.fromkeys(DISCONTINUED_MODELS.get(m, m) for m in models))
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    """1.1 -> 1.3: Open-Meteo is the only weather source, and Noxcast's own weather entity feeds the cards."""
+    """1.1 -> 1.4: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
+    and the ICON models Open-Meteo discontinues become ICON (icon_seamless, 1.4)."""
     if entry.version > 1:
         return False
     if entry.minor_version < 3:
         data = {k: v for k, v in entry.data.items() if k not in ("weather_source", "weather_entity")}
         options = {k: v for k, v in entry.options.items() if k != "compare_open_meteo"}
         hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=3)
+    if entry.minor_version < 4:
+        options = dict(entry.options)
+        if options.get(CONF_WEATHER_MODELS):
+            options[CONF_WEATHER_MODELS] = replace_discontinued(list(options[CONF_WEATHER_MODELS]))
+        hass.config_entries.async_update_entry(entry, options=options, minor_version=4)
     return True
 
 

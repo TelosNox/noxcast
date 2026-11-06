@@ -6,10 +6,11 @@ const ACC_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     title: "Prognosegüte", days: "Tage", error: "Tagesfehler", bias: "Abweichung", noData: "Noch keine abgeschlossenen Tage im Archiv. Die Tagesprognose wird jeden Abend archiviert und nachts mit den Messwerten ergänzt.",
-    source: "Wetterquelle", primary: "Hauptquelle", open_meteo: "Open-Meteo", all: "Alle Gruppen",
+    source: "Wetterquelle", primary: "Ausgegebene Prognose", primaryOf: (m) => `Ausgegeben (${m})`, open_meteo: "Open-Meteo (früherer Vergleich)", all: "Alle Gruppen",
+    switched: (d, a, b) => `Modelle gewechselt am ${d}: ${a} → ${b}`,
     range: "Zeitraum", perDay: "Prognose und Ist pro Tag", forecast: "Prognose", actual: "Ist", calendar: "Kalender",
     byWeather: "Nach Wetterlage", clear: "klar", mixed: "wechselhaft", overcast: "bedeckt", compare: "Modelle einzeln",
-    sameDays: "Hauptquelle an denselben Tagen", hourly: "Stundenverlauf", curtailed: "Akku voll (evtl. abgeregelt)", issued: "erstellt",
+    sameDays: "Ausgegebene Prognose an denselben Tagen", hourly: "Stundenverlauf", curtailed: "Akku voll (evtl. abgeregelt)", issued: "erstellt",
     pick: "Tag im Diagramm oder Kalender anklicken", over: "zu hoch", under: "zu niedrig", kwh: "kWh",
     help: "Fehler = Summe der absoluten Tagesabweichungen geteilt durch die Summe der Ist-Werte. Abweichung > 0 heißt: im Mittel zu hoch prognostiziert. Die Wetterlage folgt aus der prognostizierten Einstrahlung im Verhältnis zum klaren Himmel.",
     split: "Wetter oder Modell?", weatherPart: "Wetteranteil", modelPart: "Modellanteil", modelBias: "Modell-Abweichung",
@@ -27,14 +28,34 @@ const ACC_TEXT = {
     btFew: (days, needed) => `Noch zu wenig Daten: ${days} von ${needed} Tagen.`,
     btHelp: "Die Prozentzahl zeigt, wie stark der Fehler gegenüber dem Vergleichswert schrumpft: 20 % → 18 % sind 10 % kleiner. Oben: Hätte das heutige Modell die archivierten Tage besser getroffen? Der Fehler der Wettervorhersage bleibt dabei enthalten. Unten: Das Modell lernt auf jedem zweiten Tag und wird auf den übrigen mit gemessener Einstrahlung geprüft; das zeigt, was die Verschattungskarte auf unbekannten Tagen bringt. Liegen die ungelernten Tage deutlich über den gelernten, merkt sich das Modell Zufälle. Die beiden Zahlen beantworten verschiedene Fragen und sind nicht direkt vergleichbar.",
     weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    mcTitle: "Wettermodelle vergleichen", mcStart: "Vergleich starten", mcCombo: "Wettermodelle", mcRank: "Platz",
+    mcIntro: "Welche Wettermodelle passen zu deiner Anlage? Noxcast holt für jedes Modell die Vortagsprognosen des letzten Jahres, rechnet sie mit deinem gelernten Modell durch und vergleicht mit der gemessenen Erzeugung, jedes Modell einzeln und jedes Paar gemittelt, wie in der Prognose.",
+    mcNever: "Noch kein Vergleich.", mcLast: (d, n, a, b) => `Verglichen am ${d}: ${n} Tage (${a} – ${b})`,
+    mcRunning: (i, n) => (i < n ? `Läuft: Modell ${i + 1} von ${n} wird abgefragt …` : "Läuft: rechnet …"),
+    mcCooldown: (d) => `Nächster Vergleich ab ${d} möglich.`, mcNotLearned: "Möglich nach dem ersten Lernlauf.",
+    mcAdmin: "Starten können nur Administratoren.",
+    mcFailed: (e) => `Letzter Versuch abgebrochen: ${e.replace(/[.\s]+$/, "")}. Das vorige Ergebnis bleibt, ein neuer Versuch ist sofort möglich.`,
+    mcLimited: "Open-Meteo hat das Abfragelimit gemeldet. Die Prognose nutzt bis zu 24 Stunden lang die letzte Antwort; den Vergleich später erneut starten. Fragt weitere Software über dieselbe Internetverbindung bei Open-Meteo ab, teilt sie sich das Kontingent.",
+    mcQuota: (n, calls) => `Ein Vergleich fragt ${n} Modelle je einmal für ein Jahr ab, nacheinander mit Pausen. Das kostet etwa ${calls} Aufrufe vom kostenlosen Kontingent von Open-Meteo (10.000 am Tag je Internetanschluss), die laufende Prognose braucht etwa 50 am Tag. Das Ergebnis ändert sich über Wochen kaum: Sinnvoll ist ein Vergleich etwa vierteljährlich oder nach Änderungen an der Anlage. Nach einem erfolgreichen Vergleich ist der nächste frühestens nach 7 Tagen möglich.`,
+    mcFew: (n, k) => `Zu wenig Tage zum Vergleichen: ${n} von ${k}. Es zählen Tage mit Messwerten, die auch das Lernen nutzt.`,
+    mcBest: (m, n) => `Deine Auswahl (${m}) ist die beste von ${n} Kombinationen. Kein Wechsel nötig.`,
+    mcKeep: (b, e, m, f, r) => `${b} liegt mit ${e} vorn, deine Auswahl (${m}) mit ${f} auf Platz ${r}. Der Vorsprung ist nicht verlässlich: Auf Tagen, die bei der Auswahl nicht verwendet wurden, gewinnt die jeweils beste Kombination nicht sicher genug. Kein Wechsel nötig.`,
+    mcChange: (b, e, m, f, s1, s2) => `${b} wäre besser: Tagesfehler ${e} statt ${f} mit deiner Auswahl (${m}). Auf Tagen, die bei der Auswahl nicht verwendet wurden, gewinnt sie in ${s1} und ${s2} der Stichproben.`,
+    mcWhere: "Die Wettermodelle stellst du unter Einstellungen → Geräte & Dienste → Noxcast → Konfigurieren ein.",
+    mcUnscored: (m) => `Deine Auswahl (${m}) ließ sich nicht bewerten, weil ein Modell darin hier keine ausreichenden Daten hat.`,
+    mcYours: "deine Auswahl", mcShowAll: (n) => `Alle ${n} anzeigen`, mcShowLess: "Weniger anzeigen",
+    mcByWeather: "Nach Wetterlage", mcByMonth: "Nach Monat", mcBestShort: "Beste",
+    mcSkipped: "Nicht bewertet", mcNoData: "keine Daten für diesen Standort", mcCoverage: (p) => `nur ${p} der Stunden`,
+    mcHelp: "Grundlage ist die Prognose, die jedes Modell 24 Stunden vor jeder Stunde abgegeben hat (Archiv früherer Modellläufe von Open-Meteo), gerechnet mit dem heute gelernten Modell. Bewertet werden nur Stunden, die auch das Lernen nutzt, und für alle Modelle dieselben. Die echte Prognose für einen Tag entsteht am Abend davor, mit kürzerem Vorlauf; die Fehler hier liegen daher etwas höher als oben, an der Reihenfolge der Modelle ändert das nichts. Damit nicht der Zufall gewinnt, wird ein Wechsel nur empfohlen, wenn die auf der einen Hälfte der Tage beste Kombination auch auf der anderen Hälfte gewinnt, in beide Richtungen.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
     title: "Forecast accuracy", days: "days", error: "Daily error", bias: "Bias", noData: "No completed days in the archive yet. The day-ahead forecast is archived every evening and completed with measurements at night.",
-    source: "Weather source", primary: "Main source", open_meteo: "Open-Meteo", all: "All arrays",
+    source: "Weather source", primary: "Issued forecast", primaryOf: (m) => `Issued (${m})`, open_meteo: "Open-Meteo (earlier comparison)", all: "All arrays",
+    switched: (d, a, b) => `Models changed on ${d}: ${a} → ${b}`,
     range: "Period", perDay: "Forecast and actual per day", forecast: "Forecast", actual: "Actual", calendar: "Calendar",
     byWeather: "By weather", clear: "clear", mixed: "mixed", overcast: "overcast", compare: "Models on their own",
-    sameDays: "main source on the same days", hourly: "Hourly", curtailed: "Battery full (possibly curtailed)", issued: "issued",
+    sameDays: "issued forecast on the same days", hourly: "Hourly", curtailed: "Battery full (possibly curtailed)", issued: "issued",
     pick: "Click a day in the chart or calendar", over: "too high", under: "too low", kwh: "kWh",
     help: "Error = sum of the absolute daily deviations divided by the sum of the actual values. Bias > 0 means forecast too high on average. The weather class follows from the forecast irradiance relative to a clear sky.",
     split: "Weather or model?", weatherPart: "Weather part", modelPart: "Model part", modelBias: "Model bias",
@@ -52,6 +73,25 @@ const ACC_TEXT = {
     btFew: (days, needed) => `Not enough data yet: ${days} of ${needed} days.`,
     btHelp: "The percentage shows how much the error shrinks against the comparison: 20 % → 18 % is 10 % smaller. Above: would today's model have matched the archived days better? The error of the weather forecast stays in. Below: the model learns on every other day and is checked on the rest with measured irradiance; this shows what the shading map brings on unknown days. If the unlearned days lie well above the learned ones, the model memorises chance. The two figures answer different questions and cannot be compared directly.",
     weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    mcTitle: "Compare weather models", mcStart: "Start comparison", mcCombo: "Weather models", mcRank: "Rank",
+    mcIntro: "Which weather models suit your installation? Noxcast fetches each model's day-ahead forecasts of the past year, runs them through your learned model and compares them with the measured output, each model on its own and each pair averaged, as in the forecast.",
+    mcNever: "No comparison yet.", mcLast: (d, n, a, b) => `Compared on ${d}: ${n} days (${a} – ${b})`,
+    mcRunning: (i, n) => (i < n ? `Running: asking for model ${i + 1} of ${n} …` : "Running: computing …"),
+    mcCooldown: (d) => `Next comparison possible from ${d}.`, mcNotLearned: "Possible after the first learning run.",
+    mcAdmin: "Only administrators can start it.",
+    mcFailed: (e) => `Last attempt stopped: ${e.replace(/[.\s]+$/, "")}. The previous result stays; a new attempt is possible right away.`,
+    mcLimited: "Open-Meteo reported its request limit. The forecast uses the last answer for up to 24 hours; start the comparison again later. Other software asking Open-Meteo over the same internet connection shares the quota.",
+    mcQuota: (n, calls) => `A comparison asks for ${n} models once each for a year, one after the other with pauses. That costs about ${calls} calls of Open-Meteo's free quota (10,000 a day per internet connection); the running forecast needs about 50 a day. The result hardly changes over weeks: a comparison about every quarter or after changes to the installation is enough. After a successful comparison the next one is possible after 7 days at the earliest.`,
+    mcFew: (n, k) => `Not enough days to compare: ${n} of ${k}. Days count with measurements that learning uses as well.`,
+    mcBest: (m, n) => `Your choice (${m}) is the best of ${n} combinations. No change needed.`,
+    mcKeep: (b, e, m, f, r) => `${b} leads with ${e}, your choice (${m}) ranks ${r} with ${f}. The lead is not reliable: on days not used for picking, the best combination does not win clearly enough. No change needed.`,
+    mcChange: (b, e, m, f, s1, s2) => `${b} would be better: daily error ${e} instead of ${f} with your choice (${m}). On days not used for picking it wins in ${s1} and ${s2} of the resamples.`,
+    mcWhere: "Weather models are set under Settings → Devices & services → Noxcast → Configure.",
+    mcUnscored: (m) => `Your choice (${m}) could not be scored, because one of its models lacks enough data here.`,
+    mcYours: "your choice", mcShowAll: (n) => `Show all ${n}`, mcShowLess: "Show fewer",
+    mcByWeather: "By weather", mcByMonth: "By month", mcBestShort: "Best",
+    mcSkipped: "Not scored", mcNoData: "no data for this location", mcCoverage: (p) => `only ${p} of the hours`,
+    mcHelp: "The basis is the forecast each model issued 24 hours before every hour (Open-Meteo's archive of earlier model runs), computed with today's learned model. Only hours that learning uses count, the same ones for all models. The real forecast for a day is made the evening before, with a shorter lead time; the errors here are therefore somewhat higher than above, the order of the models stays the same. So that chance does not win, a change is recommended only when the combination that is best on one half of the days also wins on the other half, in both directions.",
   },
 };
 
@@ -68,7 +108,7 @@ class NoxcastAccuracy extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._s = { range: 30, source: "primary", array: "all", day: null };
+    this._s = { range: 30, source: "primary", array: "all", day: null, allCombos: false };
     this.shadowRoot.addEventListener("click", (ev) => this._click(ev));
   }
 
@@ -91,6 +131,7 @@ class NoxcastAccuracy extends HTMLElement {
       this._data = data;
       this._error = null;
       this._loadBacktest();
+      this._loadModels();
     } catch (err) {
       this._error = String((err && err.message) || err);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
@@ -106,17 +147,59 @@ class NoxcastAccuracy extends HTMLElement {
     if (this._bt) this._render();
   }
 
+  // the weather model comparison comes separately as well; while it runs, ask again every few seconds
+  async _loadModels() {
+    clearTimeout(this._mcPoll);
+    const data = await ask(this._hass, { type: "noxcast/weather_models" }).catch(() => null);
+    this._mc = data && data.v === WS_SCHEMA ? data : null;
+    this._render();
+    const entry = this._mc && (this._mc.entries || [])[0];
+    if (entry && entry.state.running) this._mcPoll = setTimeout(() => { if (this.isConnected) this._loadModels(); }, 5000);
+  }
+
+  async _startCompare() {
+    this._mcStarting = true;
+    this._render();
+    await ask(this._hass, { type: "noxcast/compare_weather_models" }).catch((err) => { this._mcError = String((err && err.message) || err); });
+    this._mcStarting = false;
+    this._loadModels();
+  }
+
   // ------------------------------------------------------------ evaluation
 
-  // "primary" and every alternative source in the archive, in order of appearance
+  // "primary" (the issued forecast) and every model in the archive, in order of appearance; a day made from one
+  // model alone counts for that model as well
   get _sources() {
     const entry = this._data && (this._data.entries || [])[0];
     const out = new Set(["primary"]);
-    for (const d of (entry && entry.days) || []) for (const h of d.hours) for (const k of Object.keys(h.alt || {})) out.add(k);
+    for (const d of (entry && entry.days) || []) {
+      if ((d.models || []).length === 1) out.add(d.models[0]);
+      for (const h of d.hours) for (const k of Object.keys(h.alt || {})) out.add(k);
+    }
     return [...out];
   }
 
-  _label(src) { return this._t[src] || MODEL_NAMES[src] || src; }
+  _label(src) {
+    if (src === "primary") {
+      const sets = this._modelSets();
+      return sets.length === 1 && sets[0].models.length ? this._t.primaryOf(this._names(sets[0].models)) : this._t.primary;
+    }
+    return this._t[src] || MODEL_NAMES[src] || src;
+  }
+
+  _names(models) { return models.map((m) => MODEL_NAMES[m] || m).join(" + "); }
+
+  // the weather models of the issued forecast within the chosen period: runs of days with the same models
+  _modelSets() {
+    const entry = this._data && (this._data.entries || [])[0];
+    const days = this._inRange((entry && entry.days) || []);
+    const out = [];
+    for (const d of days) {
+      const key = (d.models || []).join("+");
+      if (!out.length || out[out.length - 1].key !== key) out.push({ key, models: d.models || [], from: d.date });
+    }
+    return out;
+  }
 
   _color(src) {
     if (src === "primary") return "var(--nx-fc)";
@@ -126,11 +209,14 @@ class NoxcastAccuracy extends HTMLElement {
   }
 
   // forecast of one hour for the chosen source; null when that source has no value
-  _fc(h, source, ids) {
+  _fc(h, source, ids, day) {
     const pick = (f) => (ids.every((id) => id in f) ? ids.reduce((a, id) => a + f[id], 0) : null);
-    if (source === "primary") return pick(h.forecast);
+    if (source === "primary" || this._single(day, source)) return pick(h.forecast);
     return h.alt && h.alt[source] ? pick(h.alt[source].forecast || h.alt[source]) : null;
   }
+
+  // the day's issued forecast came from this model alone
+  _single(day, source) { return !!day && (day.models || []).length === 1 && day.models[0] === source; }
 
   // complete days: every hour has an actual value and a forecast of the source
   _days(source) {
@@ -141,7 +227,7 @@ class NoxcastAccuracy extends HTMLElement {
     for (const d of entry.days) {
       let f = 0, a = 0, m = 0, ghi = 0, clear = 0, curtailed = 0, ok = d.hours.length >= 20, meas = true;
       for (const h of d.hours) {
-        const fc = this._fc(h, source, ids);
+        const fc = this._fc(h, source, ids, d);
         if (!ok || fc === null || !h.actual || !ids.every((id) => id in h.actual)) { ok = false; break; }
         f += fc;
         a += ids.reduce((s, id) => s + h.actual[id], 0);
@@ -177,7 +263,7 @@ class NoxcastAccuracy extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else {
       const all = this._days(this._s.source), days = this._inRange(all);
-      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>${this._backtest()}`;
+      body = days.length ? this._view(days) : `<div class="card pad">${t.noData}</div>${this._backtest()}${this._models()}`;
     }
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${this._controls()}${body}</div>`;
   }
@@ -185,13 +271,16 @@ class NoxcastAccuracy extends HTMLElement {
   _controls() {
     const t = this._t, s = this._s;
     const entry = this._data && (this._data.entries || [])[0];
-    const hasAlt = entry && entry.days.some((d) => d.hours.some((h) => h.alt && Object.keys(h.alt).length));
+    const hasAlt = entry && this._sources.length > 1;
+    const sets = this._modelSets().filter((x) => x.models.length);
+    const switches = sets.slice(1).map((x, i) => `<span class="muted small">${t.switched(this._date(x.from), esc(this._names(sets[i].models)), esc(this._names(x.models)))}</span>`).join("");
     const chip = (key, val, label) => `<button class="chip ${s[key] === val ? "on" : ""}" data-set="${key}" data-val="${val}">${label}</button>`;
     const arrays = entry ? [chip("array", "all", t.all), ...entry.arrays.map((a) => chip("array", a.id, esc(a.name)))] : [];
     return `<div class="controls">
       <div class="group"><span class="muted small">${t.range}</span>${[14, 30, 90].map((r) => chip("range", r, `${r} ${t.days}`)).join("")}</div>
       ${hasAlt ? `<div class="group"><span class="muted small">${t.source}</span>${this._sources.map((src) => chip("source", src, esc(this._label(src)))).join("")}</div>` : ""}
       ${arrays.length > 2 ? `<div class="group">${arrays.join("")}</div>` : ""}
+      ${hasAlt && switches ? `<div class="group">${switches}</div>` : ""}
     </div>`;
   }
 
@@ -207,6 +296,7 @@ class NoxcastAccuracy extends HTMLElement {
       <section class="card pad"><h3>${t.perDay}</h3>${this._bars(days)}</section>
       ${this._split(days)}
       ${this._backtest()}
+      ${this._models()}
       <section class="card pad">${sel ? this._hourly(sel) : `<h3>${t.hourly}</h3><p class="muted">${t.pick}</p>`}</section>
       <div class="split">
         <section class="card pad"><h3>${t.calendar}</h3>${this._calendar(days)}</section>
@@ -307,6 +397,96 @@ class NoxcastAccuracy extends HTMLElement {
     return `<section class="card pad"><h3>${t.backtest}</h3><div class="figs">${figs.join("")}</div>${table}<p class="help">${t.btHelp}</p></section>`;
   }
 
+  // which weather models suit the installation: the hindcast of every model and pair (hindcast.py)
+  _models() {
+    const t = this._t, entry = this._mc && (this._mc.entries || [])[0];
+    if (!entry) return "";
+    const st = entry.state, r = entry.result, admin = !!(this._hass.user && this._hass.user.is_admin);
+    const pc = (v, signed = false) => (v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${(v * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+    const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang, { day: "numeric", month: "short", year: "numeric" });
+    const iso = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(this._lang, { day: "numeric", month: "short", year: "numeric" });
+
+    let status;
+    if (st.running || this._mcStarting) status = t.mcRunning(st.done || 0, st.total || entry.candidates.length);
+    else if (entry.blocked === "cooldown") status = t.mcCooldown(day(entry.until));
+    else if (entry.blocked === "not_learned") status = t.mcNotLearned;
+    else if (!admin) status = t.mcAdmin;
+    const can = admin && !entry.blocked && !this._mcStarting;
+    const last = r && r.first ? t.mcLast(day(r.computed_at), r.days, iso(r.first), iso(r.last)) : r ? day(r.computed_at) : t.mcNever;
+    const head = `<div class="mchead"><span class="small">${last}${status ? `<br><span class="muted">${status}</span>` : ""}</span>
+      <button class="btn" data-act="compare"${can ? "" : " disabled"}>${t.mcStart}</button></div>`;
+    const failed = st.error ? `<p class="note warn">${esc(t.mcFailed(st.error))}${st.limited ? `<br>${t.mcLimited}` : ""}</p>` : "";
+    // a call counts per two weeks of data: a year is about 26
+    const quota = `<p class="help">${t.mcQuota(entry.candidates.length, entry.candidates.length * 26)}</p>`;
+    const intro = `<p class="help" style="margin-top:0">${t.mcIntro}</p>`;
+    if (!r) return `<section class="card pad"><h3>${t.mcTitle}</h3>${intro}${head}${failed}${quota}</section>`;
+    if (r.status !== "ok") {
+      const why = r.status === "not_enough_data" ? t.mcFew(r.days || 0, r.needed || 0) : t.mcNotLearned;
+      return `<section class="card pad"><h3>${t.mcTitle}</h3>${intro}${head}${failed}<p class="note">${why}</p>${this._skipped(r)}${quota}</section>`;
+    }
+
+    const combos = r.combos, mine = combos.find((c) => c.models.join("+") === r.current.join("+"));
+    const best = combos[0], rec = r.recommendation, name = (c) => esc(this._names(c.models));
+    let verdict;
+    if (!rec || !mine) verdict = `<p class="note">${t.mcUnscored(esc(this._names(r.current)))}</p>`;
+    else if (rec.verdict === "current_best") verdict = `<p class="note good">${t.mcBest(name(mine), combos.length)}</p>`;
+    else if (rec.verdict === "change") verdict = `<p class="note good">${t.mcChange(name(best), pc(best.day_error), name(mine), pc(mine.day_error),
+      ...rec.checks.map((c) => `${Math.round(c.share * 100)} %`))} ${t.mcWhere}</p>`;
+    else verdict = `<p class="note">${t.mcKeep(name(best), pc(best.day_error), name(mine), pc(mine.day_error), rec.current_rank)}</p>`;
+
+    const limit = 10, shown = this._s.allCombos ? combos : combos.filter((c, i) => i < limit || c === mine);
+    const rows = shown.map((c) => {
+      const yours = c === mine;
+      return `<tr${yours ? ` class="on"` : ""}><td class="num">${combos.indexOf(c) + 1}</td><td>${name(c)}${yours ? ` <span class="muted small">(${t.mcYours})</span>` : ""}</td>
+        <td class="num">${pc(c.day_error)}</td><td class="num">${pc(c.bias, true)}</td><td class="num">${pc(c.hour_error)}</td><td>${this._meter(c.day_error)}</td></tr>`;
+    }).join("");
+    const more = combos.length > limit ? `<button class="link" data-act="combos">${this._s.allCombos ? t.mcShowLess : t.mcShowAll(combos.length)}</button>` : "";
+    const table = `<table><thead><tr><th class="num">${t.mcRank}</th><th>${t.mcCombo}</th><th class="num">${t.error}</th><th class="num">${t.bias}</th>
+      <th class="num">${t.hourError}</th><th></th></tr></thead><tbody>${rows}</tbody></table>${more}`;
+
+    // where the difference lies: by weather class and by month, the choice against the best
+    const pair = mine && mine !== best ? [mine, best] : [best];
+    const label = (c) => (c === mine ? t.mcYours : t.mcBestShort);
+    const cls = `<table><thead><tr><th></th>${pair.map((c) => `<th class="num" title="${name(c)}">${label(c)}</th>`).join("")}<th class="num">${t.days}</th></tr></thead><tbody>
+      ${["clear", "mixed", "overcast"].map((k) => `<tr><td>${t[k]}</td>${pair.map((c) => `<td class="num">${pc(c.classes[k].day_error)} <span class="muted small">${pc(c.classes[k].bias, true)}</span></td>`).join("")}
+      <td class="num">${pair[0].classes[k].days}</td></tr>`).join("")}</tbody></table>`;
+    return `<section class="card pad"><h3>${t.mcTitle}</h3>${intro}${head}${failed}${verdict}${table}
+      <div class="split" style="margin-top:12px">
+        <div class="grow"><h3>${t.mcByWeather}</h3>${cls}</div>
+        <div class="grow"><h3>${t.mcByMonth}</h3>${this._monthChart(pair, label)}</div>
+      </div>${this._skipped(r)}<p class="help">${t.mcHelp}</p>${quota}</section>`;
+  }
+
+  _skipped(r) {
+    const t = this._t, pct = (v) => `${Math.round(v * 100)} %`;
+    if (!r.skipped || !r.skipped.length) return "";
+    const items = r.skipped.map((s) => `${esc(MODEL_NAMES[s.model] || s.model)} (${esc(s.error || (s.reason === "no_data" ? t.mcNoData : t.mcCoverage(pct(s.coverage))))})`);
+    return `<p class="help">${t.mcSkipped}: ${items.join(", ")}</p>`;
+  }
+
+  // daily error per month of the choice and the best combination
+  _monthChart(pair, label) {
+    const months = Object.keys(pair[0].months).sort();
+    if (months.length < 2) return "";
+    const W = 360, H = 150, pad = 34, x = (i) => pad + (i + 0.5) * ((W - pad) / months.length);
+    const vals = pair.flatMap((c) => months.map((m) => (c.months[m] || {}).day_error).filter((v) => v !== null && v !== undefined));
+    const max = Math.max(0.1, ...vals) * 1.1, y = (v) => H - 18 - (v / max) * (H - 28);
+    const colors = ["var(--nx-fc)", "var(--nx-alt)"];
+    const step = [0.05, 0.1, 0.2, 0.5].find((s) => max / s <= 4) || 1;
+    let grid = "";
+    for (let v = step; v < max; v += step) grid += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._pct(v)}</text>`;
+    const lines = pair.map((c, k) => {
+      const pts = months.map((m, i) => [i, (c.months[m] || {}).day_error]).filter(([, v]) => v !== null && v !== undefined);
+      return `<polyline points="${pts.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${colors[k]}" stroke-width="2"${k ? ` stroke-dasharray="4 3"` : ""}></polyline>
+        ${pts.map(([i, v]) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" fill="${colors[k]}"><title>${months[i]}: ${this._pct(v)}</title></circle>`).join("")}`;
+    }).join("");
+    const every = Math.ceil(months.length / 6);
+    const labels = months.map((m, i) => (i % every ? "" : `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${new Date(`${m}-15T12:00:00Z`).toLocaleDateString(this._lang, { month: "short" })}</text>`)).join("");
+    const legend = pair.map((c, k) => `<span><i class="sw line" style="background:${colors[k]}"></i>${label(c)}: ${esc(this._names(c.models))}</span>`).join("");
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${this._t.mcByMonth}">${grid}${lines}${labels}</svg><div class="legend">${legend}</div>`;
+  }
+
+
   _calendar(days) {
     const t = this._t, by = new Map(days.map((d) => [d.date, d]));
     const first = new Date(`${days[0].date}T12:00:00Z`), last = new Date(`${days[days.length - 1].date}T12:00:00Z`);
@@ -329,7 +509,8 @@ class NoxcastAccuracy extends HTMLElement {
     const t = this._t, entry = this._data.entries[0];
     const ids = this._s.array === "all" ? entry.arrays.map((a) => a.id) : [this._s.array];
     const hours = day.raw.hours.filter((h) => h.actual);
-    const series = this._sources.map((src) => [src, hours.map((h) => this._fc(h, src, ids))]).filter(([, v]) => v.some((x) => x !== null));
+    const series = this._sources.filter((src) => !this._single(day.raw, src))
+      .map((src) => [src, hours.map((h) => this._fc(h, src, ids, day.raw))]).filter(([, v]) => v.some((x) => x !== null));
     const actual = hours.map((h) => ids.reduce((s, id) => s + (h.actual[id] || 0), 0));
     const measured = hours.map((h) => (h.measured && ids.every((id) => id in h.measured) ? ids.reduce((s, id) => s + h.measured[id], 0) : null));
     if (measured.some((x) => x !== null)) series.push(["measured", measured]);
@@ -400,8 +581,10 @@ class NoxcastAccuracy extends HTMLElement {
   // ------------------------------------------------------------ events and formatting
 
   _click(ev) {
-    const el = ev.composedPath().find((n) => n.dataset && (n.dataset.set || n.dataset.day));
+    const el = ev.composedPath().find((n) => n.dataset && (n.dataset.set || n.dataset.day || n.dataset.act));
     if (!el) return;
+    if (el.dataset.act === "compare") { this._startCompare(); return; }
+    if (el.dataset.act === "combos") { this._s.allCombos = !this._s.allCombos; this._render(); return; }
     if (el.dataset.set) {
       const v = el.dataset.val;
       this._s[el.dataset.set] = el.dataset.set === "range" ? Number(v) : v;
@@ -466,6 +649,14 @@ class NoxcastAccuracy extends HTMLElement {
       .share div { height: 100%; background: linear-gradient(90deg, var(--nx-wx), color-mix(in srgb, var(--nx-wx) 70%, #fff)); box-shadow: 0 0 10px var(--nx-wx); }
       .verdict { margin: 4px 0 10px; font-size: 13px; line-height: 1.45; }
       .btable { margin-top: 12px; } .btable tbody th { padding-top: 10px; }
+      .btn { border: 1px solid var(--primary-color); background: var(--primary-color); color: var(--text-primary-color, #fff); border-radius: 16px;
+        padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+      .btn[disabled] { opacity: .45; cursor: default; }
+      .link { border: none; background: none; color: var(--primary-color); font: inherit; font-size: 12px; cursor: pointer; padding: 6px 0 0; }
+      .mchead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin: 8px 0; }
+      .note { margin: 8px 0; font-size: 13px; line-height: 1.45; padding: 10px 12px; border-radius: 8px; background: var(--nx-empty); }
+      .note.warn { background: color-mix(in srgb, ${d ? "#E0574A" : "#C83A2E"} 14%, transparent); }
+      .note.good { color: inherit; font-weight: 400; background: color-mix(in srgb, ${d ? "#4CC77A" : "#2E9E5B"} 14%, transparent); }
       .good { color: ${d ? "#4CC77A" : "#2E9E5B"}; font-weight: 500; } .bad { color: ${d ? "#E0574A" : "#C83A2E"}; font-weight: 500; }
     </style>`;
   }

@@ -7,7 +7,22 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- "Compare weather models" in the forecast accuracy view: on request, Noxcast fetches what every offered weather
+  model forecast one day ahead over the past year, runs it through your learned model and compares each model and
+  each averaged pair with what your arrays produced. It ranks them by daily error, shows where they differ (by
+  weather and by month) and recommends a change only when it holds on days that were not used to pick it. Nothing
+  is changed automatically. A run asks Open-Meteo once per model with pauses, stops at once if Open-Meteo reports
+  its request limit, and after a successful run the next one is possible after 7 days.
+
 ### Changed
+- The weather source chips in the accuracy view name the models of the issued forecast ("Issued (ICON + ECMWF
+  IFS)" instead of "Main source") and say when the models were changed within the period. With a single model its
+  chip includes the days it made the forecast alone. The "Open-Meteo" chip of days archived next to a weather
+  entity is now "Open-Meteo (earlier comparison)".
+- The archive keeps which weather models each day's forecast came from.
+- An Open-Meteo refusal shows its reason in the log (for example that the daily request limit is exceeded), not
+  only the HTTP status.
 - "How the hour comes about" in the day view now explains the forecast the chart compares with: today the
   6 am forecast, for past days the day-ahead forecast. Before, it recomputed the hour with the latest weather and
   model, so its "Forecast" matched no line in the chart. Today it continues with what newer weather changed
@@ -24,6 +39,10 @@ breaking changes.
   (`sensor.noxcast_forecast_remaining_today`, in German `sensor.noxcast_prognose_rest_heute`) are removed with
   their customisations; replace their entity IDs in automations and dashboards. Their recorded history stays under
   the old ID until the recorder purges it.
+
+### Removed
+- The weather models ICON Global, ICON-EU and ICON-D2, which Open-Meteo discontinues on 30 November 2026. Where
+  one of them was selected, ICON (`icon_seamless`) takes its place automatically.
 
 ## [0.1.0] - 2026-11-05
 

@@ -93,3 +93,34 @@ def test_one_more_weather_day_than_shown():
     from custom_components.noxcast.coordinator import weather_days
     # Open-Meteo's UTC days end before the last local day west of UTC, and east of it after local midnight
     assert weather_days(3) == 8 and weather_days(7) == 8
+
+
+async def test_previous_runs_give_the_day_ahead_forecast_by_hour(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(sources.PREVIOUS_RUNS_URL, json={"hourly": {
+        "time": [T.format(h)[:16] for h in range(3)],
+        "shortwave_radiation_previous_day1": [0, 300, 400], "direct_normal_irradiance_previous_day1": [0, 500, 600],
+        "diffuse_radiation_previous_day1": [0, 100, 100], "temperature_2m_previous_day1": [10, 12, 14]}})
+    day = datetime(2026, 10, 24).date()
+    hours = await sources.async_previous_runs(hass, 12.345, 6.789, "ecmwf_ifs", day, day)   # privacy-ok: made up
+    params = aioclient_mock.mock_calls[0][1].query
+    assert params["models"] == "ecmwf_ifs" and params["start_date"] == params["end_date"] == "2026-10-24"
+    assert "shortwave_radiation_previous_day1" in params["hourly"] and "cloud_cover" not in params["hourly"]
+    t1 = datetime.fromisoformat(T.format(1)).timestamp()
+    second = hours[1]                    # irradiance is the mean of the hour before its time stamp
+    assert (second.start, second.ghi, second.dni, second.dhi) == (t1 - 3600, 300.0, 500.0, 100.0)
+    assert hours[2].temp == 13.0 and second.cloud is None
+
+
+@pytest.mark.parametrize(("status", "reason", "limited"), [
+    (429, "Minutely API request limit exceeded. Please try again in one minute.", True),
+    (400, "Daily API request limit exceeded. Please try again tomorrow.", True),
+    (400, "Invalid model 'nonsense'", False),
+])
+async def test_a_refusal_says_why_and_whether_it_is_the_limit(hass: HomeAssistant, aioclient_mock, status, reason,
+                                                              limited) -> None:
+    aioclient_mock.get(sources.PREVIOUS_RUNS_URL, status=status, json={"error": True, "reason": reason})
+    day = datetime(2026, 10, 24).date()
+    with pytest.raises(sources.SourceError) as err:
+        await sources.async_previous_runs(hass, 12.345, 6.789, "x", day, day)   # privacy-ok: made up
+    assert str(err.value) == f"previous-runs-api.open-meteo.com answered {status} {reason}"
+    assert err.value.status == status and err.value.limited is limited and "12.345" not in str(err.value)

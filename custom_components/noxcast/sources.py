@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -15,14 +15,36 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_WEATHER_MODELS, FORECAST_DAYS, POWER_UNIT_FACTORS, Series
-from .model import WeatherHour
+from .model import WeatherHour, mean_weather
 
 _LOGGER = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+# what each model forecast earlier for an hour: "_previous_day1" is the forecast made 24 hours before it
+PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
+PREVIOUS_RUN_VARS = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m")
 
 
 class SourceError(Exception):
-    """A weather source failed. The text names only the host: the query of the URL holds the location and API key."""
+    """A weather source failed. The text names only the host: the query of the URL holds the location and API key.
+
+    status: the HTTP status of a refusal (None: no answer); limited: the source refused for its request limit
+    (HTTP 429, or a reason that names the limit).
+    """
+
+    def __init__(self, text: str, status: int | None = None, limited: bool = False) -> None:
+        super().__init__(text)
+        self.status = status
+        self.limited = limited
+
+
+async def _reason(resp: aiohttp.ClientResponse) -> str:
+    """Open-Meteo explains a refusal in the body ({"error": true, "reason": ...}); other sources may not."""
+    try:
+        body = await resp.json(content_type=None)
+    except Exception:  # noqa: BLE001 – no JSON: the status says enough
+        return ""
+    reason = body.get("reason") if isinstance(body, dict) else None
+    return str(reason)[:200] if reason else ""
 
 
 async def _async_get_json(hass: HomeAssistant, url: str, params: dict, timeout: float) -> dict:
@@ -30,10 +52,13 @@ async def _async_get_json(hass: HomeAssistant, url: str, params: dict, timeout: 
     host = urlsplit(url).hostname or "weather source"
     try:
         async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
-            resp.raise_for_status()
+            if resp.status >= 400:                  # not raise_for_status: the body may say why
+                reason = await _reason(resp)
+                limited = resp.status == 429 or "limit" in reason.lower()
+                raise SourceError(f"{host} answered {resp.status} {reason or resp.reason or ''}".rstrip(), resp.status, limited)
             return await resp.json()
     except aiohttp.ClientResponseError as err:      # its text and traceback would show the whole URL
-        raise SourceError(f"{host} answered {err.status} {err.message}") from None
+        raise SourceError(f"{host} answered {err.status} {err.message}", err.status, err.status == 429) from None
     except aiohttp.ClientError as err:
         raise SourceError(f"{host}: {type(err).__name__}") from None
 
@@ -112,7 +137,6 @@ async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
 HOURLY = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m", "cloud_cover",
           "sunshine_duration", "wind_speed_10m", "wind_direction_10m", "precipitation", "weather_code",
           "relative_humidity_2m")
-THUNDER = 95                    # WMO weather codes from here on: thunderstorm
 
 
 async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float, days: int = FORECAST_DAYS,
@@ -137,7 +161,26 @@ async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: floa
 
     per_model = {m: _hours(times, {var: column(var, m) for var in HOURLY}) for m in models}
     per_model = {m: hours for m, hours in per_model.items() if hours}
-    return _mean(list(per_model.values())), per_model
+    return mean_weather(list(per_model.values())), per_model
+
+
+async def async_previous_runs(hass: HomeAssistant, latitude: float, longitude: float, model: str,
+                              start: date, end: date) -> list[WeatherHour]:
+    """A model's day-ahead forecast (made 24 hours before each hour) for the days start..end, by hour.
+
+    Irradiance, its split and temperature only: what the PV model uses. One model per request, so the
+    requests of a comparison can be spread out and an answer stays small.
+    """
+    params = {
+        "latitude": latitude, "longitude": longitude, "timezone": "UTC", "models": model,
+        "start_date": start.isoformat(), "end_date": end.isoformat(),
+        "hourly": ",".join(f"{v}_previous_day1" for v in PREVIOUS_RUN_VARS),
+    }
+    data = (await _async_get_json(hass, PREVIOUS_RUNS_URL, params, 120))["hourly"]
+    times = [_parse_utc(t) for t in data["time"]]
+    columns = {var: data.get(f"{var}_previous_day1") or data.get(f"{var}_previous_day1_{model}") or []
+               for var in PREVIOUS_RUN_VARS}
+    return _hours(times, {var: columns.get(var, []) for var in HOURLY})
 
 
 def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour]:
@@ -169,40 +212,6 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
                                  wind_dir=wind[start][1] if start in wind else None,
                                  precip=precip.get(ts), code=code.get(ts), humidity=humidity.get(start)))
     return hours
-
-
-def _mean(series: list[list[WeatherHour]]) -> list[WeatherHour]:
-    """Hour by hour mean of several models; wind direction as vector mean.
-
-    The weather code cannot be averaged: a thunderstorm in any model counts, otherwise the first
-    model's code is kept (fog); rain and snow follow from the averaged precipitation.
-    """
-    if len(series) == 1:
-        return series[0]
-    by_start: dict[float, list[WeatherHour]] = {}
-    for hours in series:
-        for w in hours:
-            by_start.setdefault(w.start, []).append(w)
-
-    def avg(values: list[float | None]) -> float | None:
-        v = [x for x in values if x is not None]
-        return sum(v) / len(v) if v else None
-
-    out = []
-    for start, ws in sorted(by_start.items()):
-        split = [w for w in ws if w.dni is not None and w.dhi is not None]
-        x = sum(w.wind * math.sin(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
-        y = sum(w.wind * math.cos(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
-        out.append(WeatherHour(
-            start=start, ghi=avg([w.ghi for w in ws]),
-            # the irradiance split only when every model has it, otherwise GHI and split would disagree
-            dni=avg([w.dni for w in split]) if len(split) == len(ws) else None,
-            dhi=avg([w.dhi for w in split]) if len(split) == len(ws) else None,
-            temp=avg([w.temp for w in ws]), cloud=avg([w.cloud for w in ws]), sun=avg([w.sun for w in ws]),
-            wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None,
-            precip=avg([w.precip for w in ws]), humidity=avg([w.humidity for w in ws]),
-            code=max((w.code for w in ws if w.code is not None and w.code >= THUNDER), default=ws[0].code)))
-    return out
 
 
 def _parse_utc(text: str) -> float | None:

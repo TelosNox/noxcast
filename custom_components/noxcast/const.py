@@ -76,9 +76,16 @@ CONF_WEATHER_MODELS = "weather_models"   # Open-Meteo models; several are averag
 # day-ahead hindcast 12/2025-10/2026 (230 days): the mean of ICON and ECMWF IFS beat every single model,
 # their errors run in opposite directions (ICON too low, IFS too high)
 DEFAULT_WEATHER_MODELS = ("icon_seamless", "ecmwf_ifs")
-WEATHER_MODEL_OPTIONS = ("icon_seamless", "icon_d2", "icon_eu", "icon_global", "ecmwf_ifs", "ecmwf_ifs025",
+WEATHER_MODEL_OPTIONS = ("icon_seamless", "ecmwf_ifs", "ecmwf_ifs025",
                          "ecmwf_aifs025_single", "meteoswiss_icon_ch2", "meteofrance_seamless", "gfs_seamless",
                          "knmi_seamless", "ukmo_seamless", "gem_seamless", "best_match")
+# Open-Meteo ends these on 2026-11-30 (DWD's feed migration); ICON stays available as icon_seamless
+DISCONTINUED_MODELS = {"icon_global": "icon_seamless", "icon_eu": "icon_seamless", "icon_d2": "icon_seamless",
+                       "dwd_icon_global": "icon_seamless", "dwd_icon_eu": "icon_seamless", "dwd_icon_d2": "icon_seamless"}
+# weather model comparison (hindcast.py): a year covers every season; a run asks Open-Meteo once per model
+COMPARE_DAYS = 365
+COMPARE_COOLDOWN = timedelta(days=7)      # after a successful run; a failed one may be repeated at once
+COMPARE_PAUSE = 5.0                       # seconds between the models' requests, spreading them out
 WEATHER_MAX_AGE = timedelta(hours=24)    # a stored forecast stands in this long when Open-Meteo cannot be reached
 DEFAULT_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 DEFAULT_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"

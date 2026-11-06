@@ -31,6 +31,8 @@ WS_LEARNED = f"{DOMAIN}/learned"
 WS_TODAY = f"{DOMAIN}/today"
 WS_ACCURACY = f"{DOMAIN}/accuracy"
 WS_BACKTEST = f"{DOMAIN}/backtest"
+WS_MODELS = f"{DOMAIN}/weather_models"
+WS_COMPARE = f"{DOMAIN}/compare_weather_models"
 WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
@@ -49,6 +51,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_today)
     websocket_api.async_register_command(hass, ws_accuracy)
     websocket_api.async_register_command(hass, ws_backtest)
+    websocket_api.async_register_command(hass, ws_models)
+    websocket_api.async_register_command(hass, ws_compare)
     websocket_api.async_register_command(hass, ws_load)
     websocket_api.async_register_command(hass, ws_diagnostics)
     websocket_api.async_register_command(hass, ws_battery)
@@ -179,6 +183,24 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
 def ws_backtest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The last PV backtest for the accuracy view: past days with today's model, and unlearned days."""
     _send(connection, msg, {"entries": [views.backtest_entry(c.arrays, c.pv_backtest) for c in _coordinators(hass)]})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_MODELS})
+@callback
+def ws_models(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The weather model comparison: the last result, a running or failed run, and whether one may start."""
+    _send(connection, msg, {"now": dt_util.utcnow().timestamp(), "entries": [
+        views.compare_entry(c.model_compare, c.compare_state, *c.compare_blocked(), c.weather_models, c.compare_candidates)
+        for c in _coordinators(hass)]})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_COMPARE})
+@callback
+def ws_compare(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Start the weather model comparison; it asks Open-Meteo once per model, hence admins only."""
+    reasons = [c.async_start_compare() for c in _coordinators(hass)]
+    _send(connection, msg, {"started": any(r is None for r in reasons), "reasons": [r for r in reasons if r]})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LOAD})

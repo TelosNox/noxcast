@@ -68,6 +68,7 @@ def test_accuracy_days_from_stored_archive():
     assert days[0]["hours"][0]["sat_ghi"] is None and days[0]["hours"][0]["measured"] is None
     assert days[0]["hours"][0]["curtailed"] is False
     assert days[-1]["hours"][-1]["actual"] is None and len(days[-1]["hours"]) == 16
+    assert days[0]["models"] == []                                  # archived before the models were kept
 
 
 def test_day_view_of_a_past_day():

@@ -66,7 +66,7 @@ def _not_enough(reason: str, days: int = 0, needed: int = 0) -> dict:
     return {"status": NOT_ENOUGH, "reason": reason, "days": days, "needed": needed}
 
 
-def _usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> Series:
+def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> Series:
     """The array's hours learning would use, with the mean power (W = Wh per hour)."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
@@ -77,7 +77,7 @@ def _lit(*values: float) -> bool:
     return max(values) > MIN_WH
 
 
-def _summed(parts: list[Pairs]) -> Pairs:
+def summed(parts: list[Pairs]) -> Pairs:
     """All arrays per hour; an hour holds the arrays that have a value in it."""
     out: dict[float, list[float]] = {}
     for pairs in parts:
@@ -96,7 +96,7 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
     """
     known = {sid: arr for sid, arr in arrays.items() if sid in learned}
     geometries = {sid: arr.geometry for sid, arr in known.items()}
-    usable = {sid: _usable(arr, history, soc_full, exclusions) for sid, arr in known.items()}
+    hours_of = {sid: usable(arr, history, soc_full, exclusions) for sid, arr in known.items()}
     bare = {sid: without_map(learned[sid]) for sid in known}
     runs: dict[str, dict[str, Pairs]] = {sid: {"then": {}, "now": {}, "baseline": {}} for sid in known}
     for day in fc_archive.days(archive):
@@ -108,7 +108,7 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
             if h.curtailed:
                 continue
             for sid, run in runs.items():
-                if h.ts not in usable[sid] or sid not in h.forecast or sid not in h.actual:
+                if h.ts not in hours_of[sid] or sid not in h.forecast or sid not in h.actual:
                     continue
                 then, actual = h.forecast[sid], h.actual[sid]
                 fc = now[sid].get(h.ts, {}).get("result", 0.0)
@@ -125,7 +125,7 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
 
     out = {sid: result(run) for sid, run in runs.items()}
     good = [sid for sid, r in out.items() if r["status"] == OK]
-    total = (result({name: _summed([runs[sid][name] for sid in good]) for name in ("then", "now", "baseline")})
+    total = (result({name: summed([runs[sid][name] for sid in good]) for name in ("then", "now", "baseline")})
              if good else _not_enough(FEW_DAYS, max((r["days"] for r in out.values()), default=0), MIN_REPLAY_DAYS))
     return {"arrays": out, "total": total}
 
@@ -150,7 +150,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     tests: dict[str, Series] = {}
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
-        tests[sid] = {t: p for t, p in _usable(arr, history, soc_full, exclusions).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions).items()
                       if t in sat and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]
@@ -181,7 +181,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
 
     out.update({sid: result(run) for sid, run in runs.items()})
     return {"arrays": out,
-            "total": result({name: _summed([run[name] for run in runs.values()])
+            "total": result({name: summed([run[name] for run in runs.values()])
                              for name in ("holdout", "in_sample", "baseline")})}
 
 
@@ -196,7 +196,7 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
     same_days against fine is the effect of the resolution, today against merged the decision to switch.
     Not run by the integration: it learns from about twelve times the samples.
     """
-    day_of = _day_of(tz)
+    day_of = local_day(tz)
     sat = history.satellite_ghi
     if not sat:
         reason = _not_enough(NO_SATELLITE)
@@ -208,7 +208,7 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
         covered[sid] = {day_of(t) for t in ln.scaled_sum(fine.power, arr.sensors, {})}
-        tests[sid] = {t: p for t, p in _usable(arr, history, soc_full, exclusions).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions).items()
                       if t in sat and day_of(t) in covered[sid] and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]
@@ -242,10 +242,10 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
         return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}
 
     out.update({sid: result(run) for sid, run in runs.items()})
-    return {"arrays": out, "total": result({name: _summed([run[name] for run in runs.values()]) for name in names})}
+    return {"arrays": out, "total": result({name: summed([run[name] for run in runs.values()]) for name in names})}
 
 
-def _day_of(tz: tzinfo) -> Callable[[float], date]:
+def local_day(tz: tzinfo) -> Callable[[float], date]:
     """The local day of a time; cached per 15 minutes, the finest step of a time zone's offset."""
     cache: dict[int, date] = {}
 
@@ -260,7 +260,7 @@ def _day_of(tz: tzinfo) -> Callable[[float], date]:
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
         archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
     """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing."""
-    day_of = _day_of(tz)
+    day_of = local_day(tz)
     return {"version": VERSION, "computed_at": now,
             "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of),
             "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of)}

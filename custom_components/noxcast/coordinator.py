@@ -31,6 +31,7 @@ from .const import (
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_BATTERY_ARRAY, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
+    COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
 from . import backtest as pv_backtest
@@ -41,6 +42,7 @@ from . import explain
 from . import flows as fl
 from . import battery as bt
 from . import forecasting as fc
+from . import hindcast as hc
 from . import learning as ln
 from . import load as lf
 from . import plan as pl
@@ -51,7 +53,7 @@ from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
 )
-from .sources import async_open_meteo, async_power_factors
+from .sources import SourceError, async_open_meteo, async_power_factors, async_previous_runs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -134,6 +136,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.load_backtest: dict | None = None
         self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
         self._backtest_task: asyncio.Task | None = None
+        self.model_compare: dict | None = None       # last successful weather model comparison (hindcast.run)
+        # the running or last failed comparison: {"running", "done", "total", "error", "limited"}
+        self.compare_state: dict = {"running": False, "done": 0, "total": 0, "error": None, "limited": False}
+        self._compare_task: asyncio.Task | None = None
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
@@ -168,6 +174,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
             self.band = bd.valid(stored.get("band"))
             self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
+            self.model_compare = hc.valid(stored.get("model_compare"))
             self.battery_log = dict(stored.get("battery_log") or {})
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
@@ -316,6 +323,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return {
             "band": self.band,
             "pv_backtest": self.pv_backtest,
+            "model_compare": self.model_compare,
             "battery_log": self.battery_log,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
@@ -411,9 +419,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._archive_store.async_delay_save(self._archive_data, 5)
         return history, now.timestamp(), soc_full, exclusions
 
-    async def _async_pv_history(self, now: datetime) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
-        """The arrays' history as learning sees it, the full state of charge and the exclusions."""
-        start = now - timedelta(days=365 * HISTORY_YEARS)
+    async def _async_pv_history(self, now: datetime, start: datetime | None = None, archives: bool = True
+                                ) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
+        """The arrays' history as learning sees it, the full state of charge and the exclusions.
+
+        start: from when (default: the whole learning history); archives: also fetch the temperature and
+        satellite archives, which only learning needs.
+        """
+        start = start or now - timedelta(days=365 * HISTORY_YEARS)
         options = self.config_entry.data
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         factors = await async_power_factors(self.hass, sensor_ids)
@@ -423,7 +436,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
         power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
         soc = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
-        air_temp, satellite_ghi = await self._async_archives(start, now)
+        air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest(soc), air_temp, satellite_ghi)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
@@ -629,7 +642,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
                           alt: dict[str, tuple[dict, dict]] | None = None,
                           alt_weather: dict[str, list[WeatherHour]] | None = None,
-                          steps: dict[str, dict[float, dict]] | None = None) -> None:
+                          steps: dict[str, dict[float, dict]] | None = None, models: list[str] | None = None) -> None:
         """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
         tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
         a = tomorrow.timestamp()
@@ -643,7 +656,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
                                result.arrays, alt, wx(weather),
                                {name: wx(series) for name, series in (alt_weather or {}).items()},
-                               {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()}):
+                               {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()},
+                               models):
             fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self._archive_store.async_delay_save(self._archive_data, 300)
 
@@ -659,6 +673,84 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.exclusions = keep
         self._store.async_delay_save(self._store_data, 5)
         return True
+
+    # ------------------------------------------------------------------ weather model comparison
+
+    @property
+    def compare_candidates(self) -> list[str]:
+        """Every offered model and the configured ones (also a model typed in by hand)."""
+        return list(dict.fromkeys([*WEATHER_MODEL_OPTIONS, *self.weather_models]))
+
+    def compare_blocked(self) -> tuple[str | None, float | None]:
+        """Why a comparison cannot start now, and until when (UNIX seconds) for the waiting time."""
+        if self.compare_state["running"]:
+            return "running", None
+        if not self.learned:
+            return "not_learned", None
+        # only a usable result starts the waiting time: "not enough data" may be repeated once there is more
+        done = (self.model_compare or {}).get("computed_at") if (self.model_compare or {}).get("status") == hc.OK else None
+        if done is not None and dt_util.utcnow().timestamp() < done + COMPARE_COOLDOWN.total_seconds():
+            return "cooldown", done + COMPARE_COOLDOWN.total_seconds()
+        return None, None
+
+    def async_start_compare(self) -> str | None:
+        """Start a comparison in the background; returns why not, if it cannot start."""
+        reason, _ = self.compare_blocked()
+        if reason:
+            return reason
+        candidates = self.compare_candidates
+        self.compare_state = {"running": True, "done": 0, "total": len(candidates), "error": None, "limited": False}
+        self._compare_task = self.config_entry.async_create_background_task(
+            self.hass, self._async_compare(candidates), "noxcast weather model comparison")
+        return None
+
+    async def _async_compare(self, candidates: list[str]) -> None:
+        """Fetch each model's day-ahead forecasts of the past year, one request per model, then score them.
+
+        Only a successful run replaces the stored result and starts the waiting time. A refusal for the
+        request limit stops at once: the forecast needs the same quota. A model Open-Meteo refuses for
+        itself (an answer 4xx, e.g. unknown here) is skipped with the reason; any other failure stops the run.
+        """
+        state = self.compare_state
+        end = dt_util.now().date() - timedelta(days=1)
+        start = end - timedelta(days=COMPARE_DAYS - 1)
+        weather: dict[str, list[WeatherHour]] = {}
+        refused: dict[str, str] = {}
+        try:
+            for i, model in enumerate(candidates):
+                if i:
+                    await asyncio.sleep(COMPARE_PAUSE)
+                try:
+                    weather[model] = await async_previous_runs(self.hass, self.site.latitude, self.site.longitude,
+                                                               model, start, end)
+                except SourceError as err:
+                    if err.limited or err.status is None or err.status >= 500 or err.status == 408:
+                        raise
+                    weather[model], refused[model] = [], str(err)
+                state["done"] = i + 1
+            if len(refused) == len(candidates):
+                raise SourceError(next(iter(refused.values())))
+            now = dt_util.utcnow()
+            history, soc_full, exclusions = await self._async_pv_history(
+                now, dt_util.start_of_local_day(start), archives=False)
+            result = await self.hass.async_add_executor_job(
+                hc.run, self.site, self.arrays, copy.deepcopy(dict(self.learned)), history, weather,
+                self.weather_models, soc_full, exclusions, dt_util.get_default_time_zone(), now.timestamp())
+        except SourceError as err:
+            state.update(running=False, error=str(err), limited=err.limited)
+            _LOGGER.warning("Weather model comparison stopped: %s", err)
+            return
+        except Exception as err:  # noqa: BLE001 – the forecast does not depend on it
+            state.update(running=False, error=str(err) or type(err).__name__)
+            _LOGGER.exception("Weather model comparison failed")
+            return
+        for item in result["skipped"]:
+            if item["model"] in refused:
+                item["error"] = refused[item["model"]]
+        self.model_compare = result
+        state.update(running=False, error=None)
+        self._store.async_delay_save(self._store_data, 5)
+        _LOGGER.info("Weather model comparison: %s, recommendation %s", result["status"], result.get("recommendation"))
 
     # ------------------------------------------------------------------ forecast
 
@@ -747,7 +839,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         steps = await self.hass.async_add_executor_job(
             explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, learned,
             [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]])
-        self._archive_forecast(weather, result, alt, models, steps)
+        self._archive_forecast(weather, result, alt, models, steps, list(per_model) or self.weather_models)
         self._store.async_delay_save(self._store_data, 60)
         return result
 

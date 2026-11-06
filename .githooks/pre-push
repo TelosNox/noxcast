@@ -1,0 +1,30 @@
+#!/bin/sh
+# Runs the whole test suite before every push; a failing test stops the push.
+# Active once per clone: git config core.hooksPath .githooks (see CLAUDE.md).
+# The tests use the .venv of the main checkout, also when pushing from a worktree.
+
+# a push that only deletes remote refs needs no tests
+pushes=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case $local_sha in *[!0]*) pushes=1 ;; esac
+done
+[ "$pushes" = 0 ] && exit 0
+
+root=$(git rev-parse --show-toplevel) || exit 1
+main=$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")
+py=""
+for candidate in "$main/.venv/Scripts/python.exe" "$main/.venv/bin/python"; do
+    [ -x "$candidate" ] && py=$candidate && break
+done
+if [ -z "$py" ]; then
+    echo "pre-push: no test environment in $main/.venv (see CLAUDE.md: uv venv -p 3.14 .venv)" >&2
+    exit 1
+fi
+# the tests run on the files in the worktree: they must be what is pushed
+if [ -n "$(git -C "$root" status --porcelain --untracked-files=no)" ]; then
+    echo "pre-push: uncommitted changes; commit them first, so the tests check what is pushed" >&2
+    exit 1
+fi
+
+echo "pre-push: running the tests ..." >&2
+cd "$root" && "$py" -m pytest -q -p no:cacheprovider -p tests.windows

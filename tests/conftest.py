@@ -14,3 +14,8 @@ if "noxcast" not in sys.modules:
 
 def load(name: str):
     return importlib.import_module(f"noxcast.{name}")
+
+
+def pytest_addoption(parser):
+    parser.addoption("--update-snapshots", action="store_true",
+                     help="write tests/snapshots/*.json from this run instead of comparing (see tests/snapshot.py)")

@@ -1,9 +1,7 @@
 """Home Assistant level tests: config flow, array subentry, learning and sensors."""
 from __future__ import annotations
 
-import dataclasses
 import functools
-import hashlib
 import json
 from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
@@ -17,6 +15,8 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.noxcast import diagnostics, model, plan, solar
 from custom_components.noxcast.const import DOMAIN, WS_SCHEMA_VERSION
+
+import snapshot
 
 pytestmark = pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
 
@@ -429,72 +429,24 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
         assert not set(stored) & {"limits", "power", "inverter"}
 
 
-def _canon(o):
-    """Everything the coordinator computed as plain JSON, floats exact (repr), for a fingerprint."""
-    if dataclasses.is_dataclass(o) and not isinstance(o, type):
-        return {"__": type(o).__name__, **{f.name: _canon(getattr(o, f.name)) for f in dataclasses.fields(o)}}
-    if isinstance(o, dict):
-        return {k if isinstance(k, str) else repr(k): _canon(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)):
-        return [_canon(v) for v in o]
-    if isinstance(o, (set, frozenset)):
-        return sorted(_canon(v) for v in o)
-    if isinstance(o, float):
-        return repr(o)
-    if isinstance(o, (datetime, date)):
-        return o.isoformat()
-    if o is None or isinstance(o, (str, int, bool)):
-        return o
-    if hasattr(o, "__dict__"):
-        return {"__": type(o).__name__, **{k: _canon(v) for k, v in vars(o).items()}}
-    return repr(o)
-
-
-def _fingerprint(c) -> str:
-    # everything but the backtest's own result, which the forecast never reads and has its own pin (WS_PINNED)
-    state = _canon({
+def _state(c) -> dict:
+    # everything the coordinator computed but the backtest's own result, which the forecast never reads and is
+    # part of the websocket answers
+    return {
         "learned": c.learned, "band": c.band, "load_profile": c.load_profile, "floor_profile": c.floor_profile,
         "consumer_profiles": c.consumer_profiles, "consumer_models": c.consumer_models, "run_profiles": c.run_profiles,
         "load_events": c.load_events, "load_backtest": c.load_backtest, "battery_log": c.battery_log,
         "store": {k: v for k, v in c._store_data().items() if k not in ("pv_backtest", "last_learning_seconds", "learned_version")},
         "archive": c._archive_data(), "fine": c.fine, "data": c.data,
         "runs": {sid: c.run_profile(sid) for sid, cc in c.consumers.items() if cc.timing == "flexible"},
-    })
-    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()[:16]
+    }
 
 
-# Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
-# a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['035fa9f90f4970b5', '530f1b5606093221', '0820ccbf5b3a4820', '0284ce5c0fc87ce0', 'd32fb202ab4fcd41',
-          '8afbea154687c972']
-# Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
-# next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
-WS_PINNED = {
-    "midday": {"learned": "ca1f71965b763948", "today": "cb902231c9f963b6", "accuracy": "8b2d7e4831361ad9",
-               "load": "6fac55486d9fb796", "diagnostics": "6e662fccbad48a2c",
-               "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "43bb94f6553f8228",
-                                        "learning": "2f874ea2aff4248b", "arrays": "3d75400a515756bc",
-                                        "exclusions": "cb2504d95155b647", "archive": "ea15254290e78e03",
-                                        "fine": "3c97057e8110e976", "sensors": "3f61ce471d286300"},
-               "battery": "4fc156acd4d0899c",
-               "card_config": "32a56d9aa2e61fcd", "backtest": "5aa69e4252b9d247", "day": "b9e4553161f78c3c"},
-    "morning": {"learned": "e094b442943ca32e", "today": "8f367dae366753bb", "accuracy": "448c0f4a91384d66",
-                "load": "3f4ffb9b77232566", "diagnostics": "706f00125957119c",
-                "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "7801445abb0321e7",
-                                         "learning": "e15b85939b125f67", "arrays": "23f53b0716470c53",
-                                         "exclusions": "cb2504d95155b647", "archive": "9f1b286055de683f",
-                                         "fine": "a33177516338839a", "sensors": "3f61ce471d286300"},
-                "battery": "0958f1f8b96003b9",
-                "card_config": "32a56d9aa2e61fcd", "backtest": "95fd8bf8989b39ef", "day": "0f0c8d046d6d58e7"},
-}
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 
 
-def _hash(value) -> str:
-    return hashlib.sha256(json.dumps(value).encode()).hexdigest()[:16]
-
-
-async def _ws_prints(client) -> dict:
+async def _ws_answers(hass: HomeAssistant, client) -> dict:
+    """Every websocket answer of the panel and the day card, as sent (key order included)."""
     out = {}
     for cmd in WS_COMMANDS:
         await client.send_json_auto_id({"type": f"{DOMAIN}/{cmd}"})
@@ -503,24 +455,29 @@ async def _ws_prints(client) -> dict:
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
         for entry in msg["result"].get("entries", []) if cmd == "diagnostics" else []:     # durations are not results
             del entry["learning"]["seconds"], entry["learning"]["backtest_seconds"]
-        out[cmd] = _hash(msg["result"])
-        if cmd == "diagnostics":
-            # per section as well: this fingerprint differed now and then on CI, and the section names the cause
-            out["diagnostics_sections"] = {k: _hash(v) for e in msg["result"]["entries"] for k, v in e.items()}
-    days = []
+        for key in ("latitude", "longitude"):     # the test location; as a number the privacy check would flag it
+            if key in msg["result"]:
+                assert msg["result"][key] == getattr(hass.config, key), key
+                msg["result"][key] = "test location"
+        out[cmd] = msg["result"]
+    days = {}                               # by date: the same day at midday and the next morning lines up
     for offset in range(-31, 3):
         await client.send_json_auto_id({"type": f"{DOMAIN}/day", "offset": offset})
         msg = await client.receive_json()
         assert msg["success"], (offset, msg)
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, offset
-        days.append(msg["result"])
-    out["day"] = _hash(days)
+        days[msg["result"]["date"]] = msg["result"]
+    assert len(days) == 34, list(days)                  # one answer per offset, no date twice
+    out["day"] = days
     return out
 
 
-async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer, hass_ws_client) -> None:
+async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storage, freezer, hass_ws_client,
+                                                request: pytest.FixtureRequest) -> None:
     """Learning (PV, band, load, consumers, events), hourly updates (intraday, battery, plan) and the nightly
-    run on synthetic data, compared bit for bit with pinned fingerprints."""
+    run on synthetic data, compared with tests/snapshots/pinned.json: the state after each step and every
+    websocket answer at midday and the next morning. A refactoring must leave the snapshot as it is; a deliberate
+    change updates it (pytest --update-snapshots), and the diff shows what changed."""
     import math
     import random
 
@@ -607,7 +564,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         alt["icon_seamless"].append(model.WeatherHour(t, g * c * 0.9, temp=tt - 1, **details))
         alt["ecmwf_ifs"].append(model.WeatherHour(t, g * min(1.0, c * 1.1), temp=tt + 1, **details))
 
-    # fixed ids: they are keys of everything learned and stored, so random ones would change the fingerprints
+    # fixed ids: they are keys of everything learned and stored, so random ones would change the snapshot
     subentries = [config_entries.ConfigSubentryData(data=data, subentry_type=kind_, title=data.get("name", kind_),
                                                     unique_id=None, subentry_id=sid) for sid, (kind_, data) in zip((
         "S", "EW", "washer", "dryer", "dishwasher", "heat_pump", "tv", "battery", "battery2"), (
@@ -650,7 +607,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                              ("sensor.dryer", "0", "W")):
         hass.states.async_set(eid, value, {"unit_of_measurement": unit})
 
-    prints, ws_prints = [], {}
+    states, answers = [], {}
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, alt)), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
@@ -662,30 +619,30 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         c = entry.runtime_data
-        prints.append(_fingerprint(c))
+        states.append(snapshot.plain(_state(c)))
         assert await c.async_learn()
         await c.async_refresh()
-        prints.append(_fingerprint(c))
+        states.append(snapshot.plain(_state(c)))
         for when in times[1:3]:
             freezer.move_to(when)
             await c.async_refresh()
-            prints.append(_fingerprint(c))
-        ws_prints["midday"] = await _ws_prints(client)
+            states.append(snapshot.plain(_state(c)))
+        answers["midday"] = await _ws_answers(hass, client)
         freezer.move_to(times[3])
         assert c.pv_backtest is None                # only the nightly run starts it, not a learning run
         # the scheduled nightly run itself: called directly, its timer still fired later, as a second learning run
-        # racing the websocket fingerprints below
+        # racing the websocket answers below
         assert (times[3].astimezone(tz).hour, times[3].astimezone(tz).minute) == LEARN_TIME
         async_fire_time_changed(hass, times[3])
         # timer jobs run as background tasks: the nightly run, its backtest and the 01:30 refresh
         await hass.async_block_till_done(wait_background_tasks=True)
         assert c._backtest_task is not None and c._backtest_task.done()
         await c.async_refresh()
-        prints.append(_fingerprint(c))
+        states.append(snapshot.plain(_state(c)))
         freezer.move_to(times[4])
         await c.async_refresh()
-        prints.append(_fingerprint(c))
-        ws_prints["morning"] = await _ws_prints(client)
+        states.append(snapshot.plain(_state(c)))
+        answers["morning"] = await _ws_answers(hass, client)
         await hass.async_block_till_done()
     data = c.data
     assert c.band and data.load and data.battery and data.plan
@@ -706,7 +663,9 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     assert c._store_data()["pv_backtest"] == c.pv_backtest
     assert c.last_learning_seconds is not None and c._store_data()["last_learning_seconds"] == c.last_learning_seconds
     assert c.load_events is not None and all(c.consumer_models.values())
-    assert (prints, ws_prints) == (PINNED, WS_PINNED), f"PINNED = {prints!r}  WS_PINNED = {ws_prints!r}"      # both at once: one CI run updates both
+    midday, morning = snapshot.steps([answers["midday"], answers["morning"]])
+    snapshot.check("pinned", {"states": snapshot.steps(states), "answers": {"midday": midday, "morning": morning}},
+                   request.config.getoption("--update-snapshots"))
 
 
 async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_client) -> None:

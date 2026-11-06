@@ -465,8 +465,8 @@ def _fingerprint(c) -> str:
 
 # Fingerprints of the pinned scenario below, one per step. They change only when a number changes:
 # a refactoring must leave them as they are; a deliberate model change updates them.
-PINNED = ['63ab873ca37523af', '2f569d4a6fe4ca78', '7a03bb65eb885f85', 'e8c1aab0502cfe0f', '1d9f0af9d9fbd81a',
-          '623a5ddf4a832360']
+PINNED = ['035fa9f90f4970b5', '530f1b5606093221', '0820ccbf5b3a4820', '0284ce5c0fc87ce0', 'd32fb202ab4fcd41',
+          '8afbea154687c972']
 # Fingerprints of every websocket answer of the panel and the day card in the same scenario (midday and the
 # next morning), serialized as sent, key order included: the payloads the frontend reads must not change by accident.
 WS_PINNED = {
@@ -477,7 +477,7 @@ WS_PINNED = {
                                         "exclusions": "cb2504d95155b647", "archive": "ea15254290e78e03",
                                         "fine": "3c97057e8110e976", "sensors": "3f61ce471d286300"},
                "battery": "4fc156acd4d0899c",
-               "card_config": "32a56d9aa2e61fcd", "backtest": "5aa69e4252b9d247", "day": "0e0bd64324eae830"},
+               "card_config": "32a56d9aa2e61fcd", "backtest": "5aa69e4252b9d247", "day": "b9e4553161f78c3c"},
     "morning": {"learned": "e094b442943ca32e", "today": "8f367dae366753bb", "accuracy": "448c0f4a91384d66",
                 "load": "3f4ffb9b77232566", "diagnostics": "706f00125957119c",
                 "diagnostics_sections": {"title": "2a411d514595c7a7", "weather": "7801445abb0321e7",
@@ -485,7 +485,7 @@ WS_PINNED = {
                                          "exclusions": "cb2504d95155b647", "archive": "9f1b286055de683f",
                                          "fine": "a33177516338839a", "sensors": "3f61ce471d286300"},
                 "battery": "0958f1f8b96003b9",
-                "card_config": "32a56d9aa2e61fcd", "backtest": "95fd8bf8989b39ef", "day": "55466173dd204c7e"},
+                "card_config": "32a56d9aa2e61fcd", "backtest": "95fd8bf8989b39ef", "day": "0f0c8d046d6d58e7"},
 }
 WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
 

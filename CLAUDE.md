@@ -44,9 +44,12 @@ optional parts of the same integration. See `docs/concept.md`.
 - Comments explain why, not what.
 - `ruff check .` must pass (CI job `lint`, rules pinned in `pyproject.toml`). Lines may exceed 120 characters where
   splitting hurts readability; the limit is not enforced.
-- Run the tests before every push: `.venv/Scripts/python -m pytest -p tests.windows` in the worktree, with the
-  `.venv` of the main checkout (once: `uv venv -p 3.14 .venv`, `uv pip install -r requirements_test.txt`).
-  `tests/windows.py` lets the Home Assistant tests run on Windows. CI (Linux) stays the reference.
+- The tests run before every push: the git hook `.githooks/pre-push` runs the whole suite and stops the push if a
+  test fails or changes are uncommitted. Set up once per clone: `git config core.hooksPath .githooks`, and in the
+  main checkout `uv venv -p 3.14 .venv` and `uv pip install -r requirements_test.txt` (worktrees use that `.venv`).
+  By hand: `.venv/Scripts/python -m pytest -p tests.windows`. `tests/windows.py` lets the Home Assistant tests
+  run on Windows. A push takes about two minutes longer; never skip the hook (`--no-verify`). CI (Linux) stays
+  the reference.
 - `tests/snapshots/pinned.json` holds the results of the pinned scenario (`test_learning_and_forecast_are_pinned`),
   compared with a tolerance. A deliberate change to results, stored data or payloads updates it with
   `--update-snapshots` in the same PR; its diff shows what changed and is checked like code.

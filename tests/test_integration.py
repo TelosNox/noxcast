@@ -467,6 +467,7 @@ async def _ws_answers(hass: HomeAssistant, client) -> dict:
         assert msg["success"], (offset, msg)
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, offset
         days[msg["result"]["date"]] = msg["result"]
+    assert len(days) == 34, list(days)                  # one answer per offset, no date twice
     out["day"] = days
     return out
 

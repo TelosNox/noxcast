@@ -5,7 +5,9 @@ A snapshot is a JSON file in tests/snapshots/. A test hands its result to check(
 file and committing it: the diff of the pull request then shows which numbers change and by how much.
 
 Floats are kept to SIGNIFICANT digits and compared with a relative tolerance, since bit-exact floats differ
-between platforms (Windows and Linux libm) and would make a snapshot pass on one and fail on the other.
+between platforms (Windows and Linux libm) and would make a snapshot pass on one and fail on the other. Whole
+numbers and values from EXACT on (timestamps) stay exact: no platform noise there, and an hour off must show.
+Types count: 1, 1.0 and true differ.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ DIR = pathlib.Path(__file__).parent / "snapshots"
 SIGNIFICANT = 6
 REL_TOL = 1e-4          # far above platform noise, far below any change a model or payload change makes
 ABS_TOL = 1e-6
+EXACT = 1e8             # from here on (UTC seconds) values are neither rounded nor compared with a tolerance
 SHOWN = 40              # differences listed in a failure
 INLINE = 120            # a list or dict up to this many characters stays on one line
 SAME = "= previous"     # in a sequence of states: this part did not change since the previous one
@@ -35,7 +38,7 @@ def plain(o):
     if isinstance(o, (set, frozenset)):
         return sorted(plain(v) for v in o)
     if isinstance(o, float):
-        return o if not math.isfinite(o) or o == 0 else float(f"{o:.{SIGNIFICANT}g}")
+        return o if not math.isfinite(o) or o.is_integer() or abs(o) >= EXACT else float(f"{o:.{SIGNIFICANT}g}")
     if isinstance(o, (datetime, date)):
         return o.isoformat()
     if o is None or isinstance(o, (str, int, bool)):
@@ -67,9 +70,14 @@ def differences(old, new, path: str = "") -> list[str]:
         if len(old) != len(new):
             return [f"{path}: length {len(old)} -> {len(new)}"]
         return [d for i, (a, b) in enumerate(zip(old, new)) for d in differences(a, b, f"{path}[{i}]")]
-    if isinstance(old, (int, float)) and isinstance(new, (int, float)) and not isinstance(old, bool) \
-            and not isinstance(new, bool):
-        return [] if math.isclose(old, new, rel_tol=REL_TOL, abs_tol=ABS_TOL) else [f"{path}: {old} -> {new}"]
+    if type(old) is not type(new):
+        return [f"{path}: {_short(old)} -> {_short(new)} (type)"]
+    if isinstance(old, float):
+        if math.isnan(old) and math.isnan(new):
+            return []
+        exact = max(abs(old), abs(new)) >= EXACT
+        same = old == new if exact else math.isclose(old, new, rel_tol=REL_TOL, abs_tol=ABS_TOL)
+        return [] if same else [f"{path}: {old} -> {new}"]
     return [] if old == new else [f"{path}: {_short(old)} -> {_short(new)}"]
 
 
@@ -79,16 +87,24 @@ def steps(states: list, depth: int = 6) -> list:
     return [states[0], *(_same(prev, cur, depth) for prev, cur in zip(states, states[1:]))]
 
 
+def _identical(a, b) -> bool:
+    # key order and types count (1, 1.0 and true differ), as in differences()
+    return json.dumps(a) == json.dumps(b)
+
+
 def _same(prev, cur, depth: int):
-    if prev == cur:
+    if _identical(prev, cur):
         return SAME
     if depth and isinstance(prev, dict) and isinstance(cur, dict):
         return {k: _same(prev[k], v, depth - 1) if k in prev else v for k, v in cur.items()}
     if depth and isinstance(prev, list) and isinstance(cur, list) and all(isinstance(x, dict) for x in prev + cur):
-        # items line up by their date where they have one (a list of days grows by a day), else by position
-        if all("date" in x for x in prev + cur):
+        # a list of days grows by a day: items line up by their date (kept in the marker, so order and duplicates
+        # still show) if every date is there once; else by position
+        dates = [[x.get("date") for x in prev], [x.get("date") for x in cur]]
+        if all(None not in d and len(set(d)) == len(d) for d in dates):
             before = {x["date"]: x for x in prev}
-            return [_same(before[x["date"]], x, depth - 1) if x["date"] in before else x for x in cur]
+            return [x if x["date"] not in before else f"{SAME} {x['date']}" if _identical(before[x["date"]], x)
+                    else _same(before[x["date"]], x, depth - 1) for x in cur]
         if len(prev) == len(cur):
             return [_same(a, b, depth - 1) for a, b in zip(prev, cur)]
     return cur
@@ -114,10 +130,12 @@ def _short(v) -> str:
 
 
 def check(name: str, value, update: bool) -> None:
-    """Compare a result with tests/snapshots/<name>.json; write the file if it is missing or update is set."""
+    """Compare a result with tests/snapshots/<name>.json, or write the file if update is set."""
     path = DIR / f"{name}.json"
     new = json.loads(json.dumps(plain(value)))
-    if update or not path.exists():
+    if not update and not path.exists():
+        raise AssertionError(f"{path.name} is missing: run pytest --update-snapshots and commit the file")
+    if update:
         DIR.mkdir(exist_ok=True)
         path.write_text(dumps(new) + "\n", encoding="utf-8", newline="\n")
         return

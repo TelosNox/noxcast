@@ -64,12 +64,13 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 
 ### Changelog
 - `CHANGELOG.md` follows Keep a Changelog: `## Unreleased` on top, then `## [X.Y.Z] - date` per version, grouped
-  into Added, Changed, Fixed and Removed.
+  into Breaking, Added, Changed, Fixed and Removed.
 - Every PR that users can notice adds its entry to `Unreleased` in the same PR. Internal refactoring and tests need
   no entry. The `changelog` workflow fails a PR that changes `custom_components/` without changing `Unreleased`,
   unless a line of its description starts with "No changelog entry:" and the reason.
 - Entries are in English and written for users: what changes for them, not how the code changed.
-- A breaking change is marked **Breaking** and says what the user has to do.
+- A breaking change goes into a `### Breaking` group at the top of its version section, above Added, so it is not
+  lost among the other entries. It says what the user has to do.
 
 ### Compatibility
 - These count as breaking unless a migration keeps them working: entity IDs, attribute schemas

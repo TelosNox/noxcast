@@ -201,7 +201,8 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 3              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity (migration in __init__)
+    MINOR_VERSION = 4              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+                                   # 1.4: discontinued ICON models replaced (migration in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)

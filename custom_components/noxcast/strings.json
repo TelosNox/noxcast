@@ -603,7 +603,7 @@
           "api_key": "API key"
         },
         "data_description": {
-          "weather_models": "Open-Meteo models, averaged hour by hour. Default ICON + ECMWF IFS: in a day-ahead test over ten months their mean beat every single model. With several models each one is also archived on its own, so the accuracy panel can compare them.",
+          "weather_models": "Open-Meteo models, averaged hour by hour. Default ICON + ECMWF IFS: in a day-ahead test over ten months their mean beat every single model. With several models each one is also archived on its own, so the accuracy panel can compare them. Which models suit your installation shows \"Compare weather models\" in the accuracy panel.",
           "archive_temperature": "Needed to learn the temperature loss. Without it, efficiency absorbs the average temperature.",
           "satellite": "Uses satellite irradiance to select clear hours for learning. Optional; quality varies by region.",
           "api_key": "Only for commercial or self-hosted access."

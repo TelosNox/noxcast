@@ -35,7 +35,7 @@ deinem Verlauf, was auf deinem Dach anders ist.
 | **Genauigkeit** | Jede Vortagsprognose wird archiviert und mit dem verglichen, was passiert ist. Mit dem Satellitenfilter (eine Option) wird der Fehler jedes Tages in Wetteranteil und Modellanteil aufgeteilt. |
 | **Datenqualität** | Stunden mit vollem Akku, Nulleinspeisung, Wechselrichtergrenze oder Ausfällen bleiben beim Lernen außen vor. |
 | **Montage** | Mehrere Ausrichtungen an einem Eingang (Ost + West, senkrechte Balkonmodule) als eine PV-Gruppe. |
-| **Wetter** | Open-Meteo, ICON und ECMWF IFS stundenweise gemittelt. Kein Konto, kein API-Schlüssel, kein Abruflimit. |
+| **Wetter** | Open-Meteo, ICON und ECMWF IFS stundenweise gemittelt. Kein Konto, kein API-Schlüssel, kostenlos für private Nutzung. |
 | **Datenschutz** | Läuft in Home Assistant. Nur deine Koordinaten gehen an Open-Meteo. |
 | **Selbstprüfung** | Meldet eine Konfiguration, die nicht zu den Messwerten passen kann, etwa einen Wirkungsgrad über 100 % oder einen falschen Azimut. |
 
@@ -62,7 +62,8 @@ Jede Prognosestunde lässt sich in ihre Schritte zerlegen. Hier steht die Morgen
 
 Prognose gegen Ist für die letzten 14, 30 oder 90 Tage, nach Wetterklasse und Wettermodell. Mit dem Satellitenfilter
 wird der Fehler jedes Tages aufgeteilt: Der Wetteranteil ist das, was die Wettervorhersage falsch hatte, der
-Modellanteil das, was Noxcast mit dem echten Wetter falsch hatte.
+Modellanteil das, was Noxcast mit dem echten Wetter falsch hatte. Ein Vergleich der Wettermodelle zeigt auf Knopfdruck,
+welches Modell oder Modellpaar im letzten Jahr am besten zu deiner Anlage gepasst hätte.
 
 ![Prognosegüte: Tagesfehler, Prognose und Ist je Tag, aufgeteilt in Wetteranteil und Modellanteil](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/accuracy.png)
 
@@ -239,7 +240,7 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 |---|---|
 | Gelerntes | Ein Lernstand (letzter und nächster Lernlauf, wie weit jede PV-Gruppe ist, für Administratoren ein Knopf zum sofortigen Neulernen); je PV-Gruppe die gelernten Karten für Schatten, Reflexion und Richtung über Sonnenazimut × Höhe mit den Sonnenbahnen des Jahres, ein Datumsregler, Werte je Feld, ein Raster Monat × Stunde, Kennzahlen (Wirkungsgrad, Himmelssicht, Temperaturkoeffizient, Abdeckung) und eine Plausibilitätsprüfung von Neigung und Azimut |
 | Tag | Ein Tag (bis 120 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; je Stunde ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
-| Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat |
+| Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
 | Akku & Überschuss | Simulation bis zum Ladebeginn morgen, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
 | Diagnose | Wetter, letzter Lernlauf, Archiv; jeder Sensor, den Noxcast liest, mit Zustand, Statistik und Abdeckung; fehlende Daten und Fehler |
@@ -399,6 +400,15 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
   teilweise bewölkt, sonst bewölkt; Wind ≥ 10,8 m/s windig; Gewitter und Nebel aus dem Wettercode. Ein Tag wird nach
   seinen hellen Stunden beurteilt.
 - Ist Open-Meteo nicht erreichbar, wird die letzte Antwort bis zu 24 h weiter genutzt, auch nach einem Neustart.
+- **Wettermodelle vergleichen** (Prognosegüte, von Administratoren gestartet): Für jedes angebotene Modell kommt die
+  Prognose, die es 24 Stunden vor jeder Stunde des letzten Jahres abgegeben hat, aus dem Archiv früherer Modellläufe
+  von Open-Meteo, eine Abfrage je Modell mit Pausen dazwischen. Das heute gelernte Modell rechnet mit jedem Modell und
+  mit dem Stundenmittel jedes Paars, bewertet auf denselben Stunden, die auch das Lernen nutzt. Ein Wechsel wird nur
+  empfohlen, wenn die auf der einen Hälfte der Tage beste Kombination deine Auswahl auch auf der anderen Hälfte
+  schlägt, in beide Richtungen, in 95 % der Bootstrap-Stichproben. Die Modelle werden nicht automatisch geändert. Ein
+  Lauf kostet etwa 300 der rund 10.000 Aufrufe, die die kostenlose Nutzung von Open-Meteo je Internetanschluss und Tag
+  erlaubt; Prognose und nächtliches Lernen brauchen etwa 100 bis 200 am Tag. Nach einem erfolgreichen Lauf wartet der nächste 7 Tage; ein Lauf, den
+  ein Fehler oder das Abfragelimit von Open-Meteo abgebrochen hat, kann sofort wiederholt werden.
 
 ### Archiv und Genauigkeit
 

@@ -416,7 +416,9 @@ orientation changes the geometry key and starts relearning.
   a change in the weather shows within half an hour instead of after the next full hour.
 - With several weather models, each one is also computed on its own and archived next to their
   mean (no extra request: Open-Meteo returns all models in one answer), so each model can be
-  compared with the mean on the same days.
+  compared with the mean on the same days. Each archived day names the models of its forecast
+  (`models`), so the accuracy view can say which mean it was and when the choice changed.
+- Weather model comparison (`hindcast.py`), see below: which models suit this installation.
 - Energy dashboard solar forecast.
 - Diagnostics: shading-map coverage, last learning run, excluded hours with reason,
   forecast error of the last 30 days.
@@ -632,6 +634,36 @@ only, so a period counts as steady by its two neighbours; the satellite's hour k
 switches on until it shows a gain. The sun returns to the archive's first positions at the end of February 2027;
 before that the hours tested are mostly positions only half of the data has seen. The download of the
 diagnostics shows how far the archive reaches (`fine_archive`).
+
+### Weather model comparison
+
+The archive holds only the models that were configured, so it cannot say whether another model would
+have served better, and trying models out takes weeks per choice under changing weather. Open-Meteo's
+previous-runs archive keeps what each model forecast earlier for every hour: `_previous_day1` is the
+forecast made 24 hours before (most models from January 2024). `hindcast.py` runs today's learned model
+on a year of those forecasts for every offered model, and on the hourly mean of every pair
+(`model.mean_weather`, the same averaging as the live forecast, not a mean of the PV results), and scores
+them against the measured output on the same hours: those learning uses with light, in which every
+compared model has a forecast. A model missing more than 10 % of them (regional models outside their
+area, a short archive) is listed as skipped instead of shrinking the comparison.
+
+- **Lead time:** the issued forecast for a day is made the evening before, so its hours lie up to a day ahead;
+  `previous_day1` has 24. The errors are therefore somewhat higher than in the archive; as all models have the
+  same lead, their order should hardly change (high-resolution models may gain at shorter lead).
+- **Recommendation:** with dozens of combinations one is always best on the days it is picked on. For each
+  half of the days (even, odd) the best combination is picked on the other half and compared with the
+  current choice on the held-out half; a change is recommended only when it wins there in at least 95 % of
+  2000 bootstrap resamples of the days, in both directions. On synthetic models that differ by chance this
+  keeps the current choice. Nothing is changed automatically; the panel names where the models are set.
+- **Requests:** started only by an administrator in the panel, never on a schedule. One request per model
+  (about 26 Open-Meteo call units for a year with four variables), 5 s apart, about 300 units for all
+  offered models, against 10,000 a day for free use and roughly 100 to 200 a day for the forecast (48 requests)
+  and the nightly learning (the temperature archive over two years alone is about 50 units). A refusal for the
+  request limit (HTTP 429 or a reason naming the limit) stops the run at once; a model Open-Meteo refuses
+  for itself (4xx) is skipped with the reason. Only a usable result is stored (`model_compare` in the main
+  store) and starts a waiting time of 7 days; a failed run can be repeated at once.
+- **Cost:** the sun path of each hour is computed once for all combinations (`model.sun_paths`); a year
+  with 11 models (66 combinations) and two arrays takes about half a minute on a desktop CPU.
 
 ## Load forecast and surplus (planned)
 

@@ -35,7 +35,7 @@ roof.
 | **Accuracy** | Every day-ahead forecast is archived and compared with what happened. With the satellite filter (an option), each day's error is split into weather part and model part. |
 | **Data quality** | Hours with a full battery, zero export, the inverter limit or outages are left out of learning. |
 | **Mounting** | Several orientations on one input (east + west, vertical balcony modules) as one array. |
-| **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, no call limit. |
+| **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, free for private use. |
 | **Privacy** | Runs in Home Assistant. Only your coordinates go to Open-Meteo. |
 | **Self-check** | Flags a configuration that cannot fit the measurements, such as an efficiency above 100 % or a wrong azimuth. |
 
@@ -62,7 +62,8 @@ Every forecast hour breaks down into its steps. Here the morning sun is behind t
 
 Forecast against actual for the last 14, 30 or 90 days, by weather class and weather model. With the satellite
 filter, each day's error is split: the weather part is what the weather forecast got wrong, the model part is
-what Noxcast got wrong with the real weather.
+what Noxcast got wrong with the real weather. A comparison of the weather models shows, on request, which model or
+pair of models would have suited your installation best over the past year.
 
 ![Forecast accuracy: daily error, forecast and actual per day, split into weather part and model part](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/accuracy.png)
 
@@ -238,7 +239,7 @@ Appears in the sidebar after setup; nothing to configure. Tabs:
 |---|---|
 | Learned | A learning status (last and next run, how far each array has come, a button to learn again now for administrators); per array the learned shade, reflection and direction maps over sun azimuth × elevation with the sun paths of the year, a date slider, values per cell, a month × hour grid, key figures (efficiency, sky view, temperature coefficient, coverage) and a plausibility check of tilt and azimuth |
 | Day | One day (up to 120 days back, 2 ahead): the arrays stacked, forecast vs expectation vs actual, P10–P90, hourly weather, shade and reflection periods; per hour a waterfall from clear sky through clouds, shade, reflection, heat to the forecast; how the day's expectation developed hour by hour; where the energy went (PV, battery, grid, house) |
-| Forecast accuracy | Day-ahead forecasts against actual over 14 / 30 / 90 days: error, bias, calendar, by weather class, each weather model against the mean; with the satellite filter the split into weather part and model part; a nightly backtest: today's model on past days, and on days it did not learn from |
+| Forecast accuracy | Day-ahead forecasts against actual over 14 / 30 / 90 days: error, bias, calendar, by weather class, each weather model against the mean; with the satellite filter the split into weather part and model part; a nightly backtest: today's model on past days, and on days it did not learn from; on request a comparison of every weather model and pair over the past year, with a recommendation |
 | Load | Rest of today and tomorrow by part (base load, each consumer), learned profiles, backtest, suggested recurring devices |
 | Battery & surplus | Simulation until tomorrow's charge start, what-if with more capacity or an extra consumer, the morning prediction against what happened, last 30 days |
 | Diagnostics | Weather, last learning run, archive; every sensor Noxcast reads with state, statistics and coverage; missing data and errors |
@@ -399,6 +400,14 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
   < 20 % sunny / clear night, < 70 % partly cloudy, else cloudy; wind ≥ 10.8 m/s windy;
   thunderstorm and fog from the weather code. A day is judged on its daylight hours.
 - If Open-Meteo cannot be reached, the last answer is used for up to 24 h, also after a restart.
+- **Comparing weather models** (accuracy view, started by an administrator): each offered model's forecast made
+  24 hours ahead for every hour of the past year comes from Open-Meteo's archive of earlier model runs, one request
+  per model with pauses in between. Today's learned model runs on each model and on the hourly mean of every pair,
+  scored on the same hours learning uses. A change is recommended only when the combination best on one half of
+  the days also beats your choice on the other half, both ways, in 95 % of bootstrap resamples. The models are not
+  changed automatically. A run costs about 300 of the roughly 10,000 daily calls Open-Meteo's free use allows per
+  internet connection; the forecast and the nightly learning need about 100 to 200 a day. After a successful run the next one waits 7 days; a run
+  stopped by an error or Open-Meteo's request limit can be repeated at once.
 
 ### Archive and accuracy
 

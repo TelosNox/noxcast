@@ -2,7 +2,7 @@
 
 The condition follows from the same numbers the PV forecast uses (cloud cover, precipitation,
 temperature, wind), so the weather shown and the expected yield cannot disagree. Thunderstorms and
-fog cannot be averaged; they come from the weather code (see sources._mean).
+fog cannot be averaged; they come from the weather code (see model.mean_weather).
 """
 from __future__ import annotations
 

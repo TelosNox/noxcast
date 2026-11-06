@@ -197,7 +197,7 @@ def accuracy_days(archive: dict, site: Site) -> list[dict]:
                 "alt": {name: s.forecast for name, s in h.alt.items()},
                 "curtailed": h.curtailed, "sat_ghi": h.sat_ghi, "measured": h.measured,
             })
-        days.append({"date": day.date, "issued": day.issued, "hours": hours})
+        days.append({"date": day.date, "issued": day.issued, "models": day.models, "hours": hours})
     return days
 
 
@@ -216,6 +216,16 @@ def backtest_entry(arrays: dict, result: dict | None) -> dict:
         return {"total": p["total"], "arrays": {sid: r for sid, r in p["arrays"].items() if sid in arrays}} if p else None
     return {"arrays": array_names(arrays), "computed_at": (result or {}).get("computed_at"),
             "replay": part("replay"), "holdout": part("holdout")}
+
+
+# ---------------------------------------------------------------- noxcast/weather_models
+
+def compare_entry(result: dict | None, state: dict, blocked: str | None, until: float | None, current: list[str],
+                  candidates: list[str]) -> dict:
+    """The weather model comparison for the accuracy view: result (hindcast.run) or None, the state of a running
+    or failed run, why none may start now (blocked: running, not_learned, cooldown until a time) and the models."""
+    return {"result": result, "state": dict(state), "blocked": blocked, "until": until, "current": list(current),
+            "candidates": list(candidates)}
 
 
 def load_entry(house_load: str, profile, consumers: dict, consumer_profiles: dict, consumer_models: dict, forecast,

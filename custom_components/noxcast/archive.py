@@ -4,7 +4,7 @@ Weather forecasts are not recorded by Home Assistant and the hourly forecast att
 from the recorder, so without this archive a past forecast cannot be evaluated. Actual values come
 from long-term statistics during the nightly learning run.
 
-Layout: {"YYYY-MM-DD": {"issued": iso, "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
+Layout: {"YYYY-MM-DD": {"issued": iso, "models": [weather model, ...], "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
          "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
          "forecast": {array_id: Wh}, "actual": {array_id: Wh}, "steps": {array_id: [Wh, ...]},
          "alt": {source: {"ghi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
@@ -23,6 +23,9 @@ predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archi
 several (e.g. ICON and ECMWF IFS), so each model can be compared with their mean and the actual
 values. Days archived before Open-Meteo became the only source hold "open_meteo" there, next to a
 weather entity as primary source.
+
+"models" names the weather models whose mean the forecast was made from, as configured when it was
+issued; days archived before it have none.
 
 "steps" holds how the forecast of an hour comes about (explain.packed: clear sky, clouds, shade,
 reflection, direction, heat; their sum is the forecast), only for hours with light, so the day view
@@ -79,6 +82,7 @@ class Day:
     issued: str | None                   # when the forecast was made (ISO), the last snapshot before the day
     hours: list[Hour]                    # by hour start
     history: list[tuple[float, list[tuple[float, float]]]]   # (snapshot ts, [(hour start, Wh all arrays)]), by time
+    models: list[str]                    # weather models of the forecast, [] if archived before they were kept
 
     @property
     def complete(self) -> bool:
@@ -96,7 +100,7 @@ def _day(key: str, d: dict) -> Day:
     hours = sorted((_hour(k, h) for k, h in (d.get("hours") or {}).items()), key=lambda h: h.ts)
     history = [(float(s), sorted((float(t), v) for t, v in snap.items()))
                for s, snap in sorted((d.get("history") or {}).items(), key=lambda kv: float(kv[0]))]
-    return Day(key, d.get("issued"), hours, history)
+    return Day(key, d.get("issued"), hours, history, list(d.get("models") or []))
 
 
 def days(archive: dict) -> list[Day]:
@@ -142,11 +146,11 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
              forecasts: dict[str, Series],
              alt: dict[str, tuple[Series, dict[str, Series]]] | None = None,
              wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None,
-             steps: dict[str, dict[float, list[float]]] | None = None) -> bool:
+             steps: dict[str, dict[float, list[float]]] | None = None, models: list[str] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
 
     wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source;
-    steps: per array and hour the steps of the forecast (explain.packed).
+    steps: per array and hour the steps of the forecast (explain.packed); models: the weather models.
     """
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
@@ -173,6 +177,8 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
         if "actual" in old.get(key, {}):
             hour["actual"] = old[key]["actual"]
     archive[day.isoformat()] = {"issued": issued, "hours": hours}
+    if models:
+        archive[day.isoformat()]["models"] = list(models)
     if history:
         archive[day.isoformat()]["history"] = history
     return True

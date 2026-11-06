@@ -63,6 +63,7 @@ from .const import Series
 AZ_STEP = 10.0
 EL_STEP = 5.0
 HOUR = 3600.0                    # seconds, the default period
+THUNDER = 95                     # WMO weather codes from here on: thunderstorm
 SUBSTEPS = 6                     # 10-minute sub-steps per hour
 MIN_BEAM_W = 60.0                # expected beam power (W) needed to observe shading
 MIN_CELL_SAMPLES = 4
@@ -203,6 +204,40 @@ class LearnedArray:
 
 
 # ---------------------------------------------------------------------------- helpers
+
+def mean_weather(series: list[list[WeatherHour]]) -> list[WeatherHour]:
+    """Hour by hour mean of several models; wind direction as vector mean.
+
+    The weather code cannot be averaged: a thunderstorm in any model counts, otherwise the first
+    model's code is kept (fog); rain and snow follow from the averaged precipitation.
+    """
+    if len(series) == 1:
+        return series[0]
+    by_start: dict[float, list[WeatherHour]] = {}
+    for hours in series:
+        for w in hours:
+            by_start.setdefault(w.start, []).append(w)
+
+    def avg(values: list[float | None]) -> float | None:
+        v = [x for x in values if x is not None]
+        return sum(v) / len(v) if v else None
+
+    out = []
+    for start, ws in sorted(by_start.items()):
+        split = [w for w in ws if w.dni is not None and w.dhi is not None]
+        x = sum(w.wind * math.sin(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
+        y = sum(w.wind * math.cos(math.radians(w.wind_dir)) for w in ws if w.wind is not None and w.wind_dir is not None)
+        out.append(WeatherHour(
+            start=start, ghi=avg([w.ghi for w in ws]),
+            # the irradiance split only when every model has it, otherwise GHI and split would disagree
+            dni=avg([w.dni for w in split]) if len(split) == len(ws) else None,
+            dhi=avg([w.dhi for w in split]) if len(split) == len(ws) else None,
+            temp=avg([w.temp for w in ws]), cloud=avg([w.cloud for w in ws]), sun=avg([w.sun for w in ws]),
+            wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None,
+            precip=avg([w.precip for w in ws]), humidity=avg([w.humidity for w in ws]),
+            code=max((w.code for w in ws if w.code is not None and w.code >= THUNDER), default=ws[0].code)))
+    return out
+
 
 def _substeps(period: float) -> int:
     """Sub-steps of a period: about 10 minutes long, a short period is a single one."""
@@ -1051,15 +1086,24 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
     return out
 
 
+def sun_paths(site: Site, starts: list[float], period: float = HOUR) -> dict[float, list[SunPosition]]:
+    """The sun path of each period, for forecast() when it runs many times on the same hours."""
+    return {t: _sun_path(site, t, period) for t in starts}
+
+
 def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour],
-             period: float = HOUR) -> Series:
-    """Expected energy per period (Wh), keyed by period start (UNIX seconds); weather: means of those periods."""
+             period: float = HOUR, paths: dict[float, list[SunPosition]] | None = None) -> Series:
+    """Expected energy per period (Wh), keyed by period start (UNIX seconds); weather: means of those periods.
+
+    paths: precomputed sun paths (sun_paths()); a period without one computes its own.
+    """
     out = {}
     n = _substeps(period)
     for wh in weather:
         dni_extra = extra_radiation(wh.start + period / 2)
         total = 0.0
-        for sun in _sun_path(site, wh.start, period):
+        path = paths.get(wh.start) if paths else None
+        for sun in path if path is not None else _sun_path(site, wh.start, period):
             if sun.elevation <= 0 or wh.ghi <= 0:
                 continue
             if wh.dni is None or wh.dhi is None:

@@ -248,9 +248,24 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert dict(entry.data) == {"soc_full_pct": 95}
     assert dict(entry.options) == {"satellite": False}
+
+
+async def test_migration_replaces_discontinued_icon_models(hass: HomeAssistant) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=3, unique_id=DOMAIN, title="Noxcast",
+                            data={"soc_full_pct": 95},
+                            options={"weather_models": ["icon_d2", "ecmwf_ifs", "icon_eu", "icon_seamless"]})
+    entry.add_to_hass(hass)
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})) as fetch:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.minor_version == 4 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
+    assert fetch.call_args.args[-1] == ["icon_seamless", "ecmwf_ifs"]
 
 
 async def test_stored_weather_stands_in_when_open_meteo_fails(hass: HomeAssistant) -> None:
@@ -741,6 +756,96 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
             assert bool(again.learned) is kept and learn.called is not kept, version
             if not kept:
                 assert await again.async_learn() and again.learned
+
+
+async def test_weather_model_comparison_waits_only_after_success(hass: HomeAssistant, hass_ws_client) -> None:
+    """A run asks once per model, skips a model Open-Meteo refuses, stops at the request limit, and only a usable
+    result starts the waiting time."""
+    from custom_components.noxcast.sources import SourceError
+
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
+
+    async def fake_stats(_hass, ids, _start, kind, period="hour", end=None):
+        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
+
+    async def fake_factors(_hass, ids):
+        return {i: 1.0 for i in ids}
+
+    asked: list[str] = []
+
+    async def previous_runs(_hass, _lat, _lon, name, _start, _end):
+        asked.append(name)
+        if name == "gfs_seamless":
+            raise SourceError("previous-runs-api.open-meteo.com answered 400 No data", 400)
+        if name == limit_at:
+            raise SourceError("previous-runs-api.open-meteo.com answered 429 Daily API request limit exceeded", 429, True)
+        return _clear_hours(site, dt_util.start_of_local_day().timestamp() - 30 * 86400, 30 * 24)
+
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})),          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors),          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats),          patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}) as archive,          patch("custom_components.noxcast.coordinator.async_previous_runs", side_effect=previous_runs),          patch("custom_components.noxcast.coordinator.COMPARE_PAUSE", 0):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"soc_full_pct": 95})
+        entry = result["result"]
+        await hass.async_block_till_done()
+        c = entry.runtime_data
+        assert c.compare_blocked() == ("not_learned", None)
+        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
+                                                              context={"source": config_entries.SOURCE_USER})
+        await hass.config_entries.subentries.async_configure(sub["flow_id"], ARRAY)
+        await hass.async_block_till_done()
+        c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert await c.async_learn()
+        client = await hass_ws_client(hass)
+
+        # the request limit stops the run at once; nothing is stored and it may be repeated
+        limit_at, archive.call_count = "ecmwf_ifs025", 0
+        await client.send_json_auto_id({"type": f"{DOMAIN}/compare_weather_models"})
+        assert (await client.receive_json())["result"]["started"] is True
+        await c._compare_task
+        assert asked == ["icon_seamless", "ecmwf_ifs", "ecmwf_ifs025"]
+        assert c.model_compare is None and c.compare_state["limited"] is True and not c.compare_state["running"]
+        assert "429" in c.compare_state["error"] and c.compare_blocked() == (None, None)
+
+        # too few days: a result, but no waiting time
+        limit_at, asked[:] = None, []
+        assert c.async_start_compare() is None
+        await c._compare_task
+        assert asked == c.compare_candidates and archive.call_count == 0          # no learning archives fetched
+        assert c.model_compare["status"] == "not_enough_data" and c.compare_blocked() == (None, None)
+        skipped = {s["model"]: s for s in c.model_compare["skipped"]}
+        assert skipped["gfs_seamless"]["error"].endswith("400 No data")
+
+        # a usable result starts the waiting time, also after a restart
+        with patch("custom_components.noxcast.hindcast.MIN_DAYS", 20):
+            assert c.async_start_compare() is None
+            await c._compare_task
+        assert c.model_compare["status"] == "ok" and c.model_compare["current"] == ["icon_seamless", "ecmwf_ifs"]
+        reason, until = c.compare_blocked()
+        assert reason == "cooldown" and until == pytest.approx(c.model_compare["computed_at"] + 7 * 86400)
+        await client.send_json_auto_id({"type": f"{DOMAIN}/compare_weather_models"})
+        assert (await client.receive_json())["result"] == {"v": WS_SCHEMA_VERSION, "started": False, "reasons": ["cooldown"]}
+        await client.send_json_auto_id({"type": f"{DOMAIN}/weather_models"})
+        answer = (await client.receive_json())["result"]["entries"][0]
+        assert answer["blocked"] == "cooldown" and answer["result"]["status"] == "ok" and answer["state"]["error"] is None
+        assert "icon_d2" not in answer["candidates"] and answer["current"] == ["icon_seamless", "ecmwf_ifs"]
+
+        await c._store.async_save(c._store_data())
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        again = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert again.model_compare == json.loads(json.dumps(c.model_compare)) and again.compare_blocked()[0] == "cooldown"
+
+        # other models chosen since: the comparison may run for them; too few days do not replace the usable result
+        hass.config_entries.async_update_entry(entry, options={**entry.options, "weather_models": ["gfs_seamless"]})
+        await hass.async_block_till_done()
+        c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert c.model_compare["status"] == "ok" and c.compare_blocked() == (None, None)
+        usable = c.model_compare
+        assert c.async_start_compare() is None
+        await c._compare_task
+        assert c.model_compare is usable and c.compare_state["error"].startswith("not_enough_data")
 
 
 async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:

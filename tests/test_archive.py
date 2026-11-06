@@ -32,6 +32,16 @@ def test_snapshot_keeps_the_steps_of_lit_hours():
     assert "steps" not in a[DAY.isoformat()]["hours"][str(int(T0))]
 
 
+def test_snapshot_names_the_weather_models_of_the_forecast():
+    a = {}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}}, models=["icon_seamless", "ecmwf_ifs"])
+    assert archive.day(a, DAY).models == ["icon_seamless", "ecmwf_ifs"]
+    archive.snapshot(a, DAY, "y", _weather(), {"roof": {}}, models=["gfs_seamless"])      # the last one counts
+    assert archive.day(a, DAY).models == ["gfs_seamless"]
+    del a[DAY.isoformat()]["models"]                                                     # archived before
+    assert archive.day(a, DAY).models == []
+
+
 def test_daily_error_and_prune():
     a = {}
     archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)},

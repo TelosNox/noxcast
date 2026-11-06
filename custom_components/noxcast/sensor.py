@@ -15,9 +15,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from . import archive as fc_archive
 from . import load as lf
-from .const import ATTR_SCHEMA_VERSION, DOMAIN, ERROR_DAYS, MAX_FORECAST_DAYS, TOTAL, Series
+from .const import ATTR_SCHEMA_VERSION, DOMAIN, MAX_FORECAST_DAYS, TOTAL, Series
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
 from .shade import STEP_MIN, day_profile, shade_periods, shaded_minutes, unknown_periods
 
@@ -291,33 +290,17 @@ class ForecastErrorSensor(NoxcastEntity, SensorEntity):
     def available(self) -> bool:
         return True
 
-    def _since(self):
-        return dt_util.now().date() - timedelta(days=ERROR_DAYS)
-
     @property
     def native_value(self) -> float | None:
-        error, _ = fc_archive.daily_error(self.coordinator.forecast_archive, self._since())
-        return None if error is None else round(error * 100, 1)
+        report = self.coordinator.forecast_error
+        return report["error"] if report else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        archive = self.coordinator.forecast_archive
-        _, days = fc_archive.daily_error(archive, self._since())
-        per_array = {}
-        for sub_id, arr in self.coordinator.arrays.items():
-            error, _ = fc_archive.daily_error(archive, self._since(), sub_id)
-            per_array[arr.name] = None if error is None else round(error * 100, 1)
-        sources = {}
-        for name in fc_archive.alt_sources(archive, self._since()):   # each model, on the days it has
-            error, n = fc_archive.daily_error(archive, self._since(), source=name)
-            if n:
-                own = {k: v for k, v in fc_archive.day_totals(archive).items()
-                       if k in fc_archive.day_totals(archive, source=name) and k >= self._since().isoformat()}
-                own_actual = sum(a for _, a in own.values())
-                sources[name] = {"error": round(error * 100, 1) if error is not None else None, "days": n,
-                                 "primary_error": round(sum(abs(f - a) for f, a in own.values()) / own_actual * 100, 1)
-                                 if own_actual > 0 else None}
-        return {"days": days, "archived_days": len(archive), "per_array": per_array, "comparison": sources}
+        # computed in the executor (coordinator._async_forecast_error), never on the event loop
+        report = self.coordinator.forecast_error or {"days": 0, "per_array": {}, "comparison": {}}
+        return {"days": report["days"], "archived_days": len(self.coordinator.forecast_archive),
+                "per_array": report["per_array"], "comparison": report["comparison"]}
 
 
 class LoadSensor(NoxcastEntity, SensorEntity):

@@ -119,8 +119,8 @@ früher sind die gelernten Werte gut; genutzt werden bis zu zwei Jahre.
 
 1. HACS öffnen → ⋮ → *Benutzerdefinierte Repositories*, `https://github.com/TelosNox/noxcast` mit der Kategorie
    *Integration* hinzufügen.
-2. In HACS nach *Noxcast* suchen und herunterladen. HACS bietet das neueste stabile Release an. Um eine Vorabversion
-   (etwa `0.3.0b1`) zu testen, HACS für Noxcast Beta-Versionen anzeigen lassen.
+2. In HACS nach *Noxcast* suchen und herunterladen. HACS bietet das neueste stabile Release an. Um eine Vorabversion zu testen,
+   HACS für Noxcast Beta-Versionen anzeigen lassen.
 3. Home Assistant neu starten.
 
 Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren und neu starten.
@@ -373,8 +373,8 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
   außen vor. Ein Plateau an der Wechselrichtergrenze wird gelernt und als Deckel angewandt. Unruhige Stunden
   (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und Reflexion.
-- **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter nur aus Stunden, deren
-  Sonnenposition die Schattenkarte als frei gelernt hat, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
+- **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter, sobald die Schattenkarte genug
+  freie Sonnenpositionen kennt, nur aus Stunden an diesen Positionen, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
   drückt. Die Plausibilitätsprüfung von Neigung und Azimut (*Geometrie prüfen*) nutzt ebenfalls nur freie Stunden
   und braucht sie auf beiden Seiten der Modulrichtung.
 - **Schattenkarte** (10° Azimut × 5° Höhe): der Anteil des Direktlichts, der ankommt, nur wo Direktlicht möglich ist.

@@ -118,8 +118,8 @@ the sooner the learned values are good; up to two years are used.
 
 1. Open HACS → ⋮ → *Custom repositories*, add `https://github.com/TelosNox/noxcast` with the category
    *Integration*.
-2. Search for *Noxcast* in HACS and download it. HACS offers the latest stable release. To test a pre-release
-   (such as `0.3.0b1`), let HACS show beta versions for Noxcast.
+2. Search for *Noxcast* in HACS and download it. HACS offers the latest stable release. To test a pre-release, let HACS
+   show beta versions for Noxcast.
 3. Restart Home Assistant.
 
 Without HACS: copy `custom_components/noxcast` into `config/custom_components` and restart.
@@ -373,8 +373,8 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
 - **Data filters:** hours with a full battery, excluded periods, outages and incomplete hours are
   left out. A plateau at the inverter limit is learned and applied as a cap. Unsteady hours
   (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
-- **Efficiency:** from hours with strong expected output. With the satellite filter, only from hours whose sun
-  position the shading map has learned as free, so shade it does not know yet (trees) does not pull it down. The
+- **Efficiency:** from hours with strong expected output. With the satellite filter, once the shading map knows
+  enough free sun positions, only from hours at those positions, so shade it does not know yet (trees) does not pull it down. The
   plausibility check of tilt and azimuth (*Check geometry*) also uses only free hours and needs them on both sides
   of the modules' direction.
 - **Shading map** (10° azimuth × 5° elevation): the share of direct light that arrives, only where

@@ -535,10 +535,10 @@ def run_energy(current: float | None, since_start: list[float]) -> float | None:
 
     A per-program counter starts at 0, a meter that keeps counting stands at its reading from the start; the lowest
     value fits both, so the elapsed time gives the program's power with either kind of counter. Without any history
-    the counter is taken as one per program, as before.
+    the kind is unknown and so is the energy: a meter's reading would pass for a huge run.
     """
     if current is None or not since_start:
-        return current
+        return None
     return max(current - min([current, *since_start]), 0.0)
 
 

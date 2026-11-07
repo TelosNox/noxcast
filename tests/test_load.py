@@ -281,5 +281,5 @@ def test_run_energy_with_either_kind_of_counter():
     assert lf.run_energy(600.0, [0.0, 200.0, 400.0]) == 600.0              # counter per program, from 0
     assert lf.run_energy(600.0, [300.0, 0.0, 200.0]) == 600.0              # previous program's value, then reset
     assert lf.run_energy(52_100.0, [51_600.0, 51_800.0]) == 500.0          # meter that keeps counting
-    assert lf.run_energy(600.0, []) == 600.0                                # no history: counts from 0
+    assert lf.run_energy(600.0, []) is None                                 # no history: kind of counter unknown
     assert lf.run_energy(None, [1.0]) is None

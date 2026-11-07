@@ -670,7 +670,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             states = await get_instance(self.hass).async_add_executor_job(
                 history.state_changes_during_period, self.hass, dt_util.utc_from_timestamp(start), None, entity_id,
                 False, False, None, True)
-        except Exception as err:  # noqa: BLE001 – without history the counter counts as one per program
+        except Exception as err:  # noqa: BLE001 – without history the run counts with its learned profile only
             _LOGGER.debug("No history for the energy sensor %s: %s", entity_id, err)
             return []
         out = []

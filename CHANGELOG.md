@@ -7,11 +7,79 @@ breaking changes.
 
 ## Unreleased
 
+## [0.2.0] - 2026-11-07
+
+All changes since 0.1.0, tested in the pre-releases 0.2.0b1 to 0.2.0b4 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). One change needs action: see Breaking.
+
+### Breaking
+- "Forecast remaining today" is now "Expected remaining today" ("Erwartung Rest heute" in German), with a new entity
+  ID such as `sensor.noxcast_expected_remaining_today` (in German `sensor.noxcast_erwartung_rest_heute`), per array
+  as well. It has always been the rest of "Expected today", recomputed with every update, not the rest of the
+  forecast fixed at 6 am. The old sensors (`sensor.noxcast_forecast_remaining_today`, in German
+  `sensor.noxcast_prognose_rest_heute`) are removed with their customisations; replace their entity IDs in
+  automations and dashboards. Their recorded history stays under the old ID until the recorder purges it.
+
+### Added
+- "Compare weather models" in the forecast accuracy view: on request, Noxcast fetches what every offered weather
+  model forecast one day ahead over the past year, runs it through your learned model and compares each model and
+  each averaged pair with what your arrays produced. It ranks them by daily error, shows where they differ (by
+  weather and by month) and recommends a change only when it holds on days that were not used to pick it. Nothing
+  is changed automatically. A run asks Open-Meteo once per model with pauses, stops at once if Open-Meteo reports
+  its request limit, and after a successful run the next one is possible after 7 days.
+
+### Changed
+- The weather card shows today the same yield as the sensor "Expected today" (measured so far plus the corrected
+  rest of the day) instead of a running weather forecast that appeared nowhere else. The new card option
+  `pv_today: forecast` shows the morning forecast instead, as the sensor "Forecast today" does.
+- "How the hour comes about" in the day view now explains the forecast the chart compares with: today the
+  6 am forecast, for past days the day-ahead forecast. Before, it recomputed the hour with the latest weather and
+  model, so its "Forecast" matched no line in the chart. Today it continues with what newer weather changed
+  ("Newer weather", "Latest forecast"), today's correction and the actual value. The values are in Wh, the energy of
+  that hour. The derivation is stored from this version on: days archived before are recomputed with today's model
+  and marked "Today's model".
+- The small charts under "Groups" in the day view cover the same daylight hours as the main chart instead of the
+  whole day, share one scale so their heights compare, and show the group's own forecast (6 am today, day-ahead for
+  past days) as a dashed line.
+- The weather source chips in the accuracy view name the models of the issued forecast ("Issued (ICON + ECMWF
+  IFS)" instead of "Main source") and say when the models were changed within the period. With a single model its
+  chip includes the days it made the forecast alone. The "Open-Meteo" chip of days archived next to a weather
+  entity is now "Open-Meteo (earlier comparison)".
+- The archive keeps which weather models each day's forecast came from.
+- An Open-Meteo refusal shows its reason in the log (for example that the daily request limit is exceeded), not
+  only the HTTP status.
+- When a Noxcast page gets no answer while loading its data, for example while Noxcast relearns after its settings
+  changed, it explains that Noxcast is not answering and that the page tries again, instead of showing just
+  "timeout".
+- The consumer form and the README say which properties the power, energy and time sensors need.
+
 ### Fixed
+- A consumer with an energy counter that is unknown between runs (common for the program energy of washers and
+  dishwashers) no longer takes those hours out of learning the base load. Hours without a value now count as no
+  consumption of that device. Such a device was learned from its run hours only and forecast too high; expect its
+  forecast to drop after the next learning run. If a meter that keeps counting is unavailable for a while, those
+  hours count as no consumption too, so what the device used meanwhile counts as base load, and the meter's catch-up
+  lands in the next hour.
+- With an energy sensor and an elapsed time, the power of a running program is now right for a meter that keeps
+  counting too, not only for a counter that starts at 0 with each program.
+- The forecast error sensor no longer blocks Home Assistant for about a second at start and on every update
+  ("Updating state ... took 0.9 seconds" in the log). Its figures are now computed in the background at start and
+  after the nightly learning run, which is when new actual values arrive.
+- When Open-Meteo is busy (often "503 Service Unavailable" on the full and half hour), Noxcast keeps its stored
+  weather of the last 24 hours and tries again one to three minutes later instead of waiting for the next update.
+  The log shows one warning per outage, only when the retry fails too, and a note when Open-Meteo answers again.
+- The learning status in the panel no longer flickers during a run: only its text, the stages and the button change
+  until the run is done.
+- The weather card updates only the outside values when the temperature or humidity sensor reports, instead of
+  rebuilding the whole card.
 - After a Home Assistant restart the weather card shows the PV yield per day again as soon as Noxcast has computed
   it. Before, it showed the days without PV until the next refresh 15 minutes later, or until the page was reloaded.
 - A browser tab that stays open across a Home Assistant restart no longer logs "the name "noxcast-panel" has already
   been used" (or the same for a card). It keeps the loaded panel and cards until the page is reloaded.
+
+### Removed
+- The weather models ICON Global, ICON-EU and ICON-D2, which Open-Meteo discontinues on 30 November 2026. Where
+  one of them was selected, ICON (`icon_seamless`) takes its place automatically.
 
 ## [0.2.0b4] - 2026-11-07
 

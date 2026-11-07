@@ -15,6 +15,11 @@ breaking changes.
 - Learned values: the sky view shows "not learned yet" instead of 100 % while there are too few overcast hours to
   learn it (the forecast keeps assuming a free sky until then). The learned sensor has a new attribute
   `sky_view_learned`. Arrays learned before this version show the old value until the next nightly learning run.
+- Satellite filter: the efficiency is learned only from hours whose sun position the shading map has learned as
+  free. Before, positions the map did not know yet counted as unshaded, so soft shade there (trees) pulled the
+  efficiency down and the direction factor up to its limit. The geometry check also keeps away from shaded cells
+  and needs free hours on both sides of the modules' direction, so "Check geometry" no longer appears just
+  because trees shade one side. Takes effect with the next learning run.
 
 ## [0.2.0] - 2026-11-07
 

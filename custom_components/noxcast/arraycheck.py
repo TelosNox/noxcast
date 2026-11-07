@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from .model import (
     CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_heating, clearsky_hour, clearsky_profile,
-    temperature_factor, transmission,
+    known_free, temperature_factor, transmission,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
 from .const import Series
@@ -21,7 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 H = 3600.0
 MONTH_MIN_HOURS = 20                 # hours a month needs for its efficiency
 GEOMETRY_MIN_HOURS = 60              # clear unshaded hours the geometry check needs
-GEOMETRY_MAX_ROWS = 600              # rows evaluated per candidate (evenly thinned)
+GEOMETRY_SIDE_MIN_HOURS = 15         # of them on each side of the plane's direction (sun left and right of it)
+GEOMETRY_MAX_ROWS = 600             # rows evaluated per candidate (evenly thinned)
 MIN_BEAM_SHARE = 0.4                 # hours whose clear-sky plane irradiance is at least this share of the best
 DIRECTION_MIN_HOURS = 10             # hours a sun sector needs for its efficiency
 SECTORS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]   # sun azimuth in 45° sectors, centred on the name
@@ -89,7 +90,7 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
             if g is None or cs_ghi <= 50 or g / cs_ghi < CLEAR_KT:
                 continue
             kt = min(g / cs_ghi, 1.2)
-        if transmission(learned, az, el) < 0.95:
+        if not known_free(learned, az, el, margin=True):
             continue
         temp = (air_temp or {}).get(t)
         rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp, "az": az,
@@ -235,6 +236,11 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
         return None
     rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)
     if len(rows) < GEOMETRY_MIN_HOURS:
+        return None
+    # An azimuth error shows as one side of the plane's direction against the other. With free hours on one
+    # side only (a tree takes the other), the fit would turn the plane to explain shade it does not know.
+    left = sum(1 for r in rows if (r["az"] - geo.azimuth) % 360 > 180)
+    if min(left, len(rows) - left) < GEOMETRY_SIDE_MIN_HOURS:
         return None
     if len(rows) > GEOMETRY_MAX_ROWS:
         step = len(rows) / GEOMETRY_MAX_ROWS

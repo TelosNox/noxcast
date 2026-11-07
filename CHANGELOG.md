@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Day view, groups: the course of each group shows like the chart above which part is measured (strong) and which
+  is still forecast (faint), with a line at the current time.
+
 ## [0.2.0] - 2026-11-07
 
 All changes since 0.1.0, tested in the pre-releases 0.2.0b1 to 0.2.0b4 (their single steps are listed in

@@ -17,6 +17,8 @@ breaking changes.
   counting too, not only for a counter that starts at 0 with each program.
 
 ### Changed
+- When a Noxcast page gets no answer, for example while Noxcast relearns after its settings changed, it explains that
+  Noxcast is not answering and that the page tries again, instead of showing just "timeout".
 - The consumer form and the README say which properties the power, energy and time sensors need.
 
 ## [0.2.0b3] - 2026-11-07

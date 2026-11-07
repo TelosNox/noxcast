@@ -176,6 +176,8 @@ class LearnedArray:
     cells: dict[str, float] = field(default_factory=dict)      # "az_idx,el_idx" -> transmission
     direction: dict[str, float] = field(default_factory=dict)  # coarse "az_idx,el_idx" -> beam factor (non-shade)
     sky_view: float = 1.0                                      # share of the isotropic sky diffuse seen
+    sky_view_learned: bool | None = False                      # False: too few overcast hours, 1.0 is an assumption;
+                                                               # None: stored before the flag existed
     reflection: dict[str, float] = field(default_factory=dict) # coarse "az_idx,el_idx" -> plane W/m² per W/m² DNI
     coverage: float = 0.0                                      # share of reachable cells learned
     samples: int = 0
@@ -200,6 +202,8 @@ class LearnedArray:
 
     @classmethod
     def from_dict(cls, data: dict) -> LearnedArray:
+        # unknown rather than the default False, so a learned value stored earlier is not shown as unlearned
+        data = {"sky_view_learned": None, **data}
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
@@ -486,6 +490,8 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
         if sky is None or abs(sky - learned.sky_view) < 0.01:
             break
         learned = _learn(site, geo, samples, now, sky_view=sky, **args)
+    # whether there are enough overcast hours depends only on the samples, not on the other parameters
+    learned.sky_view_learned = sky is not None
     learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp, period)
     return learned
 

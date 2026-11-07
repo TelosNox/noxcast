@@ -671,7 +671,8 @@ class NoxcastPanel extends HTMLElement {
     const date = (s) => s ? new Date(typeof s === "number" ? s * 1000 : s).toLocaleDateString(this._lang, { timeZone: this._data.time_zone }) : "–";
     return [
       [t.efficiency, pct(la.efficiency)],
-      [t.skyView, pct(la.sky_view ?? 1, 0)],
+      // stored before the flag existed: undefined, shown as before until the next learning run
+      [t.skyView, la.sky_view_learned === false ? t.notLearned : pct(la.sky_view ?? 1, 0)],
       [t.tempCoeff, `${num(la.temp_coeff * 100)} %/K`],
       [t.coverage, pct(la.coverage, 0)],
       [t.facade, la.facade ? `${num(la.facade.height, 1)}° · ${Math.round(la.facade.direction)}° · ${Math.round(la.facade.start)}–${Math.round(la.facade.end)}°` : "–"],

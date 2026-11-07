@@ -11,6 +11,11 @@ breaking changes.
 - Day view, groups: each group's course now shows, like the chart above, which part is measured (strong) and which
   is still forecast (faint), with a line at the current time.
 
+### Fixed
+- Learned values: the sky view shows "not learned yet" instead of 100 % while there are too few overcast hours to
+  learn it (the forecast keeps assuming a free sky until then). The learned sensor has a new attribute
+  `sky_view_learned`. Arrays learned before this version show the old value until the next nightly learning run.
+
 ## [0.2.0] - 2026-11-07
 
 All changes since 0.1.0, tested in the pre-releases 0.2.0b1 to 0.2.0b4 (their single steps are listed in

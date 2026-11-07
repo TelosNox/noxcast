@@ -379,7 +379,8 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
 - **Richtungsfaktor** (grobe Bereiche, 0,8–1,2): was an unverschatteten Positionen übrig bleibt – Geometrie- und
   Modellfehler.
 - **Reflexion:** Licht von hellen Flächen, wo das Modul selbst wenig Direktlicht bekommt.
-- **Himmelssicht:** der Anteil des Himmels, den die Module sehen, aus bedeckten Stunden (braucht den Satellitenfilter).
+- **Himmelssicht:** der Anteil des Himmels, den die Module sehen, aus bedeckten Stunden (braucht den Satellitenfilter). Bis
+  genug davon vorliegen, rechnet die Prognose mit freiem Himmel und das Panel zeigt „nicht gelernt“.
 - **Temperaturkoeffizient:** obere Hüllkurve der Leistung über der Zelltemperatur.
 
 ### Im Lauf des Tages

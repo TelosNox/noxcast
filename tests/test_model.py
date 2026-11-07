@@ -224,6 +224,7 @@ def test_sky_view_is_learned_from_overcast_hours():
     samples, sat = make_sky_view_samples()
     learned = model.learn(SITE, GEO, samples, now=START + 240 * 86400, satellite_ghi=sat)
     assert abs(learned.sky_view - SKY_VIEW) < 0.08
+    assert learned.sky_view_learned
     assert abs(learned.efficiency - EFF) < 0.03
     overcast = [t for t, _ in samples if sat[t] > 30 and sat[t] / max(model.clearsky_hour(SITE, GEO, t)[4], 1) < 0.4]
     weather = [model.WeatherHour(start=t, ghi=sat[t]) for t in overcast]
@@ -233,7 +234,9 @@ def test_sky_view_is_learned_from_overcast_hours():
 
 
 def test_sky_view_needs_satellite_data():
-    assert model.learn(SITE, GEO, make_samples(60), now=START + 60 * 86400).sky_view == 1.0
+    learned = model.learn(SITE, GEO, make_samples(60), now=START + 60 * 86400)
+    assert learned.sky_view == 1.0
+    assert not learned.sky_view_learned
 
 
 REFLECTION = 0.05
@@ -528,3 +531,9 @@ def test_a_few_five_minute_samples_are_not_enough_for_a_cell():
     samples = [(t0 + k * FIVE_MIN, 400.0) for k in range(4)]
     learned = model.learn(SITE, GEO, samples, t0 + 3600, period=FIVE_MIN, datasheet_temp_coeff=0.0)
     assert not learned.cells
+
+
+def test_sky_view_flag_of_earlier_stored_data_is_unknown():
+    stored = model.LearnedArray(sky_view=0.95, sky_view_learned=True).as_dict()
+    del stored["sky_view_learned"]
+    assert model.LearnedArray.from_dict(stored).sky_view_learned is None

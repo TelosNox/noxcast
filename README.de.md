@@ -62,7 +62,9 @@ Jede Prognosestunde lässt sich in ihre Schritte zerlegen. Hier steht die Morgen
 
 Prognose gegen Ist für die letzten 14, 30 oder 90 Tage, nach Wetterklasse und Wettermodell. Mit dem Satellitenfilter
 wird der Fehler jedes Tages aufgeteilt: Der Wetteranteil ist das, was die Wettervorhersage falsch hatte, der
-Modellanteil das, was Noxcast mit dem echten Wetter falsch hatte. Ein Vergleich der Wettermodelle zeigt auf Knopfdruck,
+Modellanteil das, was Noxcast mit dem vom Satelliten gemessenen Wetter falsch hatte. Weil Satellitenwerte Flächenmittel
+sind, enthält der Modellanteil auch deren Fehler (etwa bei Nebel): Er sagt über viele Tage etwas über das Modell, nicht an
+einem einzelnen Tag. Ein Vergleich der Wettermodelle zeigt auf Knopfdruck,
 welches Modell oder Modellpaar im letzten Jahr am besten zu deiner Anlage gepasst hätte.
 
 ![Prognosegüte: Tagesfehler, Prognose und Ist je Tag, aufgeteilt in Wetteranteil und Modellanteil](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/accuracy.png)

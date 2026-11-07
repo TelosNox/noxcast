@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Forecast accuracy, "Weather or model?": the daily bars now show the weather and model part in kWh instead of as a
+  share of that day's actual yield. A dark day with little yield no longer shows a huge model part for a few hundred
+  Wh. The help text explains that the model part also contains the satellite's measurement errors (e.g. in fog), so
+  a single day says little about the model.
+
 ## [0.3.0b2] - 2026-11-07
 
 The second pre-release of 0.3.0. The sections below list what changed since 0.3.0b1.

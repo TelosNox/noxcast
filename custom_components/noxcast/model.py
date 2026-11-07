@@ -83,6 +83,7 @@ FALLBACK_AIR_TEMP = 15.0         # when a forecast has no temperature
 CLEAR_KT = 0.8                   # satellite clearness index for a clear hour
 MIN_CLEAR_COVERAGE = 0.3         # use the satellite filter only if it covers this share of samples
 MIN_UNSHADED_HOURS = 20          # clear hours at unshaded positions needed for the efficiency median
+FREE_TRANSMISSION = 0.95         # a learned cell at least this bright counts as unshaded
 STEADY_BAND = 0.15               # steady hour: a sensor's minimum and maximum within ±15 % of its mean
 SPLIT_RATIO = 0.6                # sensors of one array this far apart (relative to their peaks): a shadow on part of it
 SPLIT_MIN_SHARE = 0.05           # ... above this share of the sensor's peak (low light is noise)
@@ -644,10 +645,13 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
     cells = envelope()
     if clear_filter:
         # median over clear hours whose sun position is unshaded; the median does not ignore shadows.
-        # With little data (new installation) all clear hours: shadows pull it slightly low, the safe side,
+        # Unshaded means known as free; while the map knows too few positions (new installation) also those it
+        # has not learned yet, and with less still all clear hours: shadows pull it slightly low, the safe side,
         # while a high percentile over clear hours would only pick satellite errors.
         probe = LearnedArray(cells=cells)
-        unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= 0.95]
+        unshaded = [r for r in strong if known_free(probe, r[4], r[5])]
+        if len(unshaded) < _periods(MIN_UNSHADED_HOURS, period):
+            unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= FREE_TRANSMISSION]
         steady_unshaded = [r for r in unshaded if r[0] in steady] if steady_filter else []
         if len(steady_unshaded) >= _periods(MIN_UNSHADED_HOURS, period):
             unshaded = steady_unshaded
@@ -1035,6 +1039,28 @@ def transmission(learned: LearnedArray, azimuth: float, elevation: float) -> flo
     near = [learned.cells[k] for k in (_key((ai + x) % 36, ei + y) for x in (-1, 0, 1) for y in (-1, 0, 1))
             if k in learned.cells]
     return sum(near) / len(near) if near else 1.0
+
+
+def known_free(learned: LearnedArray, azimuth: float, elevation: float, margin: bool = False) -> bool:
+    """The map knows this sun position as unshaded: its cell is learned (or the facade covers it) and lets at
+    least FREE_TRANSMISSION through; with `margin`, no learned neighbour is shaded either.
+
+    transmission() treats a position the map has not learned as free. That is right for the forecast, but
+    wrong where learning takes such hours for unshaded: soft tree shade in cells with few clear hours then
+    pulls the efficiency median down. The margin keeps the geometry check away from shadow edges, which a
+    tree's crown blurs over more than one cell; for the efficiency it cost accuracy in the backtest.
+    """
+    def known(a: int, e: int) -> float | None:
+        v = learned.cells.get(_key(a % 36, e))
+        if v is None and e >= 0 and learned.facade:
+            v = facade_transmission(learned.facade, (a % 36 + 0.5) * AZ_STEP, (e + 0.5) * EL_STEP)
+        return v
+
+    ai, ei = _cell(azimuth, elevation)
+    if known(ai, ei) is None or transmission(learned, azimuth, elevation) < FREE_TRANSMISSION:
+        return False
+    return not margin or all(v >= FREE_TRANSMISSION for v in (known(ai + x, ei + y)
+                                                              for x in (-1, 0, 1) for y in (-1, 0, 1)) if v is not None)
 
 
 def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:

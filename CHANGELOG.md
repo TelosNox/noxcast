@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.0b2] - 2026-11-07
+
+The second pre-release of 0.3.0. The sections below list what changed since 0.3.0b1.
+
 ### Fixed
 - A forecast update during a learning run no longer interferes with the forecast archive. Before, this could
   rarely make the backtest or the saving of the archive fail, for example with a manual relearn around midnight.

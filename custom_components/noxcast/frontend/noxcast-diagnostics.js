@@ -7,7 +7,7 @@ const DIAG_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     adminOnly: "Die Diagnose können nur Administratoren sehen.",
-    ok: "Alles in Ordnung", problems: "Hinweise", weather: "Wetterquelle", learning: "Letzter Lernlauf", learnTook: "Lernen", backtestTook: "Rückrechnung", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
+    ok: "Alles in Ordnung", problems: "Hinweise", version: "Version", versionSub: "installiert", weather: "Wetterquelle", learning: "Letzter Lernlauf", learnTook: "Lernen", backtestTook: "Rückrechnung", archive: "Prognose-Archiv", fine: "5-Minuten-Archiv", fineSub: "je Sensor, für schärfere Schatten, max. 3 Jahre",
     sensors: "Sensoren", arrays: "Gelernte Gruppen", exclusions: "Ausgeschlossene Zeiträume", none: "keine", include: "Wieder einbeziehen",
     includeAsk: "Diesen Zeitraum wieder beim Lernen einbeziehen? Danach wird neu gelernt, das dauert einige Minuten.",
     included: "Wieder einbezogen. Neu gelernt wird im Hintergrund; „Aktualisieren“ zeigt den neuen Lernlauf.",
@@ -27,7 +27,7 @@ const DIAG_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page",
     adminOnly: "Only administrators can see the diagnostics.",
-    ok: "All good", problems: "Notes", weather: "Weather source", learning: "Last learning run", learnTook: "Learning", backtestTook: "Backtest", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
+    ok: "All good", problems: "Notes", version: "Version", versionSub: "installed", weather: "Weather source", learning: "Last learning run", learnTook: "Learning", backtestTook: "Backtest", archive: "Forecast archive", fine: "5-minute archive", fineSub: "per sensor, for sharper shading, at most 3 years",
     sensors: "Sensors", arrays: "Learned arrays", exclusions: "Excluded periods", none: "none", include: "Include again",
     includeAsk: "Include this period in learning again? Noxcast then learns again, which takes a few minutes.",
     included: "Included again. Learning runs in the background; “Refresh” shows the new run.",
@@ -146,6 +146,7 @@ class NoxcastDiagnostics extends HTMLElement {
       [t.learning, e.learning.last ? this._ago(e.learning.last) : t.never, e.learning.last ? this._learningSub(e.learning) : ""],
       [t.archive, `${e.archive.days} ${t.days}`, `${e.archive.complete} ${t.complete}`],
       [t.fine, `${(e.fine || {}).days || 0} ${t.days}`, t.fineSub],
+      ...(this._data.version ? [[t.version, esc(this._data.version), t.versionSub]] : []),
     ].map(([k, v, sub]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${v}</span><span class="muted small">${sub}</span></div>`).join("");
     const list = issues.length
       ? `<ul class="issues">${issues.map(([lvl, text]) => `<li class="${lvl}"><span class="dot"></span><span>${text}</span></li>`).join("")}</ul>`

@@ -1,5 +1,5 @@
 """Websocket payloads of the panel and the day card (views.py), built from plain data without Home Assistant."""
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -309,6 +309,7 @@ def test_payloads_hold_no_positional_tuples():
         "load": views.load_entry("s", None, {}, {}, {}, d.load, None, events, None),
         "learned": views.learned_arrays(arrays(), {"roof": la}, None),
         "backtest": views.backtest_entry(arrays(), BACKTEST),
+        "overview": views.overview_entry(arrays(), d, {}, 3, DAY, day_start, arc, {}, [], {}, None),
     }
     assert payloads["day"]["history"] == [{"at": A + 6 * H, "t": [A + 12 * H], "wh": [300.0]}]
     assert {k: _tuples(v) for k, v in payloads.items()} == {k: [] for k in payloads}
@@ -348,3 +349,77 @@ def test_learning_status_payload():
     assert out["arrays"] == [
         {"id": "r", "name": "Roof", "stage": "growing", "hours": 500, "days": 30, "coverage": 0.4},
         {"id": "b", "name": "Balcony", "stage": "waiting", "hours": 0, "days": 0, "coverage": 0.0}]
+
+
+def _archive_day(day: date, fc: float, act: float | None, hours: int = 24, curtailed: int = 0) -> dict:
+    a = day_start(day)
+    return {"hours": {str(int(a + h * H)): {"forecast": {"roof": fc / 2 / hours, "wall": fc / 2 / hours},
+                                             "actual": None if act is None else {"roof": act / 2 / hours, "wall": act / 2 / hours},
+                                             "curtailed": h < curtailed}
+                      for h in range(hours)}}
+
+
+def test_overview_today_sums_the_arrays_hour_by_hour():
+    d = data(held={"roof": {A + 11 * H: 100.04, A + 12 * H: 200.0}, "wall": {A + 11 * H: 50.0, A + 12 * H: 60.0}},
+             actual={"roof": {A + 11 * H: 90.0}, "wall": {A + 11 * H: 40.0, A + 12 * H: 1.0}},  # 12 h: roof not measured
+             expected={None: {A + 12 * H: 270.0, A + 30 * H: 1.0}})
+    out = views.overview_today(arrays(), d, A, A + 86400)
+    assert out["t"] == [A + 11 * H, A + 12 * H]                          # tomorrow's expected hour is not today
+    assert out["forecast"] == [150.0, 260.0] and out["actual"] == [130.0, None] and out["expected"] == [None, 270.0]
+    assert out["clear"] == [round(d.clear[None][A + 11 * H], 1), round(d.clear[None][A + 12 * H], 1)]
+    assert out["p10"] == [None, 250.0] and out["p90"] == [None, 350.1]
+
+
+def test_recent_accuracy_counts_complete_days_as_the_accuracy_view():
+    today = date(2026, 7, 20)
+    arc = {"2026-07-19": _archive_day(date(2026, 7, 19), 11300, 10400, curtailed=2),
+           "2026-07-18": _archive_day(date(2026, 7, 18), 9000, 10000),
+           "2026-07-17": _archive_day(date(2026, 7, 17), 9000, None),        # not learned yet
+           "2026-07-16": _archive_day(date(2026, 7, 16), 9000, 9000, hours=12),   # too few hours
+           "2026-07-01": _archive_day(date(2026, 7, 1), 1000, 5000),          # before the 14 days
+           "2026-07-20": _archive_day(today, 1000, 1000)}                     # today is not done
+    out = views.recent_accuracy(arc, arrays(), today)
+    assert out["yesterday"] == {"date": "2026-07-19", "forecast_wh": 11300, "actual_wh": 10400, "curtailed": 2}
+    assert out["days"] == 2 and out["span"] == 14
+    assert out["error"] == round((900 + 1000) / 20400, 3) and out["bias"] == round((900 - 1000) / 20400, 3)
+    # an array without forecast in the archive (added later) leaves no complete day
+    more = {**arrays(), "new": SimpleNamespace(name="New", sensors=(), geometry=GEO)}
+    assert views.recent_accuracy(arc, more, today) == {"yesterday": None, "days": 0, "span": 14, "error": None, "bias": None}
+
+
+def test_overview_consumers_decide_as_the_binary_sensor():
+    win = lambda s, e, pv: SimpleNamespace(start=s, end=e, pv_share=pv, lost_share=0.0)   # noqa: E731
+    plan = {"dw": {"now": win(1, 2, 0.88), "today": win(3, 4, 0.91), "tomorrow": win(5, 6, 0.745)},
+            "wm": {"now": win(1, 2, 0.88), "today": None, "tomorrow": None}}
+    consumers = {"dw": SimpleNamespace(name="Dishwasher", start_share=None), "wm": SimpleNamespace(name="Washer", start_share=90)}
+    out = views.overview_consumers(consumers, plan)
+    assert out == [{"name": "Dishwasher", "now": 0.88, "start_now": True, "today": {"start": 3, "end": 4, "pv": 0.91},
+                    "tomorrow": {"start": 5, "end": 6, "pv": 0.745}},
+                   {"name": "Washer", "now": 0.88, "start_now": False, "today": None, "tomorrow": None}]   # below its 90 %
+
+
+def test_overview_entry():
+    d = data()
+    status = {"running": False, "last": None, "arrays": []}
+    sensors = [("sensor.pv1", "pv", "Roof", "1200"), ("sensor.pv2", "pv", "Roof", "unavailable"),
+               ("sensor.pv3", "pv", "Wall", None)]
+    out = views.overview_entry(arrays(), d, {}, 3, DAY, day_start, {}, status, sensors,
+                               {"b1": {"soc_sensor": "sensor.soc", "capacity": 5}}, "sensor.rest")
+    assert list(out) == ["today", "day_end", "days", "battery", "load", "consumers", "accuracy", "status", "live"]
+    assert out["day_end"] == A + 86400 and [x["date"] for x in out["days"]] == ["2026-07-01", "2026-07-02", "2026-07-03"]
+    assert out["battery"] is None and out["load"] is None and out["consumers"] == []
+    assert out["status"] == {**status, "sensors": 3, "unavailable": [
+        {"entity_id": "sensor.pv2", "role": "pv", "owner": "Roof"}, {"entity_id": "sensor.pv3", "role": "pv", "owner": "Wall"}]}
+    assert out["live"] == {"pv": ["sensor.pv1", "sensor.pv2", "sensor.pv3"], "soc": [{"entity": "sensor.soc", "capacity": 5000.0}],
+                           "remaining": "sensor.rest"}
+    empty = views.overview_entry(arrays(), None, {}, 3, DAY, day_start, {}, status, [], {}, None)
+    assert empty["today"] is None and empty["days"] == [] and empty["consumers"] == []
+
+
+def test_recent_accuracy_ends_with_the_last_complete_day():
+    """Before the nightly run yesterday has no actual: the range then ends the day before, as in the accuracy view."""
+    today = date(2026, 7, 20)
+    arc = {k.isoformat(): _archive_day(k, 1000, 1000) for k in (date(2026, 7, 4) + timedelta(days=i) for i in range(15))}
+    arc["2026-07-19"] = _archive_day(date(2026, 7, 19), 1000, None)
+    out = views.recent_accuracy(arc, arrays(), today)
+    assert out["yesterday"] is None and out["days"] == 14 and out["error"] == 0.0     # 5 to 18 July

@@ -132,7 +132,8 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
    Add one array per group of modules that is measured together.
 3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
 
-Then open **Noxcast** in the sidebar: *Learned* shows what it found about each array, *Day* the forecast of today.
+Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Learned* what it
+found about each array, *Day* the forecast of today in detail.
 For the dashboard: *Add card* → *Noxcast*.
 
 ### Examples
@@ -244,12 +245,13 @@ Appears in the sidebar after setup; nothing to configure. Tabs:
 
 | Tab | Content |
 |---|---|
+| Overview | The start: today expected, so far against its forecast, rest of today and PV power now with the day's course; for flexible consumers whether to start now and the best windows; the battery's state of charge, full and empty times and lost surplus; the next days with range and clear sky; yesterday's forecast against actual and the error of the last 14 days; a status line with the last learning run, sensors that report no values and the installed version. Each part links to the tab that explains it |
 | Learned | A learning status (last and next run, how far each array has come, a button to learn again now for administrators); per array the learned shade, reflection and direction maps over sun azimuth × elevation with the sun paths of the year, a date slider, values per cell, a month × hour grid, key figures (efficiency, sky view, temperature coefficient, coverage) and a plausibility check of tilt and azimuth |
 | Day | One day (up to 120 days back, 2 ahead): the arrays stacked, forecast vs expectation vs actual, P10–P90, hourly weather, shade and reflection periods; per hour a waterfall from clear sky through clouds, shade, reflection, heat to the forecast; how the day's expectation developed hour by hour; where the energy went (PV, battery, grid, house) |
 | Forecast accuracy | Day-ahead forecasts against actual over 14 / 30 / 90 days: error, bias, calendar, by weather class, each weather model against the mean; with the satellite filter the split into weather part and model part; a nightly backtest: today's model on past days, and on days it did not learn from; on request a comparison of every weather model and pair over the past year, with a recommendation |
 | Load | Rest of today and tomorrow by part (base load, each consumer), learned profiles, backtest, suggested recurring devices |
 | Battery & surplus | Simulation until tomorrow's charge start, what-if with more capacity or an extra consumer, the morning prediction against what happened, last 30 days |
-| Diagnostics | Weather, last learning run, archive; every sensor Noxcast reads with state, statistics and coverage; missing data and errors |
+| Diagnostics | Installed version, weather, last learning run, archive; every sensor Noxcast reads with state, statistics and coverage; missing data and errors |
 
 ### Day card `custom:noxcast-card`
 

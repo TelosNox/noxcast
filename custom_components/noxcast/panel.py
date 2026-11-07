@@ -17,6 +17,7 @@ from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_metadata, statistics_during_period
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
@@ -37,6 +38,7 @@ WS_LOAD = f"{DOMAIN}/load"
 WS_DIAGNOSTICS = f"{DOMAIN}/diagnostics"
 WS_BATTERY = f"{DOMAIN}/battery"
 WS_DAY = f"{DOMAIN}/day"
+WS_OVERVIEW = f"{DOMAIN}/overview"
 WS_CARD = f"{DOMAIN}/card_config"
 WS_LEARNING = f"{DOMAIN}/learning"
 WS_RELEARN = f"{DOMAIN}/relearn"
@@ -57,6 +59,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_diagnostics)
     websocket_api.async_register_command(hass, ws_battery)
     websocket_api.async_register_command(hass, ws_day)
+    websocket_api.async_register_command(hass, ws_overview)
     websocket_api.async_register_command(hass, ws_card_config)
     websocket_api.async_register_command(hass, ws_learning)
     websocket_api.async_register_command(hass, ws_relearn)
@@ -70,7 +73,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
                                          "noxcast-diagnostics.js", "noxcast-battery.js",
-                                         "noxcast-theme.js", "noxcast-day.js")
+                                         "noxcast-theme.js", "noxcast-day.js", "noxcast-overview.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js", "noxcast-common.js")
     weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js", "noxcast-common.js")
     await hass.http.async_register_static_paths(
@@ -242,7 +245,8 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
             learning_seconds=c.last_learning_seconds, backtest_seconds=(c.pv_backtest or {}).get("seconds"),
             learning_error=c.last_learning_error, archive_errors=c.archive_errors, arrays=c.arrays, learned=c.learned,
             exclusions=c.exclusions, archive=c.forecast_archive, fine=c.fine, sensors=sensors))
-    _send(connection, msg, {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "entries": entries})
+    _send(connection, msg, {"time_zone": hass.config.time_zone, "days": DIAG_DAYS, "version": await _integration_version(hass),
+                            "entries": entries})
 
 
 @websocket_api.require_admin
@@ -338,6 +342,34 @@ async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection
                 _LOGGER.exception("Energy paths of %s failed", day)
         result["entries"].append(view)
     _send(connection, msg, result)
+
+
+async def _integration_version(hass: HomeAssistant) -> str:
+    """The installed Noxcast version, from its manifest."""
+    return str((await async_get_integration(hass, DOMAIN)).version)
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_OVERVIEW})
+@websocket_api.async_response
+async def ws_overview(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """What is due today and in the days ahead, for the overview of the panel; None without a Noxcast entry."""
+    entries = hass.config_entries.async_loaded_entries(DOMAIN)
+    if not entries:
+        _send(connection, msg, None)
+        return
+    entry = entries[0]
+    c = entry.runtime_data
+    now = dt_util.utcnow()
+    roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers, c.batteries,
+                               _battery_names(entry))
+    sensors = [(e, role, owner, (s.state if (s := hass.states.get(e)) else None)) for e, role, owner in roles]
+    status = views.learning_status(c.arrays, c.learned, c.last_learning, c.last_learning_seconds, c.last_learning_error,
+                                   c.learning_running, _next_learning(now))
+    remaining = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_energy_expected_remaining_today")
+    result = views.overview_entry(c.arrays, c.data, c.consumers, c.forecast_days, dt_util.now().date(), _day_start,
+                                  c.forecast_archive, status, sensors, c.batteries, remaining)
+    _send(connection, msg, {"now": now.timestamp(), "time_zone": hass.config.time_zone,
+                            "version": await _integration_version(hass), **result})
 
 
 def _next_learning(now: datetime) -> datetime:

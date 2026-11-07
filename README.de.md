@@ -133,8 +133,8 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
    und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird.
 3. Fertig. Noxcast lernt sofort aus dem vorhandenen Verlauf und danach jede Nacht um 01:30.
 
-Dann **Noxcast** in der Seitenleiste öffnen: *Gelerntes* zeigt, was es über jede PV-Gruppe herausgefunden hat, *Tag*
-die Prognose von heute. Fürs Dashboard: *Karte hinzufügen* → *Noxcast*.
+Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und in den nächsten Tagen ansteht,
+*Gelerntes*, was es über jede PV-Gruppe herausgefunden hat, *Tag* die Prognose von heute im Detail. Fürs Dashboard: *Karte hinzufügen* → *Noxcast*.
 
 ### Beispiele
 
@@ -245,12 +245,13 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 
 | Reiter | Inhalt |
 |---|---|
+| Übersicht | Der Einstieg: heute erwartet, bis jetzt gegen die Prognose dafür, Rest heute und PV-Leistung jetzt mit dem Tagesverlauf; für flexible Verbraucher, ob jetzt starten, und die besten Fenster; Ladestand des Akkus, wann voll und wann leer, verlorener Überschuss; die nächsten Tage mit Spanne und klarem Himmel; die Prognose von gestern gegen Ist und der Fehler der letzten 14 Tage; eine Statuszeile mit letztem Lernlauf, Sensoren ohne Werte und der installierten Version. Jeder Teil führt in den Reiter, der ihn erklärt |
 | Gelerntes | Ein Lernstand (letzter und nächster Lernlauf, wie weit jede PV-Gruppe ist, für Administratoren ein Knopf zum sofortigen Neulernen); je PV-Gruppe die gelernten Karten für Schatten, Reflexion und Richtung über Sonnenazimut × Höhe mit den Sonnenbahnen des Jahres, ein Datumsregler, Werte je Feld, ein Raster Monat × Stunde, Kennzahlen (Wirkungsgrad, Himmelssicht, Temperaturkoeffizient, Abdeckung) und eine Plausibilitätsprüfung von Neigung und Azimut |
 | Tag | Ein Tag (bis 120 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; je Stunde ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
 | Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
 | Akku & Überschuss | Simulation bis zum Ladebeginn morgen, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
-| Diagnose | Wetter, letzter Lernlauf, Archiv; jeder Sensor, den Noxcast liest, mit Zustand, Statistik und Abdeckung; fehlende Daten und Fehler |
+| Diagnose | Installierte Version, Wetter, letzter Lernlauf, Archiv; jeder Sensor, den Noxcast liest, mit Zustand, Statistik und Abdeckung; fehlende Daten und Fehler |
 
 ### Tageskarte `custom:noxcast-card`
 

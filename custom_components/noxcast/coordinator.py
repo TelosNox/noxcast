@@ -425,7 +425,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp = history.air_temp
         learned = await self.hass.async_add_executor_job(
             ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
-        base = self.forecast_archive
+        # a copy: add_history replaces days of the live dict, and merged() tells those by identity
+        base = dict(self.forecast_archive)
         work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),
                                                       soc_full)
         # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)

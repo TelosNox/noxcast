@@ -21,8 +21,8 @@ predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archi
 
 Executor jobs read the live archive while the event loop keeps changing it. So the event loop never changes
 a day in place: snapshot() and add_history() put a new day dict, and the caller rebinds a copy of the
-top-level dict before adding or removing days (snapshot, prune). A job that adds measured values works
-on a deep copy, and merged() brings them back.
+top-level dict before adding or removing days (snapshot, prune). A job that adds measured values gets a
+shallow copy as its base, works on a deep copy of it, and merged() brings the values back.
 
 "alt" holds the same day computed from each weather model on its own when the forecast averages
 several (e.g. ICON and ECMWF IFS), so each model can be compared with their mean and the actual
@@ -40,7 +40,7 @@ before it have none.
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
 
-The stored dict is written only here (snapshot, add_*, prune) and read elsewhere only through the
+The stored dict is written only here (snapshot, add_*, prune, merged) and read elsewhere only through the
 read-only views Day / Hour / Source (days(), day(), dates()); they parse the string keys and leave
 the stored format untouched. Values are the stored objects themselves: readers must not modify them.
 """

@@ -140,13 +140,14 @@ def test_history_leaves_the_day_a_job_reads_unchanged():
 def test_merged_keeps_what_the_loop_changed_meanwhile():
 
     other = date(2026, 10, 12)
-    base = {}
-    archive.snapshot(base, other, "x", _weather(), {"roof": {}})
-    archive.snapshot(base, DAY, "x", _weather(), {"roof": {}})
+    live = {}
+    archive.snapshot(live, other, "x", _weather(), {"roof": {}})
+    archive.snapshot(live, DAY, "x", _weather(), {"roof": {}})
+    base = dict(live)                                                            # as the coordinator does
     work = copy.deepcopy(base)
     archive.add_actuals(work, "roof", {T0 + h * 3600: 40.0 for h in range(24)}, before=T0 + 24 * 3600, curtailed={T0})
-    live = dict(base)
-    archive.add_history(live, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0})     # the loop replaces DAY
+    archive.add_history(live, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0})     # the loop replaces DAY in place
+    live = dict(live)
     archive.prune(live, DAY)                                                     # and drops the older day
     out = archive.merged(live, base, work)
     assert set(out) == {DAY.isoformat()}

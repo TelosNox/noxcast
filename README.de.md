@@ -370,13 +370,13 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
 
 ### Klarer Himmel
 
-Der klare Himmel (Obergrenze jeder Prognose, Bezug für Klarheit, Bandbreite und Korrekturen) ist ein festes
+Die Einstrahlung bei klarem Himmel (Bezug für die Klarheit, Obergrenze für Bandbreite und Korrekturen) ist ein festes
 physikalisches Modell ohne gelernte Werte und ohne Wetterdaten: Sonnenstand nach NOAA aus Breite, Länge und Zeit,
 Einstrahlung nach dem vereinfachten Solis-Modell von Ineichen mit dem Luftdruck aus der Höhe (Standardatmosphäre).
 Breite, Länge und Höhe stammen aus den Einstellungen von Home Assistant. Aerosole (AOD 0,1 bei 700 nm) und
 Wasserdampf (1 cm) sind fest, für jeden Standort und jede Jahreszeit gleich. Erst danach machen die gelernten Werte
-der PV-Gruppe (Schatten, Himmelssicht, Wirkungsgrad) aus dieser Einstrahlung die Leistung der Gruppe bei klarem
-Himmel.
+der PV-Gruppe (Schatten, Richtung, Reflexion, Himmelssicht, Wirkungsgrad) und der Temperaturverlust bei der
+vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe bei klarem Himmel.
 
 ### Lernen (nachts, aus der Langzeitstatistik)
 

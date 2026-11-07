@@ -425,8 +425,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp = history.air_temp
         learned = await self.hass.async_add_executor_job(
             ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
-        await self.hass.async_add_executor_job(
-            ln.record_archive, self.forecast_archive, self.site, self.arrays, learned, history, now.timestamp(), soc_full)
+        base = self.forecast_archive
+        work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),
+                                                      soc_full)
+        # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
+        self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
         self.learned.update(learned)          # applied in one step on the event loop
         self.band = await self.hass.async_add_executor_job(self._learn_band)
         await self._async_forecast_error()
@@ -476,6 +479,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception:  # noqa: BLE001
             # a diagnostic figure: it must not stop setup or the rest of the learning run
             _LOGGER.warning("Forecast error could not be computed from the archive", exc_info=True)
+
+    def _record_archive(self, base: dict, learned: dict[str, LearnedArray], history: ln.PvHistory, now: float,
+                        soc_full: float) -> dict:
+        """Executor. On a copy: the event loop reads and stores the live archive meanwhile."""
+        work = copy.deepcopy(base)
+        ln.record_archive(work, self.site, self.arrays, learned, history, now, soc_full)
+        return work
 
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
@@ -707,12 +717,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         def wx(series: list[WeatherHour]) -> dict[float, dict]:
             return {w.start: fc_archive.details(w.cloud, w.sun, w.wind, w.wind_dir) for w in series if a <= w.start < b}
 
-        if fc_archive.snapshot(self.forecast_archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
+        # a new top-level dict: executor jobs may be iterating the current one (archive.py)
+        archive = dict(self.forecast_archive)
+        if fc_archive.snapshot(archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
                                result.arrays, alt, wx(weather),
                                {name: wx(series) for name, series in (alt_weather or {}).items()},
                                {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()},
                                models):
-            fc_archive.prune(self.forecast_archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
+            fc_archive.prune(archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
+            self.forecast_archive = archive
             self._archive_store.async_delay_save(self._archive_data, 300)
 
     async def async_add_exclusion(self, start: datetime, end: datetime, note: str = "") -> None:

@@ -230,6 +230,13 @@ Alle Akkus werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach
 | Satellitenfilter | Aus: wählt mit der Satellitenstrahlung klare Stunden zum Lernen aus und teilt den Prognosefehler in Wetter und Modell |
 | Archiv-URLs, Satellitenmodell, API-Schlüssel | Open-Meteo; nur für selbst gehosteten oder kommerziellen Zugang ändern |
 
+Ob der Satellitenfilter hilft, hängt von der Region ab (Berge und Küstennebel verschlechtern ihn). Nach dem Einschalten
+und dem nächsten nächtlichen Lernlauf zeigt der Sensor **Übereinstimmung Satellit** jedes Arrays, wie gut Satellit und
+Anlage bei klaren und bewölkten Stunden übereinstimmen (Korrelation, unverschattete Stunden). Ab 0,9 arbeitet der
+Filter gut; auf der Anlage, an der er entwickelt wurde, lag der Wert bei 0,90–0,94. Unter etwa 0,8 ist er nicht besser
+als eine grobe Reanalyse und kann mehr schaden als nützen, dann besser wieder ausschalten. Ohne ihn werden
+Himmelssicht und Temperaturkoeffizient nicht gelernt.
+
 ## Dashboard-Referenz
 
 ### Seitenleisten-Panel *Noxcast* (Gesamtübersicht)

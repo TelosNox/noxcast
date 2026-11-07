@@ -229,6 +229,13 @@ All batteries are simulated as one storage (capacities add up, limits weighted b
 | Satellite filter | Off: uses satellite irradiance to pick clear hours for learning and to split the forecast error into weather and model |
 | Archive URLs, satellite model, API key | Open-Meteo; change only for self-hosted or commercial access |
 
+Whether the satellite filter helps depends on the region (mountains and coastal fog make it worse). After switching it
+on and the next nightly learning run, each array's **satellite agreement** sensor shows how well satellite and
+installation agree on clear and cloudy hours (correlation, unshaded hours). At 0.9 or above the filter works well; on
+the installation it was developed on it reached 0.90–0.94. Below about 0.8 it is no better than a coarse reanalysis
+and can do more harm than good, so switch it off again. Without it, sky view and temperature coefficient are not
+learned.
+
 ## Dashboard reference
 
 ### Sidebar panel *Noxcast* (full overview)

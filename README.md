@@ -62,7 +62,8 @@ Every forecast hour breaks down into its steps. Here the morning sun is behind t
 
 Forecast against actual for the last 14, 30 or 90 days, by weather class and weather model. With the satellite
 filter, each day's error is split: the weather part is what the weather forecast got wrong, the model part is
-what Noxcast got wrong with the real weather. A comparison of the weather models shows, on request, which model or
+what Noxcast got wrong with the satellite-measured weather. Since satellite values are area means, the model part also
+contains their errors (fog, for example): it says something about the model over many days, not on a single day. A comparison of the weather models shows, on request, which model or
 pair of models would have suited your installation best over the past year.
 
 ![Forecast accuracy: daily error, forecast and actual per day, split into weather part and model part](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/accuracy.png)

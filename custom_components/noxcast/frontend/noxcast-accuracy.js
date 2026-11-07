@@ -18,7 +18,7 @@ const ACC_TEXT = {
     verdictWeather: "Der größte Teil des Fehlers kommt aus der Wettervorhersage. Mit dem tatsächlichen Wetter liegt das Modell deutlich näher am Ist.",
     verdictModel: "Der größere Teil des Fehlers bleibt auch mit gemessenem Wetter. Hier lohnt ein Blick auf Verschattung, Ausrichtung und Wirkungsgrad.",
     verdictBoth: "Wettervorhersage und Modell tragen etwa gleich viel zum Fehler bei.",
-    splitHelp: "Für jede vergangene Stunde rechnet Noxcast das Modell noch einmal mit der Einstrahlung aus dem Satellitenarchiv. Wetteranteil = Prognose − Modell mit gemessenem Wetter, Modellanteil = Modell mit gemessenem Wetter − Ist. Beide Balken zusammen ergeben die Tagesabweichung. Ein Rest bleibt immer: Satellitenwerte sind Flächenmittel und keine Messung am Dach.",
+    splitHelp: "Für jede vergangene Stunde rechnet Noxcast das Modell noch einmal mit der Einstrahlung aus dem Satellitenarchiv. Wetteranteil = Prognose − Modell mit gemessenem Wetter, Modellanteil = Modell mit gemessenem Wetter − Ist. Beide Balken zusammen ergeben die Tagesabweichung in kWh. Der Modellanteil enthält auch die Messfehler des Satelliten: Seine Werte sind Flächenmittel und keine Messung am Dach, bei Nebel oder Hochnebel liegen sie oft deutlich daneben. Ein einzelner Tag sagt deshalb wenig über das Modell; aussagekräftig ist der Modellanteil über viele Tage.",
     backtest: "Rückrechnung", hourError: "Stundenfehler",
     btSmaller: (p, vs) => `Fehler ${p} % kleiner als ${vs}`, btLarger: (p, vs) => `Fehler ${p} % größer als ${vs}`,
     btVsThen: "die Prognose damals", btVsNoMap: "ohne Verschattungskarte",
@@ -65,7 +65,7 @@ const ACC_TEXT = {
     verdictWeather: "Most of the error comes from the weather forecast. With the actual weather the model is much closer to what happened.",
     verdictModel: "The larger part of the error remains even with measured weather. Shading, orientation and efficiency are worth a look.",
     verdictBoth: "Weather forecast and model contribute about equally to the error.",
-    splitHelp: "For every past hour Noxcast runs the model again on the irradiance from the satellite archive. Weather part = forecast − model on measured weather, model part = model on measured weather − actual. Both bars together are the daily deviation. Some rest always remains: satellite values are area means, not a measurement on the roof.",
+    splitHelp: "For every past hour Noxcast runs the model again on the irradiance from the satellite archive. Weather part = forecast − model on measured weather, model part = model on measured weather − actual. Both bars together are the daily deviation in kWh. The model part also contains the satellite's measurement errors: its values are area means, not a measurement on the roof, and in fog or low stratus they are often far off. A single day therefore says little about the model; the model part over many days is what counts.",
     backtest: "Backtest", hourError: "Hourly error",
     btSmaller: (p, vs) => `Error ${p} % smaller than ${vs}`, btLarger: (p, vs) => `Error ${p} % larger than ${vs}`,
     btVsThen: "the forecast then", btVsNoMap: "without the shading map",
@@ -346,15 +346,19 @@ class NoxcastAccuracy extends HTMLElement {
       [t.modelBias, this._pct(mBias, true), null], [t.splitDays, String(sel.length), null]]
       .map(([k, v, c]) => `<div class="fig"><span class="muted small">${c ? `<i class="dot" style="background:${c}"></i>` : ""}${k}</span><span class="big">${v}</span></div>`).join("");
     const W = 720, H = 180, pad = 34, mid = H / 2 - 6;
-    const lim = Math.max(0.1, ...sel.flatMap((d) => [Math.abs(d.f - d.m) / d.a, Math.abs(d.m - d.a) / d.a])) * 1.1;
-    const span = Math.min(lim, 1.5), y = (v) => mid - (Math.max(-span, Math.min(span, v)) / span) * (mid - 8);
+    // bars in kWh, not relative to each day's actual: a dark day's few hundred Wh would otherwise show as a huge share
+    const span = Math.max(100, ...sel.flatMap((d) => [Math.abs(d.f - d.m), Math.abs(d.m - d.a)])) * 1.1;
+    const y = (v) => mid - (Math.max(-span, Math.min(span, v)) / span) * (mid - 8);
+    // signed kWh; a value that rounds to zero shows as plain 0 instead of "+0,0" or "-0,0"
+    const dg = span < 2000 ? 2 : 1;
+    const sk = (v) => { const s = this._kwh(v, dg); return /[1-9]/.test(s) ? `${v > 0 ? "+" : ""}${s}` : this._kwh(0, dg); };
     const bw = (W - pad) / sel.length;
     const ticks = [-span / 2, span / 2].map((v) => `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line>
-      <text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._pct(v, true)}</text>`).join("");
+      <text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${sk(v)}</text>`).join("");
     const bars = sel.map((d, i) => {
-      const x = pad + i * bw, w = (d.f - d.m) / d.a, m = (d.m - d.a) / d.a, on = d.date === this._s.day;
+      const x = pad + i * bw, w = d.f - d.m, m = d.m - d.a, on = d.date === this._s.day;
       const bar = (v, x0, cls) => `<rect x="${x0.toFixed(1)}" y="${Math.min(y(v), mid).toFixed(1)}" width="${(bw * 0.36).toFixed(1)}" height="${Math.max(1, Math.abs(y(v) - mid)).toFixed(1)}" rx="2" class="${cls}${on ? " on" : ""}"></rect>`;
-      return `<g data-day="${d.date}" class="hit"><title>${this._date(d.date)}: ${t.weatherPart} ${this._pct(w, true)}, ${t.modelPart} ${this._pct(m, true)}</title>
+      return `<g data-day="${d.date}" class="hit"><title>${this._date(d.date)}: ${t.weatherPart} ${sk(w)}, ${t.modelPart} ${sk(m)} ${t.kwh}</title>
         ${bar(w, x + bw * 0.12, "wx")}${bar(m, x + bw * 0.52, "md")}
         <rect x="${x.toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H}" fill="transparent"></rect></g>`;
     }).join("");
@@ -367,7 +371,7 @@ class NoxcastAccuracy extends HTMLElement {
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.split}">${ticks}<line x1="${pad}" x2="${W}" y1="${mid}" y2="${mid}" class="zero"></line>
         <text x="${pad - 4}" y="${mid + 3}" text-anchor="end" class="ax">0</text>${bars}${labels}</svg>
       <div class="legend"><span><i class="sw" style="background:var(--nx-wx)"></i>${t.weatherPart}</span><span><i class="sw" style="background:var(--nx-md)"></i>${t.modelPart}</span>
-        <span>&gt; 0 = ${t.over}</span></div>
+        <span>${t.kwh}, &gt; 0 = ${t.over}</span></div>
       <p class="help">${t.splitHelp}</p></section>`;
   }
 

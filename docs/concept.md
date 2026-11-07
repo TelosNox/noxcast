@@ -108,9 +108,10 @@ Consequences:
   not. A user's installation shaded by a fir and oaks showed the pattern this causes (not confirmed from its
   hours): an efficiency of about 54 %, a direction factor at its upper limit of 1.2 over the free cells (it is
   relative to the efficiency), and a geometry check that turned the plane away from the trees. On the reference
-  installation (hold-out, daily energy error) the roof went from 9.6 to 9.3 % (bias −3.7 → −2.9 %), the balcony
-  stayed at 5.6 %. Two stricter variants lost in the same backtest and were dropped: a margin of one cell around
-  shaded cells for the efficiency (roof 10.1 %), and the same rule for the direction factor (balcony 5.8 %).
+  installation (hold-out, daily energy error, Dec 2025 – Nov 2026 with steady hours) the roof went from 5.6 to
+  5.3 % (bias −1.9 → −1.4 %), the balcony stayed at 5.5 %. Two stricter variants lost in an earlier backtest
+  (without steady hours) and were dropped: a margin of one cell around shaded cells for the efficiency (roof
+  9.6 → 10.1 %), and the same rule for the direction factor (balcony 5.6 → 5.8 %).
   The geometry check, a diagnostic only, uses the margin and needs at least 15 free hours on each side of the
   plane's direction, since an azimuth error only shows as one side against the other.
 - **Regressions over many hours** (sky view, temperature loss) may use satellite irradiance

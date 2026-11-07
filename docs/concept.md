@@ -409,7 +409,8 @@ orientation changes the geometry key and starts relearning.
   0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI), gives the 10th and 90th
   percentile; a class with fewer than 8 days (40 hours) falls back to all days together, and hours
   with possible curtailment are left out. The band varies the clouds, not the output: P10 and P90
-  stay between no sun and a clear sky plus 5 % (geometry and shading errors, cloud enhancement).
+  stay between no sun and a clear sky plus 5 % (geometry and shading errors, cloud enhancement), or the
+  forecast itself if the weather source reports more irradiance than the clear-sky model.
   A first version used the ratio actual / forecast; on a mixed day it put P90 at 2.2 times the
   forecast, 10.1 kWh against 8.3 kWh with a clear sky. Applied to today's rest,
   tomorrow and the day after (attributes `p10` / `p90` of the total sensors), per hour in the day

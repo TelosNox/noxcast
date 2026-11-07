@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.0b3] - 2026-11-07
+
+The third pre-release of 0.3.0. The sections below list what changed since 0.3.0b2.
+
 ### Changed
 - Forecast accuracy, "Weather or model?": the daily bars now show the weather and model part in kWh instead of as a
   share of that day's actual yield. A dark day with little yield no longer shows a huge model part for a few hundred

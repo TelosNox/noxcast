@@ -1050,13 +1050,17 @@ def known_free(learned: LearnedArray, azimuth: float, elevation: float, margin: 
     pulls the efficiency median down. The margin keeps the geometry check away from shadow edges, which a
     tree's crown blurs over more than one cell; for the efficiency it cost accuracy in the backtest.
     """
+    def known(a: int, e: int) -> float | None:
+        v = learned.cells.get(_key(a % 36, e))
+        if v is None and e >= 0 and learned.facade:
+            v = facade_transmission(learned.facade, (a % 36 + 0.5) * AZ_STEP, (e + 0.5) * EL_STEP)
+        return v
+
     ai, ei = _cell(azimuth, elevation)
-    if learned.cells.get(_key(ai, ei)) is None and not learned.facade:
+    if known(ai, ei) is None or transmission(learned, azimuth, elevation) < FREE_TRANSMISSION:
         return False
-    if transmission(learned, azimuth, elevation) < FREE_TRANSMISSION:
-        return False
-    return not margin or all(v >= FREE_TRANSMISSION for v in (learned.cells.get(_key((ai + x) % 36, ei + y))
-                                                for x in (-1, 0, 1) for y in (-1, 0, 1)) if v is not None)
+    return not margin or all(v >= FREE_TRANSMISSION for v in (known(ai + x, ei + y)
+                                                              for x in (-1, 0, 1) for y in (-1, 0, 1)) if v is not None)
 
 
 def direction_factor(learned: LearnedArray, azimuth: float, elevation: float) -> float:

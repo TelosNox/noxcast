@@ -46,6 +46,11 @@ def test_unlearned_positions_and_shadow_edges_are_not_known_free():
     assert not model.known_free(learned, 195.0, 32.0, margin=True)  # ... but next to the shaded cell 20,6
     assert not model.known_free(learned, 95.0, 32.0)        # not learned: transmission says 1, but nothing is known
     assert model.transmission(learned, 95.0, 32.0) == 1.0
+    # a facade fills only its own sector: an unlearned position outside it stays unknown
+    facade = {"direction": 120.0, "height": 20.0, "start": 90.0, "end": 150.0}
+    with_facade = model.LearnedArray(cells=dict(learned.cells), facade=facade)
+    assert model.known_free(with_facade, 125.0, 50.0)                # high above the facade's edge: known free
+    assert not model.known_free(with_facade, 245.0, 50.0)            # west, outside the sector: not known
 
 
 def test_geometry_check_stays_silent_when_a_tree_leaves_free_hours_on_one_side_only():
@@ -55,7 +60,7 @@ def test_geometry_check_stays_silent_when_a_tree_leaves_free_hours_on_one_side_o
     learned = model.LearnedArray(efficiency=EFF, cells=tree)
     assert len(ac._rows(SITE, TRUE, learned, samples, ghi, None)) >= ac.GEOMETRY_MIN_HOURS    # enough, but one-sided
     assert ac.check_geometry(SITE, TRUE, learned, samples, ghi) is None
-    # the same hours, but an unlearned afternoon dimmed by the tree no longer counts as free and turns the plane
+    # an afternoon dimmed by the tree that the map has not learned: no longer free, so no fit that would turn the plane
     east = {k: v for k, v in FREE.items() if int(k.split(",")[0]) * 10 + 5 < 200}
     dimmed = [(t, p * (0.6 if model.clearsky_hour(SITE, TRUE, t)[2] > 210 else 1.0)) for t, p in samples]
     assert ac.check_geometry(SITE, TRUE, model.LearnedArray(efficiency=EFF, cells=east), dimmed, ghi) is None

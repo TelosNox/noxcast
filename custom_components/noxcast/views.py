@@ -344,7 +344,7 @@ def diagnostics_entry(title: str, *, weather_models, data, last_learning: dateti
                     "hints": learned[sid].hints if sid in learned else []}
                    for sid, arr in arrays.items()],
         "exclusions": [{"start": _iso(e["start"]), "end": _iso(e["end"]), "note": e.get("note", "")} for e in exclusions],
-        "archive": {"days": len(archive), "complete": sum(1 for d in fc_archive.days(archive) if d.complete)},
+        "archive": {"days": len(archive), "complete": fc_archive.complete_days(archive)},
         "fine": {"days": sum(1 for d in fine.values() if any(d.values()))},
         "sensors": sensors,
     }

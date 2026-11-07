@@ -103,6 +103,12 @@ def _day(key: str, d: dict) -> Day:
     return Day(key, d.get("issued"), hours, history, list(d.get("models") or []))
 
 
+def complete_days(archive: dict) -> int:
+    """Days whose every hour has its actual values, counted on the stored form without building the days."""
+    return sum(1 for d in archive.values()
+               if (hours := d.get("hours")) and all(h.get("actual") is not None for h in hours.values()))
+
+
 def days(archive: dict) -> list[Day]:
     """All archived days, by date."""
     return [_day(k, archive[k]) for k in sorted(archive)]

@@ -10,7 +10,7 @@ import copy
 import logging
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -270,6 +270,19 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – the archive simply misses these days
             _LOGGER.debug("5-minute statistics unavailable: %s", err)
             return
+        bounds = [(day, dt_util.start_of_local_day(day).timestamp(),
+                   dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()) for day in days]
+        # a sun position per 5-minute step and plane: after a few missed days too much for the event loop
+        steps = await self.hass.async_add_executor_job(self._fine_steps, stats, dict(self._factors), bounds)
+        for day, sensor, day_steps in steps:
+            fn.add_day(self.fine, day, sensor, day_steps)
+        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids))
+        self._fine_store.async_delay_save(lambda: {"days": self.fine}, 60)
+
+    def _fine_steps(self, stats: dict[str, Series], factors: dict[str, float],
+                    bounds: list[tuple[date, float, float]]) -> list[tuple[date, str, dict | None]]:
+        """Executor. The useful 5-minute periods per day and sensor; the archive itself is changed on the event loop."""
+        out = []
         for arr in self.arrays.values():
             planes = arr.geometry.planes
 
@@ -279,13 +292,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     angle_of_incidence(tilt, azimuth, 90.0 - sun.elevation, sun.azimuth) < 90.0 for tilt, azimuth, _ in planes)
 
             for sensor in arr.sensors:
-                series = {t: v * self._factors.get(sensor, 1.0) for t, v in stats.get(sensor, {}).items() if v is not None}
-                for day in days:
-                    a = dt_util.start_of_local_day(day).timestamp()
-                    b = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
-                    fn.add_day(self.fine, day, sensor, fn.day_steps(series, a, b, useful))
-        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids))
-        self._fine_store.async_delay_save(lambda: {"days": self.fine}, 60)
+                series = {t: v * factors.get(sensor, 1.0) for t, v in stats.get(sensor, {}).items() if v is not None}
+                out += [(day, sensor, fn.day_steps(series, a, b, useful)) for day, a, b in bounds]
+        return out
 
     def _geometry_key(self, sub_id: str) -> list:
         a = self.arrays[sub_id]

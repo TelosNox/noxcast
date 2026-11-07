@@ -254,8 +254,11 @@ class NoxcastDay extends HTMLElement {
     const band = tsRows(e.band, "p10", "p90");
     const figs = [[mainLabel, `${this._kwh(main)} ${t.kwh}`]];
     if (ref > 0 && phase !== "future") {
-      const clear = e.arrays.reduce((a, arr) => a + this._clear(arr), 0);
-      figs.push([refLabel, `${this._kwh(ref)} ${t.kwh}`], [t.deviation, this._dev(main, ref, clear)]);
+      // only arrays with a reference count: a new array without a day-ahead forecast is no miss
+      const withRef = e.arrays.filter((arr) => this._sum(this._reference(arr)) > 0);
+      const mainRef = withRef.reduce((a, arr) => a + this._sum(this._main(arr)), 0);
+      const clear = withRef.reduce((a, arr) => a + this._clear(arr), 0);
+      figs.push([refLabel, `${this._kwh(ref)} ${t.kwh}`], [t.deviation, this._dev(mainRef, ref, clear)]);
     }
     if (band.length) {
       const lo = band.reduce((a, [, l]) => a + l, 0), hi = band.reduce((a, [, , h]) => a + h, 0);
@@ -748,7 +751,7 @@ class NoxcastDay extends HTMLElement {
       .gmain b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .gfigs { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
       .gfig { white-space: nowrap; }
-      .good { color: var(--nx-good); font-weight: 500; } .bad { color: var(--nx-bad); font-weight: 500; } .warn { color: var(--nx-warn); font-weight: 500; }
+      .bad { color: var(--nx-bad); font-weight: 500; } .warn { color: var(--nx-warn); font-weight: 500; }
       .wfall { max-width: 640px; }
       .wl { font-size: 12px; fill: var(--primary-text-color); } .wv { font-size: 12px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
       .wf.start { fill: #F5A524; } .wf.total { fill: #FF6A3D; } .wf.actual { fill: #8B5CF6; }

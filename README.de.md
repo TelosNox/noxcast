@@ -119,8 +119,8 @@ früher sind die gelernten Werte gut; genutzt werden bis zu zwei Jahre.
 
 1. HACS öffnen → ⋮ → *Benutzerdefinierte Repositories*, `https://github.com/TelosNox/noxcast` mit der Kategorie
    *Integration* hinzufügen.
-2. In HACS nach *Noxcast* suchen und herunterladen. Bis Version 0.1.0 gibt es nur Vorabversionen: HACS für Noxcast
-   Beta-Versionen anzeigen lassen.
+2. In HACS nach *Noxcast* suchen und herunterladen. HACS bietet das neueste stabile Release an. Um eine Vorabversion zu testen,
+   HACS für Noxcast Beta-Versionen anzeigen lassen.
 3. Home Assistant neu starten.
 
 Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren und neu starten.
@@ -247,7 +247,7 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 |---|---|
 | Übersicht | Der Einstieg: heute erwartet, bis jetzt gegen die Prognose dafür, Rest heute und PV-Leistung jetzt mit dem Tagesverlauf; für flexible Verbraucher, ob jetzt starten, und die besten Fenster; Ladestand des Akkus, wann voll und wann leer, verlorener Überschuss; die nächsten Tage mit Spanne und klarem Himmel; die Prognose von gestern gegen Ist und der Fehler der letzten 14 Tage; eine Statuszeile mit letztem Lernlauf, Sensoren ohne Werte und der installierten Version. Jeder Teil führt in den Reiter, der ihn erklärt |
 | Gelerntes | Ein Lernstand (letzter und nächster Lernlauf, wie weit jede PV-Gruppe ist, für Administratoren ein Knopf zum sofortigen Neulernen); je PV-Gruppe die gelernten Karten für Schatten, Reflexion und Richtung über Sonnenazimut × Höhe mit den Sonnenbahnen des Jahres, ein Datumsregler, Werte je Feld, ein Raster Monat × Stunde, Kennzahlen (Wirkungsgrad, Himmelssicht, Temperaturkoeffizient, Abdeckung) und eine Plausibilitätsprüfung von Neigung und Azimut |
-| Tag | Ein Tag (bis 120 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; je Stunde ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
+| Tag | Ein Tag (bis 120 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; unter *Gruppen* der Verlauf jeder PV-Gruppe, gemessener Teil kräftig und Prognose blass; je Stunde ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
 | Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
 | Akku & Überschuss | Simulation bis zum Ladebeginn morgen, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
@@ -373,7 +373,10 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
   außen vor. Ein Plateau an der Wechselrichtergrenze wird gelernt und als Deckel angewandt. Unruhige Stunden
   (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und Reflexion.
-- **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung.
+- **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter, sobald die Schattenkarte genug
+  freie Sonnenpositionen kennt, nur aus Stunden an diesen Positionen, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
+  drückt. Die Plausibilitätsprüfung von Neigung und Azimut (*Geometrie prüfen*) nutzt ebenfalls nur freie Stunden
+  und braucht sie auf beiden Seiten der Modulrichtung.
 - **Schattenkarte** (10° Azimut × 5° Höhe): der Anteil des Direktlichts, der ankommt, nur wo Direktlicht möglich ist.
   Sie folgt der Form echter Hindernisse; Werte ≥ 0,9 gelten als frei. Neuere Beobachtungen wiegen mehr; übereinstimmende
   neue Beobachtungen ersetzen alte (ein gefällter Baum).

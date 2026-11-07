@@ -7,19 +7,25 @@ breaking changes.
 
 ## Unreleased
 
+## [0.2.0b4] - 2026-11-07
+
+The fourth pre-release of 0.2.0. The sections below list what changed since 0.2.0b3.
+
+### Changed
+- When a Noxcast page gets no answer while loading its data, for example while Noxcast relearns after its settings
+  changed, it explains that Noxcast is not answering and that the page tries again, instead of showing just
+  "timeout".
+- The consumer form and the README say which properties the power, energy and time sensors need.
+
 ### Fixed
 - A consumer with an energy counter that is unknown between runs (common for the program energy of washers and
   dishwashers) no longer takes those hours out of learning the base load. Hours without a value now count as no
   consumption of that device. Such a device was learned from its run hours only and forecast too high; expect its
   forecast to drop after the next learning run. If a meter that keeps counting is unavailable for a while, those
-  hours count as no consumption too and the meter's catch-up lands in the next hour.
+  hours count as no consumption too, so what the device used meanwhile counts as base load, and the meter's catch-up
+  lands in the next hour.
 - With an energy sensor and an elapsed time, the power of a running program is now right for a meter that keeps
   counting too, not only for a counter that starts at 0 with each program.
-
-### Changed
-- When a Noxcast page gets no answer, for example while Noxcast relearns after its settings changed, it explains that
-  Noxcast is not answering and that the page tries again, instead of showing just "timeout".
-- The consumer form and the README say which properties the power, energy and time sensors need.
 
 ## [0.2.0b3] - 2026-11-07
 

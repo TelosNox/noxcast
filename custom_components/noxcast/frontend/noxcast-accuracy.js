@@ -349,7 +349,9 @@ class NoxcastAccuracy extends HTMLElement {
     // bars in kWh, not relative to each day's actual: a dark day's few hundred Wh would otherwise show as a huge share
     const span = Math.max(100, ...sel.flatMap((d) => [Math.abs(d.f - d.m), Math.abs(d.m - d.a)])) * 1.1;
     const y = (v) => mid - (Math.max(-span, Math.min(span, v)) / span) * (mid - 8);
-    const sk = (v) => `${v > 0 ? "+" : ""}${this._kwh(v)}`;
+    // signed kWh; a value that rounds to zero shows as plain 0 instead of "+0,0" or "-0,0"
+    const dg = span < 2000 ? 2 : 1;
+    const sk = (v) => { const s = this._kwh(v, dg); return /[1-9]/.test(s) ? `${v > 0 ? "+" : ""}${s}` : this._kwh(0, dg); };
     const bw = (W - pad) / sel.length;
     const ticks = [-span / 2, span / 2].map((v) => `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line>
       <text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${sk(v)}</text>`).join("");
@@ -369,7 +371,7 @@ class NoxcastAccuracy extends HTMLElement {
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t.split}">${ticks}<line x1="${pad}" x2="${W}" y1="${mid}" y2="${mid}" class="zero"></line>
         <text x="${pad - 4}" y="${mid + 3}" text-anchor="end" class="ax">0</text>${bars}${labels}</svg>
       <div class="legend"><span><i class="sw" style="background:var(--nx-wx)"></i>${t.weatherPart}</span><span><i class="sw" style="background:var(--nx-md)"></i>${t.modelPart}</span>
-        <span>&gt; 0 = ${t.over}</span></div>
+        <span>${t.kwh}, &gt; 0 = ${t.over}</span></div>
       <p class="help">${t.splitHelp}</p></section>`;
   }
 

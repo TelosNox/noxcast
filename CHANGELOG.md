@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- After a Home Assistant restart the weather card shows the PV yield per day again as soon as Noxcast has computed
+  it. Before, it showed the days without PV until the next refresh 15 minutes later, or until the page was reloaded.
+
 ## [0.2.0b4] - 2026-11-07
 
 The fourth pre-release of 0.2.0. The sections below list what changed since 0.2.0b3.

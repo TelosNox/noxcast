@@ -1,5 +1,5 @@
 """Websocket payloads of the panel and the day card (views.py), built from plain data without Home Assistant."""
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -414,3 +414,12 @@ def test_overview_entry():
                            "remaining": "sensor.rest"}
     empty = views.overview_entry(arrays(), None, {}, 3, DAY, day_start, {}, status, [], {}, None)
     assert empty["today"] is None and empty["days"] == [] and empty["consumers"] == []
+
+
+def test_recent_accuracy_ends_with_the_last_complete_day():
+    """Before the nightly run yesterday has no actual: the range then ends the day before, as in the accuracy view."""
+    today = date(2026, 7, 20)
+    arc = {k.isoformat(): _archive_day(k, 1000, 1000) for k in (date(2026, 7, 4) + timedelta(days=i) for i in range(15))}
+    arc["2026-07-19"] = _archive_day(date(2026, 7, 19), 1000, None)
+    out = views.recent_accuracy(arc, arrays(), today)
+    assert out["yesterday"] is None and out["days"] == 14 and out["error"] == 0.0     # 5 to 18 July

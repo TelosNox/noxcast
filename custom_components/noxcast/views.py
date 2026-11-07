@@ -497,6 +497,7 @@ def day_pv(view: dict) -> Series:
 # ---------------------------------------------------------------- noxcast/overview
 
 ACCURACY_DAYS = 14          # the overview's accuracy figure: the shortest range of the accuracy view
+SEARCH_DAYS = 7             # how far before that range the last complete day may lie
 UNAVAILABLE = (None, "unavailable", "unknown")
 
 
@@ -525,13 +526,16 @@ def overview_today(arrays: dict, data, a: float, b: float) -> dict:
 def recent_accuracy(archive: dict, arrays: dict, today: date, span: int = ACCURACY_DAYS) -> dict:
     """Day-ahead forecast against actual of all arrays: yesterday, and error and bias over the last `span` days.
 
-    Days count as in the accuracy view: every hour has a forecast and an actual value of every array, the actual
+    Days count as in the accuracy view: the range ends with the last complete day; every hour has a forecast and an actual value of every array, the actual
     day total is above zero; error = sum |forecast - actual| / sum actual, bias = sum (forecast - actual) / sum actual.
     """
-    ids, first, last = list(arrays), (today - timedelta(days=span)).isoformat(), today.isoformat()
-    days = []
-    for d in fc_archive.days(archive):
-        if not ids or not first <= d.date < last or len(d.hours) < 20:
+    # only the dates in question are parsed: the request runs in the event loop, the archive holds months
+    last = today.isoformat()
+    keys = [k for k in fc_archive.dates(archive) if (today - timedelta(days=span + SEARCH_DAYS)).isoformat() <= k < last]
+    ids, days = list(arrays), []
+    for key in keys:
+        d = fc_archive.day(archive, key)
+        if not ids or len(d.hours) < 20:
             continue
         if any(h.actual is None or any(i not in h.actual or i not in h.forecast for i in ids) for h in d.hours):
             continue
@@ -539,6 +543,10 @@ def recent_accuracy(archive: dict, arrays: dict, today: date, span: int = ACCURA
         act = sum(h.actual[i] for h in d.hours for i in ids)
         if act > 0:
             days.append({"date": d.date, "forecast_wh": f, "actual_wh": act, "curtailed": sum(1 for h in d.hours if h.curtailed)})
+    # the range ends with the last complete day, as in the accuracy view (yesterday is complete only after learning)
+    if days:
+        first = (date.fromisoformat(days[-1]["date"]) - timedelta(days=span - 1)).isoformat()
+        days = [d for d in days if d["date"] >= first]
     total = sum(d["actual_wh"] for d in days)
     yesterday = (today - timedelta(days=1)).isoformat()
     y = next((d for d in days if d["date"] == yesterday), None)

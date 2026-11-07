@@ -10,7 +10,7 @@ breaking changes.
 ### Added
 - Panel: a new start tab *Overview* (*Übersicht*) with what is due today and in the days ahead: today expected, so
   far against its forecast, rest of today and PV power now with the day's course; for flexible consumers whether to
-  start now and the best windows; the battery's state of charge, full and empty times; the next days; yesterday's
+  start now and the best windows; the battery's state of charge, full and empty times and lost surplus; the next days; yesterday's
   forecast against actual and the error of the last 14 days; a status line with sensors that report no values. Each
   part links to the tab that explains it. Live values update in place without reloading the page.
 - Panel, Diagnostics: shows the installed Noxcast version.

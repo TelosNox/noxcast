@@ -24,7 +24,7 @@ const OV_TEXT = {
     battery: "Akku", socNow: "jetzt {p}", socMax: "erwartet max. {p}", fullAt: "Voll um", notFull: "heute nicht voll",
     lost: "Verlorener Überschuss heute", emptyAt: "Leer um", notEmpty: "nicht vor der nächsten Ladung", tomorrow: "morgen",
     days: "Nächste Tage", lDayFc: "Prognose", lDayBand: "Spanne", lDayClear: "klarer Himmel", todayShort: "Heute",
-    yesterday: "Gestern", yFc: "Prognose", yAct: "Ist", deviation: "Abweichung", tooHigh: "zu hoch", tooLow: "zu niedrig",
+    yesterday: "Gestern", yFc: "Prognose", yAct: "Ist", deviation: "Ist gegenüber Prognose", tooHigh: "Prognose zu hoch", tooLow: "Prognose zu niedrig",
     curtailed: "{n} h Akku voll, Ist evtl. abgeregelt", recent: "Letzte {n} Tage", recentSub: "{d} vollständige Tage",
     avgErr: "±{p} im Mittel", noYesterday: "Für gestern liegt noch kein vollständiger Tag vor.",
     ok: "Alles in Ordnung", problems: "{n} Hinweis(e)", lastRun: "Lernlauf {t}", noRun: "noch kein Lernlauf", running: "Lernlauf läuft",
@@ -48,7 +48,7 @@ const OV_TEXT = {
     battery: "Battery", socNow: "now {p}", socMax: "expected max. {p}", fullAt: "Full at", notFull: "not full today",
     lost: "Surplus lost today", emptyAt: "Empty at", notEmpty: "not before the next charge", tomorrow: "tomorrow",
     days: "Next days", lDayFc: "Forecast", lDayBand: "Range", lDayClear: "clear sky", todayShort: "Today",
-    yesterday: "Yesterday", yFc: "Forecast", yAct: "Actual", deviation: "Deviation", tooHigh: "too high", tooLow: "too low",
+    yesterday: "Yesterday", yFc: "Forecast", yAct: "Actual", deviation: "Actual against forecast", tooHigh: "forecast too high", tooLow: "forecast too low",
     curtailed: "{n} h battery full, actual possibly curtailed", recent: "Last {n} days", recentSub: "{d} complete days",
     avgErr: "±{p} on average", noYesterday: "No complete day for yesterday yet.",
     ok: "All good", problems: "{n} note(s)", lastRun: "Learning run {t}", noRun: "no learning run yet", running: "Learning run in progress",
@@ -82,14 +82,17 @@ class NoxcastOverview extends HTMLElement {
     // Noxcast computed anew: its sensor of the rest of today changed
     const id = this._data && this._data.live && this._data.live.remaining, s = id && hass.states[id];
     const stamp = s && s.last_updated;
-    if (stamp && this._stamp && stamp !== this._stamp) this._load();
+    if (stamp && this._stamp && stamp !== this._stamp) {
+      // hidden on another tab: load once it is shown again
+      if (this.isConnected) this._load(); else this._stale = true;
+    }
     if (stamp) this._stamp = stamp;
   }
 
   connectedCallback() {
     clearInterval(this._timer);
     this._timer = setInterval(() => this._load(), RELOAD_MS);
-    if (this._hass && this._data && Date.now() - this._loaded > RELOAD_MS) this._load();
+    if (this._hass && !this._loading && (!this._data || this._stale || Date.now() - this._loaded > RELOAD_MS)) this._load();
   }
   disconnectedCallback() { clearInterval(this._timer); clearTimeout(this._retry); }
 
@@ -98,9 +101,14 @@ class NoxcastOverview extends HTMLElement {
   get _lang() { return this._hass.language || "en"; }
 
   async _load() {
-    if (this._loading || !this._hass) return;
+    if (!this._hass) return;
+    // a trigger while a request runs: its answer may predate the new computation, so ask once more afterwards
+    if (this._loading) { this._again = true; return; }
     this._loading = true;
+    this._again = false;
+    this._stale = false;
     const hadFrame = !!this.shadowRoot.getElementById("ov");
+    if (!hadFrame && !this._data && !this._error) this._render();         // a placeholder while the first answer is on its way
     let error = null;
     try {
       // a request lost while the connection is rebuilt never answers: give up after 20 s and try again
@@ -114,6 +122,7 @@ class NoxcastOverview extends HTMLElement {
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     } finally {
       this._loading = false;
+      if (this._again) setTimeout(() => this._load(), 0);
     }
     // a failed reload keeps what is shown; only without data the error replaces it
     if (error && this._data && hadFrame && error !== this._t.outdated) return;
@@ -179,7 +188,7 @@ class NoxcastOverview extends HTMLElement {
     const hours = tsRows(d.today, "forecast", "expected", "actual", "clear", "p10", "p90")
       .map(([ts, fc, ex, act, clear, p10, p90]) => ({ ts, fc, ex, act, clear, p10, p90 }));
     this._hours = hours;
-    const today = (d.days || [])[0];
+    const today = this._today();
     // expected today, with the morning forecast, the range and clear sky
     const k = (wh) => kwh(wh, this._lang);
     this._set("s-exp", today ? `${k(today.expected_wh ?? today.wh)} <span class="muted unit">kWh</span>` : "–");
@@ -294,8 +303,8 @@ class NoxcastOverview extends HTMLElement {
         <div class="row"><span class="muted">${t.bestTomorrow}</span><span>${win(c.tomorrow)}</span></div></div>`).join("");
     let load = "";
     if (d.load) {
-      const hourStart = Math.floor(Date.now() / 3600000) * 3600;
-      const wh = tsRows(d.load, "wh").filter(([ts]) => ts >= hourStart && ts < d.day_end).reduce((s, [, v]) => s + v, 0);
+      const now = Date.now() / 1000;
+      const wh = tsRows(d.load, "wh").filter(([ts]) => ts + 3600 > now && ts < d.day_end).reduce((s, [, v]) => s + v, 0);
       load = `<div class="rows"><div class="row"><span class="muted">${t.loadRest}<br><span class="small">${t.loadRestSub}</span></span><span>${kwh(wh, this._lang)} kWh</span></div></div>`;
     }
     this._set("s-consumers", blocks + load);
@@ -322,13 +331,14 @@ class NoxcastOverview extends HTMLElement {
     if (!days.length) return "";
     const top = Math.max(...days.map((x) => Math.max(x.clear_wh || 0, x.p90 || 0, x.expected_wh || 0, x.wh || 0))) || 1;
     const yy = (wh) => (76 - wh / top * 72).toFixed(1);
-    const cells = days.map((x, i) => {
-      const v = i === 0 && x.expected_wh != null ? x.expected_wh : x.wh;
+    const cells = days.map((x) => {
+      const isToday = x === this._today();
+      const v = isToday && x.expected_wh != null ? x.expected_wh : x.wh;
       const date = new Date(`${x.date}T12:00:00Z`);
-      const name = i === 0 ? t.todayShort : date.toLocaleDateString(this._lang, { weekday: "short", timeZone: "UTC" });
+      const name = isToday ? t.todayShort : date.toLocaleDateString(this._lang, { weekday: "short", timeZone: "UTC" });
       const sub = date.toLocaleDateString(this._lang, { day: "numeric", month: "short", timeZone: "UTC" });
       const whisker = x.p10 != null ? `<line x1="17" x2="17" y1="${yy(x.p90)}" y2="${yy(x.p10)}" class="wh"/><line x1="13" x2="21" y1="${yy(x.p90)}" y2="${yy(x.p90)}" class="wh"/><line x1="13" x2="21" y1="${yy(x.p10)}" y2="${yy(x.p10)}" class="wh"/>` : "";
-      return `<div class="day ${i === 0 ? "today" : ""}"><div><div class="dn">${esc(name)}</div><div class="muted small">${esc(sub)}</div></div>
+      return `<div class="day ${isToday ? "today" : ""}"><div><div class="dn">${esc(name)}</div><div class="muted small">${esc(sub)}</div></div>
         <svg viewBox="0 0 34 80" aria-hidden="true">${x.clear_wh ? `<rect x="7" y="${yy(x.clear_wh)}" width="20" height="${(76 - yy(x.clear_wh)).toFixed(1)}" rx="5" fill="var(--ov-rail)"/>` : ""}
           <rect x="7" y="${yy(v)}" width="20" height="${(76 - yy(v)).toFixed(1)}" rx="5" fill="url(#ov-grad)"/>${whisker}</svg>
         <div class="kwh">${kwh(v, this._lang)}<span class="muted small"> kWh</span></div>
@@ -342,11 +352,12 @@ class NoxcastOverview extends HTMLElement {
     const t = this._t, acc = this._data.accuracy || {}, y = acc.yesterday;
     const recent = acc.error != null ? `<div class="row"><span class="muted">${fill(t.recent, { n: acc.span })}<br><span class="small">${fill(t.recentSub, { d: acc.days })}</span></span><span>${fill(t.avgErr, { p: `${num(acc.error * 100, this._lang)} %` })}</span></div>` : "";
     if (!y) return `<p class="muted small">${t.noYesterday}</p><div class="rows">${recent}</div>`;
-    const top = Math.max(y.forecast_wh, y.actual_wh) || 1, dev = y.actual_wh > 0 ? y.forecast_wh / y.actual_wh - 1 : 0;
+    // the same sign as "so far": actual against forecast, + = more than forecast
+    const top = Math.max(y.forecast_wh, y.actual_wh) || 1, dev = y.forecast_wh > 0 ? y.actual_wh / y.forecast_wh - 1 : 0;
     const bar = (label, wh, c) => `<div class="ybar"><span class="muted">${label}</span><div class="track"><div style="width:${(wh / top * 100).toFixed(1)}%;background:${c}"></div></div><b>${kwh(wh, this._lang)} kWh</b></div>`;
     return `<div class="ybars">${bar(t.yFc, y.forecast_wh, "var(--ov-fc)")}${bar(t.yAct, y.actual_wh, "var(--ov-act)")}</div>
       <div class="rows"><div class="row"><span class="muted">${t.deviation}</span><span><span class="${Math.abs(dev) <= PLAN_BAND ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>
-        <span class="muted">· ${dev >= 0 ? t.tooHigh : t.tooLow}</span>${y.curtailed ? `<br><span class="muted small">${fill(t.curtailed, { n: y.curtailed })}</span>` : ""}</span></div>${recent}</div>`;
+        <span class="muted">· ${dev >= 0 ? t.tooLow : t.tooHigh}</span>${y.curtailed ? `<br><span class="muted small">${fill(t.curtailed, { n: y.curtailed })}</span>` : ""}</span></div>${recent}</div>`;
   }
 
   _status() {
@@ -364,6 +375,9 @@ class NoxcastOverview extends HTMLElement {
       <span>${fill(t.arrays, { n: (s.arrays || []).length })}, ${fill(t.sensorsOk, { n: s.sensors || 0 })}</span>
       ${version ? `<span class="muted">·</span>${version}` : ""}${link}</div>`;
   }
+
+  // the entry of today among the days: the one whose day ends with the payload's day_end (a day may be left out)
+  _today() { return (this._data.days || []).find((x) => x.start < this._data.day_end && this._data.day_end - x.start <= 25 * 3600) || null; }
 
   _hm(ts) { return hm(ts, this._lang, this._data.time_zone, { hourCycle: "h23" }); }
   _when(iso) {

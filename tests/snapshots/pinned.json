@@ -37232,7 +37232,7 @@
       "tomorrow": {"start": 1781287200.0, "end": 1781292600.0, "pv": "= previous"}
      }
     ],
-    "accuracy": {"yesterday": null, "days": 13, "span": "= previous", "error": 0.224, "bias": -0.066},
+    "accuracy": {"yesterday": null, "days": "= previous", "span": "= previous", "error": "= previous", "bias": "= previous"},
     "status": {
      "running": "= previous",
      "last": "2026-06-11T08:30:00+00:00",

@@ -1,7 +1,7 @@
 // Noxcast panel section "Battery & surplus": what-if runs on the current forecast and the last 30 days.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/battery".
 // The what-if simulation mirrors battery.simulate in the integration; without changes it gives the same numbers.
-const { WS_SCHEMA, ask, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const BAT_TEXT = {
   de: {
@@ -108,7 +108,7 @@ class NoxcastBattery extends HTMLElement {
       this._loaded = Date.now();
       this._error = null;
     } catch (err) {
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }

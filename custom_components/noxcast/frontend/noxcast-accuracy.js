@@ -1,6 +1,6 @@
 // Noxcast panel section "Forecast accuracy": day-ahead forecasts from the archive against what happened.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/accuracy".
-const { WS_SCHEMA, ask, esc, hm, kwh } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const ACC_TEXT = {
   de: {
@@ -137,7 +137,7 @@ class NoxcastAccuracy extends HTMLElement {
       this._loadBacktest();
       this._loadModels();
     } catch (err) {
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }

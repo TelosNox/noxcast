@@ -23,7 +23,7 @@
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 // Tapping a figure opens the more-info dialog of its entity. With several entities behind it (PV arrays and
 // sensors, battery level and power) it first lists them with their current values.
-const { WS_SCHEMA, ask, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -336,7 +336,7 @@ class NoxcastCard extends HTMLElement {
       if (dayStart !== this._localMidnight(new Date()) && this.isConnected) this._retry = setTimeout(() => this._refresh(), LAG_RETRY_MS);
       if (this._srcPending) this._loadSource();
     } catch (err) {
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);
       if (this.isConnected) {
         this._retry = setTimeout(() => this._refresh(), RETRY_MS[Math.min(this._tries || 0, RETRY_MS.length - 1)]);

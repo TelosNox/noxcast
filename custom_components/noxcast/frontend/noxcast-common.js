@@ -11,7 +11,21 @@ export const WS_SCHEMA = 2;
 // a websocket request that gives up: one lost while the connection was rebuilt never answers
 export function ask(hass, msg, timeoutMs = 20000) {
   return Promise.race([hass.connection.sendMessagePromise(msg),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs))]);
+    new Promise((_, reject) => setTimeout(() => reject(new Error(TIMEOUT)), timeoutMs))]);
+}
+const TIMEOUT = "timeout";
+
+// a request without answer mostly means Home Assistant is starting or Noxcast is learning after a change of its
+// settings (the recorder answers the page only after the learning queries); the page asks again by itself
+const NO_ANSWER = {
+  de: "Noxcast antwortet gerade nicht. Das passiert, während Home Assistant startet oder Noxcast nach einer Änderung neu lernt. Die Seite versucht es gleich wieder.",
+  en: "Noxcast is not answering right now. This happens while Home Assistant starts or Noxcast relearns after a change. The page tries again shortly.",
+};
+
+// an error of a request as text for the user
+export function errorText(err, lang) {
+  const text = String((err && err.message) || err);
+  return text === TIMEOUT ? NO_ANSWER[(lang || "en").slice(0, 2)] || NO_ANSWER.en : text;
 }
 
 // a time series of the payload ({t: [...], name: [...]}) as rows [t, value of each name]

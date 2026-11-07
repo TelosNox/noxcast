@@ -91,6 +91,9 @@ def steady_band(five_min: Series) -> tuple[Series, Series]:
 def summary(store: dict) -> dict:
     """How far the archive reaches, for the diagnostics: months of data are lost if it silently stops."""
     days = sorted(store)
-    filled = {s: sum(1 for d in store.values() if (d.get(s) or {}).get("w")) for d in store.values() for s in d}
+    filled: dict[str, int] = {}
+    for d in store.values():               # one pass: the archive grows to years of days
+        for s, steps in d.items():
+            filled[s] = filled.get(s, 0) + bool((steps or {}).get("w"))
     return {"days": len(days), "first": days[0] if days else None, "last": days[-1] if days else None,
             "days_with_values": filled}

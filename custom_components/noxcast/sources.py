@@ -117,8 +117,15 @@ async def async_hourly_statistics(hass: HomeAssistant, statistic_ids: list[str],
     """Long-term statistics per statistic id: {period_start_ts: value} (period "hour" or "5minute")."""
     if not statistic_ids:
         return {}
-    result = await get_instance(hass).async_add_executor_job(
-        statistics_during_period, hass, start, end, set(statistic_ids), period, None, {kind})
+    # converted in the recorder's thread too: years of hourly rows are too many for the event loop
+    return await get_instance(hass).async_add_executor_job(
+        _statistics, hass, start, end, set(statistic_ids), period, kind)
+
+
+def _statistics(hass: HomeAssistant, start: datetime, end: datetime | None, statistic_ids: set[str], period: str,
+                kind: str) -> dict[str, dict[float, float | None]]:
+    """Recorder thread."""
+    result = statistics_during_period(hass, start, end, statistic_ids, period, None, {kind})
     return {sid: {_start_ts(row["start"]): row.get(kind) for row in rows} for sid, rows in result.items()}
 
 

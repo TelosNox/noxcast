@@ -119,3 +119,10 @@ def test_weather_details_only_for_daylight_and_compact():
     assert hours[str(int(T0 + 3600))]["alt"]["open_meteo"]["wx"] == {"sun": 1.0}
     assert "wx" not in hours[str(int(T0 + 7200))]["alt"]["open_meteo"]
     assert archive.details() == {}
+
+
+def test_complete_days_counts_as_the_parsed_days():
+    store = {"2026-10-11": {"hours": {str(T0): {"actual": {"a": 1.0}}, str(T0 + 3600): {"actual": {"a": 2.0}}}},
+             "2026-10-12": {"hours": {str(T0): {"actual": {"a": 1.0}}, str(T0 + 3600): {}}},
+             "2026-10-13": {"hours": {}}}
+    assert archive.complete_days(store) == sum(1 for d in archive.days(store) if d.complete) == 1

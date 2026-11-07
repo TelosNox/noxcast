@@ -232,9 +232,9 @@ All batteries are simulated as one storage (capacities add up, limits weighted b
 Whether the satellite filter helps depends on the region (mountains and coastal fog make it worse). After switching it
 on and the next nightly learning run, each array's **satellite agreement** sensor shows how well satellite and
 installation agree on clear and cloudy hours (correlation, unshaded hours). At 0.9 or above the filter works well; on
-the installation it was developed on it reached 0.90–0.94. Below about 0.8 it is no better than a coarse reanalysis
-and can do more harm than good, so switch it off again. Without it, sky view and temperature coefficient are not
-learned.
+the installation it was developed on it reached 0.90–0.94. Below about 0.8 it is probably no better than a coarse
+reanalysis (0.69–0.78 there), and switching it off is worth a try. Without it, sky view, direction factor and the
+temperature coefficient (unless a datasheet value is set) are not learned.
 
 ## Dashboard reference
 

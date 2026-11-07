@@ -1313,7 +1313,7 @@ class NoxcastCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-card", NoxcastCard);
-customElements.define("noxcast-card-editor", NoxcastCardEditor);
+if (!customElements.get("noxcast-card")) customElements.define("noxcast-card", NoxcastCard);
+if (!customElements.get("noxcast-card-editor")) customElements.define("noxcast-card-editor", NoxcastCardEditor);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield, shade loss and surplus", preview: false });
+if (!window.customCards.some((c) => c.type === "noxcast-card")) window.customCards.push({ type: "noxcast-card", name: "Noxcast", description: "Power flow, today's yield, shade loss and surplus", preview: false });

@@ -704,4 +704,4 @@ class NoxcastAccuracy extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-accuracy", NoxcastAccuracy);
+if (!customElements.get("noxcast-accuracy")) customElements.define("noxcast-accuracy", NoxcastAccuracy);

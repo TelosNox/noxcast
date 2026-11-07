@@ -245,4 +245,4 @@ class NoxcastDiagnostics extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-diagnostics", NoxcastDiagnostics);
+if (!customElements.get("noxcast-diagnostics")) customElements.define("noxcast-diagnostics", NoxcastDiagnostics);

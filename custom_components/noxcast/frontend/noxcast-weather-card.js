@@ -276,9 +276,9 @@ class NoxcastWeatherCard extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-weather-card", NoxcastWeatherCard);
+if (!customElements.get("noxcast-weather-card")) customElements.define("noxcast-weather-card", NoxcastWeatherCard);
 window.customCards = window.customCards || [];
 const W_DE = (document.documentElement.lang || "en").startsWith("de");
-window.customCards.push({ type: "noxcast-weather-card", name: W_DE ? "Noxcast Wetter" : "Noxcast weather",
+if (!window.customCards.some((c) => c.type === "noxcast-weather-card")) window.customCards.push({ type: "noxcast-weather-card", name: W_DE ? "Noxcast Wetter" : "Noxcast weather",
   description: W_DE ? "Die nächsten Tage untereinander, mit dem PV-Ertrag, den Noxcast je Tag erwartet"
     : "The coming days one below the other, with the PV yield Noxcast expects per day", preview: true });

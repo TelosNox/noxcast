@@ -196,8 +196,8 @@ sensor and the timing first, then only the fields of that timing.
 
 | Field | Meaning |
 |---|---|
-| Power or energy sensor | Power (W/kW) or energy (kWh, e.g. per-program energy of a washer) |
-| Remaining / elapsed time | Optional: a running program counts until it ends |
+| Power or energy sensor | Power in W/kW with `state_class: measurement`, or energy in Wh/kWh with `state_class: total` or `total_increasing`. A power sensor is the first choice: energy counters often count in 0.1 kWh steps, too coarse for single hours. As energy, a meter that keeps counting and a counter per program (e.g. the program energy of a washer) both work; a counter that is unknown between runs counts as no consumption there |
+| Remaining / elapsed time | Optional: a running program counts until it ends. With an energy sensor, the elapsed time gives the power of the running program, with either kind of counter |
 | Timing | *Fixed*: part of the load forecast. *Flexible*: you choose when it runs; Noxcast suggests the window |
 | Kind (fixed only) | *Profile*: own median per hour. *Program*: runs with an end (dishwasher); learned start times, runs per day, power curve. *Session*: on, then open-ended (PC, TV); learned on-probability and duration. *Regulated*: follows the outside temperature (heat pump, air conditioning) |
 | Run power, run minutes | Flexible only, optional: otherwise learned from history |

@@ -476,7 +476,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:
         """House load and consumer power in W: {sensor: {hour start: mean W}}.
 
-        Consumers without a power sensor use their energy sensor: the hourly change in Wh is the mean W.
+        Consumers without a power sensor use their energy sensor: the hourly change in Wh is the mean W, and an hour
+        without a statistic counts as 0 (see load.fill_counter_gaps).
         """
         ids = [self.house_load] + [c.sensor for c in self.consumers.values() if c.sensor]
         energy = [c.energy for c in self.consumers.values() if not c.sensor]
@@ -485,9 +486,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if energy:
             factors.update(await async_power_factors(self.hass, energy, ENERGY_UNIT_FACTORS))
             stats.update(await async_hourly_statistics(self.hass, energy, start, "change", period))
-        return {sid: {t: max(v, 0.0) * factors.get(sid, 1.0) if sid in energy else v * factors.get(sid, 1.0)
-                      for t, v in stats.get(sid, {}).items() if v is not None}
-                for sid in ids + energy}
+        out = {sid: {t: max(v, 0.0) * factors.get(sid, 1.0) if sid in energy else v * factors.get(sid, 1.0)
+                     for t, v in stats.get(sid, {}).items() if v is not None}
+               for sid in ids + energy}
+        hours = out.get(self.house_load, {})
+        for sid in energy:
+            out[sid] = lf.fill_counter_gaps(out[sid], hours)
+        return out
 
     async def _async_load_floor(self, start: datetime) -> Series:
         """Hourly minimum of the house load in W (the base-load floor before consumers are subtracted)."""
@@ -595,7 +600,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 floor = await self._async_load_floor(dt_util.utc_from_timestamp(start))
             except Exception as err:  # noqa: BLE001 – without the floor only the correction factor applies
                 _LOGGER.debug("Load floor statistics unavailable: %s", err)
-        running = {sid: run for sid, c in self.consumers.items() if (run := self._run(c))}
+        running = {sid: run for sid, c in self.consumers.items() if (run := await self._async_run(c, now))}
         return fc.load(self.house_load, self.consumers, self.load_profile, self.floor_profile, self.consumer_profiles,
                        self.consumer_models, series, floor, running, self._zone(now), dt_util.get_default_time_zone(),
                        now, end, dt_util.start_of_local_day().timestamp(), temps)
@@ -650,10 +655,31 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except (AttributeError, TypeError, ValueError):
             return None
 
-    def _run(self, c: ConsumerConfig) -> lf.Run | None:
+    async def _async_run(self, c: ConsumerConfig, now: float) -> lf.Run | None:
         """The consumer's run now: power from its sensor or energy / elapsed time, minutes still to go."""
-        return lf.current_run(self._value(c.sensor, POWER_UNIT_FACTORS), self._value(c.remaining, MINUTE_FACTORS),
-                              self._value(c.energy, ENERGY_UNIT_FACTORS), self._value(c.elapsed, MINUTE_FACTORS))
+        power, energy = self._value(c.sensor, POWER_UNIT_FACTORS), self._value(c.energy, ENERGY_UNIT_FACTORS)
+        elapsed = self._value(c.elapsed, MINUTE_FACTORS)
+        if power is None and energy is not None and elapsed and elapsed > 0:
+            energy = lf.run_energy(energy, await self._async_energy_since(c.energy, now - elapsed * 60))
+        return lf.current_run(power, self._value(c.remaining, MINUTE_FACTORS), energy, elapsed)
+
+    async def _async_energy_since(self, entity_id: str, start: float) -> list[float]:
+        """The energy sensor's values in Wh since start, including the one it had then; empty without history."""
+        from homeassistant.components.recorder import get_instance, history
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                history.state_changes_during_period, self.hass, dt_util.utc_from_timestamp(start), None, entity_id,
+                False, False, None, True)
+        except Exception as err:  # noqa: BLE001 – without history the run counts with its learned profile only
+            _LOGGER.debug("No history for the energy sensor %s: %s", entity_id, err)
+            return []
+        out = []
+        for s in states.get(entity_id, []):
+            try:
+                out.append(float(s.state) * ENERGY_UNIT_FACTORS.get(s.attributes.get("unit_of_measurement"), 1.0))
+            except (TypeError, ValueError):
+                continue
+        return out
 
     def _archive_data(self) -> dict:
         return fc_archive.to_store(self.forecast_archive)

@@ -227,8 +227,8 @@
             "timing": "Zeitbindung"
           },
           "data_description": {
-            "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
-            "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
+            "power_sensor": "Leistung des Geräts in W oder kW, state_class measurement. Erste Wahl, wenn es ihn gibt: Energiezähler zählen oft in Schritten von 0,1 kWh, zu grob für einzelne Stunden. Entweder dieser oder ein Energiesensor.",
+            "energy_sensor": "Statt Leistung: Energie in Wh oder kWh, state_class total oder total_increasing. Ein durchlaufender Zähler und ein Zähler je Programm gehen beide; unbekannt zwischen den Läufen zählt als kein Verbrauch.",
             "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
           }
         },
@@ -242,8 +242,8 @@
             "timing": "Zeitbindung"
           },
           "data_description": {
-            "power_sensor": "Leistung des Geräts (W). Entweder dieser oder ein Energiesensor.",
-            "energy_sensor": "Statt Leistung: Energie in kWh (Zähler oder pro Programm, total/total_increasing).",
+            "power_sensor": "Leistung des Geräts in W oder kW, state_class measurement. Erste Wahl, wenn es ihn gibt: Energiezähler zählen oft in Schritten von 0,1 kWh, zu grob für einzelne Stunden. Entweder dieser oder ein Energiesensor.",
+            "energy_sensor": "Statt Leistung: Energie in Wh oder kWh, state_class total oder total_increasing. Ein durchlaufender Zähler und ein Zähler je Programm gehen beide; unbekannt zwischen den Läufen zählt als kein Verbrauch.",
             "timing": "Fest: läuft unabhängig vom Überschuss und gehört zur Lastprognose. Flexibel: der Zeitpunkt soll dem Überschuss folgen, daher zählt er nur, solange er läuft."
           }
         },
@@ -258,7 +258,7 @@
           "data_description": {
             "kind": "Profil: Median je Stunde (grundlastartig). Programm: Läufe mit Ende, gelernte Startzeiten und Läufe pro Tag (Spülmaschine). Sitzung: an, dann offen (PC, TV). Geregelt: folgt der Außentemperatur (Wärmepumpe, Klima).",
             "remaining_time": "Optional: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
-            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms (s, min, h). Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms, bei beiden Zählerarten."
           }
         },
         "flexible": {
@@ -276,7 +276,7 @@
             "run_minutes": "Dauer eines typischen Laufs. Leer = aus dem Verlauf gelernt.",
             "start_share": "Der Sensor „jetzt starten“ geht an, wenn ein jetzt gestarteter Lauf mindestens diesen Anteil aus Überschuss bekommt und etwa so viel wie das beste Fenster, das heute noch kommt. Leer = 70 %.",
             "remaining_time": "Optional: Restlaufzeit des Geräts. Ein laufendes Programm zählt dann bis zu seinem Ende.",
-            "elapsed_time": "Optional: bisherige Laufzeit des Programms. Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms."
+            "elapsed_time": "Optional: bisherige Laufzeit des Programms (s, min, h). Mit dem Energiesensor ergibt sie die Leistung des laufenden Programms, bei beiden Zählerarten."
           }
         }
       },

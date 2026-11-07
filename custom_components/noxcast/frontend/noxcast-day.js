@@ -1,7 +1,7 @@
 // Noxcast panel section "Day": one day in detail. The groups stacked, forecast against expectation
 // and actual, the weather of each hour, and for a chosen hour how its forecast comes about.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/day".
-const { WS_SCHEMA, ask, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DAY_TEXT = {
   de: {
@@ -130,7 +130,7 @@ class NoxcastDay extends HTMLElement {
       const e = (this._data.entries || [])[0];
       if (this._hour === null || this._hour < this._data.start || this._hour >= this._data.end) this._hour = e ? this._defaultHour(e) : null;
     } catch (err) {
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }

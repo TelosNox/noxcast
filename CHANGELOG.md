@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+
+- When a Noxcast page gets no answer, for example while Noxcast relearns after its settings changed, it explains that
+  Noxcast is not answering and that the page tries again, instead of showing just "timeout".
+
 ## [0.2.0b3] - 2026-11-07
 
 The third pre-release of 0.2.0. The section below lists what changed since 0.2.0b2.

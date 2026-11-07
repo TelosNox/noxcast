@@ -1,7 +1,7 @@
 // Noxcast panel section "Diagnostics": data quality of every sensor Noxcast reads, learning runs,
 // weather source, archive and excluded periods. Answers "why does it not learn?" without logs.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/diagnostics".
-const { WS_SCHEMA, ask, esc, escId } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DIAG_TEXT = {
   de: {
@@ -93,7 +93,7 @@ class NoxcastDiagnostics extends HTMLElement {
       this._error = null;
     } catch (err) {
       if (err && err.code === "unauthorized") { this._data = null; this._error = this._t.adminOnly; this._render(); return; }
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }

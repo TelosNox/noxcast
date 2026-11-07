@@ -1,6 +1,6 @@
 // Noxcast panel section "Load": the learned load profile, the consumers and the forecast by part.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/load".
-const { WS_SCHEMA, ask, esc, escId, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const LOAD_TEXT = {
   de: {
@@ -77,7 +77,7 @@ class NoxcastLoad extends HTMLElement {
       this._loaded = Date.now();
       this._error = null;
     } catch (err) {
-      this._error = String((err && err.message) || err);
+      this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }

@@ -1,7 +1,7 @@
 // Noxcast sidebar panel: what the system has learned per array (shade, reflection, direction factor),
 // plus further sections that live in their own modules (e.g. forecast accuracy).
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/learned".
-const { WS_SCHEMA, ask, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
@@ -429,7 +429,7 @@ class NoxcastPanel extends HTMLElement {
       }
     } catch (err) {
       this._tries = (this._tries || 0) + 1;
-      if (this._tries > 2) this._error = String(err && err.message || err);   // shown only once retries failed
+      if (this._tries > 2) this._error = errorText(err, this._hass.language);   // shown only once retries failed
       if (this.isConnected) this._retry = setTimeout(() => this._load(), Math.min(60000, 5000 * this._tries));
     } finally {
       this._loading = false;

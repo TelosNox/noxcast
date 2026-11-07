@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.0b1] - 2026-11-07
+
+The first pre-release of 0.3.0. It changes how the efficiency is learned, so it runs through a nightly learning run
+before 0.3.0.
+
 ### Added
 - Panel: a new start tab *Overview* (*Übersicht*) with what is due today and in the days ahead: today expected, so
   far against its forecast, rest of today and PV power now with the day's course; for flexible consumers whether to

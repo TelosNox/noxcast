@@ -1,4 +1,5 @@
 """Forecast archive: snapshot, actuals, pruning and error."""
+import copy
 from datetime import date
 
 from conftest import load
@@ -126,3 +127,32 @@ def test_complete_days_counts_as_the_parsed_days():
              "2026-10-12": {"hours": {str(T0): {"actual": {"a": 1.0}}, str(T0 + 3600): {}}},
              "2026-10-13": {"hours": {}}}
     assert archive.complete_days(store) == sum(1 for d in archive.days(store) if d.complete) == 1
+
+
+def test_history_leaves_the_day_a_job_reads_unchanged():
+    a = {}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}})
+    seen = a[DAY.isoformat()]
+    archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0})
+    assert "history" not in seen and "history" in a[DAY.isoformat()]
+
+
+def test_merged_keeps_what_the_loop_changed_meanwhile():
+
+    other = date(2026, 10, 12)
+    live = {}
+    archive.snapshot(live, other, "x", _weather(), {"roof": {}})
+    archive.snapshot(live, DAY, "x", _weather(), {"roof": {}})
+    base = dict(live)                                                            # as the coordinator does
+    work = copy.deepcopy(base)
+    archive.add_actuals(work, "roof", {T0 + h * 3600: 40.0 for h in range(24)}, before=T0 + 24 * 3600, curtailed={T0})
+    archive.add_history(live, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0})     # the loop replaces DAY in place
+    live = dict(live)
+    archive.prune(live, DAY)                                                     # and drops the older day
+    out = archive.merged(live, base, work)
+    assert set(out) == {DAY.isoformat()}
+    hour = out[DAY.isoformat()]["hours"][str(int(T0))]
+    assert hour["actual"] == {"roof": 40.0} and hour["curtailed"] is True
+    assert str(int(T0 + 6 * 3600)) in out[DAY.isoformat()]["history"]
+    untouched = {DAY.isoformat(): base[DAY.isoformat()]}
+    assert archive.merged(untouched, base, work)[DAY.isoformat()] is work[DAY.isoformat()]

@@ -19,6 +19,11 @@ hour, wind), only for hours with irradiance and only the values the source has �
 per daylight hour and source. It is not used by the model; it allows comparing sources and
 predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archived days.
 
+Executor jobs read the live archive while the event loop keeps changing it. So the event loop never changes
+a day in place: snapshot() and add_history() put a new day dict, and the caller rebinds a copy of the
+top-level dict before adding or removing days (snapshot, prune). A job that adds measured values gets a
+shallow copy as its base, works on a deep copy of it, and merged() brings the values back.
+
 "alt" holds the same day computed from each weather model on its own when the forecast averages
 several (e.g. ICON and ECMWF IFS), so each model can be compared with their mean and the actual
 values. Days archived before Open-Meteo became the only source hold "open_meteo" there, next to a
@@ -35,7 +40,7 @@ before it have none.
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
 
-The stored dict is written only here (snapshot, add_*, prune) and read elsewhere only through the
+The stored dict is written only here (snapshot, add_*, prune, merged) and read elsewhere only through the
 read-only views Day / Hour / Source (days(), day(), dates()); they parse the string keys and leave
 the stored format untouched. Values are the stored objects themselves: readers must not modify them.
 """
@@ -296,12 +301,38 @@ def add_history(archive: dict, day: date, stamp: float, total: Series) -> bool:
     entry = archive.get(day.isoformat())
     if entry is None:
         return False
-    history = entry.setdefault("history", {})
     key = str(int(stamp))
-    if key in history:
+    if key in entry.get("history", {}):
         return False
-    history[key] = {str(int(t)): round(v) for t, v in sorted(total.items()) if v >= 0.5}
+    # a new day dict, never a change in place: an executor job may be reading the old one
+    history = {**entry.get("history", {}), key: {str(int(t)): round(v) for t, v in sorted(total.items()) if v >= 0.5}}
+    archive[day.isoformat()] = {**entry, "history": history}
     return True
+
+
+MEASURED_FIELDS = ("actual", "curtailed", "sat_ghi", "measured")
+
+
+def merged(current: dict, base: dict, work: dict) -> dict:
+    """The live archive with what a job added to `work`, its deep copy of `base` (add_actuals, add_measured).
+
+    A day the event loop has not replaced since is taken from work. One it replaced (a new snapshot, a history
+    stamp) keeps the loop's version with the measured fields of work; days the loop pruned stay away.
+    """
+    out = {}
+    for key, day in current.items():
+        done = work.get(key)
+        if done is None:
+            out[key] = day
+        elif day is base.get(key):
+            out[key] = done
+        else:
+            hours = {}
+            for k, hour in day.get("hours", {}).items():
+                add = {f: v for f in MEASURED_FIELDS if (v := done.get("hours", {}).get(k, {}).get(f)) is not None}
+                hours[k] = {**hour, **add} if add else hour
+            out[key] = {**day, "hours": hours}
+    return out
 
 
 def add_measured(archive: dict, array_id: str, satellite_ghi: Series, air_temp: Series | None,

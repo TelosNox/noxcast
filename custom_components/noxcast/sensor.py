@@ -206,7 +206,7 @@ class LearnedSensor(NoxcastEntity, SensorEntity):
                 "steady_filter": learned.steady_filter,
                 "direction_factor": [min(learned.direction.values()), max(learned.direction.values())]
                 if learned.direction else None,
-                "sky_view": learned.sky_view,
+                "sky_view": learned.sky_view, "sky_view_learned": learned.sky_view_learned,
                 "reflection_max": max(learned.reflection.values()) if learned.reflection else None}
 
 

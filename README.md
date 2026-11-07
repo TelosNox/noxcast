@@ -378,7 +378,8 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
 - **Direction factor** (coarse bins, 0.8–1.2): what remains at unshaded positions – geometry and
   model errors.
 - **Reflection:** light from bright surfaces where the module itself gets little direct light.
-- **Sky view:** share of the sky the modules see, from overcast hours (needs the satellite filter).
+- **Sky view:** share of the sky the modules see, from overcast hours (needs the satellite filter). Until there are
+  enough of them, the forecast assumes a free sky and the panel shows "not learned yet".
 - **Temperature coefficient:** upper envelope of output over cell temperature.
 
 ### During the day

@@ -50,8 +50,10 @@ each with file:line, the concrete scenario that goes wrong, and how sure it is. 
   of `Unreleased` with what the user has to do, and the version step fits it (`CLAUDE.md`, Versioning).
 
 **B. Physics and model**
-- Clear sky with the learned model is the upper bound. Bands, intraday corrections and similar adjustments vary
-  the cloud part (clearness), never act as a factor on power. More than a few percent above clear sky is a bug.
+- Clear sky with the learned model is the upper bound for Noxcast's own adjustments. Bands, intraday corrections
+  and similar adjustments vary the cloud part (clearness), never act as a factor on power. An adjustment that ends
+  more than a few percent above clear sky is a bug. A forecast that is higher only because the weather source
+  reports more irradiance than the clear-sky model is not: reported irradiance is not clipped.
 - Units (W, Wh, kWh, W/m², %, degrees), UTC against local time, daylight saving days (23 and 25 hours), the sun
   position at the middle of the hour for hourly means, period start as the key of a `Series`.
 - Learning excludes curtailment (full battery, zero export, inverter or sensor limit), outages, snow and partial

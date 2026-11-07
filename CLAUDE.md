@@ -106,8 +106,10 @@ Noxcast is delivered in releases. HACS offers users the latest release, not the 
 - Data quality before modelling: curtailment (full battery / zero export / inverter limit),
   outages, snow and partial hours are excluded from learning.
 - Hourly mean values belong to the sun position at the middle of the hour.
-- Clear sky is the upper bound. Uncertainty bands, intraday corrections and similar adjustments vary the cloud part
-  (clearness between overcast and clear), never act as a factor on PV power. The clear-sky output with the learned
-  model (shade, efficiency) may be exceeded by a few percent at most, for model errors.
+- Clear sky is the upper bound for what Noxcast adjusts itself. Uncertainty bands, intraday corrections and similar
+  adjustments vary the cloud part (clearness between overcast and clear), never act as a factor on PV power, and
+  do not push the clear-sky output with the learned model (shade, efficiency) up by more than a few percent, for
+  model errors. A blanket upward factor would produce made-up values. Irradiance that the weather source reports is
+  a fact and is not clipped: if it exceeds the clear-sky model, the simplified model has a gap, not the data.
 - Every model change proves itself in the backtest (`backtest.py`, `docs/concept.md`, PV backtest) before it is
   merged; the PR says what changed in the metrics.

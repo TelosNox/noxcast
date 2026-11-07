@@ -28,8 +28,9 @@ from typing import Any
 from . import archive as fc_archive
 from . import battery as bt
 from . import explain
+from . import plan as pl
 from .const import (TOTAL, Series, CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-                    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR)
+                    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, START_SHARE_DEFAULT)
 from .model import LearnedArray, clearsky_weather, facade_cells
 from .solar import Site
 
@@ -491,3 +492,100 @@ def day_pv(view: dict) -> Series:
         for t, v in zip(actual["t"], actual["wh"], strict=True):
             pv[t] = pv.get(t, 0.0) + v
     return pv
+
+
+# ---------------------------------------------------------------- noxcast/overview
+
+ACCURACY_DAYS = 14          # the overview's accuracy figure: the shortest range of the accuracy view
+UNAVAILABLE = (None, "unavailable", "unknown")
+
+
+def _total(per_array: dict[str, Series], ids: list[str]) -> Series:
+    """Hourly sum over the arrays, only for hours every array has."""
+    hours = set().union(*(per_array.get(i, {}) for i in ids)) if ids else set()
+    return {t: sum(per_array[i][t] for i in ids) for t in hours if all(t in per_array.get(i, {}) for i in ids)}
+
+
+def overview_today(arrays: dict, data, a: float, b: float) -> dict:
+    """Today's total per hour in [a, b): latest forecast (held once the hour began), expected (actual + corrected
+    rest), measured, clear sky and the P10 / P90 band; None where a series has no value for the hour."""
+    ids = list(arrays)
+    held, actual = _total(data.held, ids), _total(data.actual, ids)
+    expected, clear = data.expected.get(TOTAL, {}), data.clear.get(TOTAL, {})
+    band = (data.band or {}).get("hours", {})
+
+    def r(v):
+        return None if v is None else round(v, 1)
+    hours = sorted(t for t in set(held) | set(expected) if a <= t < b)
+    return columns(((t, r(held.get(t)), r(expected.get(t)), r(actual.get(t)), r(clear.get(t)),
+                     r(band[t][0]) if t in band else None, r(band[t][1]) if t in band else None) for t in hours),
+                   "forecast", "expected", "actual", "clear", "p10", "p90")
+
+
+def recent_accuracy(archive: dict, arrays: dict, today: date, span: int = ACCURACY_DAYS) -> dict:
+    """Day-ahead forecast against actual of all arrays: yesterday, and error and bias over the last `span` days.
+
+    Days count as in the accuracy view: every hour has a forecast and an actual value of every array, the actual
+    day total is above zero; error = sum |forecast - actual| / sum actual, bias = sum (forecast - actual) / sum actual.
+    """
+    ids, first, last = list(arrays), (today - timedelta(days=span)).isoformat(), today.isoformat()
+    days = []
+    for d in fc_archive.days(archive):
+        if not ids or not first <= d.date < last or len(d.hours) < 20:
+            continue
+        if any(h.actual is None or any(i not in h.actual or i not in h.forecast for i in ids) for h in d.hours):
+            continue
+        f = sum(h.forecast[i] for h in d.hours for i in ids)
+        act = sum(h.actual[i] for h in d.hours for i in ids)
+        if act > 0:
+            days.append({"date": d.date, "forecast_wh": f, "actual_wh": act, "curtailed": sum(1 for h in d.hours if h.curtailed)})
+    total = sum(d["actual_wh"] for d in days)
+    yesterday = (today - timedelta(days=1)).isoformat()
+    y = next((d for d in days if d["date"] == yesterday), None)
+    return {
+        "yesterday": {**y, "forecast_wh": round(y["forecast_wh"]), "actual_wh": round(y["actual_wh"])} if y else None,
+        "days": len(days), "span": span,
+        "error": round(sum(abs(d["forecast_wh"] - d["actual_wh"]) for d in days) / total, 3) if total else None,
+        "bias": round(sum(d["forecast_wh"] - d["actual_wh"] for d in days) / total, 3) if total else None,
+    }
+
+
+def overview_consumers(consumers: dict, plan: dict) -> list[dict]:
+    """Per flexible consumer: share of PV if started now, whether to start now (as the binary sensor), best windows."""
+    def window(w):
+        return {"start": w.start, "end": w.end, "pv": round(w.pv_share, 3)} if w else None
+    out = []
+    for sid, p in (plan or {}).items():
+        c = consumers.get(sid)
+        share = getattr(c, "start_share", None)
+        threshold = (START_SHARE_DEFAULT if share is None else share) / 100
+        out.append({"name": c.name if c else sid, "now": round(p["now"].pv_share, 3),
+                    "start_now": pl.start_now(p["now"], p["today"], threshold),
+                    "today": window(p["today"]), "tomorrow": window(p.get("tomorrow"))})
+    return out
+
+
+def overview_entry(arrays: dict, data, consumers: dict, days: int, today: date, day_start: Callable[[date], float],
+                   archive: dict, status: dict, sensors: list[tuple[str, str, str, str | None]],
+                   batteries: dict[str, dict], remaining: str | None) -> dict:
+    """What the overview shows: today per hour, the days ahead, battery, consumers, accuracy and status.
+
+    sensors are (entity, role, owner, state) of every sensor Noxcast reads; the overview lists the unavailable
+    ones. "live" names the entities the page reads itself between two answers: the PV power sensors, the state of
+    charge sensors with their capacity (Wh) and Noxcast's sensor of the expected rest of today, whose update also
+    tells the page that Noxcast computed anew.
+    """
+    a, b = day_start(today), day_start(today + timedelta(days=1))
+    out: dict[str, Any] = {"today": overview_today(arrays, data, a, b) if data is not None else None,
+                           "day_end": b, "days": [], "battery": None, "load": None}
+    if data is not None:
+        totals = today_totals(data, consumers, days, today, day_start)
+        out.update(days=totals["days"], battery=totals.get("battery"), load=totals.get("load"))
+    out["consumers"] = overview_consumers(consumers, data.plan if data is not None else {})
+    out["accuracy"] = recent_accuracy(archive, arrays, today)
+    out["status"] = {**status, "sensors": len(sensors), "unavailable": [{"entity_id": e, "role": role, "owner": owner}
+                                               for e, role, owner, state in sensors if state in UNAVAILABLE]}
+    out["live"] = {"pv": [s for arr in arrays.values() for s in arr.sensors],
+                   "soc": [{"entity": e, "capacity": c} for e, c in soc_capacities(batteries).items()],
+                   "remaining": remaining}
+    return out

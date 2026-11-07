@@ -127,6 +127,12 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     await client.send_json_auto_id({"type": "noxcast/diagnostics"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["sensors"][0]["role"] == "pv"
+    assert msg["result"]["version"]                          # the installed version, shown under Diagnostics
+    await client.send_json_auto_id({"type": "noxcast/overview"})
+    msg = await client.receive_json()
+    assert msg["success"] and msg["result"]["version"] and msg["result"]["today"]["t"]
+    assert msg["result"]["live"]["remaining"].startswith("sensor.") and msg["result"]["status"]["unavailable"] == []
+    assert hass.states.get(msg["result"]["live"]["remaining"]).state not in ("unknown", "unavailable")
     await client.send_json_auto_id({"type": "noxcast/card_config"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["pv"]["groups"][0]["name"] == "Roof"
@@ -457,7 +463,7 @@ def _state(c) -> dict:
     }
 
 
-WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest")
+WS_COMMANDS = ("learned", "today", "accuracy", "load", "diagnostics", "battery", "card_config", "backtest", "overview")
 
 
 async def _ws_answers(hass: HomeAssistant, client) -> dict:
@@ -470,6 +476,10 @@ async def _ws_answers(hass: HomeAssistant, client) -> dict:
         assert msg["result"]["v"] == WS_SCHEMA_VERSION, cmd
         for entry in msg["result"].get("entries", []) if cmd == "diagnostics" else []:     # durations are not results
             del entry["learning"]["seconds"], entry["learning"]["backtest_seconds"]
+        if cmd in ("diagnostics", "overview"):           # the installed version changes with every release
+            assert msg["result"].pop("version")
+        if cmd == "overview":                            # the duration of the run is not a result
+            msg["result"]["status"]["seconds"] = None
         for key in ("latitude", "longitude"):     # the test location; as a number the privacy check would flag it
             if key in msg["result"]:
                 assert msg["result"][key] == getattr(hass.config, key), key

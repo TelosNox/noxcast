@@ -4,19 +4,21 @@
 const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
-const SECTIONS = [["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
+const SECTIONS = [["overview", "noxcast-overview", "./noxcast-overview.js"], ["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
   ["battery", "noxcast-battery", "./noxcast-battery.js"], ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
 // shared look of the panel and its sections, loaded with this module's cache buster
 const { adoptTheme, LOGO, ORBIT } = await import(new URL("./noxcast-theme.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const SECTION_LEADS = {
-  de: { day: "Ein Tag im Detail: die Gruppen übereinander, Prognose gegen Erwartung und Ist, das Wetter jeder Stunde und wie eine Stunde zustande kommt.",
+  de: { overview: "Was heute und in den nächsten Tagen ansteht. Jede Zahl führt in den Bereich, der sie erklärt.",
+    day: "Ein Tag im Detail: die Gruppen übereinander, Prognose gegen Erwartung und Ist, das Wetter jeder Stunde und wie eine Stunde zustande kommt.",
     learned: "Was Noxcast über jede Modulfläche gelernt hat: Schatten, Reflexion und Richtung, Sonnenposition für Sonnenposition.",
     accuracy: "Wie gut die Prognose vom Vortag eingetroffen ist, nach Tag, Wetterlage und Wetterquelle.",
     load: "Wann im Haus wie viel verbraucht wird, aus welchen Teilen sich das zusammensetzt und wie verlässlich die Prognose ist.",
     battery: "Wohin der Überschuss heute und morgen geht und was sich mit mehr Kapazität oder einem weiteren Verbraucher ändert.",
     diagnostics: "Welche Daten Noxcast liest, wie vollständig sie sind und wo etwas fehlt." },
-  en: { day: "One day in detail: the groups stacked, forecast against expectation and actual, the weather of each hour and how an hour comes about.",
+  en: { overview: "What is due today and in the days ahead. Every figure leads to the section that explains it.",
+    day: "One day in detail: the groups stacked, forecast against expectation and actual, the weather of each hour and how an hour comes about.",
     learned: "What Noxcast has learned about each array: shade, reflection and direction, sun position by sun position.",
     accuracy: "How well the day-ahead forecast came true, by day, weather and weather source.",
     load: "When the house uses how much, which parts it is made of and how reliable the forecast is.",
@@ -24,13 +26,13 @@ const SECTION_LEADS = {
     diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
 };
 // Home Assistant icons of the sections; on a phone the tabs get their own row, each with its icon over a short title
-const SECTION_ICONS = { learned: "mdi:brain", day: "mdi:calendar-today", accuracy: "mdi:target", load: "mdi:home-lightning-bolt",
+const SECTION_ICONS = { overview: "mdi:view-dashboard", learned: "mdi:brain", day: "mdi:calendar-today", accuracy: "mdi:target", load: "mdi:home-lightning-bolt",
   battery: "mdi:battery-charging", diagnostics: "mdi:stethoscope" };
 
-const SECTION_TITLES = { de: { day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
-  en: { day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
-const SECTION_SHORT = { de: { day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", diagnostics: "Diagnose" },
-  en: { day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", diagnostics: "Data" } };
+const SECTION_TITLES = { de: { overview: "Übersicht", day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
+  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
+const SECTION_SHORT = { de: { overview: "Übersicht", day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", diagnostics: "Diagnose" },
+  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", diagnostics: "Data" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
@@ -46,7 +48,7 @@ const TEXT = {
         early: "lernt noch: {h} Stunden aus {d} Tagen. Der Wirkungsgrad ist vorläufig, belastbar ab {D} Tagen und {H} Stunden.",
         growing: "Wirkungsgrad belastbar ({h} Stunden aus {d} Tagen). Die Schattenkarte ist zu {c} gefüllt und wächst, während die Sonne ihren Weg durchs Jahr nimmt.",
         settled: "eingelernt: {h} Stunden aus {d} Tagen, Schattenkarte zu {c} gefüllt." } },
-    title: "Gelerntes", overview: "Übersicht", map: "Karte", grid: "Jahresraster", pano: "Panorama",
+    title: "Gelerntes", overview: "Alle Gruppen", map: "Karte", grid: "Jahresraster", pano: "Panorama",
     panoKinds: { plane: "eigene Modulebene (Dach, Wand, Brüstung)", obstacle: "Hindernis, gemessen", facade: "Hindernis, aus der Horizontlinie",
       inferred: "Hindernis, nach unten ergänzt", partial: "Teilschatten", free: "frei", none: "noch keine Daten",
       never: "hier steht die Sonne nie", ground: "unter dem Horizont" },
@@ -114,7 +116,7 @@ const TEXT = {
         early: "still learning: {h} hours from {d} days. The efficiency is provisional, reliable from {D} days and {H} hours.",
         growing: "efficiency reliable ({h} hours from {d} days). The shading map is {c} filled and grows as the sun's path moves through the year.",
         settled: "learned: {h} hours from {d} days, shading map {c} filled." } },
-    title: "Learned", overview: "Overview", map: "Map", grid: "Year grid", pano: "Panorama",
+    title: "Learned", overview: "All arrays", map: "Map", grid: "Year grid", pano: "Panorama",
     panoKinds: { plane: "the module's own plane (roof, wall, railing)", obstacle: "obstacle, measured", facade: "obstacle, from the horizon line",
       inferred: "obstacle, continued downwards", partial: "partial shade", free: "free", none: "no data yet",
       never: "the sun is never here", ground: "below the horizon" },
@@ -361,12 +363,20 @@ class NoxcastPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     adoptTheme(this.shadowRoot);
-    this._state = { section: "learned", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
+    this._state = { section: "overview", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
     this._sections = {};
     this._data = null;
     this._cache = {};
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
+    // the overview links each figure to the section that explains it
+    this.shadowRoot.addEventListener("noxcast-section", (ev) => {
+      ev.stopPropagation();
+      this._state.section = ev.detail.section;
+      this._state.sel = null;
+      this._render();
+      window.scrollTo({ top: 0 });
+    });
     for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) this.shadowRoot.addEventListener(type, (ev) => this._onPanoPointer(ev));
     this.shadowRoot.addEventListener("pointerleave", (ev) => this._onPanoPointer(ev), true);
     this.shadowRoot.addEventListener("wheel", (ev) => this._onPanoWheel(ev), { passive: false });
@@ -619,8 +629,9 @@ class NoxcastPanel extends HTMLElement {
     const lang = (this._hass && this._hass.language || "en").slice(0, 2);
     // load and battery only when set up in the integration (sections unknown while loading: all shown)
     const known = (this._data && this._data.sections) || {};
-    const keys = ["learned", ...SECTIONS.map(([k]) => k)].filter((k) => known[k] !== false);
-    if (!keys.includes(s.section)) { s.section = "learned"; s.sel = null; }
+    // the overview first, as the start; then what was learned and the further sections
+    const keys = ["overview", "learned", ...SECTIONS.slice(1).map(([k]) => k)].filter((k) => known[k] !== false);
+    if (!keys.includes(s.section)) { s.section = keys[0]; s.sel = null; }
     const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
     const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
     const tabs = keys.map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span class="long">${titles[k]}</span><span class="short">${short[k]}</span></button>`).join("");

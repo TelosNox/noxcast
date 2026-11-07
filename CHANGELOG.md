@@ -7,7 +7,16 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- Panel: a new start tab *Overview* (*Übersicht*) with what is due today and in the days ahead: today expected, so
+  far against its forecast, rest of today and PV power now with the day's course; for flexible consumers whether to
+  start now and the best windows; the battery's state of charge, full and empty times; the next days; yesterday's
+  forecast against actual and the error of the last 14 days; a status line with sensors that report no values. Each
+  part links to the tab that explains it. Live values update in place without reloading the page.
+- Panel, Diagnostics: shows the installed Noxcast version.
+
 ### Changed
+- Panel: *Learned* is no longer the start tab; inside an array the way back reads "All arrays".
 - Day view, groups: each group's course now shows, like the chart above, which part is measured (strong) and which
   is still forecast (faint), with a line at the current time.
 

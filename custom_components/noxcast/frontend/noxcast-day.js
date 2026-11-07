@@ -754,4 +754,4 @@ class NoxcastDay extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-day", NoxcastDay);
+if (!customElements.get("noxcast-day")) customElements.define("noxcast-day", NoxcastDay);

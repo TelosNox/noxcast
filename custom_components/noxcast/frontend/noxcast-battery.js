@@ -396,4 +396,4 @@ class NoxcastBattery extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-battery", NoxcastBattery);
+if (!customElements.get("noxcast-battery")) customElements.define("noxcast-battery", NoxcastBattery);

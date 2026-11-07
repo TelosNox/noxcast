@@ -304,4 +304,4 @@ class NoxcastLoad extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-load", NoxcastLoad);
+if (!customElements.get("noxcast-load")) customElements.define("noxcast-load", NoxcastLoad);

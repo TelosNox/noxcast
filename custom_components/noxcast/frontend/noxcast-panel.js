@@ -1396,4 +1396,6 @@ class NoxcastPanel extends HTMLElement {
   }
 }
 
-customElements.define("noxcast-panel", NoxcastPanel);
+// a page open across a Home Assistant restart loads the module again under a new cache buster; defining the element
+// twice would throw, so the old one stays until the page is reloaded (the same in every module)
+if (!customElements.get("noxcast-panel")) customElements.define("noxcast-panel", NoxcastPanel);

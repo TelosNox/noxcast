@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- A browser tab that stays open across a Home Assistant restart no longer logs "the name "noxcast-panel" has already
+  been used" (or the same for a card). It keeps the loaded panel and cards until the page is reloaded.
+
 ## [0.2.0b4] - 2026-11-07
 
 The fourth pre-release of 0.2.0. The sections below list what changed since 0.2.0b3.

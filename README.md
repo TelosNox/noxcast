@@ -368,6 +368,15 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
 5. **Temperature:** cell temperature from air temperature and irradiance (heating), loss with the
    learned or datasheet coefficient.
 
+### Clear sky
+
+The clear sky (upper bound of every forecast, reference for clearness, range and corrections) is a fixed
+physical model without learned values or weather data: sun position after NOAA from latitude, longitude and time,
+irradiance after Ineichen's simplified Solis model with the air pressure from the altitude (standard atmosphere).
+Latitude, longitude and altitude come from the Home Assistant settings. Aerosols (AOD 0.1 at 700 nm) and water
+vapour (1 cm) are constant, the same for every location and season. Only afterwards do the learned values of the
+array (shade, sky view, efficiency) turn this irradiance into the clear-sky power of the array.
+
 ### Learning (nightly, from long-term statistics)
 
 - **Data filters:** hours with a full battery, excluded periods, outages and incomplete hours are

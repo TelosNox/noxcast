@@ -197,8 +197,8 @@ hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitb
 
 | Feld | Bedeutung |
 |---|---|
-| Leistungs- oder Energiesensor | Leistung (W/kW) oder Energie (kWh, z. B. Energie je Programm einer Waschmaschine) |
-| Restlaufzeit / verstrichene Zeit | Optional: Ein laufendes Programm zählt bis zu seinem Ende |
+| Leistungs- oder Energiesensor | Leistung in W/kW mit `state_class: measurement` oder Energie in Wh/kWh mit `state_class: total` oder `total_increasing`. Ein Leistungssensor ist die erste Wahl: Energiezähler zählen oft in Schritten von 0,1 kWh, zu grob für einzelne Stunden. Als Energie gehen ein durchlaufender Zähler und ein Zähler je Programm (z. B. die Programmenergie einer Waschmaschine); ein Zähler, der zwischen den Läufen unbekannt ist, zählt dort als kein Verbrauch |
+| Restlaufzeit / verstrichene Zeit | Optional: Ein laufendes Programm zählt bis zu seinem Ende. Mit einem Energiesensor ergibt die verstrichene Zeit die Leistung des laufenden Programms, bei beiden Zählerarten |
 | Zeitbindung | *Fest*: Teil der Lastprognose. *Flexibel*: Du wählst, wann es läuft; Noxcast schlägt das Fenster vor |
 | Art (nur fest) | *Profil*: eigener Median je Stunde. *Programm*: läuft mit Ende (Spülmaschine); gelernte Startzeiten, Läufe pro Tag, Leistungskurve. *Sitzung*: an, dann offen (PC, TV); gelernte Einschaltwahrscheinlichkeit und Dauer. *Geregelt*: folgt der Außentemperatur (Wärmepumpe, Klimaanlage) |
 | Leistung eines Laufs, Dauer eines Laufs | Nur flexibel, optional: sonst aus dem Verlauf gelernt |

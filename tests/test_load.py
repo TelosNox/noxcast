@@ -267,3 +267,19 @@ def test_profile_learns_a_cell_per_day_type():
     assert p.at(wednesday, UTC) == 200.0
     m = lf.learn_program(days(28, lambda d, h: 1000.0 if d % 7 == 2 and h == 9 else 0.0), zone, MONDAY + 28 * 86400)
     assert m.starts["home"][9] == 1.0 and m.runs_max["home"] == 1 and m.starts[lf.WORKDAY][9] == 0.0
+
+
+def test_counter_gaps_count_as_no_consumption():
+    load_ = {0.0: 500.0, H: 900.0, 2 * H: 400.0, 3 * H: 300.0}
+    washer = lf.fill_counter_gaps({H: 600.0}, load_)     # unknown before and after its run
+    assert washer == {H: 600.0, 2 * H: 0.0, 3 * H: 0.0}
+    assert lf.base_series(load_, [washer]) == {0.0: 500.0, H: 300.0, 2 * H: 400.0, 3 * H: 300.0}
+    assert lf.fill_counter_gaps({}, load_) == {}
+
+
+def test_run_energy_with_either_kind_of_counter():
+    assert lf.run_energy(600.0, [0.0, 200.0, 400.0]) == 600.0              # counter per program, from 0
+    assert lf.run_energy(600.0, [300.0, 0.0, 200.0]) == 600.0              # previous program's value, then reset
+    assert lf.run_energy(52_100.0, [51_600.0, 51_800.0]) == 500.0          # meter that keeps counting
+    assert lf.run_energy(600.0, []) == 600.0                                # no history: counts from 0
+    assert lf.run_energy(None, [1.0]) is None

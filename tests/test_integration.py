@@ -630,7 +630,8 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                side_effect=functools.partial(fake_archive, temp)), \
          patch("custom_components.noxcast.coordinator.async_archive_irradiance",
                side_effect=functools.partial(fake_archive, ghi)), \
-         patch.object(NoxcastCoordinator, "_async_started"):
+         patch.object(NoxcastCoordinator, "_async_started"), \
+         patch.object(NoxcastCoordinator, "_async_energy_since", return_value=[0.0, 300.0]):  # dishwasher since start
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         c = entry.runtime_data
@@ -979,3 +980,22 @@ async def test_open_meteo_failure_is_retried_and_logged_once(hass: HomeAssistant
         assert len(warnings()) == 1 and coordinator._weather_retry is not None
         await hass.config_entries.async_unload(result["result"].entry_id)
         assert coordinator._weather_retry is None
+
+
+async def test_energy_since_reads_the_counter_history(hass: HomeAssistant) -> None:
+    """The run energy of a meter that keeps counting comes from its value at the program start."""
+    from types import SimpleNamespace
+
+    from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
+
+    from custom_components.noxcast.coordinator import NoxcastCoordinator
+    from custom_components.noxcast import load as lf
+
+    start = dt_util.utcnow().timestamp() - 1
+    for value in ("51.6", "unknown", "51.8", "52.1"):
+        hass.states.async_set("sensor.meter", value, {"unit_of_measurement": "kWh"})
+    await async_wait_recording_done(hass)
+    values = await NoxcastCoordinator._async_energy_since(SimpleNamespace(hass=hass), "sensor.meter", start)
+    assert values == [51_600.0, 51_800.0, 52_100.0]
+    assert lf.run_energy(52_100.0, values) == 500.0
+    assert await NoxcastCoordinator._async_energy_since(SimpleNamespace(hass=hass), "sensor.none", start) == []

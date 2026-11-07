@@ -131,6 +131,19 @@ def base_series(load: Series, consumers: list[Series]) -> Series:
     return out
 
 
+def fill_counter_gaps(series: Series, hours) -> Series:
+    """An energy counter's missing hours, from its first value on, count as 0 W.
+
+    Home Assistant writes no statistic for an hour in which the counter has no state, and a per-program counter is
+    often unknown between runs; without this, every such hour would drop out of the base load. A counter that comes
+    back after an outage continues from its last value, so the next hour with a value holds what it counted meanwhile.
+    """
+    if not series:
+        return series
+    first = min(series)
+    return {**{t: 0.0 for t in hours if t >= first}, **series}
+
+
 @dataclass
 class Profile:
     """Median W per (day type, local hour), with the all-days median as fallback."""
@@ -515,6 +528,18 @@ def current_run(power: float | None, remaining: float | None, energy: float | No
     if power is None or (power < RUNNING_W and minutes is None):
         return None
     return Run(power, minutes)
+
+
+def run_energy(current: float | None, since_start: list[float]) -> float | None:
+    """Energy (Wh) of the running program: the counter now minus its lowest value since the program started.
+
+    A per-program counter starts at 0, a meter that keeps counting stands at its reading from the start; the lowest
+    value fits both, so the elapsed time gives the program's power with either kind of counter. Without any history
+    the counter is taken as one per program, as before.
+    """
+    if current is None or not since_start:
+        return current
+    return max(current - min([current, *since_start]), 0.0)
 
 
 def run_value(run: Run, now: float, t: float) -> float | None:

@@ -577,10 +577,18 @@ class NoxcastDay extends HTMLElement {
     const withRef = phase !== "future";
     const max = Math.max(1, ...rows.flatMap((r) => span.flatMap((h) => [r.m.get(h) || 0, withRef ? r.r.get(h) || 0 : 0])));
     const pts = (m) => span.map((h) => `${((h + HOUR / 2 - h0) / (h1 - h0) * 100).toFixed(1)},${(22 - (m.get(h) || 0) / max * 20).toFixed(1)}`).join(" ");
+    // measured part strong, forecast part faint, as in the chart above
+    const nowPct = phase === "past" ? 100 : phase === "future" ? 0 : Math.min(100, Math.max(0, (this._data.now - h0) / (h1 - h0) * 100));
     const spark = (r) => {
-      const c = DAY_COLORS[r.i % 6];
+      const c = DAY_COLORS[r.i % 6], area = `0,22 ${pts(r.m)} 100,22`;
       const ref = withRef && r.ref > 0 ? `<polyline points="${pts(r.r)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></polyline>` : "";
-      return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><polyline points="0,22 ${pts(r.m)} 100,22" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${ref}</svg>`;
+      const now = nowPct > 0 && nowPct < 100 ? `<line x1="${nowPct.toFixed(1)}" x2="${nowPct.toFixed(1)}" y1="0" y2="24" class="nowline" vector-effect="non-scaling-stroke"></line>` : "";
+      return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><defs>
+        <clipPath id="nx-sp${r.i}p"><rect x="0" y="0" width="${nowPct.toFixed(1)}" height="24"></rect></clipPath>
+        <clipPath id="nx-sp${r.i}f"><rect x="${nowPct.toFixed(1)}" y="0" width="${(100 - nowPct).toFixed(1)}" height="24"></rect></clipPath></defs>
+        <polygon points="${area}" fill="${c}" fill-opacity=".7" clip-path="url(#nx-sp${r.i}p)"></polygon>
+        <polygon points="${area}" fill="${c}" fill-opacity=".2" clip-path="url(#nx-sp${r.i}f)"></polygon>
+        <polyline points="${pts(r.m)}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${now}${ref}</svg>`;
     };
     const devCell = (d) => (d === null ? "–" : `<span class="${Math.abs(d) < 0.05 ? "" : d < 0 ? "bad" : "good"}">${this._pct(d)}</span>`);
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;

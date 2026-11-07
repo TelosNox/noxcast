@@ -12,6 +12,10 @@ breaking changes.
   share of that day's actual yield. A dark day with little yield no longer shows a huge model part for a few hundred
   Wh. The help text explains that the model part also contains the satellite's measurement errors (e.g. in fog), so
   a single day says little about the model.
+- Day view: the deviation from the day-ahead forecast is no longer green when more came than forecast and red when
+  less came. Its colour now shows how large the miss is, measured against what the array would give under a clear
+  sky: no colour below 10 %, yellow from 10 %, red from 25 %. A +90 % on a dark November day with a few hundred Wh
+  therefore stays calm, and a big miss in either direction stands out. The tooltip gives the miss in kWh.
 
 ## [0.3.0b2] - 2026-11-07
 

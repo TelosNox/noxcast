@@ -9,7 +9,8 @@ const DAY_TEXT = {
     today: "Heute", yesterday: "Gestern", tomorrow: "Morgen", prev: "Tag zurück", next: "Tag vor",
     dayAhead: "Prognose Vortag", morning: "Prognose 6 Uhr", expected: "Erwartung", actual: "Ist", forecast: "Prognose",
     held: "Prognose laufend", deviation: "Abweichung", peak: "Spitze", band: "Spanne P10–P90", now: "jetzt",
-    groups: "Gruppen", share: "Anteil", correction: "Korrektur", noData: "Für diesen Tag liegen keine Daten vor.",
+    groups: "Gruppen", share: "Anteil", correction: "Korrektur",
+    devHint: (kwh, pct) => `${kwh} kWh daneben, ${pct} % des Ertrags bei klarem Himmel. Die Farbe richtet sich danach, nicht nach der Richtung: ab 10 % gelb, ab 25 % rot.`, noData: "Für diesen Tag liegen keine Daten vor.",
     chart: "Tagesverlauf", weather: "Wetter", clearness: "Klarheit", effects: "Effekte", shade: "Schatten", refl: "Reflexion",
     waterfall: "Wie die Stunde zustande kommt", all: "Alle", hourHint: "Stunde im Diagramm anklicken",
     steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme",
@@ -41,7 +42,8 @@ const DAY_TEXT = {
     today: "Today", yesterday: "Yesterday", tomorrow: "Tomorrow", prev: "Previous day", next: "Next day",
     dayAhead: "Day-ahead forecast", morning: "Forecast 6 am", expected: "Expected", actual: "Actual", forecast: "Forecast",
     held: "Running forecast", deviation: "Deviation", peak: "Peak", band: "Range P10–P90", now: "now",
-    groups: "Groups", share: "Share", correction: "Correction", noData: "No data for this day.",
+    groups: "Groups", share: "Share", correction: "Correction",
+    devHint: (kwh, pct) => `${kwh} kWh off, ${pct} % of the clear-sky yield. The colour follows this, not the direction: yellow from 10 %, red from 25 %.`, noData: "No data for this day.",
     chart: "Course of the day", weather: "Weather", clearness: "Clearness", effects: "Effects", shade: "Shade", refl: "Reflection",
     waterfall: "How the hour comes about", all: "All", hourHint: "Click an hour in the chart",
     steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat",
@@ -252,8 +254,8 @@ class NoxcastDay extends HTMLElement {
     const band = tsRows(e.band, "p10", "p90");
     const figs = [[mainLabel, `${this._kwh(main)} ${t.kwh}`]];
     if (ref > 0 && phase !== "future") {
-      const dev = (main - ref) / ref;
-      figs.push([refLabel, `${this._kwh(ref)} ${t.kwh}`], [t.deviation, this._pct(dev)]);
+      const clear = e.arrays.reduce((a, arr) => a + this._clear(arr), 0);
+      figs.push([refLabel, `${this._kwh(ref)} ${t.kwh}`], [t.deviation, this._dev(main, ref, clear)]);
     }
     if (band.length) {
       const lo = band.reduce((a, [, l]) => a + l, 0), hi = band.reduce((a, [, , h]) => a + h, 0);
@@ -569,7 +571,7 @@ class NoxcastDay extends HTMLElement {
     const t = this._t, phase = this._phase;
     const rows = e.arrays.map((arr, i) => {
       const m = this._main(arr), r = this._reference(arr), main = this._sum(m), ref = this._sum(r);
-      return { arr, i, m, r, main, ref, dev: ref > 0 && phase !== "future" ? (main - ref) / ref : null };
+      return { arr, i, m, r, main, ref, clear: this._clear(arr) };
     });
     const total = rows.reduce((a, r) => a + r.main, 0);
     // same hours as the main chart and one scale for all groups, so the courses line up and their heights compare
@@ -590,7 +592,6 @@ class NoxcastDay extends HTMLElement {
         <polygon points="${area}" fill="${c}" fill-opacity=".2" clip-path="url(#nx-sp${r.i}f)"></polygon>
         <polyline points="${pts(r.m)}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${now}${ref}</svg>`;
     };
-    const devCell = (d) => (d === null ? "–" : `<span class="${Math.abs(d) < 0.05 ? "" : d < 0 ? "bad" : "good"}">${this._pct(d)}</span>`);
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
     const refLabel = phase === "today" ? t.morning : t.dayAhead;
     // one block per group instead of a wide table: name and main value, the course, then small figures that wrap
@@ -601,7 +602,7 @@ class NoxcastDay extends HTMLElement {
           <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main)} ${t.kwh}</b></div></div>
         ${spark(r)}
         <div class="gfigs">
-          ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, devCell(r.dev)) : ""}
+          ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, r.ref > 0 ? this._dev(r.main, r.ref, r.clear) : "–") : ""}
           ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
           ${fig(t.share, `${total > 0 ? Math.round(r.main / total * 100) : 0} %`)}
         </div></div>`).join("")}
@@ -674,6 +675,19 @@ class NoxcastDay extends HTMLElement {
 
   // ------------------------------------------------------------ formatting
 
+  // energy of the day under a clear sky, from the forecast steps
+  _clear(arr) { let s = 0; for (const st of Object.values(arr.steps || {})) s += st.clear || 0; return s; }
+
+  // the deviation in percent, coloured by its size in energy, not by its sign: both directions are a miss, and a
+  // large share of a dark day's few hundred Wh says little. Measured against the clear-sky yield, so summer and
+  // winter use the same scale.
+  _dev(main, ref, clear) {
+    const miss = Math.abs(main - ref), r = clear > 0 ? miss / clear : 0;
+    const cls = r >= 0.25 ? "bad" : r >= 0.1 ? "warn" : "";
+    const tip = clear > 0 ? ` title="${this._t.devHint(this._kwh(miss), Math.round(r * 100))}"` : "";
+    return `<span class="${cls}"${tip}>${this._pct((main - ref) / ref)}</span>`;
+  }
+
   _pct(v) { const r = Math.round(v * 100); return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r)} %`; }
   _num(v, d) { return num(v, this._lang, d); }
   _kwh(wh) { return kwh(wh, this._lang); }
@@ -682,7 +696,7 @@ class NoxcastDay extends HTMLElement {
   _style() {
     const d = this._dark;
     return `<style>
-      :host { display: block; --nx-rail: ${d ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)"}; --nx-good: ${d ? "#4CC77A" : "#2E9E5B"}; --nx-bad: ${d ? "#E0574A" : "#C83A2E"}; }
+      :host { display: block; --nx-rail: ${d ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)"}; --nx-good: ${d ? "#4CC77A" : "#2E9E5B"}; --nx-bad: ${d ? "#E0574A" : "#C83A2E"}; --nx-warn: ${d ? "#E8B03A" : "#B7791F"}; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
       .split { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
       .grow { flex: 1 1 420px; min-width: 0; }
@@ -734,7 +748,7 @@ class NoxcastDay extends HTMLElement {
       .gmain b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .gfigs { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
       .gfig { white-space: nowrap; }
-      .good { color: var(--nx-good); font-weight: 500; } .bad { color: var(--nx-bad); font-weight: 500; }
+      .good { color: var(--nx-good); font-weight: 500; } .bad { color: var(--nx-bad); font-weight: 500; } .warn { color: var(--nx-warn); font-weight: 500; }
       .wfall { max-width: 640px; }
       .wl { font-size: 12px; fill: var(--primary-text-color); } .wv { font-size: 12px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
       .wf.start { fill: #F5A524; } .wf.total { fill: #FF6A3D; } .wf.actual { fill: #8B5CF6; }

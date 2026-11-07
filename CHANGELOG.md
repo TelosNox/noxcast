@@ -9,8 +9,8 @@ breaking changes.
 
 ### Changed
 
-- When a Noxcast page gets no answer, for example while Noxcast relearns after its settings changed, it says so and
-  that it tries again, instead of showing just "timeout".
+- When a Noxcast page gets no answer, for example while Noxcast relearns after its settings changed, it explains that
+  Noxcast is not answering and that the page tries again, instead of showing just "timeout".
 
 ## [0.2.0b3] - 2026-11-07
 

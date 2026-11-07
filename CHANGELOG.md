@@ -8,6 +8,8 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
+- After a Home Assistant restart the weather card shows the PV yield per day again as soon as Noxcast has computed
+  it. Before, it showed the days without PV until the next refresh 15 minutes later, or until the page was reloaded.
 - A browser tab that stays open across a Home Assistant restart no longer logs "the name "noxcast-panel" has already
   been used" (or the same for a card). It keeps the loaded panel and cards until the page is reloaded.
 

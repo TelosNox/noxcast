@@ -94,6 +94,8 @@ class NoxcastWeatherCard extends HTMLElement {
     this._timer = null;
     clearTimeout(this._srcRetry);
     this._srcRetry = null;
+    clearTimeout(this._pvRetry);
+    this._pvRetry = null;
     this._unsubscribe();
     if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
     this._readyConn = null;
@@ -104,7 +106,7 @@ class NoxcastWeatherCard extends HTMLElement {
     const conn = this._hass && this._hass.connection;
     if (!conn || this._readyConn === conn) return;
     if (this._readyConn) this._readyConn.removeEventListener("ready", this._onReady);
-    this._onReady = this._onReady || (() => { this._srcTries = 0; this._unsubscribe(); this._loadSource(); this._refresh(); });
+    this._onReady = this._onReady || (() => { this._srcTries = 0; this._pvTries = 0; this._unsubscribe(); this._loadSource(); this._refresh(); });
     conn.addEventListener("ready", this._onReady);
     this._readyConn = conn;
   }
@@ -139,13 +141,24 @@ class NoxcastWeatherCard extends HTMLElement {
   // PV per day from Noxcast; without Noxcast (or an older version) the card shows weather only
   async _refresh() {
     if (!this._hass || !this._config.show_pv) return;
+    clearTimeout(this._pvRetry);
+    this._pvRetry = null;
     try {
       const today = await ask(this._hass, { type: "noxcast/today" });
+      // right after a Home Assistant start Noxcast answers before its first computation, with no day: asked again
+      // soon instead of showing the days without PV until the next regular refresh
+      if (!today.day_start && !(today.days || []).length) throw new Error("Noxcast is still starting");
       this._outdated = today.v !== WS_SCHEMA;
       this._pv = new Map((this._outdated ? [] : today.days || []).map((d) => [d.date, d]));
       this._tz = today.time_zone;
+      this._pvTries = 0;
     } catch (err) {
-      setTimeout(() => { if (this.isConnected) this._refresh(); }, 30000);   // Noxcast may still be starting
+      if (this.isConnected) {                    // Noxcast may still be starting
+        clearTimeout(this._pvRetry);             // two requests may have failed at once: keep one retry
+        this._pvRetry = setTimeout(() => { this._pvRetry = null; if (this.isConnected) this._refresh(); },
+          W_RETRY_MS[Math.min(this._pvTries || 0, W_RETRY_MS.length - 1)]);
+        this._pvTries = (this._pvTries || 0) + 1;
+      }
     }
     this._render();
   }

@@ -531,3 +531,9 @@ def test_a_few_five_minute_samples_are_not_enough_for_a_cell():
     samples = [(t0 + k * FIVE_MIN, 400.0) for k in range(4)]
     learned = model.learn(SITE, GEO, samples, t0 + 3600, period=FIVE_MIN, datasheet_temp_coeff=0.0)
     assert not learned.cells
+
+
+def test_sky_view_flag_of_earlier_stored_data_is_unknown():
+    stored = model.LearnedArray(sky_view=0.95, sky_view_learned=True).as_dict()
+    del stored["sky_view_learned"]
+    assert model.LearnedArray.from_dict(stored).sky_view_learned is None

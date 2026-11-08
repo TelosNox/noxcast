@@ -18,7 +18,8 @@ breaking changes.
 ### Changed
 - Panel, Overview: *Expected today*, *So far* and *Rest of today* show two decimals; *So far* says until which full
   hour it counts, which is why it and *Rest of today* do not add up to *Expected today* during the current hour.
-- Panel, Overview, and dashboard card: power is shown in W below 1 kW and in kW with two decimals above.
+- Panel, Overview: *Power now* is shown in W below 1 kW, as on the dashboard card, and in kW with two decimals
+  above; the dashboard card also shows kW with two decimals now.
 
 ## [0.3.0] - 2026-11-08
 

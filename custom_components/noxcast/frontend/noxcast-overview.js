@@ -265,7 +265,7 @@ class NoxcastOverview extends HTMLElement {
     // as wide as the card (within bounds), so the labels keep their size on a phone
     const W = Math.round(Math.max(340, Math.min(720, (this.clientWidth || 720) - 32))), H = 200, L = 10, R = 10, T = 14, B = 24;
     const top = Math.max(...lit.map((h) => Math.max(h.clear || 0, h.p90 || 0, h.fc || 0, h.act || 0, h.ex || 0))) / 1000 || 1;
-    const step = top > 6 ? 2 : top > 3 ? 1 : top > 1.5 ? 0.5 : 0.25, ymax = Math.ceil(top / step) * step;
+    const step = top > 30 ? 10 : top > 15 ? 5 : top > 6 ? 2 : top > 3 ? 1 : top > 1.5 ? 0.5 : 0.25, ymax = Math.ceil(top / step) * step;
     const x = (ts) => L + (ts - a) / (b - a) * (W - L - R), y = (wh) => T + (1 - wh / 1000 / ymax) * (H - T - B);
     // an hour's mean belongs to the middle of the hour
     const mid = (h) => h.ts + 1800;

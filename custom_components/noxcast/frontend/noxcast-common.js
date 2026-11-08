@@ -39,7 +39,11 @@ export const escId = (s) => esc(s).replace(/[._]/g, "$&<wbr>");
 export const num = (v, lang, digits = 0) => Number(v).toLocaleString(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 export const kwh = (wh, lang, digits = 1) => num(wh / 1000, lang, digits);
 // power as [number, unit]: whole watts below 1 kW, where a decimal of kW would hide the difference; kW above
-export const powerParts = (w, lang) => (Math.abs(w) >= 1000 ? [num(w / 1000, lang, 2), "kW"] : [num(Math.round(w), lang), "W"]);
+// (decided on the rounded watts, so 999.7 W reads 1,00 kW, not 1.000 W; "|| 0" keeps -0.3 W from reading -0 W)
+export const powerParts = (w, lang) => {
+  const r = Math.round(w) || 0;
+  return Math.abs(r) >= 1000 ? [num(w / 1000, lang, 2), "kW"] : [num(r, lang), "W"];
+};
 // joined by a no-break space, so a line never ends between number and unit
 export const power = (w, lang) => powerParts(w, lang).join(" ");
 

@@ -2,8 +2,8 @@
 
 Usage: check_changelog.py [BASE], with the pull request's description in the environment variable PR_BODY.
 The integration is everything under custom_components/. Its changes need either a changed `## Unreleased` section
-(a release PR moves that section, which counts as well), a new version section (the release after pre-releases,
-whose Unreleased section is already empty) or a line in the description that starts with
+(a release PR moves that section, which counts as well), a new version section together with a new manifest
+version (the release after pre-releases, whose Unreleased section is already empty) or a line in the description that starts with
 "No changelog entry", followed by the reason.
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ import sys
 
 CHANGELOG = "CHANGELOG.md"
 INTEGRATION = "custom_components/"
+MANIFEST = "custom_components/noxcast/manifest.json"
 VERSION = re.compile(r"^## \[([^\]]+)\]", re.M)
 WAIVER = re.compile(r"^\W*no changelog entry\b\W*\w", re.I | re.M)      # with a reason after it
 
@@ -30,7 +31,7 @@ def problem(files: list[str], base_changelog: str, head_changelog: str, body: st
         return None
     if unreleased(base_changelog) != unreleased(head_changelog) or WAIVER.search(body or ""):
         return None
-    if set(VERSION.findall(head_changelog)) - set(VERSION.findall(base_changelog)):
+    if MANIFEST in files and set(VERSION.findall(head_changelog)) - set(VERSION.findall(base_changelog)):
         return None
     return ("This pull request changes the integration but not the Unreleased section of CHANGELOG.md. Add an entry "
             "for users, or start a line of the description with \"No changelog entry:\" and the reason.")

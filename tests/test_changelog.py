@@ -37,6 +37,7 @@ def test_a_release_after_pre_releases_adds_a_version_section():
     head = base.replace("## Unreleased\n\n", "## Unreleased\n\n## [0.2.0] - 2026-11-06\n\n### Fixed\n- New fix.\n\n")
     assert check.unreleased(base) == check.unreleased(head) == ""
     assert check.problem(["custom_components/noxcast/manifest.json", "CHANGELOG.md"], base, head, "") is None
+    assert check.problem(CODE + ["CHANGELOG.md"], base, head, "")                # a version heading alone is no entry
 
 
 def test_a_reason_in_the_description_waives_it():

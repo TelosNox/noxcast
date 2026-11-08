@@ -32,6 +32,14 @@ def test_a_release_moves_the_section():
     assert check.problem(["custom_components/noxcast/manifest.json", "CHANGELOG.md"], BASE, head, "") is None
 
 
+def test_a_release_after_pre_releases_adds_a_version_section():
+    base = BASE.replace("### Fixed\n- Old fix.\n\n## [0.1.0]", "## [0.2.0b1] - 2026-11-05\n\n### Fixed\n- New fix.\n\n## [0.1.0]")
+    head = base.replace("## Unreleased\n\n", "## Unreleased\n\n## [0.2.0] - 2026-11-06\n\n### Fixed\n- New fix.\n\n")
+    assert check.unreleased(base) == check.unreleased(head) == ""
+    assert check.problem(["custom_components/noxcast/manifest.json", "CHANGELOG.md"], base, head, "") is None
+    assert check.problem(CODE + ["CHANGELOG.md"], base, head, "")                # a version heading alone is no entry
+
+
 def test_a_reason_in_the_description_waives_it():
     assert check.problem(CODE, BASE, BASE, "Moves code.\n\nNo changelog entry: nothing changes for users.") is None
     assert check.problem(CODE, BASE, BASE, "**No changelog entry**: internal.") is None

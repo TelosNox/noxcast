@@ -10,8 +10,8 @@ breaking changes.
 ## [0.3.0] - 2026-11-08
 
 All changes since 0.2.0, tested in the pre-releases 0.3.0b1 to 0.3.0b3 (their single steps are listed in
-[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). With the satellite filter, the efficiency and
-the geometry check change with the first learning run after the update; nothing needs to be done.
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). The first learning run after the update relearns
+the geometry check and, with the satellite filter, the efficiency; nothing needs to be done.
 
 ### Added
 - Panel: a new start tab *Overview* (*Übersicht*) with what is due today and in the days ahead: today expected, so
@@ -42,9 +42,9 @@ the geometry check change with the first learning run after the update; nothing 
   `sky_view_learned`. Arrays learned before this version show the old value until the next nightly learning run.
 - Satellite filter: the efficiency is learned only from hours whose sun position the shading map has learned as
   free. Before, positions the map did not know yet counted as unshaded, so soft shade there (trees) pulled the
-  efficiency down and the direction factor up to its limit. The geometry check also keeps away from shaded cells
-  and needs free hours on both sides of the modules' direction, so "Check geometry" no longer appears just
-  because trees shade one side. Takes effect with the next learning run.
+  efficiency down and the direction factor up to its limit. The geometry check, with or without the satellite
+  filter, also keeps away from shaded cells and needs free hours on both sides of the modules' direction, so
+  "Check geometry" no longer appears just because trees shade one side. Takes effect with the next learning run.
 - A forecast update during a learning run no longer interferes with the forecast archive. Before, this could
   rarely make the backtest or the saving of the archive fail, for example with a manual relearn around midnight.
 

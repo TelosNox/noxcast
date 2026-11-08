@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.1b1] - 2026-11-08
+
+The first pre-release of 0.3.1. It stores when an array added during the day was fixed, so it runs through a
+nightly learning run before 0.3.1.
+
 ### Fixed
 - *Forecast today* of an array added after 6:00 followed every new weather forecast until midnight, and the total
   with it. It is now fixed at the array's first update; `fixed_at` shows that time, for the total the latest fix.

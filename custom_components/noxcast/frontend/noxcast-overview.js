@@ -5,7 +5,7 @@
 // then every part is a slot that is written only when its content changed, and the live figures (PV power,
 // state of charge, rest of today) are text nodes set from the Home Assistant states. A new answer is fetched when
 // Noxcast's own sensor of the rest of today changes (Noxcast computed anew) and every few minutes besides.
-const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const RELOAD_MS = 5 * 60000;
 const PLAN_BAND = 0.1;          // "as forecast" while the measured hours so far are this close to their forecast
@@ -14,8 +14,8 @@ const OV_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden", noEntry: "Noxcast ist noch nicht eingerichtet.",
     today: "Heute", expected: "Erwartet heute", sofar: "Bis jetzt", rest: "Rest heute", power: "Leistung jetzt",
-    morning: "Prognose am Morgen {v}", range: "Spanne {a}–{b} kWh", clear: "klar {v}", forecastFor: "Prognose dafür {v} kWh",
-    noActual: "noch keine volle Stunde gemessen", hourFc: "Prognose diese Stunde {v} kW", peak: "stärkste Stunde {t}",
+    morning: "Prognose am Morgen {v}", range: "Spanne {a}–{b} kWh", clear: "klar {v}", forecastFor: "bis {t} · Prognose dafür {v} kWh",
+    noActual: "noch keine volle Stunde gemessen", hourFc: "erwartet diese Stunde {v}", peak: "stärkste Stunde {t}",
     asPlanned: "Wie vorhergesagt", sunnier: "Sonniger als vorhergesagt", dimmer: "Trüber als vorhergesagt",
     lForecast: "Prognose", lActual: "Ist", lExpected: "Erwartet", lBand: "Spanne (Wolken)", lClear: "Klarer Himmel", now: "jetzt",
     consumers: "Verbraucher planen", startNow: "Jetzt starten", wait: "Noch warten", shareNow: "PV-Anteil jetzt {p}",
@@ -38,8 +38,8 @@ const OV_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page", noEntry: "Noxcast is not set up yet.",
     today: "Today", expected: "Expected today", sofar: "So far", rest: "Rest of today", power: "Power now",
-    morning: "morning forecast {v}", range: "range {a}–{b} kWh", clear: "clear {v}", forecastFor: "forecast for it {v} kWh",
-    noActual: "no full hour measured yet", hourFc: "forecast this hour {v} kW", peak: "strongest hour {t}",
+    morning: "morning forecast {v}", range: "range {a}–{b} kWh", clear: "clear {v}", forecastFor: "until {t} · forecast for it {v} kWh",
+    noActual: "no full hour measured yet", hourFc: "expected this hour {v}", peak: "strongest hour {t}",
     asPlanned: "As forecast", sunnier: "Sunnier than forecast", dimmer: "Duller than forecast",
     lForecast: "Forecast", lActual: "Actual", lExpected: "Expected", lBand: "Range (clouds)", lClear: "Clear sky", now: "now",
     consumers: "Plan consumers", startNow: "Start now", wait: "Better wait", shareNow: "PV share now {p}",
@@ -146,7 +146,7 @@ class NoxcastOverview extends HTMLElement {
           <div class="fig"><span class="muted small">${t.expected}</span><span class="big" id="s-exp"></span><span class="muted small" id="s-exp-sub"></span></div>
           <div class="fig"><span class="muted small">${t.sofar}</span><span class="big" id="s-sofar"></span><span class="muted small" id="s-sofar-sub"></span></div>
           <div class="fig"><span class="muted small">${t.rest}</span><span class="big"><span id="l-rest">–</span> <span class="muted unit">kWh</span></span><span class="muted small" id="l-rest-sub"></span></div>
-          <div class="fig"><span class="muted small">${t.power}</span><span class="big"><span id="l-power">–</span> <span class="muted unit">kW</span></span><span class="muted small" id="s-power-sub"></span></div>
+          <div class="fig"><span class="muted small">${t.power}</span><span class="big"><span id="l-power">–</span> <span class="muted unit" id="l-power-unit">kW</span></span><span class="muted small" id="s-power-sub"></span></div>
         </div>
         <div id="s-chart" class="chart"></div>
         <div class="head"><div class="legend">
@@ -190,8 +190,8 @@ class NoxcastOverview extends HTMLElement {
     this._hours = hours;
     const today = this._today();
     // expected today, with the morning forecast, the range and clear sky
-    const k = (wh) => kwh(wh, this._lang);
-    this._set("s-exp", today ? `${k(today.expected_wh ?? today.wh)} <span class="muted unit">kWh</span>` : "–");
+    const k = (wh) => kwh(wh, this._lang), k2 = (wh) => kwh(wh, this._lang, 2);
+    this._set("s-exp", today ? `${k2(today.expected_wh ?? today.wh)} <span class="muted unit">kWh</span>` : "–");
     const sub = [];
     if (today && today.morning_wh != null) sub.push(fill(t.morning, { v: k(today.morning_wh) }));
     if (today && today.p10 != null) sub.push(fill(t.range, { a: k(today.p10), b: k(today.p90) }));
@@ -200,16 +200,18 @@ class NoxcastOverview extends HTMLElement {
     // so far: the measured full hours against their forecast
     const done = hours.filter((h) => h.act != null && h.fc != null);
     const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.fc, 0);
-    this._set("s-sofar", done.length ? `${k(act)} <span class="muted unit">kWh</span>` : "–");
+    this._set("s-sofar", done.length ? `${k2(act)} <span class="muted unit">kWh</span>` : "–");
     const dev = fc > 0 ? act / fc - 1 : null;
-    this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
+    this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k2(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
     this._set("s-pill", dev === null || fc < 200 ? "" : Math.abs(dev) <= PLAN_BAND ? `<span class="pill good">${t.asPlanned}</span>`
       : dev > 0 ? `<span class="pill good">${t.sunnier}</span>` : `<span class="pill warn">${t.dimmer}</span>`);
     // the hour now and the strongest hour of the expected curve
     const nowTs = Date.now() / 1000, cur = hours.find((h) => h.ts <= nowTs && nowTs < h.ts + 3600);
     const peak = hours.reduce((m, h) => ((h.ex ?? h.fc ?? 0) > ((m && (m.ex ?? m.fc)) ?? 0) ? h : m), null);
     const powerSub = [];
-    if (cur && cur.fc != null) powerSub.push(fill(t.hourFc, { v: num(cur.fc / 1000, this._lang, 2) }));
+    // the corrected expectation of this hour, the value the chart draws; the morning forecast only without one
+    const curW = cur ? cur.ex ?? cur.fc : null;
+    if (curW != null) powerSub.push(fill(t.hourFc, { v: power(curW, this._lang) }));
     if (peak && (peak.ex ?? peak.fc) > 0) powerSub.push(fill(t.peak, { t: `${this._hm(peak.ts)}–${this._hm(peak.ts + 3600)}` }));
     this._set("s-power-sub", esc(powerSub.join(" · ")));
     this._set("s-chart", this._chart(hours, nowTs));
@@ -234,10 +236,12 @@ class NoxcastOverview extends HTMLElement {
       w += (s.attributes.unit_of_measurement || "W").toLowerCase() === "kw" ? v * 1000 : v;
       any = true;
     }
-    this._text("l-power", any ? num(w / 1000, this._lang, 2) : "–");
+    const [pv, unit] = any ? powerParts(w, this._lang) : ["–", "kW"];
+    this._text("l-power", pv);
+    this._text("l-power-unit", unit);
     // rest of today: Noxcast's own sensor, with its range
     const r = live.remaining && st[live.remaining], rv = r ? Number(r.state) : NaN;
-    this._text("l-rest", Number.isFinite(rv) ? num(rv, this._lang, 1) : "–");
+    this._text("l-rest", Number.isFinite(rv) ? num(rv, this._lang, 2) : "–");
     this._text("l-rest-sub", r && r.attributes.p10 != null ? fill(this._t.range, { a: num(r.attributes.p10, this._lang, 1), b: num(r.attributes.p90, this._lang, 1) }) : "");
     // state of charge: the batteries together, weighted by capacity
     let e = 0, cap = 0;
@@ -259,22 +263,29 @@ class NoxcastOverview extends HTMLElement {
     if (!lit.length) return "";
     const a = lit[0].ts - 3600, b = lit[lit.length - 1].ts + 2 * 3600;
     // as wide as the card (within bounds), so the labels keep their size on a phone
-    const W = Math.round(Math.max(340, Math.min(720, (this.clientWidth || 720) - 32))), H = 200, L = 40, R = 10, T = 14, B = 24;
+    const W = Math.round(Math.max(340, Math.min(720, (this.clientWidth || 720) - 32))), H = 200, L = 10, R = 10, T = 14, B = 24;
     const top = Math.max(...lit.map((h) => Math.max(h.clear || 0, h.p90 || 0, h.fc || 0, h.act || 0, h.ex || 0))) / 1000 || 1;
-    const step = top > 6 ? 2 : top > 3 ? 1 : top > 1.5 ? 0.5 : 0.25, ymax = Math.ceil(top / step) * step;
+    const step = top > 30 ? 10 : top > 15 ? 5 : top > 6 ? 2 : top > 3 ? 1 : top > 1.5 ? 0.5 : 0.25, ymax = Math.ceil(top / step) * step;
     const x = (ts) => L + (ts - a) / (b - a) * (W - L - R), y = (wh) => T + (1 - wh / 1000 / ymax) * (H - T - B);
     // an hour's mean belongs to the middle of the hour
     const mid = (h) => h.ts + 1800;
     const line = (pts) => pts.map(([ts, v], i) => `${i ? "L" : "M"}${x(ts).toFixed(1)} ${y(v).toFixed(1)}`).join("");
-    const pts = (key, list = hours) => list.filter((h) => h[key] != null).map((h) => [mid(h), h[key]]);
-    let svg = "";
+    // only the hours of the time axis: the night hours of the day would draw their zeros left of it
+    const shown = hours.filter((h) => mid(h) >= a && mid(h) <= b);
+    const pts = (key, list = shown) => list.filter((h) => h[key] != null).map((h) => [mid(h), h[key]]);
+    let svg = "", scale = "";
     for (let v = 0; v <= ymax + 1e-9; v += step) {
       svg += `<line x1="${L}" x2="${W - R}" y1="${y(v * 1000).toFixed(1)}" y2="${y(v * 1000).toFixed(1)}" class="${v ? "grid" : "axis"}"/>`;
-      svg += `<text x="${L - 6}" y="${(y(v * 1000) + 4).toFixed(1)}" text-anchor="end">${num(v, this._lang, step < 1 ? 2 : 0)}${v + step > ymax + 1e-9 ? " kW" : ""}</text>`;
+      // like the dashboard card: inside the right edge, just below their line, without the zero the axis already shows
+      if (v) scale += `<text x="${W - R - 2}" y="${(y(v * 1000) + 12).toFixed(1)}" text-anchor="end" class="in">${num(v, this._lang, step < 1 ? 2 : 0)}${v + step > ymax + 1e-9 ? " kW" : ""}</text>`;
     }
     const every = W < 500 ? 4 * 3600 : 7200;
-    for (let ts = Math.ceil(a / every) * every; ts <= b; ts += every) svg += `<text x="${x(ts).toFixed(1)}" y="${H - 6}" text-anchor="middle">${this._hm(ts)}</text>`;
-    const band = hours.filter((h) => h.p10 != null && h.p90 != null);
+    // a time near an edge is anchored there, so it is not cut off now that the scale no longer takes the left margin
+    for (let ts = Math.ceil(a / every) * every; ts <= b; ts += every) {
+      const tx = x(ts), anchor = tx < L + 16 ? "start" : tx > W - R - 16 ? "end" : "middle";
+      svg += `<text x="${tx.toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${this._hm(ts)}</text>`;
+    }
+    const band = shown.filter((h) => h.p10 != null && h.p90 != null);
     if (band.length) svg += `<path d="${line(band.map((h) => [mid(h), h.p90]))}${band.slice().reverse().map((h) => `L${x(mid(h)).toFixed(1)} ${y(h.p10).toFixed(1)}`).join("")}Z" fill="var(--ov-band)"/>`;
     svg += `<path d="${line(pts("clear"))}" class="clear"/>`;
     svg += `<path d="${line(pts("fc"))}" class="fc"/>`;
@@ -282,13 +293,14 @@ class NoxcastOverview extends HTMLElement {
     if (act.length) svg += `<path d="${line(act)}" class="act"/>`;
     // expected rest: from the last measured hour on
     const lastAct = act.length ? act[act.length - 1][0] : -Infinity;
-    const rest = hours.filter((h) => h.ex != null && mid(h) >= lastAct).map((h) => [mid(h), h.ex]);
+    const rest = shown.filter((h) => h.ex != null && mid(h) >= lastAct).map((h) => [mid(h), h.ex]);
     if (rest.length > 1) svg += `<path d="${line(rest)}" class="exp"/>`;
     if (nowTs > a && nowTs < b) {
       svg += `<line x1="${x(nowTs).toFixed(1)}" x2="${x(nowTs).toFixed(1)}" y1="${T}" y2="${H - B}" class="now"/>`;
       svg += `<text x="${x(nowTs).toFixed(1)}" y="${T - 3}" text-anchor="middle" class="nowt">${t.now}</text>`;
     }
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.today)}">${svg}</svg>`;
+    // the scale last, so the curves never cover it
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.today)}">${svg}${scale}</svg>`;
   }
 
   _consumers() {
@@ -422,6 +434,7 @@ class NoxcastOverview extends HTMLElement {
       .chart .act { fill: none; stroke: var(--ov-act); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
       .chart .exp { fill: none; stroke: var(--ov-act); stroke-width: 2; stroke-dasharray: 5 4; }
       .chart .now { stroke: var(--primary-text-color); stroke-dasharray: 3 3; opacity: .5; }
+      .chart .in { paint-order: stroke; stroke: var(--card-background-color); stroke-width: 3px; stroke-linejoin: round; }
       .chart .nowt { fill: var(--primary-text-color); font-weight: 500; }
       .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--secondary-text-color); }
       .sw { display: inline-block; width: 14px; height: 4px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }

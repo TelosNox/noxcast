@@ -207,6 +207,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self._today.morning_fixed = fixed
                 self._today.morning = {sid: {float(t): float(v) for t, v in hours.items()}
                                        for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
+                late = {sid: dt_util.parse_datetime(v) for sid, v in (morning.get("late") or {}).items()}
+                self._today.morning_late = {sid: t for sid, t in late.items() if t and sid in self._today.morning}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._today.hours = {}, {}
@@ -359,7 +361,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "morning": {"fixed": today.morning_fixed.isoformat() if today.morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in today.morning.items()},
                         "steps": {sid: {str(t): explain.packed(st) for t, st in h.items()}
-                                  for sid, h in today.morning_steps.items()}},
+                                  for sid, h in today.morning_steps.items()},
+                        "late": {sid: t.isoformat() for sid, t in today.morning_late.items()}},
             # only the mean: the single models serve the archive, which can skip an outage
             "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,

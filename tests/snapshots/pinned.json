@@ -169,7 +169,7 @@
      }
     },
     "load": null,
-    "morning": {"fixed": null, "hours": {}, "steps": {}},
+    "morning": {"fixed": null, "hours": {}, "steps": {}, "late": {}},
     "weather": {
      "fetched": 1781094600.0,
      "mean": [
@@ -2158,6 +2158,7 @@
     "correction": {"S": null, "EW": null},
     "effects": {"S": {"loss": {}, "gain": {}, "periods": []}, "EW": {"loss": {}, "gain": {}, "periods": []}},
     "morning_fixed": null,
+    "morning_late": {},
     "updated": "2026-06-10T12:30:00+00:00",
     "day_start": 1781074800.0,
     "weather_fetched": "2026-06-10T12:30:00+00:00",
@@ -14452,6 +14453,7 @@
      }
     },
     "morning_fixed": "= previous",
+    "morning_late": "= previous",
     "updated": "= previous",
     "day_start": "= previous",
     "weather_fetched": "= previous",
@@ -15094,7 +15096,8 @@
        "1781139600.0": [373.7, -121.7, 0.0, 0.0, 0.0, -0.7],
        "1781143200.0": [133.0, -75.0, 0.0, 0.0, 0.0, 0.7]
       }
-     }
+     },
+     "late": "= previous"
     },
     "weather": {"fetched": 1781118300.0, "mean": "= previous"}
    },
@@ -15343,6 +15346,7 @@
      }
     },
     "morning_fixed": "2026-06-10T19:05:00+00:00",
+    "morning_late": "= previous",
     "updated": "2026-06-10T19:05:00+00:00",
     "day_start": "= previous",
     "weather_fetched": "2026-06-10T19:05:00+00:00",
@@ -15999,6 +16003,7 @@
     "correction": {"S": -0.096, "EW": -0.099},
     "effects": "= previous",
     "morning_fixed": "= previous",
+    "morning_late": "= previous",
     "updated": "2026-06-10T20:40:00+00:00",
     "day_start": "= previous",
     "weather_fetched": "2026-06-10T20:40:00+00:00",
@@ -17014,7 +17019,7 @@
       ]
      }
     },
-    "morning": {"fixed": null, "hours": {}, "steps": {}},
+    "morning": {"fixed": null, "hours": {}, "steps": {}, "late": "= previous"},
     "weather": {"fetched": 1781166600.0, "mean": "= previous"}
    },
    "archive": {
@@ -18246,6 +18251,7 @@
      }
     },
     "morning_fixed": null,
+    "morning_late": "= previous",
     "updated": "2026-06-11T08:30:00+00:00",
     "day_start": 1781161200.0,
     "weather_fetched": "2026-06-11T08:30:00+00:00",
@@ -22523,7 +22529,8 @@
        "1781226000.0": [374.9, -84.4, 0.0, 0.0, 0.0, -1.8],
        "1781229600.0": [134.9, -76.1, 0.0, 0.0, 0.0, 0.7]
       }
-     }
+     },
+     "late": "= previous"
     },
     "weather": {"fetched": 1781194200.0, "mean": "= previous"}
    },
@@ -22835,6 +22842,7 @@
      }
     },
     "morning_fixed": "2026-06-11T16:10:00+00:00",
+    "morning_late": "= previous",
     "updated": "2026-06-11T16:10:00+00:00",
     "day_start": "= previous",
     "weather_fetched": "2026-06-11T16:10:00+00:00",

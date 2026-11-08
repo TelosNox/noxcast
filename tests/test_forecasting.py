@@ -64,6 +64,28 @@ def test_morning_fix_totals_and_held_hours():
     assert today3.morning_fixed is None and today3.morning == {} and today3.morning_steps == {}
 
 
+
+def test_array_added_after_the_morning_fix_is_fixed_at_its_first_update():
+    def at(hour, before, arrays, factor):
+        now = DAY + timedelta(hours=hour)
+        hours = [model.WeatherHour(w.start, w.ghi * factor, temp=w.temp) for w in weather()]
+        return fc.pv(SITE, arrays, {}, hours, {}, before, {}, {}, now, now, DAY_START, DAY_END)
+
+    _, today, _ = at(7, fc.Today(), {"a": ARRAYS["a"]}, 1.0)
+    added, today, _ = at(9, today, ARRAYS, 1.0)          # "b" is set up at 9
+    assert set(today.morning) == {"a", "b"} and today.morning_steps["b"]
+    assert today.morning_late == {"b": DAY + timedelta(hours=9)}
+    assert added.fixed_at("a") == DAY + timedelta(hours=7) and added.fixed_at("b") == DAY + timedelta(hours=9)
+    assert added.fixed_at(None) == DAY + timedelta(hours=9)
+    # new weather at 10 moves the forecast, not the fixed values of the late array
+    later, today, _ = at(10, today, ARRAYS, 0.5)
+    assert later.morning["b"] == added.morning["b"] != later.forecast["b"]
+    assert later.morning[None] == added.morning[None]
+    # the next day starts without late arrays
+    _, nxt, _ = fc.pv(SITE, ARRAYS, {}, weather(), {}, today, {}, {}, DAY + timedelta(hours=31),
+                      DAY + timedelta(hours=31), DAY_END, DAY_END + 86400)
+    assert nxt.morning_late == {} and nxt.morning_fixed == DAY + timedelta(hours=31)
+
 def test_surplus_band_battery_and_plan():
     result, _, _ = run(9)
     hours = sorted(t for t in result.forecast[None] if t >= DAY_START + 9 * 3600)

@@ -7,6 +7,17 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.1b1] - 2026-11-08
+
+The first pre-release of 0.3.1. It stores when an array added during the day was fixed, so it runs through a
+nightly learning run before 0.3.1.
+
+### Changed
+- Panel, Overview: *Expected today*, *So far* and *Rest of today* show two decimals; *So far* says until which full
+  hour it counts, which is why it and *Rest of today* do not add up to *Expected today* during the current hour.
+- Panel, Overview: *Power now* is shown in W below 1 kW, as on the dashboard card, and in kW with two decimals
+  above; the dashboard card also shows kW with two decimals now.
+
 ### Fixed
 - *Forecast today* of an array added after 6:00 followed every new weather forecast until midnight, and the total
   with it. It is now fixed at the array's first update; `fixed_at` shows that time, for the total the latest fix.
@@ -14,12 +25,6 @@ breaking changes.
   longer cut off; the scale now sits inside the right edge, without the zero, as on the dashboard card.
 - Panel, Overview: the line under *Power now* shows the expected power of this hour, the value the chart draws,
   instead of the morning forecast.
-
-### Changed
-- Panel, Overview: *Expected today*, *So far* and *Rest of today* show two decimals; *So far* says until which full
-  hour it counts, which is why it and *Rest of today* do not add up to *Expected today* during the current hour.
-- Panel, Overview: *Power now* is shown in W below 1 kW, as on the dashboard card, and in kW with two decimals
-  above; the dashboard card also shows kW with two decimals now.
 
 ## [0.3.0] - 2026-11-08
 

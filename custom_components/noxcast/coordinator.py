@@ -219,6 +219,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             except Exception:  # noqa: BLE001
                 _LOGGER.warning("Stored derivation of the morning forecast could not be read", exc_info=True)
                 self._today.morning_steps = {}
+            try:
+                late = {sid: dt_util.parse_datetime(v) for sid, v in ((stored.get("morning") or {}).get("late") or {}).items()}
+                self._today.morning_late = {sid: t for sid, t in late.items() if t and sid in self._today.morning}
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Stored fix times of arrays added later could not be read", exc_info=True)
         try:
             self.forecast_archive = fc_archive.from_store(await self._archive_store.async_load())
         except Exception:  # noqa: BLE001
@@ -359,7 +364,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "morning": {"fixed": today.morning_fixed.isoformat() if today.morning_fixed else None,
                         "hours": {sid: {str(t): v for t, v in h.items()} for sid, h in today.morning.items()},
                         "steps": {sid: {str(t): explain.packed(st) for t, st in h.items()}
-                                  for sid, h in today.morning_steps.items()}},
+                                  for sid, h in today.morning_steps.items()},
+                        "late": {sid: t.isoformat() for sid, t in today.morning_late.items()}},
             # only the mean: the single models serve the archive, which can skip an outage
             "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,

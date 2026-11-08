@@ -38,6 +38,7 @@ class NoxcastData:
     correction: dict[str, float | None] = field(default_factory=dict)              # intraday clearness shift
     effects: dict[str, dict] = field(default_factory=dict)        # today per array: loss, gain (Wh/h), periods
     morning_fixed: datetime | None = None
+    morning_late: dict[str, datetime] = field(default_factory=dict)       # arrays fixed later (added that day)
     updated: datetime | None = None
     day_start: float | None = None            # local midnight of the day these values were computed for
     weather_fetched: datetime | None = None                                # last successful Open-Meteo answer
@@ -57,6 +58,14 @@ class NoxcastData:
     def total(self) -> Series:
         return self.forecast.get(TOTAL, {})
 
+    def fixed_at(self, sub_id: str | None) -> datetime | None:
+        """When the morning values of an array were fixed; for the total the last of its arrays."""
+        if self.morning_fixed is None:
+            return None
+        if sub_id is TOTAL:
+            return max([self.morning_fixed, *self.morning_late.values()])
+        return self.morning_late.get(sub_id, self.morning_fixed)
+
 
 @dataclass
 class Today:
@@ -67,6 +76,7 @@ class Today:
     morning_fixed: datetime | None = None
     held: dict[str, Series] = field(default_factory=dict)      # see intraday.held_forecast
     morning_steps: dict[str, dict[float, dict]] = field(default_factory=dict)  # explain.hour_steps of the morning fix
+    morning_late: dict[str, datetime] = field(default_factory=dict)   # arrays fixed after morning_fixed
 
 
 def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, float | None]],
@@ -109,7 +119,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     ts_now = now.timestamp()
     result = NoxcastData(day_start=day_start)
     today = Today(dict(before.hours), dict(before.morning), before.morning_fixed, dict(before.held),
-                  dict(before.morning_steps))
+                  dict(before.morning_steps), dict(before.morning_late))
     alt: dict[str, dict[str, Series]] = {m: {} for m in models}
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id, LearnedArray())
@@ -127,14 +137,22 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
         today.morning_fixed = None
         today.morning = {}
         today.morning_steps = {}
+        today.morning_late = {}
     if today.morning_fixed is None and local_now.hour >= MORNING_HOUR:
         today.morning_fixed = now
-        today.morning = {sid: {t: v for t, v in h.items() if t < day_end} for sid, h in result.arrays.items()}
+    if today.morning_fixed is not None:
+        # an array added after the fix gets fixed at its first update instead of following the weather all day
+        new = [sid for sid in arrays if sid not in today.morning]
         # with the same weather and model as the fixed values, so the day view explains exactly them
         day_weather = [w for w in weather if w.start < day_end]
-        today.morning_steps = {sid: hour_steps(site, arr.geometry, learned.get(sid, LearnedArray()), day_weather)
-                               for sid, arr in arrays.items()}
+        for sid in new:
+            today.morning[sid] = {t: v for t, v in result.forecast[sid].items() if t < day_end}
+            today.morning_steps[sid] = hour_steps(site, arrays[sid].geometry, learned.get(sid, LearnedArray()),
+                                                  day_weather)
+            if today.morning_fixed != now:
+                today.morning_late[sid] = now
     result.morning_fixed, result.morning_steps = today.morning_fixed, today.morning_steps
+    result.morning_late = today.morning_late
 
     result.actual, result.weather = actual, weather
     temps = {w.start: w.temp for w in weather}

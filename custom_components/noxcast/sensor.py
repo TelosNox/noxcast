@@ -159,7 +159,8 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
                  "hourly": hourly_attribute(self._hours(), self.entity_description.day_offset)}
         data = self.coordinator.data
         if self.entity_description.series == "morning" and data is not None:
-            attrs["fixed_at"] = data.morning_fixed.isoformat() if data.morning_fixed else None
+            fixed = data.fixed_at(self._sub_id)
+            attrs["fixed_at"] = fixed.isoformat() if fixed else None
         if self.entity_description.series == "expected" and data is not None and self._sub_id is not TOTAL:
             attrs["correction"] = data.correction.get(self._sub_id)
         # P10 / P90 for the total, learned from the forecast archive (band.py)

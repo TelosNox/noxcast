@@ -23,7 +23,7 @@
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 // Tapping a figure opens the more-info dialog of its entity. With several entities behind it (PV arrays and
 // sensors, battery level and power) it first lists them with their current values.
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, power, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -541,10 +541,9 @@ class NoxcastCard extends HTMLElement {
     this._animate();
   }
 
+  // the same form as the panel's overview: watts below 1 kW, kW with two decimals above
   _num(x) {
-    return Math.abs(x) >= 1000
-      ? `${(x / 1000).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`
-      : `${Math.round(x)} W`;
+    return power(x, this._lang);
   }
 
   // what is behind a figure that sums up several entities: rows of a name and cells, each cell a value and the

@@ -207,8 +207,6 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self._today.morning_fixed = fixed
                 self._today.morning = {sid: {float(t): float(v) for t, v in hours.items()}
                                        for sid, hours in morning.get("hours", {}).items() if sid in self.arrays}
-                late = {sid: dt_util.parse_datetime(v) for sid, v in (morning.get("late") or {}).items()}
-                self._today.morning_late = {sid: t for sid, t in late.items() if t and sid in self._today.morning}
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Stored Noxcast state could not be read; relearning from history", exc_info=True)
             self.learned, self._today.hours = {}, {}
@@ -221,6 +219,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             except Exception:  # noqa: BLE001
                 _LOGGER.warning("Stored derivation of the morning forecast could not be read", exc_info=True)
                 self._today.morning_steps = {}
+            try:
+                late = {sid: dt_util.parse_datetime(v) for sid, v in ((stored.get("morning") or {}).get("late") or {}).items()}
+                self._today.morning_late = {sid: t for sid, t in late.items() if t and sid in self._today.morning}
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Stored fix times of arrays added later could not be read", exc_info=True)
         try:
             self.forecast_archive = fc_archive.from_store(await self._archive_store.async_load())
         except Exception:  # noqa: BLE001

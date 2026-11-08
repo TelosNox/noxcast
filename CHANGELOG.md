@@ -8,8 +8,8 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
-- *Forecast today* of an array added after 6:00 followed every new weather forecast until midnight. It is now fixed
-  at the array's first update, and its `fixed_at` attribute shows that time.
+- *Forecast today* of an array added after 6:00 followed every new weather forecast until midnight, and the total
+  with it. It is now fixed at the array's first update; `fixed_at` shows that time, for the total the latest fix.
 
 ## [0.3.0] - 2026-11-08
 

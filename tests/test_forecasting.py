@@ -64,7 +64,6 @@ def test_morning_fix_totals_and_held_hours():
     assert today3.morning_fixed is None and today3.morning == {} and today3.morning_steps == {}
 
 
-
 def test_array_added_after_the_morning_fix_is_fixed_at_its_first_update():
     def at(hour, before, arrays, factor):
         now = DAY + timedelta(hours=hour)
@@ -79,7 +78,7 @@ def test_array_added_after_the_morning_fix_is_fixed_at_its_first_update():
     assert added.fixed_at(None) == DAY + timedelta(hours=9)
     # new weather at 10 moves the forecast, not the fixed values of the late array
     later, today, _ = at(10, today, ARRAYS, 0.5)
-    assert later.morning["b"] == added.morning["b"] != later.forecast["b"]
+    assert later.morning["b"] == added.morning["b"] != {t: v for t, v in later.forecast["b"].items() if t < DAY_END}
     assert later.morning[None] == added.morning[None]
     # the next day starts without late arrays
     _, nxt, _ = fc.pv(SITE, ARRAYS, {}, weather(), {}, today, {}, {}, DAY + timedelta(hours=31),

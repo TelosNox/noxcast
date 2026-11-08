@@ -7,6 +7,47 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.0] - 2026-11-08
+
+All changes since 0.2.0, tested in the pre-releases 0.3.0b1 to 0.3.0b3 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). With the satellite filter, the efficiency and
+the geometry check change with the first learning run after the update; nothing needs to be done.
+
+### Added
+- Panel: a new start tab *Overview* (*Übersicht*) with what is due today and in the days ahead: today expected, so
+  far against its forecast, rest of today and PV power now with the day's course; for flexible consumers whether to
+  start now and the best windows; the battery's state of charge, full and empty times and lost surplus; the next
+  days; yesterday's forecast against actual and the error of the last 14 days; a status line with sensors that
+  report no values. Each part links to the tab that explains it. Live values update in place without reloading the
+  page.
+- Panel, Diagnostics: shows the installed Noxcast version.
+
+### Changed
+- Panel: *Learned* is no longer the start tab; inside an array the way back reads "All arrays".
+- Day view, groups: each group's course now shows, like the chart above, which part is measured (strong) and which
+  is still forecast (faint), with a line at the current time.
+- Forecast accuracy, "Weather or model?": the daily bars now show the weather and model part in kWh instead of as a
+  share of that day's actual yield. A dark day with little yield no longer shows a huge model part for a few hundred
+  Wh. The help text explains that the model part also contains the satellite's measurement errors (e.g. in fog), so
+  a single day says little about the model.
+- Day view: the deviation from the day-ahead forecast (today: the 6 am forecast) is no longer green when more came
+  than forecast and red when less came. Its colour now shows how large the miss is, measured against what the array
+  would give under a clear sky: no colour below 10 %, yellow from 10 %, red from 25 %. A +90 % on a dark November
+  day with a few hundred Wh therefore stays calm, and a big miss in either direction stands out. The tooltip gives
+  the miss in kWh.
+
+### Fixed
+- Learned values: the sky view shows "not learned yet" instead of 100 % while there are too few overcast hours to
+  learn it (the forecast keeps assuming a free sky until then). The learned sensor has a new attribute
+  `sky_view_learned`. Arrays learned before this version show the old value until the next nightly learning run.
+- Satellite filter: the efficiency is learned only from hours whose sun position the shading map has learned as
+  free. Before, positions the map did not know yet counted as unshaded, so soft shade there (trees) pulled the
+  efficiency down and the direction factor up to its limit. The geometry check also keeps away from shaded cells
+  and needs free hours on both sides of the modules' direction, so "Check geometry" no longer appears just
+  because trees shade one side. Takes effect with the next learning run.
+- A forecast update during a learning run no longer interferes with the forecast archive. Before, this could
+  rarely make the backtest or the saving of the archive fail, for example with a manual relearn around midnight.
+
 ## [0.3.0b3] - 2026-11-07
 
 The third pre-release of 0.3.0. The sections below list what changed since 0.3.0b2.

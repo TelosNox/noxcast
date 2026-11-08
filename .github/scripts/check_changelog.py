@@ -2,8 +2,8 @@
 
 Usage: check_changelog.py [BASE], with the pull request's description in the environment variable PR_BODY.
 The integration is everything under custom_components/. Its changes need either a changed `## Unreleased` section
-(a release PR moves that section, which counts as well), a new version section together with a new manifest
-version (the release after pre-releases, whose Unreleased section is already empty) or a line in the description that starts with
+(a release PR moves that section, which counts as well), a new version section together with a changed manifest
+(the release after pre-releases, whose Unreleased section is already empty) or a line in the description that starts with
 "No changelog entry", followed by the reason.
 """
 from __future__ import annotations

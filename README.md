@@ -331,7 +331,7 @@ With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`,
 today**, **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
 charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
-when no run fits) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
+when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.
 
 ## Repairs

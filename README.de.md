@@ -331,7 +331,8 @@ Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `ba
 `backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute**, **Akku voll um**, **Akku höchster
 Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,
-`pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt) und der Binärsensor **jetzt starten**: an, solange ein
+`pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt oder keiner
+mindestens 5 % aus Überschuss bekommt) und der Binärsensor **jetzt starten**: an, solange ein
 jetzt gestarteter Lauf mindestens den eingestellten PV-Anteil aus Überschuss bekommt und höchstens 5 Punkte weniger
 als das beste Fenster, das heute noch kommt.
 

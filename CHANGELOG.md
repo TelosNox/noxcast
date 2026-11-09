@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- Consumer planning no longer recommends a window without surplus, such as tomorrow at midnight in winter. When no
+  start gets at least 5 % of the run from surplus, *Best window today* and *Best window tomorrow* are unknown, and
+  the Overview shows *No surplus* instead of *Better wait*.
+
 ## [0.3.1b1] - 2026-11-08
 
 The first pre-release of 0.3.1. It stores when an array added during the day was fixed, so it runs through a

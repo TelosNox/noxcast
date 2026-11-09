@@ -7,7 +7,8 @@ Two shares are reported for a start time:
   pv_share   - part of the run's energy covered by surplus at all,
   lost_share - part covered by surplus that would otherwise be lost (battery full or power-limited);
                this is the energy a run saves without taking anything from the battery.
-The best start maximises pv_share, then lost_share, then prefers the earlier start.
+The best start maximises pv_share, then lost_share, then prefers the earlier start. A start with less than
+MIN_SHARE from surplus is no window: without surplus every start ties and the earliest one, at night, would win.
 Several consumers are placed one after the other (by priority); each takes its share of the surplus.
 """
 from __future__ import annotations
@@ -19,6 +20,7 @@ from .const import Series
 
 H = 3600.0
 STEP = 900.0                      # start grid and integration step: 15 minutes
+MIN_SHARE = 0.05                  # below this share from surplus no start is recommended as a window
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,8 @@ def evaluate(run: RunProfile, start: float, surplus: Series, lost: Series) -> Wi
 
 def best_window(run: RunProfile, surplus: Series, lost: Series, earliest: float,
                 latest_end: float) -> Window | None:
-    """Best start on the 15-minute grid with the run ending by latest_end; slot series as in evaluate."""
+    """Best start on the 15-minute grid with the run ending by latest_end; slot series as in evaluate.
+    None when no run fits or none gets MIN_SHARE from surplus."""
     start = earliest + (-earliest) % STEP
     best = None
     while start + run.minutes * 60 <= latest_end:
@@ -76,7 +79,7 @@ def best_window(run: RunProfile, surplus: Series, lost: Series, earliest: float,
         if best is None or (round(w.pv_share, 3), round(w.lost_share, 3)) > (round(best.pv_share, 3), round(best.lost_share, 3)):
             best = w
         start += STEP
-    return best
+    return best if best is not None and best.pv_share >= MIN_SHARE else None
 
 
 def plan(runs: list[RunProfile], surplus_h: Series, lost_h: Series, now: float,

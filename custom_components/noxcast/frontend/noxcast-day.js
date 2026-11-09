@@ -1,7 +1,7 @@
 // Noxcast panel section "Day": one day in detail. The groups stacked, forecast against expectation
 // and actual, the weather of each hour, and for a chosen hour how its forecast comes about.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/day".
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, num, smooth, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DAY_TEXT = {
   de: {
@@ -71,28 +71,6 @@ const DAY_TEXT = {
     kwh: "kWh", w: "W",
   },
 };
-
-// smooth path through points without overshoot (monotone cubic, as in the day card), as " C..." segments
-function smooth(p) {
-  const n = p.length, f = (v) => v.toFixed(1);
-  if (n < 3) return p.slice(1).map(([a, b]) => ` L${f(a)},${f(b)}`).join("");
-  const m = [], t = [];
-  for (let k = 0; k < n - 1; k++) m.push((p[k + 1][1] - p[k][1]) / (p[k + 1][0] - p[k][0] || 1e-9));
-  t.push(m[0]);
-  for (let k = 1; k < n - 1; k++) t.push(m[k - 1] * m[k] <= 0 ? 0 : (m[k - 1] + m[k]) / 2);
-  t.push(m[n - 2]);
-  for (let k = 0; k < n - 1; k++) {
-    if (m[k] === 0) { t[k] = 0; t[k + 1] = 0; continue; }
-    const a = t[k] / m[k], b = t[k + 1] / m[k], q = a * a + b * b;
-    if (q > 9) { const tau = 3 / Math.sqrt(q); t[k] = tau * a * m[k]; t[k + 1] = tau * b * m[k]; }
-  }
-  let out = "";
-  for (let k = 0; k < n - 1; k++) {
-    const dx = (p[k + 1][0] - p[k][0]) / 3;
-    out += ` C${f(p[k][0] + dx)},${f(p[k][1] + t[k] * dx)} ${f(p[k + 1][0] - dx)},${f(p[k + 1][1] - t[k + 1] * dx)} ${f(p[k + 1][0])},${f(p[k + 1][1])}`;
-  }
-  return out;
-}
 
 const DAY_COLORS = ["#F5A524", "#FF6A3D", "#8B5CF6", "#22C7E8", "#2EAA6E", "#E8543C"];
 const HOUR = 3600;
@@ -252,7 +230,7 @@ class NoxcastDay extends HTMLElement {
     let peakT = null, peak = 0;
     for (const [h, v] of totals) if (v > peak) { peak = v; peakT = h; }
     const band = tsRows(e.band, "p10", "p90");
-    const figs = [[mainLabel, `${this._kwh(main)} ${t.kwh}`]];
+    const figs = [[mainLabel, `${this._kwh(main, 2)} ${t.kwh}`]];
     if (ref > 0 && phase !== "future") {
       // only arrays with a reference count: a new array without a day-ahead forecast is no miss
       const withRef = e.arrays.filter((arr) => this._sum(this._reference(arr)) > 0);
@@ -306,7 +284,7 @@ class NoxcastDay extends HTMLElement {
     let svg = `<defs>${e.arrays.map((_, i) => `<linearGradient id="nx-g${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${DAY_COLORS[i % 6]}" stop-opacity=".95"></stop><stop offset="1" stop-color="${DAY_COLORS[i % 6]}" stop-opacity=".55"></stop></linearGradient>`).join("")}
       <clipPath id="nx-past"><rect x="0" y="0" width="${phase === "past" ? W : phase === "future" ? 0 : Math.max(0, x(now)).toFixed(1)}" height="${Hp + 1}"></rect></clipPath>
       <clipPath id="nx-rest"><rect x="${phase === "past" ? W : phase === "future" ? 0 : Math.max(0, x(now)).toFixed(1)}" y="0" width="${W}" height="${Hp + 1}"></rect></clipPath></defs>`;
-    for (let v = step; v <= ymax; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v >= 1000 ? this._num(v / 1000, v % 1000 ? 1 : 0) + " k" : v}</text>`;
+    for (let v = step; v <= ymax; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._axis(v, step, v + step > ymax)}</text>`;
     // stacked groups: one band per array, smooth over the hour middles
     const pts = (f) => span.map((h) => [x(h + HOUR / 2), f(h)]);
     let below = span.map(() => 0);
@@ -513,7 +491,7 @@ class NoxcastDay extends HTMLElement {
     const y = (v) => top + (bottom - top) * (1 - v / max);
     const step = [100, 200, 250, 500, 1000, 2000, 5000].find((s) => max / s <= 4) || 10000;
     let svg = `<defs><linearGradient id="nx-hist" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8B5CF6"></stop><stop offset="1" stop-color="#F5A524"></stop></linearGradient></defs>`;
-    for (let v = step; v < max; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v >= 1000 ? this._num(v / 1000, v % 1000 ? 1 : 0) + " k" : v}</text>`;
+    for (let v = step; v < max; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._axis(v, step, v + step >= max)}</text>`;
     const span = hours.filter((h) => h >= h0 && h < h1);
     if (final) for (const h of span) {
       const v = result.get(h) || 0;
@@ -602,7 +580,7 @@ class NoxcastDay extends HTMLElement {
     return `<section class="card pad grow"><h3>${t.groups}</h3><div class="glist">
       ${rows.map((r) => `<div class="gitem">
         <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${esc(r.arr.name)}</div>
-          <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main)} ${t.kwh}</b></div></div>
+          <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main, 2)} ${t.kwh}</b></div></div>
         ${spark(r)}
         <div class="gfigs">
           ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, r.ref > 0 ? this._dev(r.main, r.ref, r.clear) : "–") : ""}
@@ -693,7 +671,10 @@ class NoxcastDay extends HTMLElement {
 
   _pct(v) { const r = Math.round(v * 100); return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r)} %`; }
   _num(v, d) { return num(v, this._lang, d); }
-  _kwh(wh) { return kwh(wh, this._lang); }
+  // headline values of the day get two decimals; forecasts, ranges and steps stay at one, so they claim no precision they lack
+  _kwh(wh, digits = 1) { return kwh(wh, this._lang, digits); }
+  // power scale in kW with as many decimals as the step needs, the unit on the top line
+  _axis(w, step, last) { return `${this._num(w / 1000, step % 1000 === 0 ? 0 : step % 100 === 0 ? 1 : 2)}${last ? " kW" : ""}`; }
   _hm(ts) { return hm(ts, this._lang, this._data.time_zone, { hourCycle: "h23" }); }
 
   _style() {

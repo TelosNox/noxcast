@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Panel, Overview: the chart of today looks like the one on the *Day* page: measured hours as a solid area, the
+  expectation for the rest of the day pale, smooth curves, the forecast dashed and clear sky as a dotted upper
+  bound. *So far* gives its forecast with one decimal again, like the other forecasts.
+- Panel, Day: the day's main value and the main value of each group show two decimals; forecasts, ranges and the
+  energy flow keep one. The scale of the chart is in kW.
+- Dashboard card: the large actual value of today shows two decimals.
+
 ### Fixed
 - Consumer planning no longer recommends a window without surplus, such as tomorrow at midnight in winter. When no
   start gets at least 5 % of the run from surplus, *Best window today* and *Best window tomorrow* are unknown, and

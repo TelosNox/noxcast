@@ -5,7 +5,7 @@
 // then every part is a slot that is written only when its content changed, and the live figures (PV power,
 // state of charge, rest of today) are text nodes set from the Home Assistant states. A new answer is fetched when
 // Noxcast's own sensor of the rest of today changes (Noxcast computed anew) and every few minutes besides.
-const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, smooth, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const RELOAD_MS = 5 * 60000;
 const PLAN_BAND = 0.1;          // "as forecast" while the measured hours so far are this close to their forecast
@@ -150,9 +150,9 @@ class NoxcastOverview extends HTMLElement {
         </div>
         <div id="s-chart" class="chart"></div>
         <div class="head"><div class="legend">
-          <span><i class="sw" style="background:var(--ov-band)"></i>${t.lBand}</span><span><i class="sw" style="background:var(--ov-fc)"></i>${t.lForecast}</span>
-          <span><i class="sw" style="background:var(--ov-act)"></i>${t.lActual}</span><span><i class="sw dash" style="--c:var(--ov-act)"></i>${t.lExpected}</span>
-          <span><i class="sw dash" style="--c:var(--secondary-text-color)"></i>${t.lClear}</span></div>${more("day")}</div>
+          <span><i class="sw box" style="background:linear-gradient(180deg,#F5A524,#FF6A3D)"></i>${t.lActual}</span><span><i class="sw box rest"></i>${t.lExpected}</span>
+          <span><i class="sw dash" style="--c:var(--primary-text-color)"></i>${t.lForecast}</span><span><i class="sw box band"></i>${t.lBand}</span>
+          <span><i class="sw dot"></i>${t.lClear}</span></div>${more("day")}</div>
       </section>
       <div class="split">
         <section class="card pad grow2" id="c-load" hidden><div class="head"><h3>${t.consumers}</h3>${more("load")}</div><div id="s-consumers"></div></section>
@@ -202,7 +202,7 @@ class NoxcastOverview extends HTMLElement {
     const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.fc, 0);
     this._set("s-sofar", done.length ? `${k2(act)} <span class="muted unit">kWh</span>` : "–");
     const dev = fc > 0 ? act / fc - 1 : null;
-    this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k2(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
+    this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
     this._set("s-pill", dev === null || fc < 200 ? "" : Math.abs(dev) <= PLAN_BAND ? `<span class="pill good">${t.asPlanned}</span>`
       : dev > 0 ? `<span class="pill good">${t.sunnier}</span>` : `<span class="pill warn">${t.dimmer}</span>`);
     // the hour now and the strongest hour of the expected curve
@@ -269,13 +269,15 @@ class NoxcastOverview extends HTMLElement {
     const x = (ts) => L + (ts - a) / (b - a) * (W - L - R), y = (wh) => T + (1 - wh / 1000 / ymax) * (H - T - B);
     // an hour's mean belongs to the middle of the hour
     const mid = (h) => h.ts + 1800;
-    const line = (pts) => pts.map(([ts, v], i) => `${i ? "L" : "M"}${x(ts).toFixed(1)} ${y(v).toFixed(1)}`).join("");
+    // the look of the day page: monotone smooth curves, which never overshoot an hourly mean
+    const xy = (p) => p.map(([ts, v]) => [x(ts), y(v)]);
+    const line = (p) => smoothPath(xy(p));
     // only the hours of the time axis: the night hours of the day would draw their zeros left of it
     const shown = hours.filter((h) => mid(h) >= a && mid(h) <= b);
     const pts = (key, list = shown) => list.filter((h) => h[key] != null).map((h) => [mid(h), h[key]]);
     let svg = "", scale = "";
     for (let v = 0; v <= ymax + 1e-9; v += step) {
-      svg += `<line x1="${L}" x2="${W - R}" y1="${y(v * 1000).toFixed(1)}" y2="${y(v * 1000).toFixed(1)}" class="${v ? "grid" : "axis"}"/>`;
+      svg += `<line x1="${L}" x2="${W - R}" y1="${y(v * 1000).toFixed(1)}" y2="${y(v * 1000).toFixed(1)}" class="${v ? "rail" : "axis"}"/>`;
       // like the dashboard card: inside the right edge, just below their line, without the zero the axis already shows
       if (v) scale += `<text x="${W - R - 2}" y="${(y(v * 1000) + 12).toFixed(1)}" text-anchor="end" class="in">${num(v, this._lang, step < 1 ? 2 : 0)}${v + step > ymax + 1e-9 ? " kW" : ""}</text>`;
     }
@@ -285,16 +287,30 @@ class NoxcastOverview extends HTMLElement {
       const tx = x(ts), anchor = tx < L + 16 ? "start" : tx > W - R - 16 ? "end" : "middle";
       svg += `<text x="${tx.toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${this._hm(ts)}</text>`;
     }
+    // production edges at zero, so area and curves rise from the axis and return to it
+    const p0 = lit[0].ts, p1 = lit[lit.length - 1].ts + 3600;
+    const edged = (p) => (p.length ? [[p0, 0], ...p, [p1, 0]] : p);
+    // the lines too stay within production: the night hours at the edges of the axis would retrace the zero line
+    const inDay = shown.filter((h) => mid(h) >= p0 && mid(h) <= p1);
+    const clear = pts("clear", inDay);
+    if (clear.length > 1) svg += `<path d="${line(edged(clear))}" class="clear"/>`;
     const band = shown.filter((h) => h.p10 != null && h.p90 != null);
-    if (band.length) svg += `<path d="${line(band.map((h) => [mid(h), h.p90]))}${band.slice().reverse().map((h) => `L${x(mid(h)).toFixed(1)} ${y(h.p10).toFixed(1)}`).join("")}Z" fill="var(--ov-band)"/>`;
-    svg += `<path d="${line(pts("clear"))}" class="clear"/>`;
-    svg += `<path d="${line(pts("fc"))}" class="fc"/>`;
-    const act = pts("act");
-    if (act.length) svg += `<path d="${line(act)}" class="act"/>`;
-    // expected rest: from the last measured hour on
-    const lastAct = act.length ? act[act.length - 1][0] : -Infinity;
-    const rest = shown.filter((h) => h.ex != null && mid(h) >= lastAct).map((h) => [mid(h), h.ex]);
-    if (rest.length > 1) svg += `<path d="${line(rest)}" class="exp"/>`;
+    if (band.length > 1) {
+      const lo = xy(band.map((h) => [mid(h), h.p10])).reverse();
+      svg += `<path d="${line(band.map((h) => [mid(h), h.p90]))} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${smooth(lo)} Z" class="bandarea"/>`;
+    }
+    // PV as one area: measured hours, then the expectation for the rest; solid until now, pale after it
+    const day = inDay.map((h) => [mid(h), h.act ?? h.ex ?? h.fc ?? 0]);
+    if (day.length) {
+      const d = line(edged(day)), base = `L${x(p1).toFixed(1)},${y(0).toFixed(1)} L${x(p0).toFixed(1)},${y(0).toFixed(1)} Z`;
+      const cut = Math.max(0, Math.min(W, x(nowTs))).toFixed(1);
+      svg = `<defs><linearGradient id="ov-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5A524" stop-opacity=".95"/><stop offset="1" stop-color="#FF6A3D" stop-opacity=".55"/></linearGradient>
+        <clipPath id="ov-past"><rect x="0" y="0" width="${cut}" height="${H}"/></clipPath><clipPath id="ov-rest"><rect x="${cut}" y="0" width="${W}" height="${H}"/></clipPath></defs>${svg}`;
+      svg += `<path d="${d} ${base}" fill="url(#ov-area)" clip-path="url(#ov-past)"/><path d="${d} ${base}" class="rest" clip-path="url(#ov-rest)"/>`;
+      svg += `<path d="${d}" class="edge" clip-path="url(#ov-past)"/>`;
+    }
+    const fc = pts("fc", inDay);
+    if (fc.length > 1) svg += `<path d="${line(edged(fc))}" class="fc"/>`;
     if (nowTs > a && nowTs < b) {
       svg += `<line x1="${x(nowTs).toFixed(1)}" x2="${x(nowTs).toFixed(1)}" y1="${T}" y2="${H - B}" class="now"/>`;
       svg += `<text x="${x(nowTs).toFixed(1)}" y="${T - 3}" text-anchor="middle" class="nowt">${t.now}</text>`;
@@ -402,7 +418,7 @@ class NoxcastOverview extends HTMLElement {
     const d = this._dark;
     return `<style>
       :host { display: block; --ov-good: ${d ? "#4CC77A" : "#2E9E5B"}; --ov-warn: ${d ? "#E0A43C" : "#C27C0E"}; --ov-bad: ${d ? "#F06A6A" : "#C83A2E"};
-        --ov-fc: #FF6A3D; --ov-act: #8B5CF6; --ov-band: ${d ? "rgba(245,165,36,.22)" : "rgba(245,165,36,.25)"};
+        --ov-fc: #FF6A3D; --ov-act: #8B5CF6;
         --ov-rail: ${d ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)"}; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
       .split { display: flex; gap: 16px; flex-wrap: wrap; align-items: stretch; }
@@ -428,17 +444,21 @@ class NoxcastOverview extends HTMLElement {
       .pill.good { --c: var(--ov-good); } .pill.warn { --c: var(--ov-warn); } .pill.bad { --c: var(--ov-bad); }
       .chart svg { width: 100%; height: auto; display: block; }
       .chart text { fill: var(--secondary-text-color); font-size: 11px; }
-      .chart .axis { stroke: var(--divider-color); } .chart .grid { stroke: var(--divider-color); stroke-dasharray: 2 5; }
-      .chart .clear { fill: none; stroke: var(--secondary-text-color); stroke-width: 1.5; stroke-dasharray: 4 4; }
-      .chart .fc { fill: none; stroke: var(--ov-fc); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-      .chart .act { fill: none; stroke: var(--ov-act); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-      .chart .exp { fill: none; stroke: var(--ov-act); stroke-width: 2; stroke-dasharray: 5 4; }
-      .chart .now { stroke: var(--primary-text-color); stroke-dasharray: 3 3; opacity: .5; }
+      .chart .axis { stroke: var(--divider-color); } .chart .rail { stroke: var(--ov-rail); }
+      .chart .clear { fill: none; stroke: var(--secondary-text-color); stroke-width: 1; stroke-dasharray: 1.5 3; opacity: .7; }
+      .chart .bandarea { fill: #FF6A3D; fill-opacity: .12; stroke: #FF6A3D; stroke-opacity: .5; stroke-width: .8; stroke-dasharray: 2 2; }
+      .chart .rest { fill: #FF6A3D; fill-opacity: .28; }
+      .chart .edge { fill: none; stroke: #FF6A3D; stroke-width: 1.6; stroke-linejoin: round; }
+      .chart .fc { fill: none; stroke: var(--primary-text-color); stroke-width: 1.6; stroke-dasharray: 5 4; opacity: .75; }
+      .chart .now { stroke: var(--primary-text-color); stroke-dasharray: 2 2; opacity: .6; }
       .chart .in { paint-order: stroke; stroke: var(--card-background-color); stroke-width: 3px; stroke-linejoin: round; }
       .chart .nowt { fill: var(--primary-text-color); font-weight: 500; }
       .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--secondary-text-color); }
       .sw { display: inline-block; width: 14px; height: 4px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
-      .sw.dash { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 7px); }
+      .sw.dash { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 7px); opacity: .75; }
+      .sw.box { height: 10px; } .sw.rest { background: #FF6A3D; opacity: .28; }
+      .sw.band { background: rgba(255,106,61,.12); outline: 1px dashed rgba(255,106,61,.5); outline-offset: -1px; }
+      .sw.dot { height: 2px; background: repeating-linear-gradient(90deg, var(--secondary-text-color) 0 1.5px, transparent 1.5px 4px); }
       .rows { display: flex; flex-direction: column; }
       .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--divider-color); align-items: baseline; }
       .row:first-child { border-top: 0; }

@@ -482,7 +482,8 @@ class PlanSensor(NoxcastEntity, SensorEntity):
 
 
 class WindowSensor(NoxcastEntity, SensorEntity):
-    """Start of a flexible consumer's best window today or tomorrow, for automations; unknown if no run fits."""
+    """Start of a flexible consumer's best window today or tomorrow, for automations; unknown if no run fits
+    or none gets plan.MIN_SHARE from surplus."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-start"

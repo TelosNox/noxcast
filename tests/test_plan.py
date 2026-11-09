@@ -35,6 +35,14 @@ def test_no_window_when_the_run_does_not_fit():
     assert pl.plan([pl.RunProfile("x", 500, 180)], {12 * H: 800}, {}, 12 * H, 13 * H)["x"]["best"] is None
 
 
+def test_no_window_without_surplus():
+    # without surplus every start ties at 0 %; the earliest, at midnight, must not become the recommendation
+    night = {h * H: 0.0 for h in range(24)}
+    assert pl.plan([pl.RunProfile("x", 500, 120)], night, {}, 0.0, 24 * H)["x"]["best"] is None
+    little = {12 * H: 20.0}                               # 20 Wh of a 1 kWh run: 2 %
+    assert pl.plan([pl.RunProfile("x", 500, 120)], little, {}, 0.0, 24 * H)["x"]["best"] is None
+
+
 def test_start_is_aligned_to_quarter_hours():
     out = pl.plan([pl.RunProfile("x", 100, 30)], {h * H: 500 for h in range(10, 13)}, {}, 10 * H + 600, 13 * H)
     assert out["x"]["best"].start % 900 == 0

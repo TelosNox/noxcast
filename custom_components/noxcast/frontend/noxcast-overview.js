@@ -18,7 +18,7 @@ const OV_TEXT = {
     noActual: "noch keine volle Stunde gemessen", hourFc: "erwartet diese Stunde {v}", peak: "stärkste Stunde {t}",
     asPlanned: "Wie vorhergesagt", sunnier: "Sonniger als vorhergesagt", dimmer: "Trüber als vorhergesagt",
     lForecast: "Prognose", lActual: "Ist", lExpected: "Erwartet", lBand: "Spanne (Wolken)", lClear: "Klarer Himmel", now: "jetzt",
-    consumers: "Verbraucher planen", startNow: "Jetzt starten", wait: "Noch warten", shareNow: "PV-Anteil jetzt {p}",
+    consumers: "Verbraucher planen", startNow: "Jetzt starten", wait: "Noch warten", noSurplus: "Kein Überschuss", shareNow: "PV-Anteil jetzt {p}",
     bestToday: "Bestes Fenster heute", bestTomorrow: "Bestes Fenster morgen", pv: "PV", noWindow: "keines",
     loadRest: "Hausverbrauch bis Tagesende", loadRestSub: "Prognose ab dieser Stunde",
     battery: "Akku", socNow: "jetzt {p}", socMax: "erwartet max. {p}", fullAt: "Voll um", notFull: "heute nicht voll",
@@ -42,7 +42,7 @@ const OV_TEXT = {
     noActual: "no full hour measured yet", hourFc: "expected this hour {v}", peak: "strongest hour {t}",
     asPlanned: "As forecast", sunnier: "Sunnier than forecast", dimmer: "Duller than forecast",
     lForecast: "Forecast", lActual: "Actual", lExpected: "Expected", lBand: "Range (clouds)", lClear: "Clear sky", now: "now",
-    consumers: "Plan consumers", startNow: "Start now", wait: "Better wait", shareNow: "PV share now {p}",
+    consumers: "Plan consumers", startNow: "Start now", wait: "Better wait", noSurplus: "No surplus", shareNow: "PV share now {p}",
     bestToday: "Best window today", bestTomorrow: "Best window tomorrow", pv: "PV", noWindow: "none",
     loadRest: "House load until the end of the day", loadRestSub: "forecast from this hour on",
     battery: "Battery", socNow: "now {p}", socMax: "expected max. {p}", fullAt: "Full at", notFull: "not full today",
@@ -309,7 +309,7 @@ class NoxcastOverview extends HTMLElement {
     if (card) card.hidden = !list.length && !d.load;
     const win = (w) => (w ? `${this._hm(w.start)}–${this._hm(w.end)} <span class="muted">· ${num(w.pv * 100, this._lang)} % ${t.pv}</span>` : `<span class="muted">${t.noWindow}</span>`);
     const blocks = list.map((c) => `
-      <div class="answer ${c.start_now ? "" : "no"}"><span class="ans">${c.start_now ? t.startNow : t.wait}</span>
+      <div class="answer ${c.start_now ? "" : "no"}"><span class="ans">${c.start_now ? t.startNow : !c.today && c.now < 0.05 ? t.noSurplus : t.wait}</span>
         <span class="muted small"><b class="plain">${esc(c.name)}</b> · ${fill(t.shareNow, { p: `${num(c.now * 100, this._lang)} %` })}</span></div>
       <div class="rows"><div class="row"><span class="muted">${t.bestToday}</span><span>${win(c.today)}</span></div>
         <div class="row"><span class="muted">${t.bestTomorrow}</span><span>${win(c.tomorrow)}</span></div></div>`).join("");

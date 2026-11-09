@@ -7,18 +7,34 @@ breaking changes.
 
 ## Unreleased
 
+## [0.3.1] - 2026-11-09
+
+All changes since 0.3.0, tested in the pre-release 0.3.1b1 (its single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). Nothing needs to be done after the
+update.
+
 ### Changed
 - Panel, Overview: the chart of today looks like the one on the *Day* page: measured hours as a solid area, the
   expectation for the rest of the day pale, smooth curves, the forecast dashed and clear sky as a dotted upper
-  bound. *So far* gives its forecast with one decimal again, like the other forecasts.
+  bound.
+- Panel, Overview: *Expected today* and *Rest of today* show two decimals, *So far* one like the other forecasts;
+  *So far* says until which full hour it counts, which is why it and *Rest of today* do not add up to *Expected
+  today* during the current hour.
+- Panel, Overview: *Power now* is shown in W below 1 kW and in kW with two decimals above.
 - Panel, Day: the day's main value and the main value of each group show two decimals; forecasts, ranges and the
   energy flow keep one. The scale of the chart is in kW.
-- Dashboard card: the large actual value of today shows two decimals.
+- Dashboard card: the large actual value of today shows two decimals, and power in kW two decimals.
 
 ### Fixed
 - Consumer planning no longer recommends a window without surplus, such as tomorrow at midnight in winter. When no
   start gets at least 5 % of the run from surplus, *Best window today* and *Best window tomorrow* are unknown, and
   the Overview shows *No surplus* instead of *Better wait* when there is none now either.
+- *Forecast today* of an array added after 6:00 followed every new weather forecast until midnight, and the total
+  with it. It is now fixed at the array's first update; `fixed_at` shows that time, for the total the latest fix.
+- Panel, Overview: the actual curve no longer runs out of the chart on the left, and the top scale value is no
+  longer cut off; the scale now sits inside the right edge, without the zero, as on the dashboard card.
+- Panel, Overview: the line under *Power now* shows the expected power of this hour, the value the chart draws,
+  instead of the morning forecast.
 
 ## [0.3.1b1] - 2026-11-08
 

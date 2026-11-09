@@ -10,7 +10,7 @@ breaking changes.
 ### Fixed
 - Consumer planning no longer recommends a window without surplus, such as tomorrow at midnight in winter. When no
   start gets at least 5 % of the run from surplus, *Best window today* and *Best window tomorrow* are unknown, and
-  the Overview shows *No surplus* instead of *Better wait*.
+  the Overview shows *No surplus* instead of *Better wait* when there is none now either.
 
 ## [0.3.1b1] - 2026-11-08
 

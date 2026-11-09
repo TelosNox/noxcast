@@ -23,7 +23,7 @@
 // font_scale: 1                        # text size, 0.8 to 1.6; all options are also in the visual editor
 // Tapping a figure opens the more-info dialog of its entity. With several entities behind it (PV arrays and
 // sensors, battery level and power) it first lists them with their current values.
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh, power, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, kwh, power, smooth: curve, smoothPath: line, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const TEXT = {
   de: { pv: "PV", home: "Haus", grid: "Netz", battery: "Akku", tomorrow: "morgen", shade: "Schatten",
@@ -982,9 +982,9 @@ class NoxcastCard extends HTMLElement {
     const tomorrow = arrays.reduce((a, arr) => a + arr.tomorrow_wh, 0);
     const dev = morning > 0 ? Math.round((ist / morning - 1) * 100) : null;
     const numbers = after
-      ? `<span><span class="big">${this._kwh(ist)}</span> ${t.kwh}</span>
+      ? `<span><span class="big">${this._kwh(ist, 2)}</span> ${t.kwh}</span>
          <span class="muted">${t.morning} ${this._kwh(morning)}${dev === null ? "" : ` <b style="color:var(--primary-text-color);font-weight:500">(${dev > 0 ? "+" : ""}${dev} %)</b>`}</span>`
-      : `<span>${t.actual} <span class="big">${this._kwh(ist)}</span></span>
+      : `<span>${t.actual} <span class="big">${this._kwh(ist, 2)}</span></span>
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
@@ -1129,34 +1129,9 @@ class NoxcastCard extends HTMLElement {
 
   _hm(ts) { return hm(ts, this._lang, this._tz); }
 
-  _kwh(wh) { return kwh(wh, this._lang); }
+  // the big actual of today gets two decimals; forecasts and the expectation stay at one
+  _kwh(wh, digits = 1) { return kwh(wh, this._lang, digits); }
 
-}
-
-// Smooth path through points (pixels) without overshoot: monotone cubic (Fritsch-Carlson), as " C..." segments.
-function curve(p) {
-  const n = p.length, f = (v) => v.toFixed(1);
-  if (n < 3) return p.slice(1).map(([a, b]) => ` L${f(a)},${f(b)}`).join("");
-  const m = [], t = [];
-  for (let k = 0; k < n - 1; k++) m.push((p[k + 1][1] - p[k][1]) / (p[k + 1][0] - p[k][0] || 1e-9));
-  t.push(m[0]);
-  for (let k = 1; k < n - 1; k++) t.push(m[k - 1] * m[k] <= 0 ? 0 : (m[k - 1] + m[k]) / 2);
-  t.push(m[n - 2]);
-  for (let k = 0; k < n - 1; k++) {
-    if (m[k] === 0) { t[k] = 0; t[k + 1] = 0; continue; }
-    const a = t[k] / m[k], b = t[k + 1] / m[k], s = a * a + b * b;
-    if (s > 9) { const tau = 3 / Math.sqrt(s); t[k] = tau * a * m[k]; t[k + 1] = tau * b * m[k]; }
-  }
-  let out = "";
-  for (let k = 0; k < n - 1; k++) {
-    const dx = (p[k + 1][0] - p[k][0]) / 3;
-    out += ` C${f(p[k][0] + dx)},${f(p[k][1] + t[k] * dx)} ${f(p[k + 1][0] - dx)},${f(p[k + 1][1] - t[k + 1] * dx)} ${f(p[k + 1][0])},${f(p[k + 1][1])}`;
-  }
-  return out;
-}
-
-function line(p) {
-  return `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${curve(p)}`;
 }
 
 // Visual editor: display only. Sensors, batteries and feed-in come from the Noxcast configuration.

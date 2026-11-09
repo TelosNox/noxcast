@@ -49,3 +49,28 @@ export const power = (w, lang) => powerParts(w, lang).join(" ");
 
 // hour and minute of a timestamp in seconds; options e.g. { hourCycle: "h23" }
 export const hm = (ts, lang, timeZone, options = {}) => new Date(ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit", timeZone, ...options });
+
+// Smooth path through points (pixels) as " C..." segments: monotone cubic (Fritsch-Carlson), so the curve never
+// overshoots its points; between two hourly means it stays within them, and clear sky stays the upper bound.
+export function smooth(p) {
+  const n = p.length, f = (v) => v.toFixed(1);
+  if (n < 3) return p.slice(1).map(([a, b]) => ` L${f(a)},${f(b)}`).join("");
+  const m = [], t = [];
+  for (let k = 0; k < n - 1; k++) m.push((p[k + 1][1] - p[k][1]) / (p[k + 1][0] - p[k][0] || 1e-9));
+  t.push(m[0]);
+  for (let k = 1; k < n - 1; k++) t.push(m[k - 1] * m[k] <= 0 ? 0 : (m[k - 1] + m[k]) / 2);
+  t.push(m[n - 2]);
+  for (let k = 0; k < n - 1; k++) {
+    if (m[k] === 0) { t[k] = 0; t[k + 1] = 0; continue; }
+    const a = t[k] / m[k], b = t[k + 1] / m[k], q = a * a + b * b;
+    if (q > 9) { const tau = 3 / Math.sqrt(q); t[k] = tau * a * m[k]; t[k + 1] = tau * b * m[k]; }
+  }
+  let out = "";
+  for (let k = 0; k < n - 1; k++) {
+    const dx = (p[k + 1][0] - p[k][0]) / 3;
+    out += ` C${f(p[k][0] + dx)},${f(p[k][1] + t[k] * dx)} ${f(p[k + 1][0] - dx)},${f(p[k + 1][1] - t[k + 1] * dx)} ${f(p[k + 1][0])},${f(p[k + 1][1])}`;
+  }
+  return out;
+}
+// the whole path: move to the first point, then smooth through the rest
+export const smoothPath = (p) => `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${smooth(p)}`;

@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The forecast archive keeps, for each hour of tomorrow, how far the runs of the weather ensembles (ICON-EPS,
+  ECMWF ENS) spread. Noxcast does not use it yet: after a few weeks it shows whether the range of a forecast
+  can tell sure days from unsure ones better than now. One more request to Open-Meteo every 3 hours.
+
 ## [0.3.1] - 2026-11-09
 
 All changes since 0.3.0, tested in the pre-release 0.3.1b1 (its single steps are listed in

@@ -105,6 +105,9 @@ LEARN_TIME = (1, 30)                     # local time of the nightly learning ru
 HISTORY_YEARS = 2                        # history window used for learning
 
 STORAGE_VERSION = 1
+# ensembles archived with tomorrow's forecast (archive.ensemble): ICON-EPS and ECMWF ENS, the runs of the default models
+ENSEMBLE_MODELS = ("icon_seamless", "ecmwf_ifs025")
+ENSEMBLE_INTERVAL = timedelta(hours=3)    # the ensembles are recomputed every 6 to 12 hours; no need to ask more often
 ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluation
 ERROR_DAYS = 30                          # window of the forecast error sensor
 MORNING_HOUR = 6                         # local hour at which today's forecast is fixed

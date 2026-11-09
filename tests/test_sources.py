@@ -133,3 +133,17 @@ async def test_a_refusal_leaves_out_numbers_it_repeats(hass: HomeAssistant, aioc
     with pytest.raises(sources.SourceError) as err:
         await sources.async_previous_runs(hass, 912.345, 6.789, "x", day, day)   # privacy-ok: made up
     assert "912.345" not in str(err.value) and "Given: …" in str(err.value)
+
+
+async def test_ensemble_runs_per_model(hass: HomeAssistant, aioclient_mock) -> None:
+    times = [T.format(h)[:16] for h in range(2)]
+    hourly = {"time": times, "shortwave_radiation_icon_seamless_eps": [0, 300],
+              "shortwave_radiation_member01_icon_seamless_eps": [0, 200],
+              "shortwave_radiation_ecmwf_ifs025_ensemble": [0, 500],
+              "shortwave_radiation_member01_ecmwf_ifs025_ensemble": [None, -1]}
+    aioclient_mock.get(sources.ENSEMBLE_URL, json={"hourly": hourly})
+    runs = await sources.async_ensemble(hass, 48.0, 8.0, ("icon_seamless", "ecmwf_ifs025"))
+    first = datetime(2026, 10, 24, 0, tzinfo=timezone.utc).timestamp()     # 01:00 holds the mean of 00:00-01:00
+    assert runs["icon_seamless"][first] == [300, 200]
+    assert runs["ecmwf_ifs025"][first] == [500, 0]  # negative irradiance is clipped, a missing value left out
+    assert runs["ecmwf_ifs025"][first - 3600] == [0]

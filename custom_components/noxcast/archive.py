@@ -8,7 +8,8 @@ Layout: {"YYYY-MM-DD": {"issued": iso, "models": [weather model, ...], "hours": 
          "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
          "forecast": {array_id: Wh}, "actual": {array_id: Wh}, "steps": {array_id: [Wh, ...]},
          "alt": {source: {"ghi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
-         "sat_ghi": W/m², "measured": {array_id: Wh}}},
+         "sat_ghi": W/m², "measured": {array_id: Wh},
+         "ens": {ensemble model: [P10, P50, P90 GHI W/m², members]}}},
          "history": {"<snapshot ts>": {"<ts>": Wh}}}}
 
 "history" holds the expectation for the whole day (actual so far + corrected rest, all arrays) as it
@@ -37,6 +38,10 @@ reflection, direction, heat; their sum is the forecast), only for hours with lig
 explains the forecast that was made and not a replay with the model learned since. Days archived
 before it have none.
 
+"ens" holds the spread of the ensemble runs (see ensemble()), for daylight hours only – about 50 bytes
+per hour. It is not used by the forecast or the band yet; it allows testing whether the spread of the
+day tells a sure forecast from an unsure one better than the weather class does (band.py).
+
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
 
@@ -47,8 +52,9 @@ the stored format untouched. Values are the stored objects themselves: readers m
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from statistics import quantiles
 
 from .const import Series
 
@@ -78,6 +84,7 @@ class Hour:
     sat_ghi: float | None                # satellite-measured GHI, W/m²
     measured: dict[str, float] | None    # array id -> model output from sat_ghi, Wh
     steps: dict[str, list[float]]        # array id -> steps of the forecast (explain.packed), {} if not archived
+    ens: dict[str, list[float]] = field(default_factory=dict)   # ensemble model -> [P10, P50, P90 GHI, members]
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +105,7 @@ class Day:
 def _hour(key: str, h: dict) -> Hour:
     return Hour(float(key), h.get("ghi"), h.get("temp"), h.get("wx", {}), h.get("forecast", {}), h.get("actual"),
                 {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {})) for name, s in h.get("alt", {}).items()},
-                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}))
+                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}), h.get("ens", {}))
 
 
 def _day(key: str, d: dict) -> Day:
@@ -153,15 +160,31 @@ def details(cloud: float | None = None, sun: float | None = None, wind: float | 
     return out
 
 
+MIN_MEMBERS = 10           # fewer runs give no usable P10 / P90
+
+
+def ensemble(members: list[float]) -> list[float] | None:
+    """[P10, P50, P90, number of runs] of the GHI of an hour's ensemble runs (W/m², rounded); None if too few.
+
+    Linear interpolation between the sorted runs, as for the band's quantiles (band.py).
+    """
+    if len(members) < MIN_MEMBERS:
+        return None
+    q = quantiles(members, n=10, method="inclusive")
+    return [round(q[0]), round(q[4]), round(q[8]), len(members)]
+
+
 def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[float, float | None]],
              forecasts: dict[str, Series],
              alt: dict[str, tuple[Series, dict[str, Series]]] | None = None,
              wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None,
-             steps: dict[str, dict[float, list[float]]] | None = None, models: list[str] | None = None) -> bool:
+             steps: dict[str, dict[float, list[float]]] | None = None, models: list[str] | None = None,
+             ens: dict[str, dict[float, list[float]]] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
 
     wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source;
-    steps: per array and hour the steps of the forecast (explain.packed); models: the weather models.
+    steps: per array and hour the steps of the forecast (explain.packed); models: the weather models;
+    ens: per ensemble model and hour the GHI of its runs, kept as ensemble() for hours with light.
     """
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
@@ -180,6 +203,9 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
                     "ghi": round(alt_ghi[ts], 1), "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in alt_fc.items()}}
                 if alt_ghi[ts] > 0 and (alt_wx or {}).get(name, {}).get(ts):
                     entry["wx"] = alt_wx[name][ts]
+        for name, by_hour in (ens or {}).items():
+            if (spread := ensemble(by_hour.get(ts, []))) and (ghi > 0 or spread[2] > 0):
+                hour.setdefault("ens", {})[name] = spread
     if len(hours) < MIN_DAY_HOURS:
         return False
     history = archive.get(day.isoformat(), {}).get("history")

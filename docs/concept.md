@@ -577,7 +577,8 @@ orientation changes the geometry key and starts relearning.
   ensemble API, about 0.1 MB over the 120 days. Open-Meteo keeps no past ensemble forecasts, so only this archive
   can show whether the spread of a day tells a sure forecast from an unsure one, and how much the ensembles,
   which are known to be too narrow (e.g. under fog that all runs dissolve too early), must be widened at an
-  installation. Not used by the forecast or the band until the backtest shows a better band with it.
+  installation. ECMWF ENS gives irradiance every 3 hours, which Open-Meteo interpolates to hours, so its hourly
+  spread is smoother than that of ICON-EPS. Not used by the forecast or the band until the backtest shows a better band with it.
 
 ## Architecture
 

@@ -203,7 +203,8 @@ async def async_ensemble(hass: HomeAssistant, latitude: float, longitude: float,
     """
     params = {"latitude": latitude, "longitude": longitude, "timezone": "UTC", "forecast_days": days,
               "hourly": "shortwave_radiation", "models": ",".join(models)}
-    data = (await _async_get_json(hass, ENSEMBLE_URL, params, 60))["hourly"]
+    # short: the forecast update waits for it, and only the archive needs it
+    data = (await _async_get_json(hass, ENSEMBLE_URL, params, 20))["hourly"]
     starts = [None if (t := _parse_utc(s)) is None else t - 3600 for s in data["time"]]
     out: dict[str, dict[float, list[float]]] = {}
     for model in models:
@@ -216,6 +217,8 @@ async def async_ensemble(hass: HomeAssistant, latitude: float, longitude: float,
                     hours.setdefault(start, []).append(g)
         if hours:
             out[model] = hours
+        else:
+            _LOGGER.debug("Open-Meteo ensemble: no runs of %s in the answer", model)
     return out
 
 

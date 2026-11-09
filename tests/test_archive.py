@@ -58,6 +58,8 @@ def test_snapshot_keeps_the_ensemble_spread_of_lit_hours():
     assert hours[1].ens == {"icon_seamless": [100, 500, 900, 41]}
     assert hours[2].ens == {}                       # too few runs
     assert "ens" not in a[DAY.isoformat()]["hours"][str(int(T0))]
+    archive.snapshot(a, DAY, "y", _weather(), {"roof": {}})                             # ensembles failed
+    assert archive.day(a, DAY).hours[1].ens == {"icon_seamless": [100, 500, 900, 41]}
 
 
 def test_daily_error_and_prune():

@@ -184,7 +184,8 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
 
     wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source;
     steps: per array and hour the steps of the forecast (explain.packed); models: the weather models;
-    ens: per ensemble model and hour the GHI of its runs, kept as ensemble() for hours with light.
+    ens: per ensemble model and hour the GHI of its runs, kept as ensemble() for hours with light; without
+    them an hour keeps the spread of its earlier snapshot.
     """
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
@@ -213,6 +214,8 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
     for key, hour in hours.items():                 # keep actuals if a day is snapshotted again
         if "actual" in old.get(key, {}):
             hour["actual"] = old[key]["actual"]
+        if "ens" not in hour and "ens" in old.get(key, {}):     # the ensembles failed (e.g. after a restart)
+            hour["ens"] = old[key]["ens"]
     archive[day.isoformat()] = {"issued": issued, "hours": hours}
     if models:
         archive[day.isoformat()]["models"] = list(models)

@@ -22,6 +22,8 @@ _LOGGER = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 # what each model forecast earlier for an hour: "_previous_day1" is the forecast made 24 hours before it
 PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
+# ensemble runs of the same models, for the spread of the forecast (archive.ensemble); not used by the forecast itself
+ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 PREVIOUS_RUN_VARS = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m")
 
 
@@ -190,6 +192,34 @@ async def async_previous_runs(hass: HomeAssistant, latitude: float, longitude: f
     columns = {var: data.get(f"{var}_previous_day1") or data.get(f"{var}_previous_day1_{model}") or []
                for var in PREVIOUS_RUN_VARS}
     return _hours(times, {var: columns.get(var, []) for var in HOURLY})
+
+
+async def async_ensemble(hass: HomeAssistant, latitude: float, longitude: float, models: tuple[str, ...],
+                         days: int = 3) -> dict[str, dict[float, list[float]]]:
+    """GHI of every ensemble member: {model: {hour start: [W/m² per member]}}, the control run included.
+
+    Open-Meteo names a column "shortwave_radiation[_memberNN]_<model>[_<suffix>]" (the suffix, e.g. "_eps", depends
+    on the model), so the columns are matched by the model name. Irradiance is the mean of the preceding hour.
+    """
+    params = {"latitude": latitude, "longitude": longitude, "timezone": "UTC", "forecast_days": days,
+              "hourly": "shortwave_radiation", "models": ",".join(models)}
+    # short: the forecast update waits for it, and only the archive needs it
+    data = (await _async_get_json(hass, ENSEMBLE_URL, params, 20))["hourly"]
+    starts = [None if (t := _parse_utc(s)) is None else t - 3600 for s in data["time"]]
+    out: dict[str, dict[float, list[float]]] = {}
+    for model in models:
+        columns = [v for k, v in data.items() if k.startswith("shortwave_radiation")
+                   and (len(models) == 1 or k.endswith(f"_{model}") or f"_{model}_" in k)]
+        hours: dict[float, list[float]] = {}
+        for column in columns:
+            for start, value in zip(starts, column):
+                if start is not None and (g := _irradiance(value)) is not None:
+                    hours.setdefault(start, []).append(g)
+        if hours:
+            out[model] = hours
+        else:
+            _LOGGER.debug("Open-Meteo ensemble: no runs of %s in the answer", model)
+    return out
 
 
 def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour]:

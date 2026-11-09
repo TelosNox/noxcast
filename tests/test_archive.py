@@ -43,6 +43,25 @@ def test_snapshot_names_the_weather_models_of_the_forecast():
     assert archive.day(a, DAY).models == []
 
 
+def test_ensemble_spread():
+    assert archive.ensemble([100.0] * 9) is None                                         # too few runs
+    assert archive.ensemble([float(v) for v in range(0, 1001, 25)]) == [100, 500, 900, 41]
+
+
+def test_snapshot_keeps_the_ensemble_spread_of_lit_hours():
+    a = {}
+    runs = [float(v) for v in range(0, 1001, 25)]
+    ens = {"icon_seamless": {T0: [0.0] * 40, T0 + 3600: runs, T0 + 2 * 3600: runs[:5]}}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}}, ens=ens)
+    hours = archive.day(a, DAY).hours
+    assert hours[0].ens == {}                       # night: forecast and every run dark
+    assert hours[1].ens == {"icon_seamless": [100, 500, 900, 41]}
+    assert hours[2].ens == {}                       # too few runs
+    assert "ens" not in a[DAY.isoformat()]["hours"][str(int(T0))]
+    archive.snapshot(a, DAY, "y", _weather(), {"roof": {}})                             # ensembles failed
+    assert archive.day(a, DAY).hours[1].ens == {"icon_seamless": [100, 500, 900, 41]}
+
+
 def test_daily_error_and_prune():
     a = {}
     archive.snapshot(a, DAY, "x", _weather(), {"roof": {T0 + h * 3600: 50.0 for h in range(24)},

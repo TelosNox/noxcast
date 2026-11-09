@@ -25,7 +25,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -54,7 +54,7 @@ from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
     async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
 )
-from .sources import SourceError, async_open_meteo, async_power_factors, async_previous_runs
+from .sources import SourceError, async_ensemble, async_open_meteo, async_power_factors, async_previous_runs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # last Open-Meteo answer: (fetched at, mean of the models, each model); stands in during outages
         self._weather: tuple[float, list[WeatherHour], dict[str, list[WeatherHour]]] | None = None
         self._weather_retry = None                # cancels the pending retry after a failed fetch
+        self._ensemble: tuple[float, dict] = (0.0, {})   # (fetched, async_ensemble answer), only for the archive
         self._weather_retrying = False            # the refresh running now is that retry
         self._weather_warned = False              # the current outage is in the log already
         self._learn_lock = asyncio.Lock()
@@ -713,7 +714,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _archive_forecast(self, weather: list[WeatherHour], result: NoxcastData,
                           alt: dict[str, tuple[dict, dict]] | None = None,
                           alt_weather: dict[str, list[WeatherHour]] | None = None,
-                          steps: dict[str, dict[float, dict]] | None = None, models: list[str] | None = None) -> None:
+                          steps: dict[str, dict[float, dict]] | None = None, models: list[str] | None = None,
+                          ens: dict[str, dict[float, list[float]]] | None = None) -> None:
         """Keep overwriting tomorrow's forecast; the last version before midnight is the day-ahead forecast."""
         tomorrow = dt_util.start_of_local_day() + timedelta(days=1)
         a = tomorrow.timestamp()
@@ -730,7 +732,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                result.arrays, alt, wx(weather),
                                {name: wx(series) for name, series in (alt_weather or {}).items()},
                                {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()},
-                               models):
+                               models, ens):
             fc_archive.prune(archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self.forecast_archive = archive
             self._archive_store.async_delay_save(self._archive_data, 300)
@@ -861,6 +863,24 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self._weather = fetched
         return fetched
 
+    async def _async_ensemble(self, now: float) -> dict[str, dict[float, list[float]]]:
+        """The ensemble runs for the archive, fetched every ENSEMBLE_INTERVAL; a failure only leaves them out.
+
+        Nothing but the archive depends on them, so an outage is no reason to warn or to fail the forecast.
+        """
+        fetched, runs = self._ensemble
+        if now - fetched < ENSEMBLE_INTERVAL.total_seconds():
+            return runs
+        try:
+            runs = await async_ensemble(self.hass, self.site.latitude, self.site.longitude, ENSEMBLE_MODELS)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Open-Meteo ensemble failed (%s); tomorrow's archive keeps the earlier spread", err)
+            # try again with the next update but one, not with every update while the source is down
+            self._ensemble = (now - ENSEMBLE_INTERVAL.total_seconds() + 3600, runs)
+            return runs
+        self._ensemble = (now, runs)
+        return runs
+
     def _weather_failed(self, err: Exception, age: float) -> None:
         """One retry a few minutes later; the log hears of an outage once, when the retry fails too.
 
@@ -958,7 +978,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         steps = await self.hass.async_add_executor_job(
             explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, learned,
             [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]])
-        self._archive_forecast(weather, result, alt, models, steps, list(per_model) or self.weather_models)
+        self._archive_forecast(weather, result, alt, models, steps, list(per_model) or self.weather_models,
+                               await self._async_ensemble(now))
         self._store.async_delay_save(self._store_data, 60)
         return result
 

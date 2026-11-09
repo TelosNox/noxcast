@@ -572,6 +572,13 @@ orientation changes the geometry key and starts relearning.
   total cloud cover was too pessimistic under thin high cloud; wind cools the modules by about
   1 % per m/s. These values are not used by the model. They add about 40 bytes per daylight hour
   and source, well below 1 MB over the 120 days.
+- The archive also keeps the spread of the ensemble runs for each daylight hour (`archive.ensemble`): P10, P50
+  and P90 of the GHI of ICON-EPS (40 runs) and ECMWF ENS (51 runs), fetched every 3 hours from Open-Meteo's
+  ensemble API, about 0.1 MB over the 120 days. Open-Meteo keeps no past ensemble forecasts, so only this archive
+  can show whether the spread of a day tells a sure forecast from an unsure one, and how much the ensembles,
+  which are known to be too narrow (e.g. under fog that all runs dissolve too early), must be widened at an
+  installation. ECMWF ENS gives irradiance every 3 hours, which Open-Meteo interpolates to hours, so its hourly
+  spread is smoother than that of ICON-EPS. Not used by the forecast or the band until the backtest shows a better band with it.
 
 ## Architecture
 

@@ -9,7 +9,7 @@ breaking changes.
 
 ### Changed
 - Panel, Overview: the chart of today looks like the one on the *Day* page: measured hours as a solid area, the
-  expectation for the rest of the day pale, smooth curves, the 6 am forecast dashed and clear sky as a dotted upper
+  expectation for the rest of the day pale, smooth curves, the forecast dashed and clear sky as a dotted upper
   bound. *So far* gives its forecast with one decimal again, like the other forecasts.
 - Panel, Day: the day's main value and the main value of each group show two decimals; forecasts, ranges and the
   energy flow keep one. The scale of the chart is in kW.

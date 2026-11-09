@@ -290,7 +290,9 @@ class NoxcastOverview extends HTMLElement {
     // production edges at zero, so area and curves rise from the axis and return to it
     const p0 = lit[0].ts, p1 = lit[lit.length - 1].ts + 3600;
     const edged = (p) => (p.length ? [[p0, 0], ...p, [p1, 0]] : p);
-    const clear = pts("clear");
+    // the lines too stay within production: the night hours at the edges of the axis would retrace the zero line
+    const inDay = shown.filter((h) => mid(h) >= p0 && mid(h) <= p1);
+    const clear = pts("clear", inDay);
     if (clear.length > 1) svg += `<path d="${line(edged(clear))}" class="clear"/>`;
     const band = shown.filter((h) => h.p10 != null && h.p90 != null);
     if (band.length > 1) {
@@ -298,8 +300,7 @@ class NoxcastOverview extends HTMLElement {
       svg += `<path d="${line(band.map((h) => [mid(h), h.p90]))} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${smooth(lo)} Z" class="bandarea"/>`;
     }
     // PV as one area: measured hours, then the expectation for the rest; solid until now, pale after it
-    const day = shown.filter((h) => mid(h) >= p0 && mid(h) <= p1)
-      .map((h) => [mid(h), h.act ?? h.ex ?? h.fc ?? 0]);
+    const day = inDay.map((h) => [mid(h), h.act ?? h.ex ?? h.fc ?? 0]);
     if (day.length) {
       const d = line(edged(day)), base = `L${x(p1).toFixed(1)},${y(0).toFixed(1)} L${x(p0).toFixed(1)},${y(0).toFixed(1)} Z`;
       const cut = Math.max(0, Math.min(W, x(nowTs))).toFixed(1);
@@ -308,7 +309,7 @@ class NoxcastOverview extends HTMLElement {
       svg += `<path d="${d} ${base}" fill="url(#ov-area)" clip-path="url(#ov-past)"/><path d="${d} ${base}" class="rest" clip-path="url(#ov-rest)"/>`;
       svg += `<path d="${d}" class="edge" clip-path="url(#ov-past)"/>`;
     }
-    const fc = pts("fc");
+    const fc = pts("fc", inDay);
     if (fc.length > 1) svg += `<path d="${line(edged(fc))}" class="fc"/>`;
     if (nowTs > a && nowTs < b) {
       svg += `<line x1="${x(nowTs).toFixed(1)}" x2="${x(nowTs).toFixed(1)}" y1="${T}" y2="${H - B}" class="now"/>`;

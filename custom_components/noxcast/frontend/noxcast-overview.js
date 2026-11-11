@@ -198,12 +198,14 @@ class NoxcastOverview extends HTMLElement {
     if (today && today.clear_wh) sub.push(fill(t.clear, { v: k(today.clear_wh) }));
     this._set("s-exp-sub", esc(sub.join(" · ")));
     // so far: the measured full hours against the morning forecast, the reference the day is judged by; the
-    // latest forecast follows the measured hours and would call nearly every day "as forecast"
-    const done = hours.filter((h) => h.act != null && h.mo != null);
+    // latest forecast follows the measured hours and would call nearly every day "as forecast". The headline counts
+    // every measured hour; the comparison only those with a morning value (an array added later has none early on)
+    const measured = hours.filter((h) => h.act != null && h.fc != null);
+    const done = measured.filter((h) => h.mo != null);
     const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.mo, 0);
-    this._set("s-sofar", done.length ? `${k2(act)} <span class="muted unit">kWh</span>` : "–");
+    this._set("s-sofar", measured.length ? `${k2(measured.reduce((s, h) => s + h.act, 0))} <span class="muted unit">kWh</span>` : "–");
     const dev = fc > 0 ? act / fc - 1 : null;
-    this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
+    this._set("s-sofar-sub", !measured.length ? esc(t.noActual) : !done.length ? "" : `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
     this._set("s-pill", dev === null || fc < 200 ? "" : Math.abs(dev) <= PLAN_BAND ? `<span class="pill good">${t.asPlanned}</span>`
       : dev > 0 ? `<span class="pill good">${t.sunnier}</span>` : `<span class="pill warn">${t.dimmer}</span>`);
     // the hour now and the strongest hour of the expected curve

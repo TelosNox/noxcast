@@ -508,19 +508,19 @@ def _total(per_array: dict[str, Series], ids: list[str]) -> Series:
 
 
 def overview_today(arrays: dict, data, a: float, b: float) -> dict:
-    """Today's total per hour in [a, b): latest forecast (held once the hour began), expected (actual + corrected
-    rest), measured, clear sky and the P10 / P90 band; None where a series has no value for the hour."""
+    """Today's total per hour in [a, b): latest forecast (held once the hour began), the morning forecast, expected
+    (actual + corrected rest), measured, clear sky and the P10 / P90 band; None where a series has no value for the hour."""
     ids = list(arrays)
-    held, actual = _total(data.held, ids), _total(data.actual, ids)
+    held, actual, morning = _total(data.held, ids), _total(data.actual, ids), _total(data.morning, ids)
     expected, clear = data.expected.get(TOTAL, {}), data.clear.get(TOTAL, {})
     band = (data.band or {}).get("hours", {})
 
     def r(v):
         return None if v is None else round(v, 1)
     hours = sorted(t for t in set(held) | set(expected) if a <= t < b)
-    return columns(((t, r(held.get(t)), r(expected.get(t)), r(actual.get(t)), r(clear.get(t)),
+    return columns(((t, r(held.get(t)), r(morning.get(t)), r(expected.get(t)), r(actual.get(t)), r(clear.get(t)),
                      r(band[t][0]) if t in band else None, r(band[t][1]) if t in band else None) for t in hours),
-                   "forecast", "expected", "actual", "clear", "p10", "p90")
+                   "forecast", "morning", "expected", "actual", "clear", "p10", "p90")
 
 
 def recent_accuracy(archive: dict, arrays: dict, today: date, span: int = ACCURACY_DAYS) -> dict:

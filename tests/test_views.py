@@ -362,10 +362,12 @@ def _archive_day(day: date, fc: float, act: float | None, hours: int = 24, curta
 def test_overview_today_sums_the_arrays_hour_by_hour():
     d = data(held={"roof": {A + 11 * H: 100.04, A + 12 * H: 200.0}, "wall": {A + 11 * H: 50.0, A + 12 * H: 60.0}},
              actual={"roof": {A + 11 * H: 90.0}, "wall": {A + 11 * H: 40.0, A + 12 * H: 1.0}},  # 12 h: roof not measured
-             expected={None: {A + 12 * H: 270.0, A + 30 * H: 1.0}})
+             expected={None: {A + 12 * H: 270.0, A + 30 * H: 1.0}},
+             morning={"roof": {A + 11 * H: 300.0, A + 12 * H: 310.0}, "wall": {A + 11 * H: 100.0}})  # 12 h: wall not fixed
     out = views.overview_today(arrays(), d, A, A + 86400)
     assert out["t"] == [A + 11 * H, A + 12 * H]                          # tomorrow's expected hour is not today
     assert out["forecast"] == [150.0, 260.0] and out["actual"] == [130.0, None] and out["expected"] == [None, 270.0]
+    assert out["morning"] == [400.0, None]
     assert out["clear"] == [round(d.clear[None][A + 11 * H], 1), round(d.clear[None][A + 12 * H], 1)]
     assert out["p10"] == [None, 250.0] and out["p90"] == [None, 350.1]
 

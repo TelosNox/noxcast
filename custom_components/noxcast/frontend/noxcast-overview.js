@@ -8,13 +8,13 @@
 const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, smooth, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const RELOAD_MS = 5 * 60000;
-const PLAN_BAND = 0.1;          // "as forecast" while the measured hours so far are this close to their forecast
+const PLAN_BAND = 0.1;          // "as forecast" while the measured hours so far are this close to their morning forecast
 
 const OV_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden", noEntry: "Noxcast ist noch nicht eingerichtet.",
     today: "Heute", expected: "Erwartet heute", sofar: "Bis jetzt", rest: "Rest heute", power: "Leistung jetzt",
-    morning: "Prognose am Morgen {v}", range: "Spanne {a}–{b} kWh", clear: "klar {v}", forecastFor: "bis {t} · Prognose dafür {v} kWh",
+    morning: "Prognose am Morgen {v}", range: "Spanne {a}–{b} kWh", clear: "klar {v}", forecastFor: "bis {t} · Morgenprognose dafür {v} kWh",
     noActual: "noch keine volle Stunde gemessen", hourFc: "erwartet diese Stunde {v}", peak: "stärkste Stunde {t}",
     asPlanned: "Wie vorhergesagt", sunnier: "Sonniger als vorhergesagt", dimmer: "Trüber als vorhergesagt",
     lForecast: "Prognose", lActual: "Ist", lExpected: "Erwartet", lBand: "Spanne (Wolken)", lClear: "Klarer Himmel", now: "jetzt",
@@ -38,7 +38,7 @@ const OV_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page", noEntry: "Noxcast is not set up yet.",
     today: "Today", expected: "Expected today", sofar: "So far", rest: "Rest of today", power: "Power now",
-    morning: "morning forecast {v}", range: "range {a}–{b} kWh", clear: "clear {v}", forecastFor: "until {t} · forecast for it {v} kWh",
+    morning: "morning forecast {v}", range: "range {a}–{b} kWh", clear: "clear {v}", forecastFor: "until {t} · morning forecast for it {v} kWh",
     noActual: "no full hour measured yet", hourFc: "expected this hour {v}", peak: "strongest hour {t}",
     asPlanned: "As forecast", sunnier: "Sunnier than forecast", dimmer: "Duller than forecast",
     lForecast: "Forecast", lActual: "Actual", lExpected: "Expected", lBand: "Range (clouds)", lClear: "Clear sky", now: "now",
@@ -185,8 +185,8 @@ class NoxcastOverview extends HTMLElement {
   _fill() {
     if (!this.shadowRoot.getElementById("ov")) return;
     const d = this._data, t = this._t;
-    const hours = tsRows(d.today, "forecast", "expected", "actual", "clear", "p10", "p90")
-      .map(([ts, fc, ex, act, clear, p10, p90]) => ({ ts, fc, ex, act, clear, p10, p90 }));
+    const hours = tsRows(d.today, "forecast", "morning", "expected", "actual", "clear", "p10", "p90")
+      .map(([ts, fc, mo, ex, act, clear, p10, p90]) => ({ ts, fc, mo, ex, act, clear, p10, p90 }));
     this._hours = hours;
     const today = this._today();
     // expected today, with the morning forecast, the range and clear sky
@@ -197,9 +197,10 @@ class NoxcastOverview extends HTMLElement {
     if (today && today.p10 != null) sub.push(fill(t.range, { a: k(today.p10), b: k(today.p90) }));
     if (today && today.clear_wh) sub.push(fill(t.clear, { v: k(today.clear_wh) }));
     this._set("s-exp-sub", esc(sub.join(" · ")));
-    // so far: the measured full hours against their forecast
-    const done = hours.filter((h) => h.act != null && h.fc != null);
-    const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.fc, 0);
+    // so far: the measured full hours against the morning forecast, the reference the day is judged by; the
+    // latest forecast follows the measured hours and would call nearly every day "as forecast"
+    const done = hours.filter((h) => h.act != null && h.mo != null);
+    const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.mo, 0);
     this._set("s-sofar", done.length ? `${k2(act)} <span class="muted unit">kWh</span>` : "–");
     const dev = fc > 0 ? act / fc - 1 : null;
     this._set("s-sofar-sub", done.length ? `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));

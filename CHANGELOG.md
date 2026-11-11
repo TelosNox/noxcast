@@ -12,6 +12,11 @@ breaking changes.
   ECMWF ENS) spread. Noxcast does not use it yet: after a few weeks it shows whether the range of a forecast
   can tell sure days from unsure ones better than now. One more request to Open-Meteo every 3 hours.
 
+### Changed
+- Panel, Overview: *So far* and the badge at the top (*As forecast*, *Sunnier* or *Duller than forecast*) compare
+  the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
+  measured hours during the day, so a day far below the morning forecast could still show *As forecast*.
+
 ## [0.3.1] - 2026-11-09
 
 All changes since 0.3.0, tested in the pre-release 0.3.1b1 (its single steps are listed in

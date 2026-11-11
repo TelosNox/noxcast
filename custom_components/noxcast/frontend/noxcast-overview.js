@@ -205,7 +205,7 @@ class NoxcastOverview extends HTMLElement {
     const act = done.reduce((s, h) => s + h.act, 0), fc = done.reduce((s, h) => s + h.mo, 0);
     this._set("s-sofar", measured.length ? `${k2(measured.reduce((s, h) => s + h.act, 0))} <span class="muted unit">kWh</span>` : "–");
     const dev = fc > 0 ? act / fc - 1 : null;
-    this._set("s-sofar-sub", !measured.length ? esc(t.noActual) : !done.length ? "" : `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}` : esc(t.noActual));
+    this._set("s-sofar-sub", !measured.length ? esc(t.noActual) : !done.length ? "" : `${esc(fill(t.forecastFor, { t: this._hm(done[done.length - 1].ts + 3600), v: k(fc) }))}${dev !== null ? ` · <span class="${dev >= 0 ? "good" : "warn"}">${dev >= 0 ? "+" : "−"}${num(Math.abs(dev) * 100, this._lang)} %</span>` : ""}`);
     this._set("s-pill", dev === null || fc < 200 ? "" : Math.abs(dev) <= PLAN_BAND ? `<span class="pill good">${t.asPlanned}</span>`
       : dev > 0 ? `<span class="pill good">${t.sunnier}</span>` : `<span class="pill warn">${t.dimmer}</span>`);
     // the hour now and the strongest hour of the expected curve

@@ -17,6 +17,12 @@ breaking changes.
   the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
   measured hours during the day, so a day far below the morning forecast could still show *As forecast*.
 
+### Fixed
+- The correction of today's forecast from the measured hours no longer reads PV cut by a full battery as clouds.
+  Before, a battery that was full at noon lowered the expected PV for the rest of the day. An hour in which a
+  battery reached *Battery considered full at* now only counts when it was sunnier than forecast;
+  if every recent hour was cut, today's forecast stays as it is.
+
 ## [0.3.1] - 2026-11-09
 
 All changes since 0.3.0, tested in the pre-release 0.3.1b1 (its single steps are listed in

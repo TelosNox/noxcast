@@ -30,6 +30,18 @@ def run(hour, before=None, actual=None):
     return fc.pv(SITE, ARRAYS, {}, weather(), {}, before or fc.Today(), actual or {}, {}, now, now, DAY_START, DAY_END)
 
 
+def test_curtailed_hours_from_the_highest_state_of_charge():
+    now = DAY_START + 12 * 3600 + 20 * 60
+    hourly = {"soc1": {DAY_START + 9 * 3600: 90.0, DAY_START + 10 * 3600: 96.0},
+              "soc2": {DAY_START + 9 * 3600: 95.0, DAY_START + 10 * 3600: None}}
+    recent = {"soc1": {DAY_START + 11 * 3600 + 300: 97.0, DAY_START + 12 * 3600: 80.0}}
+    assert fc.curtailed_hours(hourly, recent, [80.0], 95.0, now) == {
+        DAY_START + 9 * 3600, DAY_START + 10 * 3600, DAY_START + 11 * 3600}
+    # the live state counts for the running hour
+    assert DAY_START + 12 * 3600 in fc.curtailed_hours({}, {}, [80.0, 95.0], 95.0, now)
+    assert fc.curtailed_hours({}, {}, [], 95.0, now) == set()
+
+
 def test_today_actual_takes_the_just_ended_and_running_hour_from_5_minute_values():
     now = DAY_START + 12 * 3600 + 20 * 60
     hourly = {"pv1": {DAY_START + 10 * 3600: 400.0}}

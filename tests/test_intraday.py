@@ -56,6 +56,43 @@ def test_partial_is_scaled_by_the_clear_sky_profile():
     assert abs(shift) < 1e-9
 
 
+def test_curtailed_hour_below_forecast_is_left_out_of_the_window():
+    # 10:00 was cut by a full battery: it does not count as clouds, and 9:00 keeps its weight of an older hour
+    actual = {9 * H: 600.0, 10 * H: 100.0}
+    shift = intraday.clearness_shift(CLOUDY, actual, CLEAR, now=11 * H, peak_w=1000, curtailed={10 * H})
+    assert abs(shift - 0.6 * 200 / (0.6 * 800)) < 1e-9
+    # the window does not reach further back for it
+    actual = {8 * H: 800.0, 9 * H: 600.0, 10 * H: 100.0, 11 * H: 100.0}
+    shift = intraday.clearness_shift(CLOUDY, actual, CLEAR, now=12 * H, peak_w=1000, curtailed={10 * H, 11 * H})
+    assert abs(shift - 200 / 800) < 1e-9
+
+
+def test_all_hours_curtailed_below_forecast_give_no_correction():
+    actual = {8 * H: 100.0, 9 * H: 100.0, 10 * H: 100.0}
+    curtailed = set(actual)
+    assert intraday.clearness_shift(CLOUDY, actual, CLEAR, now=11 * H, peak_w=1000, curtailed=curtailed) is None
+
+
+def test_curtailed_hour_may_raise_but_never_lower_the_shift():
+    # cut, yet still clearer than forecast: the sky was at least that clear
+    actual = {9 * H: 400.0, 10 * H: 700.0}
+    shift = intraday.clearness_shift(CLOUDY, actual, CLEAR, now=11 * H, peak_w=1000, curtailed={10 * H})
+    assert shift == intraday.clearness_shift(CLOUDY, actual, CLEAR, now=11 * H, peak_w=1000)
+    assert shift > 0
+    # a curtailed hour above the forecast but below the others does not pull a larger shift down
+    actual = {9 * H: 800.0, 10 * H: 450.0}
+    free = intraday.clearness_shift(CLOUDY, {9 * H: 800.0}, CLEAR, now=11 * H, peak_w=1000)
+    shift = intraday.clearness_shift(CLOUDY, actual, CLEAR, now=11 * H, peak_w=1000, curtailed={10 * H})
+    assert abs(shift - free) < 1e-9
+
+
+def test_running_hour_with_a_full_battery_is_left_out():
+    partial = intraday.Partial(start=10 * H, power=100.0, share=0.5, profile=1.0)
+    shift = intraday.clearness_shift(CLOUDY, {9 * H: 400.0}, CLEAR, now=10.5 * H, peak_w=1000, partial=partial,
+                                     curtailed={10 * H})
+    assert abs(shift) < 1e-9
+
+
 def test_held_forecast_keeps_hours_that_have_begun():
     day = 1_000_000.0
     first = intraday.held_forecast({}, {day + 3600 * h: 100.0 for h in range(8, 12)}, day + 3600 * 7, day)

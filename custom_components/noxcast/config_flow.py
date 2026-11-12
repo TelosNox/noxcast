@@ -18,7 +18,7 @@ from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
     WEATHER_MODEL_OPTIONS,
-    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
@@ -139,6 +139,8 @@ def _orientation_schema(defaults: dict[str, Any]) -> vol.Schema:
 # mounting -> cell heating in K at 1000 W/m²: free behind about 30, on the roof 45–55, in the roof about 60
 MOUNTING = {"free": 30.0, "roof": 50.0, "integrated": 60.0}
 ARRAY_ADVANCED = "advanced"
+ARRAY_LIMITS = "limits"
+SENSOR_LIMIT = "sensor_limit_w"       # form field: one limit for every sensor of the array
 
 
 def _mounting(heating: float | None) -> tuple[str, float | None]:
@@ -157,7 +159,10 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
     if ARRAY_ADVANCED in defaults or "mounting" in defaults:          # the form's input
         mounting = defaults.get("mounting", "free")
         advanced = dict(defaults.get(ARRAY_ADVANCED) or {})
+        limit = (defaults.get(ARRAY_LIMITS) or {}).get(SENSOR_LIMIT)
     else:
+        stored = set((defaults.get(CONF_SENSOR_LIMITS) or {}).values())
+        limit = stored.pop() if len(stored) == 1 else None
         mounting, own = _mounting(defaults.get(CONF_HEATING))
         advanced = {CONF_VALID_SINCE: defaults.get(CONF_VALID_SINCE), CONF_TEMP_COEFF: defaults.get(CONF_TEMP_COEFF),
                     CONF_HEATING: own}
@@ -184,6 +189,11 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Required("mounting", default=mounting):
             selector.SelectSelector(selector.SelectSelectorConfig(options=list(MOUNTING), translation_key="mounting")),
         **orientations,
+        vol.Optional(ARRAY_LIMITS): section(vol.Schema({
+            vol.Optional(SENSOR_LIMIT, description={"suggested_value": limit}):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=100000, step=1, unit_of_measurement="W",
+                                                                      mode=number)),
+        }), {"collapsed": limit is None}),
         vol.Optional(ARRAY_ADVANCED): section(advanced_schema, {"collapsed": all(v is None for v in advanced.values())}),
     })
 
@@ -328,9 +338,14 @@ class ArraySubentryFlow(ConfigSubentryFlow):
 
 def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
     """Unused orientation sections (the form sends them empty) are not stored. The advanced section and the
-    mounting become the stored fields as before: an own heating in K wins over the mounting's."""
-    data = _flatten(user_input, (ARRAY_ADVANCED,))
+    mounting become the stored fields as before: an own heating in K wins over the mounting's. The limit
+    becomes CONF_SENSOR_LIMITS; an empty one removes it."""
+    data = _flatten(user_input, (ARRAY_ADVANCED, ARRAY_LIMITS))
     mounting = data.pop("mounting", "free")
+    # one limit for every sensor; stored per sensor, so that sensors with different limits fit later
+    limit = data.pop(SENSOR_LIMIT, None)
+    if limit:
+        data[CONF_SENSOR_LIMITS] = {s: float(limit) for s in data.get(CONF_POWER_SENSORS) or []}
     if data.get(CONF_HEATING) is None:
         data[CONF_HEATING] = MOUNTING.get(mounting, MOUNTING["free"])
     return {k: v for k, v in data.items() if k not in CONF_ORIENTATIONS or any(x is not None for x in (v or {}).values())}
@@ -344,7 +359,7 @@ def _validate_array(hass: HomeAssistant, user_input: dict[str, Any] | None) -> d
     """
     if user_input is None:
         return {}
-    user_input = _flatten(user_input, (ARRAY_ADVANCED,))
+    user_input = _flatten(user_input, (ARRAY_ADVANCED, ARRAY_LIMITS))
     sensors = user_input.get(CONF_POWER_SENSORS) or []
     if not sensors:
         return {CONF_POWER_SENSORS: "sensor_required"}

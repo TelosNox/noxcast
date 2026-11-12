@@ -163,6 +163,13 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
             attrs["fixed_at"] = fixed.isoformat() if fixed else None
         if self.entity_description.series == "expected" and data is not None and self._sub_id is not TOTAL:
             attrs["correction"] = data.correction.get(self._sub_id)
+        # a fixed power limit: what the cap takes off this value (Wh), and the array's limit
+        uncapped = data.uncapped.get(self.entity_description.series, {}).get(self._sub_id) if data is not None else None
+        if uncapped is not None:
+            if self._sub_id is not TOTAL:
+                attrs["limit_w"] = data.limits.get(self._sub_id)
+            above = (self.entity_description.value(uncapped) or 0.0) - (self.native_value or 0.0)
+            attrs["limited_wh"] = round(max(above, 0.0) * 1000)
         # P10 / P90 for the total, learned from the forecast archive (band.py)
         band = data.band if data is not None and self._sub_id is TOTAL else None
         if band:

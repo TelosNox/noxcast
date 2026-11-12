@@ -117,6 +117,16 @@
                 "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
               }
             },
+            "limits": {
+              "name": "Leistungsgrenze",
+              "description": "Nur wenn die Module mehr liefern, als ein MPPT-Eingang oder ein Mikrowechselrichter durchlässt, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt.",
+              "data": {
+                "sensor_limit_w": "Jeder Sensor liefert höchstens"
+              },
+              "data_description": {
+                "sensor_limit_w": "Die Grenze eines Eingangs oder Mikrowechselrichters in W, so wie einer der Leistungssensoren oben sie misst (z. B. 800 bei einem 800-W-Mikrowechselrichter). Gilt für jeden Sensor dieses Arrays. Die Prognose wird darauf begrenzt; leer = keine Grenze."
+              }
+            },
             "advanced": {
               "name": "Erweitert",
               "description": "Meist nicht nötig.",
@@ -180,6 +190,16 @@
               },
               "data_description": {
                 "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
+              }
+            },
+            "limits": {
+              "name": "Leistungsgrenze",
+              "description": "Nur wenn die Module mehr liefern, als ein MPPT-Eingang oder ein Mikrowechselrichter durchlässt, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt.",
+              "data": {
+                "sensor_limit_w": "Jeder Sensor liefert höchstens"
+              },
+              "data_description": {
+                "sensor_limit_w": "Die Grenze eines Eingangs oder Mikrowechselrichters in W, so wie einer der Leistungssensoren oben sie misst (z. B. 800 bei einem 800-W-Mikrowechselrichter). Gilt für jeden Sensor dieses Arrays. Die Prognose wird darauf begrenzt; leer = keine Grenze."
               }
             },
             "advanced": {

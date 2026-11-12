@@ -33,7 +33,7 @@ roof.
 | **Explanation** | Per hour from clear sky through clouds, shade, reflection, direction and heat to the forecast. No black box: physics first, learned values second, a statistical correction last. |
 | **Range** | P10–P90 from your own archive of past forecasts. It shifts the clouds, so it never goes above a clear sky. |
 | **Accuracy** | Every day-ahead forecast is archived and compared with what happened. With the satellite filter (an option), each day's error is split into weather part and model part. |
-| **Data quality** | Hours with a full battery, zero export, the inverter limit or outages are left out of learning. |
+| **Data quality** | Hours with a full battery, excluded periods or outages are left out of learning. A power limit of an input or micro-inverter caps the forecast. |
 | **Mounting** | Several orientations on one input (east + west, vertical balcony modules) as one array. |
 | **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, free for private use. |
 | **Privacy** | Runs in Home Assistant. Only your coordinates go to Open-Meteo. |
@@ -188,6 +188,7 @@ An array is what is measured together, usually one MPPT input or one inverter.
 | Valid since (*Advanced*) | Optional: ignore history before this date (e.g. after a rebuild) |
 | Temperature coefficient (*Advanced*) | Optional: datasheet Pmax coefficient in %/K; otherwise learned |
 | Mounting | Free behind (balcony, rack; 30 K cell heating at 1000 W/m²), parallel on the roof (50 K) or integrated into the roof (60 K). An own value in K goes under *Advanced* |
+| Each sensor delivers at most (*Power limit*) | Optional: when an MPPT input or a micro-inverter lets through less than the modules deliver, so the power stays flat at a maximum on sunny days. In W as the power sensors measure it (e.g. 800), for every sensor of the array. The forecast is capped at it |
 
 Learning starts right away from the existing history and then runs every night (01:30).
 
@@ -382,8 +383,11 @@ temperature turn this irradiance into the clear-sky power of the array.
 ### Learning (nightly, from long-term statistics)
 
 - **Data filters:** hours with a full battery, excluded periods, outages and incomplete hours are
-  left out. A plateau at the inverter limit is learned and applied as a cap. Unsteady hours
-  (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
+  left out. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
+  Hours at a *Power limit* still count for now: left out, only clouded and shaded hours would remain of the
+  sunny ones, which bends the efficiency even further. With a limit well below what the modules deliver,
+  efficiency and midday shade are therefore learned somewhat too low; learning that counts these hours as
+  "at least this much" follows later.
 - **Efficiency:** from hours with strong expected output. With the satellite filter, once the shading map knows
   enough free sun positions, only from hours at those positions, so shade it does not know yet (trees) does not pull it down. The
   plausibility check of tilt and azimuth (*Check geometry*) also uses only free hours and needs them on both sides
@@ -416,6 +420,10 @@ temperature turn this irradiance into the clear-sky power of the array.
 - The **P10–P90 band** comes from the archive: how far the clearness of actual and forecast differed
   on past days with similar weather. It shifts the clouds, so it never goes above a clear sky (plus
   5 % for model errors).
+- With a **power limit**, forecast, correction and band are computed without it, and the limit caps the result
+  last: per 10-minute step of each hour, so an hour that only reaches the limit for part of the time loses only
+  that part. An hour at the limit counts for the correction only if it was sunnier than forecast. The forecast
+  sensors of the array show `limit_w` and `limited_wh` (energy above the limit), the total sensors `limited_wh`.
 
 ### Weather
 

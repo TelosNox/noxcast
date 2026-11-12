@@ -25,7 +25,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS, CONF_SENSOR_LIMITS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -42,6 +42,8 @@ from . import events as ev
 from . import explain
 from . import flows as fl
 from . import battery as bt
+from . import curtailment as ct
+from . import installation as inst
 from . import forecasting as fc
 from . import hindcast as hc
 from . import learning as ln
@@ -103,6 +105,17 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
     return configs
 
 
+def installation_of(entry: ConfigEntry) -> inst.Installation:
+    """The installation as configured: the arrays' sensors with their limits, the house's batteries."""
+    arrays, limits = {}, {}
+    for sub_id, sub in entry.subentries.items():
+        if sub.subentry_type == SUBENTRY_ARRAY:
+            arrays[sub_id] = list(sub.data[CONF_POWER_SENSORS])
+            limits.update(sub.data.get(CONF_SENSOR_LIMITS) or {})
+    return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
+                      float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)))
+
+
 def weather_days(forecast_days: int) -> int:
     """Days to ask Open-Meteo for. It counts days in UTC, so the last local day would end after its data west
     of UTC, and east of UTC in the hours after local midnight: one more day keeps it complete. The PV forecast
@@ -119,6 +132,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=None)
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
         self.arrays = array_configs(entry)
+        self.installation = installation_of(entry)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
         self.grid: str | None = entry.data.get(CONF_GRID) or None
         self.grid_sign = -1.0 if entry.data.get(CONF_GRID_INVERT) else 1.0
@@ -492,7 +506,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                         soc_full: float) -> dict:
         """Executor. On a copy: the event loop reads and stores the live archive meanwhile."""
         work = copy.deepcopy(base)
-        ln.record_archive(work, self.site, self.arrays, learned, history, now, soc_full)
+        ln.record_archive(work, self.site, self.arrays, learned, history, now, soc_full, self.installation)
         return work
 
     def _eval_archive(self) -> dict:
@@ -967,6 +981,42 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             hourly, recent = {}, {}
         return fc.curtailed_hours(hourly, recent, live, float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), now)
 
+    async def _async_limited(self, day_start: float, now: float) -> dict[str, set[float]]:
+        """Per array today's hours in which a sensor was at its fixed limit (see curtailment.limited_hours).
+
+        Like _async_curtailed: hourly maxima, 5-minute maxima for the hours not yet compiled, and the current
+        state for the running hour.
+        """
+        limited = self.installation.limited_arrays()
+        sensors = sorted({i.sensor for a in limited for i in self.installation.inputs_of(a)})
+        if not sensors:
+            return {}
+        factors = self._factors or {}
+        hour_now = now - now % 3600
+        try:
+            hourly = await async_hourly_statistics(self.hass, sensors, dt_util.utc_from_timestamp(day_start), "max")
+            recent = await async_hourly_statistics(self.hass, sensors,
+                                                   dt_util.utc_from_timestamp(max(hour_now - 3600, day_start)),
+                                                   "max", "5minute")
+        except Exception as err:  # noqa: BLE001 – without them the correction reads every hour as clouds
+            _LOGGER.debug("Today's power maxima unavailable: %s", err)
+            hourly, recent = {}, {}
+        peaks: dict[str, dict[float, float]] = {}
+        for s in sensors:
+            f = factors.get(s, 1.0)
+            values = {t: v * f for t, v in (hourly.get(s) or {}).items() if v is not None}
+            for t, v in (recent.get(s) or {}).items():
+                if v is not None:
+                    hour = t - t % 3600
+                    values[hour] = max(values.get(hour, v * f), v * f)
+            try:
+                live = float(self.hass.states.get(s).state) * f
+                values[hour_now] = max(values.get(hour_now, live), live)
+            except (AttributeError, TypeError, ValueError):
+                pass
+            peaks[s] = values
+        return {a: ct.limited_hours(self.installation, a, peaks) for a in limited}
+
     async def _async_update_data(self) -> NoxcastData:
         try:
             fetched, weather, per_model = await self._async_fetch_weather()
@@ -990,10 +1040,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         now = utc_now.timestamp()
         actual, running = await self._async_today_actual(day_start, now)
         curtailed = await self._async_curtailed(day_start, now)
+        limited = await self._async_limited(day_start, now)
         learned = dict(self.learned)        # the same model for the forecast and its archived steps
         result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
             fc.pv, self.site, self.arrays, learned, weather, models, self._today, actual, running, utc_now,
-            local_now, day_start, day_end, curtailed)
+            local_now, day_start, day_end, curtailed, self.installation, limited)
         result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
         result.outlook = outlook
 

@@ -6133,7 +6133,10 @@
       "code": null,
       "humidity": null
      }
-    ]
+    ],
+    "limits": {},
+    "uncapped": {},
+    "profiles": {}
    },
    "runs": {"washer": null, "dryer": {"__": "RunProfile", "name": "dryer", "power_w": 1500.0, "minutes": 90.0}}
   },
@@ -14973,7 +14976,10 @@
     },
     "actual": "= previous",
     "weather": "= previous",
-    "outlook": "= previous"
+    "outlook": "= previous",
+    "limits": "= previous",
+    "uncapped": "= previous",
+    "profiles": "= previous"
    },
    "runs": {"washer": {"__": "RunProfile", "name": "washer", "power_w": 1900.0, "minutes": 74.0}, "dryer": "= previous"}
   },
@@ -15814,7 +15820,10 @@
      }
     },
     "weather": "= previous",
-    "outlook": "= previous"
+    "outlook": "= previous",
+    "limits": "= previous",
+    "uncapped": "= previous",
+    "profiles": "= previous"
    },
    "runs": "= previous"
   },
@@ -16463,7 +16472,10 @@
      }
     },
     "weather": "= previous",
-    "outlook": "= previous"
+    "outlook": "= previous",
+    "limits": "= previous",
+    "uncapped": "= previous",
+    "profiles": "= previous"
    },
    "runs": "= previous"
   },
@@ -22421,7 +22433,10 @@
       "code": null,
       "humidity": null
      }
-    ]
+    ],
+    "limits": "= previous",
+    "uncapped": "= previous",
+    "profiles": "= previous"
    },
    "runs": "= previous"
   },
@@ -23355,7 +23370,10 @@
      }
     },
     "weather": "= previous",
-    "outlook": "= previous"
+    "outlook": "= previous",
+    "limits": "= previous",
+    "uncapped": "= previous",
+    "profiles": "= previous"
    },
    "runs": "= previous"
   }

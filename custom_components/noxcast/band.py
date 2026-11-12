@@ -7,8 +7,8 @@ shifts are grouped per weather class of the forecast (clearness = forecast GHI r
 GHI). The 10th and 90th percentile of the shift, added to a new forecast's clearness, give P10 and
 P90; the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
 geometry or a wrongly learned shadow, cloud enhancement). A clear forecast can therefore hardly
-rise, an overcast one can rise up to a clear sky. Hours with possible curtailment are left out,
-since their actual value does not show what the sun gave.
+rise, an overcast one can rise up to a clear sky. Hours with possible curtailment or at a fixed limit
+are left out, since their actual value does not show what the sun gave.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
             continue
         f_sum = a_sum = c_sum = ghi_sum = clear_sum = 0.0
         for h in day.hours:
-            if h.curtailed or (keep is not None and not keep(h.ts)):
+            if h.curtailed or h.limited or (keep is not None and not keep(h.ts)):
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())

@@ -107,6 +107,7 @@ class Hour:
     dni: float | None = None             # forecast direct normal irradiance (mean of the models), W/m²
     dhi: float | None = None             # forecast diffuse horizontal irradiance (mean of the models), W/m²
     band: list[float] | None = None      # published [P10, P90] of the total, Wh; None if not archived
+    limited: bool = False                # an array was at a fixed limit: actual and forecast both capped
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +132,7 @@ def _hour(key: str, h: dict) -> Hour:
                 {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {}), s.get("dni"), s.get("dhi"))
                  for name, s in h.get("alt", {}).items()},
                 bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}), h.get("ens", {}),
-                h.get("dni"), h.get("dhi"), h.get("band"))
+                h.get("dni"), h.get("dhi"), h.get("band"), bool(h.get("limited")))
 
 
 def _day(key: str, d: dict) -> Day:
@@ -275,11 +276,13 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
 
 
 def add_actuals(archive: dict, array_id: str, actual_w: Series, before: float,
-                curtailed: set[float] = frozenset()) -> None:
+                curtailed: set[float] = frozenset(), limited: set[float] = frozenset()) -> None:
     """Add measured hourly mean power (W = Wh per hour) for hours that have ended.
 
     Hours with possible curtailment (full battery) are flagged, so an evaluation can tell
-    a forecast error from energy that could not be used.
+    a forecast error from energy that could not be used. Hours in which the array was at a fixed limit
+    are flagged as limited: the forecast is capped the same way, so its error still counts, but the
+    actual value does not show how clear the sky was.
     """
     for day in archive.values():
         for key, hour in day["hours"].items():
@@ -288,6 +291,8 @@ def add_actuals(archive: dict, array_id: str, actual_w: Series, before: float,
                 hour.setdefault("actual", {})[array_id] = round(actual_w[ts], 1)
                 if ts in curtailed:
                     hour["curtailed"] = True
+                if ts in limited:
+                    hour["limited"] = True
 
 
 def prune(archive: dict, oldest: date) -> None:
@@ -394,7 +399,7 @@ def add_history(archive: dict, day: date, stamp: float, total: Series,
     return True
 
 
-MEASURED_FIELDS = ("actual", "curtailed", "sat_ghi", "measured")
+MEASURED_FIELDS = ("actual", "curtailed", "limited", "sat_ghi", "measured")
 
 
 def merged(current: dict, base: dict, work: dict) -> dict:

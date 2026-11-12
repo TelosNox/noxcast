@@ -8,6 +8,13 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- PV arrays can have a power limit (*Power limit* in the array's settings): when an MPPT input or a micro-inverter
+  lets through less than the modules deliver, the forecast, *Expected today*, the P10–P90 range and the battery
+  forecast are capped at it. The cap comes last, so the correction during the day and the range still see the
+  clouds. An hour that reaches the limit only for part of the time loses only that part. The forecast sensors show
+  `limit_w` and `limited_wh` (energy above the limit), and the forecast archive marks hours at the limit. Learning
+  still uses those hours, so efficiency and midday shade stay somewhat too low with a strong limit; a later version
+  learns from them as "at least this much".
 - The forecast archive keeps, for each hour of tomorrow, how far the runs of the weather ensembles (ICON-EPS,
   ECMWF ENS) spread. Noxcast does not use it yet: after a few weeks it shows whether the range of a forecast
   can tell sure days from unsure ones better than now. One more request to Open-Meteo every 3 hours.

@@ -22,7 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import views
-from .const import CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, LEARN_TIME, WS_SCHEMA_VERSION
+from .const import ARCHIVE_DAYS, CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -176,7 +176,9 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
     """Day-ahead forecast archive for the accuracy view of the panel."""
     entries = []
     for c in _coordinators(hass):
-        days = await hass.async_add_executor_job(views.accuracy_days, c.forecast_archive, c.site)
+        # the page offers up to 90 days; the whole archive would only make the answer larger
+        recent = fc_archive.recent(c.forecast_archive, dt_util.now().date() - timedelta(days=EVAL_DAYS))
+        days = await hass.async_add_executor_job(views.accuracy_days, recent, c.site)
         entries.append({"arrays": views.array_names(c.arrays), "days": days})
     _send(connection, msg, {"time_zone": hass.config.time_zone, "entries": entries})
 
@@ -321,7 +323,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         _battery_names(entry), er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather")))
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_DAY, vol.Optional("offset", default=0): vol.All(int, vol.Range(-120, 2))})
+@websocket_api.websocket_command({vol.Required("type"): WS_DAY, vol.Optional("offset", default=0): vol.All(int, vol.Range(-ARCHIVE_DAYS, 2))})
 @websocket_api.async_response
 async def ws_day(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """A day in detail: offset 0 = today, negative = past days from the archive, up to 2 days ahead."""

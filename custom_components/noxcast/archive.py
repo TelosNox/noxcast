@@ -4,13 +4,17 @@ Weather forecasts are not recorded by Home Assistant and the hourly forecast att
 from the recorder, so without this archive a past forecast cannot be evaluated. Actual values come
 from long-term statistics during the nightly learning run.
 
-Layout: {"YYYY-MM-DD": {"issued": iso, "models": [weather model, ...], "hours": {"<ts>": {"ghi": W/m², "temp": °C | None,
+Layout: {"YYYY-MM-DD": {"issued": iso, "models": [weather model, ...], "band": [P10, P90 kWh],
+         "hours": {"<ts>": {"ghi": W/m², "dni": W/m², "dhi": W/m², "temp": °C | None,
          "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
          "forecast": {array_id: Wh}, "actual": {array_id: Wh}, "steps": {array_id: [Wh, ...]},
-         "alt": {source: {"ghi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
+         "alt": {source: {"ghi": W/m², "dni": W/m², "dhi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
          "sat_ghi": W/m², "measured": {array_id: Wh},
-         "ens": {ensemble model: [P10, P50, P90 GHI W/m², members]}}},
-         "history": {"<snapshot ts>": {"<ts>": Wh}}}}
+         "ens": {ensemble model: [P10, P50, P90 GHI W/m², members]}, "band": [P10, P90 Wh]}},
+         "history": {"<snapshot ts>": {"<ts>": Wh}}, "shift": {"<snapshot ts>": {array_id: clearness shift}}}}
+
+Every field but "hours" and the hour's "ghi" and "forecast" may be missing: each was added later, and days
+archived before keep their rows without it. The read-only views give None or {} for them.
 
 "history" holds the expectation for the whole day (actual so far + corrected rest, all arrays) as it
 stood at each full hour of that day, so the panel can show how the forecast developed.
@@ -42,6 +46,19 @@ before it have none.
 per hour. It is not used by the forecast or the band yet; it allows testing whether the spread of the
 day tells a sure forecast from an unsure one better than the weather class does (band.py).
 
+"band" is the P10 / P90 of the total that was published with the forecast (band.forecast_band), per hour
+and for the day, so a later calibration can check the band users saw, not one recomputed from the band
+learned since. "dni" / "dhi" are the split of the forecast irradiance (mean and per model) for daylight hours
+with both values, so a later comparison of weather sources can check the split and not only GHI.
+
+"shift" holds the intraday clearness shift per array (intraday.clearness_shift) at each history stamp, so the
+corrections applied during the day can be evaluated against the actual values. Arrays without a shift at that
+time are left out.
+
+Days are kept for ARCHIVE_DAYS (400): a full year for seasonal checks. A day takes about 15–30 KB, depending
+on daylight and the number of arrays and weather models. The band, the backtest and the accuracy page still
+read only the last EVAL_DAYS (recent()), as before the archive grew.
+
 "measured" is the same model run on the satellite-measured irradiance of the hour: it splits the
 deviation into a weather part (forecast − measured) and a model part (measured − actual).
 
@@ -68,6 +85,8 @@ class Source:
     ghi: float | None                    # forecast GHI of that model, W/m²
     forecast: dict[str, float]           # array id -> Wh from that model's weather
     wx: dict                             # weather details (see details()), {} if none
+    dni: float | None = None             # forecast direct normal irradiance of that model, W/m²
+    dhi: float | None = None             # forecast diffuse horizontal irradiance of that model, W/m²
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +104,9 @@ class Hour:
     measured: dict[str, float] | None    # array id -> model output from sat_ghi, Wh
     steps: dict[str, list[float]]        # array id -> steps of the forecast (explain.packed), {} if not archived
     ens: dict[str, list[float]] = field(default_factory=dict)   # ensemble model -> [P10, P50, P90 GHI, members]
+    dni: float | None = None             # forecast direct normal irradiance (mean of the models), W/m²
+    dhi: float | None = None             # forecast diffuse horizontal irradiance (mean of the models), W/m²
+    band: list[float] | None = None      # published [P10, P90] of the total, Wh; None if not archived
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +117,8 @@ class Day:
     hours: list[Hour]                    # by hour start
     history: list[tuple[float, list[tuple[float, float]]]]   # (snapshot ts, [(hour start, Wh all arrays)]), by time
     models: list[str]                    # weather models of the forecast, [] if archived before they were kept
+    band: list[float] | None = None      # published [P10, P90] of the day's total, kWh; None if not archived
+    shift: list[tuple[float, dict[str, float]]] = field(default_factory=list)   # (stamp, array id -> shift), by time
 
     @property
     def complete(self) -> bool:
@@ -104,15 +128,18 @@ class Day:
 
 def _hour(key: str, h: dict) -> Hour:
     return Hour(float(key), h.get("ghi"), h.get("temp"), h.get("wx", {}), h.get("forecast", {}), h.get("actual"),
-                {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {})) for name, s in h.get("alt", {}).items()},
-                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}), h.get("ens", {}))
+                {name: Source(s.get("ghi"), s.get("forecast", {}), s.get("wx", {}), s.get("dni"), s.get("dhi"))
+                 for name, s in h.get("alt", {}).items()},
+                bool(h.get("curtailed")), h.get("sat_ghi"), h.get("measured"), h.get("steps", {}), h.get("ens", {}),
+                h.get("dni"), h.get("dhi"), h.get("band"))
 
 
 def _day(key: str, d: dict) -> Day:
     hours = sorted((_hour(k, h) for k, h in (d.get("hours") or {}).items()), key=lambda h: h.ts)
     history = [(float(s), sorted((float(t), v) for t, v in snap.items()))
                for s, snap in sorted((d.get("history") or {}).items(), key=lambda kv: float(kv[0]))]
-    return Day(key, d.get("issued"), hours, history, list(d.get("models") or []))
+    shift = [(float(s), v) for s, v in sorted((d.get("shift") or {}).items(), key=lambda kv: float(kv[0]))]
+    return Day(key, d.get("issued"), hours, history, list(d.get("models") or []), d.get("band"), shift)
 
 
 def complete_days(archive: dict) -> int:
@@ -134,6 +161,11 @@ def day(archive: dict, when: date | str) -> Day | None:
 def dates(archive: dict) -> list[str]:
     """Archived dates (ISO), in order."""
     return sorted(archive)
+
+
+def recent(archive: dict, oldest: date) -> dict:
+    """The days from `oldest` on, as a new top-level dict of the same (shared) day dicts."""
+    return {k: v for k, v in archive.items() if k >= oldest.isoformat()}
 
 
 def from_store(data: dict | None) -> dict:
@@ -179,14 +211,23 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
              alt: dict[str, tuple[Series, dict[str, Series]]] | None = None,
              wx: dict[float, dict] | None = None, alt_wx: dict[str, dict[float, dict]] | None = None,
              steps: dict[str, dict[float, list[float]]] | None = None, models: list[str] | None = None,
-             ens: dict[str, dict[float, list[float]]] | None = None) -> bool:
+             ens: dict[str, dict[float, list[float]]] | None = None,
+             split: dict[float, tuple[float | None, float | None]] | None = None,
+             alt_split: dict[str, dict[float, tuple[float | None, float | None]]] | None = None,
+             band: dict[float, tuple[float, float]] | None = None, day_band: list[float] | None = None) -> bool:
     """Store (overwrite) the forecast for a coming day; the last snapshot before the day starts remains.
 
     wx / alt_wx: weather details per hour (see details()) of the primary / an alternative source;
     steps: per array and hour the steps of the forecast (explain.packed); models: the weather models;
     ens: per ensemble model and hour the GHI of its runs, kept as ensemble() for hours with light; without
-    them an hour keeps the spread of its earlier snapshot.
+    them an hour keeps the spread of its earlier snapshot. split / alt_split: per hour (DNI, DHI) of the primary
+    / an alternative source; band / day_band: the published P10 / P90 of the total per hour (Wh) and for the
+    day (kWh).
     """
+    def add_split(entry: dict, ghi: float, values: tuple[float | None, float | None] | None) -> None:
+        if ghi > 0 and values and values[0] is not None and values[1] is not None:
+            entry["dni"], entry["dhi"] = round(values[0], 1), round(values[1], 1)
+
     hours = {}
     for ts, (ghi, temp) in sorted(weather.items()):
         hours[str(int(ts))] = hour = {
@@ -195,6 +236,9 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
         }
         if ghi > 0 and (wx or {}).get(ts):
             hour["wx"] = wx[ts]
+        add_split(hour, ghi, (split or {}).get(ts))
+        if (band or {}).get(ts, (0.0, 0.0))[1] > 0:           # dark hours have no spread to keep
+            hour["band"] = [round(band[ts][0], 1), round(band[ts][1], 1)]
         packed = {sid: [round(v, 1) for v in by_hour[ts]] for sid, by_hour in (steps or {}).items() if ts in by_hour}
         if packed:
             hour["steps"] = packed
@@ -204,12 +248,14 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
                     "ghi": round(alt_ghi[ts], 1), "forecast": {sid: round(f.get(ts, 0.0), 1) for sid, f in alt_fc.items()}}
                 if alt_ghi[ts] > 0 and (alt_wx or {}).get(name, {}).get(ts):
                     entry["wx"] = alt_wx[name][ts]
+                add_split(entry, alt_ghi[ts], (alt_split or {}).get(name, {}).get(ts))
         for name, by_hour in (ens or {}).items():
             if (spread := ensemble(by_hour.get(ts, []))) and (ghi > 0 or spread[2] > 0):
                 hour.setdefault("ens", {})[name] = spread
     if len(hours) < MIN_DAY_HOURS:
         return False
     history = archive.get(day.isoformat(), {}).get("history")
+    shift = archive.get(day.isoformat(), {}).get("shift")
     old = archive.get(day.isoformat(), {}).get("hours", {})
     for key, hour in hours.items():                 # keep actuals if a day is snapshotted again
         if "actual" in old.get(key, {}):
@@ -219,8 +265,12 @@ def snapshot(archive: dict, day: date, issued: str, weather: dict[float, tuple[f
     archive[day.isoformat()] = {"issued": issued, "hours": hours}
     if models:
         archive[day.isoformat()]["models"] = list(models)
+    if day_band:
+        archive[day.isoformat()]["band"] = [round(day_band[0], 3), round(day_band[1], 3)]
     if history:
         archive[day.isoformat()]["history"] = history
+    if shift:
+        archive[day.isoformat()]["shift"] = shift
     return True
 
 
@@ -322,10 +372,12 @@ def error_report(archive: dict, since: date, arrays: dict[str, str]) -> dict:
     return {"error": _percent(error), "days": days, "per_array": per_array, "comparison": comparison}
 
 
-def add_history(archive: dict, day: date, stamp: float, total: Series) -> bool:
+def add_history(archive: dict, day: date, stamp: float, total: Series,
+                shift: dict[str, float | None] | None = None) -> bool:
     """Record the day's expectation (Wh per hour, all arrays) as it stands at `stamp`, once per stamp.
 
-    Only for a day that is in the archive (its day-ahead forecast is the start of the history).
+    Only for a day that is in the archive (its day-ahead forecast is the start of the history). shift: the
+    intraday clearness shift per array at that time (None: no correction), kept next to the expectation.
     """
     entry = archive.get(day.isoformat())
     if entry is None:
@@ -335,7 +387,10 @@ def add_history(archive: dict, day: date, stamp: float, total: Series) -> bool:
         return False
     # a new day dict, never a change in place: an executor job may be reading the old one
     history = {**entry.get("history", {}), key: {str(int(t)): round(v) for t, v in sorted(total.items()) if v >= 0.5}}
-    archive[day.isoformat()] = {**entry, "history": history}
+    new = {**entry, "history": history}
+    if applied := {sid: round(v, 3) for sid, v in (shift or {}).items() if v is not None}:
+        new["shift"] = {**entry.get("shift", {}), key: applied}
+    archive[day.isoformat()] = new
     return True
 
 

@@ -562,7 +562,7 @@ orientation changes the geometry key and starts relearning.
   reports the shaded minutes (transmission below 0.8) with the shaded periods (start, end, lowest
   transmission) and the periods not learned yet as attributes; an image entity shows the day as a
   timeline with the current time. Times are accurate to about a quarter of an hour (cell size).
-- Forecast archive: the day-ahead forecast (with the weather it used) is kept for 120 days and
+- Forecast archive: the day-ahead forecast (with the weather it used) is kept for 400 days (`ARCHIVE_DAYS`) and
   completed with actual values during the nightly run. Weather forecasts are not recorded by
   Home Assistant, so this is the only basis for evaluating and calibrating against the forecast
   source (e.g. the sky view). For daylight hours it also keeps what each source says besides
@@ -571,10 +571,19 @@ orientation changes the geometry key and starts relearning.
   sunshine duration of Open-Meteo matched sunny autumn days better than its irradiance, while
   total cloud cover was too pessimistic under thin high cloud; wind cools the modules by about
   1 % per m/s. These values are not used by the model. They add about 40 bytes per daylight hour
-  and source, well below 1 MB over the 120 days.
+  and source, about 1 MB over the 400 days.
+- A year of days allows seasonal checks (band calibration, bias by season, comparison of weather sources). The
+  band, the nightly backtest and the accuracy page still read only the last 120 days (`EVAL_DAYS`), so their
+  results did not change when the archive grew; how to use the older days is decided by those evaluations.
+- Per day the archive also keeps what was published and applied, which cannot be recomputed later: the P10 / P90
+  of the band per hour and for the day as published with the forecast (not one recomputed from the band learned
+  since), DNI and DHI of the mean and of each weather model for daylight hours, and the intraday clearness shift
+  per array at each full hour of the history (`shift`). Together about 3 KB per summer day. A day of the archive
+  takes 15–30 KB with two arrays and two weather models, about 9 MB over 400 days; each further array adds
+  roughly 1.5 MB.
 - The archive also keeps the spread of the ensemble runs for each daylight hour (`archive.ensemble`): P10, P50
   and P90 of the GHI of ICON-EPS (40 runs) and ECMWF ENS (51 runs), fetched every 3 hours from Open-Meteo's
-  ensemble API, about 0.1 MB over the 120 days. Open-Meteo keeps no past ensemble forecasts, so only this archive
+  ensemble API, about 0.3 MB over the 400 days. Open-Meteo keeps no past ensemble forecasts, so only this archive
   can show whether the spread of a day tells a sure forecast from an unsure one, and how much the ensembles,
   which are known to be too narrow (e.g. under fog that all runs dissolve too early), must be widened at an
   installation. ECMWF ENS gives irradiance every 3 hours, which Open-Meteo interpolates to hours, so its hourly

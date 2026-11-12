@@ -108,7 +108,10 @@ STORAGE_VERSION = 1
 # ensembles archived with tomorrow's forecast (archive.ensemble): ICON-EPS and ECMWF ENS, the runs of the default models
 ENSEMBLE_MODELS = ("icon_seamless", "ecmwf_ifs025")
 ENSEMBLE_INTERVAL = timedelta(hours=3)    # the ensembles are recomputed every 6 to 12 hours; no need to ask more often
-ARCHIVE_DAYS = 120                       # day-ahead forecasts kept for evaluation
+ARCHIVE_DAYS = 400                       # day-ahead forecasts kept for evaluation: a year for seasonal checks
+# what the band, the backtest and the accuracy page read of the archive: as many days as it kept before it grew
+# to a year, so their results do not change until a seasonal evaluation decides how to use the older days
+EVAL_DAYS = 120
 ERROR_DAYS = 30                          # window of the forecast error sensor
 MORNING_HOUR = 6                         # local hour at which today's forecast is fixed
 ATTR_SCHEMA_VERSION = 1

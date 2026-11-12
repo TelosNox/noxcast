@@ -212,7 +212,7 @@ class NoxcastDay extends HTMLElement {
     const label = o === 0 ? t.today : o === -1 ? t.yesterday : o === 1 ? t.tomorrow : "";
     const date = new Date(`${d.date}T12:00:00Z`).toLocaleDateString(this._lang, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
     return `<div class="nav">
-      <button class="round" data-act="prev" aria-label="${t.prev}" ${o <= -120 ? "disabled" : ""}>‹</button>
+      <button class="round" data-act="prev" aria-label="${t.prev}" ${o <= -400 ? "disabled" : ""}>‹</button>
       <div class="when"><b>${label || date}</b>${label ? `<span class="muted small">${date}</span>` : ""}</div>
       <button class="round" data-act="next" aria-label="${t.next}" ${o >= 2 ? "disabled" : ""}>›</button>
       ${o !== 0 ? `<button class="chip" data-act="today">${t.today}</button>` : ""}

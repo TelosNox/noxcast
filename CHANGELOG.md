@@ -11,11 +11,18 @@ breaking changes.
 - The forecast archive keeps, for each hour of tomorrow, how far the runs of the weather ensembles (ICON-EPS,
   ECMWF ENS) spread. Noxcast does not use it yet: after a few weeks it shows whether the range of a forecast
   can tell sure days from unsure ones better than now. One more request to Open-Meteo every 3 hours.
+- The forecast archive also keeps, for each day from now on, the published P10–P90 range, the split of the
+  irradiance into direct and diffuse for each weather model, and the intraday correction applied each hour. Nothing
+  uses them yet: they allow seasonal checks of the range and the corrections and a fair comparison of weather
+  sources later.
 
 ### Changed
 - Panel, Overview: *So far* and the badge at the top (*As forecast*, *Sunnier* or *Duller than forecast*) compare
   the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
   measured hours during the day, so a day far below the morning forecast could still show *As forecast*.
+- The forecast archive keeps 400 days instead of 120, and the *Day* page goes back as far. The range (P10–P90) and
+  the *Forecast accuracy* page still use the last 120 days, so nothing changes there. The archive grows to about
+  9 MB over a year with two arrays.
 
 ### Fixed
 - The correction of today's forecast from the measured hours no longer reads PV cut by a full battery as clouds.

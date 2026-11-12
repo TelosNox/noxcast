@@ -25,7 +25,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -407,7 +407,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """Compare the model with the past (backtest.py); a failure leaves the last result in place."""
         try:
             result = await self.hass.async_add_executor_job(
-                self._run_backtest, dict(self.learned), dict(self.forecast_archive), history, now, soc_full, exclusions)
+                self._run_backtest, dict(self.learned), self._eval_archive(), history, now, soc_full, exclusions)
         except Exception:  # noqa: BLE001 – learning and forecast do not depend on it
             _LOGGER.exception("Noxcast backtest failed; keeping the last result")
             return
@@ -495,9 +495,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         ln.record_archive(work, self.site, self.arrays, learned, history, now, soc_full)
         return work
 
+    def _eval_archive(self) -> dict:
+        """The archived days the band and the backtest learn from (EVAL_DAYS)."""
+        return fc_archive.recent(self.forecast_archive, dt_util.now().date() - timedelta(days=EVAL_DAYS))
+
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
-        return bd.from_archive(self.forecast_archive, self.site, {sid: a.geometry for sid, a in self.arrays.items()},
+        return bd.from_archive(self._eval_archive(), self.site, {sid: a.geometry for sid, a in self.arrays.items()},
                                self.learned)
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:
@@ -726,13 +730,22 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         def wx(series: list[WeatherHour]) -> dict[float, dict]:
             return {w.start: fc_archive.details(w.cloud, w.sun, w.wind, w.wind_dir) for w in series if a <= w.start < b}
 
+        def split(series: list[WeatherHour]) -> dict[float, tuple[float | None, float | None]]:
+            return {w.start: (w.dni, w.dhi) for w in series if a <= w.start < b}
+
+        # the band as published with this forecast (surplus() has set it), tomorrow only
+        band = result.band or {}
+        hour_band = {t: r for t, r in (band.get("hours") or {}).items() if a <= t < b}
+
         # a new top-level dict: executor jobs may be iterating the current one (archive.py)
         archive = dict(self.forecast_archive)
         if fc_archive.snapshot(archive, tomorrow.date(), dt_util.utcnow().isoformat(), hours,
                                result.arrays, alt, wx(weather),
                                {name: wx(series) for name, series in (alt_weather or {}).items()},
                                {sid: {t: explain.packed(st) for t, st in h.items()} for sid, h in (steps or {}).items()},
-                               models, ens):
+                               models, ens, split(weather),
+                               {name: split(series) for name, series in (alt_weather or {}).items()},
+                               hour_band, (band.get("days") or {}).get(1)):
             fc_archive.prune(archive, dt_util.now().date() - timedelta(days=ARCHIVE_DAYS))
             self.forecast_archive = archive
             self._archive_store.async_delay_save(self._archive_data, 300)
@@ -986,7 +999,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         if local_now.hour in fc_archive.HISTORY_HOURS and fc_archive.add_history(
                 self.forecast_archive, local_now.date(), local_now.replace(minute=0, second=0, microsecond=0).timestamp(),
-                result.expected[TOTAL]):
+                result.expected[TOTAL], result.correction):
             self._archive_store.async_delay_save(self._archive_data, 300)
 
         result.load = await self._async_load_forecast(

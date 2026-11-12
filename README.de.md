@@ -169,7 +169,7 @@ Untereinträge anlegen (⋮ → *PV-Gruppe hinzufügen* / *Verbraucher hinzufüg
 
 | Feld | Bedeutung |
 |---|---|
-| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen außen vor (die Leistung kann abgeregelt sein) |
+| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein) |
 | Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
@@ -413,6 +413,8 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 - **Prognose heute** wird um 06:00 fixiert. **Erwartung heute** = gemessene Stunden + der Rest, korrigiert danach, wie
   viel klarer oder wolkiger die letzten Stunden waren als vorhergesagt (die halbe Abweichung für die laufende Stunde,
   halbiert mit jeder weiteren Stunde, nie über klarem Himmel). Die laufende Stunde zählt ab 15 gemessenen Minuten.
+  Eine Stunde mit vollem Akku zählt nur, wenn sie sonniger war als vorhergesagt: Der Wechselrichter hat dann vielleicht
+  abgeregelt, weniger Ertrag sagt also nichts über Wolken.
 - Das **P10–P90-Band** kommt aus dem Archiv: wie weit die Klarheit von Ist und Prognose an vergangenen Tagen mit
   ähnlichem Wetter auseinanderlag. Es verschiebt die Wolken und liegt deshalb nie über klarem Himmel (plus 5 % für
   Modellfehler).

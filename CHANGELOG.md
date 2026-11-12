@@ -21,7 +21,8 @@ breaking changes.
 - The correction of today's forecast from the measured hours no longer reads PV cut by a full battery as clouds.
   Before, a battery that was full at noon lowered the expected PV for the rest of the day. An hour in which a
   battery reached *Battery considered full at* now only counts when it was sunnier than forecast;
-  if every recent hour was cut, today's forecast stays as it is.
+  if every recent hour was cut and duller than forecast, today's forecast stays as it is. This needs *Battery state
+  of charge sensors* in the settings.
 
 ## [0.3.1] - 2026-11-09
 

@@ -3,6 +3,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
+import snapshot
 from conftest import load
 
 archive = load("archive")
@@ -232,3 +233,58 @@ def test_fine_holdout_needs_days_in_the_archive():
     hist, store = _mast_data(10)
     r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 10 * 86400, 95, [], UTC)
     assert r["arrays"]["roof"] == {"status": "not_enough_data", "reason": "few_days", "days": 10, "needed": 28}
+
+
+WINTER0 = 1761955200.0                  # 2025-11-01 00:00 UTC
+
+
+def _site_history(days: int = 150) -> "ln.PvHistory":
+    """A synthetic site from November to March: clear, hazy and broken days, a low shadow in the west, unsteady cloudy hours."""
+    ts = [WINTER0 + h * 3600 for h in range(days * 24)]
+    clear = {t: model.clearsky_weather(SITE, t).ghi for t in ts}
+    kt = {t: (1.0, 0.85, 0.5, 0.95, 0.3)[int((t - WINTER0) // 86400) % 5] for t in ts}
+    sat = {t: clear[t] * kt[t] for t in ts}
+    fc = model.forecast(SITE, GEO, TRUE, [model.WeatherHour(t, sat[t], temp=5.0) for t in ts])
+
+    def factor(t: float) -> float:
+        sun = solar.sun_position(SITE, t + 1800)
+        shade = 0.5 if sun.azimuth > 200 and sun.elevation < 15 and kt[t] > 0.8 else 1.0
+        return shade * (1.25 if kt[t] == 0.5 else 1.0)          # broken clouds: more than the model expects
+    power = {t: fc[t] * factor(t) for t in ts}
+    spread = {t: 0.05 if kt[t] >= 0.85 else 0.4 for t in ts}
+    return ln.PvHistory({"pv": power}, {"pv": {t: p * (1 - spread[t]) for t, p in power.items()}},
+                        {"pv": {t: p * (1 + spread[t]) for t, p in power.items()}}, {}, {},
+                        {t: 5.0 for t in ts}, sat)
+
+
+def test_scorecard_of_the_synthetic_site_is_pinned(request):
+    """The scorecard on a winter site; its diff shows what a model change does where."""
+    hist = _site_history()
+    now = WINTER0 + 150 * 86400
+    r = backtest.run(SITE, {"roof": ARRAY}, {}, hist, {}, now, 95, [], UTC,
+                     near_limit=lambda sid, t: hist.power["pv"][t] > 600)["holdout"]["arrays"]["roof"]
+    card = r["scorecard"]
+    assert list(card) == [*backtest.SUBSETS, "near_limit"]
+    assert card["all"]["holdout"] == r["holdout"] and card["all"]["in_sample"] == r["in_sample"]
+    for name, parts in card.items():
+        assert parts["holdout"]["hours"] == parts["in_sample"]["hours"] > 0, name
+    assert card["winter"]["holdout"]["hours"] < card["all"]["holdout"]["hours"]
+    assert card["steady"]["holdout"]["hour_error"] < card["all"]["holdout"]["hour_error"]
+    snapshot.check("backtest_scorecard", card, request.config.getoption("--update-snapshots"))
+
+
+def test_subsets_compare_morning_and_afternoon_at_equal_elevation():
+    day = backtest.local_day(UTC)
+    ts = [DAY0 + h * 3600 for h in range(24)]
+    lit = {t: 100.0 for t in ts if solar.sun_position(SITE, t + 1800).elevation > 0}
+    sets = backtest.subsets(SITE, lit, {t: 90.0 for t in lit}, set(ts[:12]), day)
+    assert "near_limit" not in sets and sets["all"] == set(lit)
+    assert sets["above_clear"] == set(lit)                   # 100 > 1.05 × 90
+    for side, east in (("morning", True), ("afternoon", False)):
+        assert sets[side] and all((solar.sun_position(SITE, t + 1800).azimuth < 180) == east
+                                  and 10 <= solar.sun_position(SITE, t + 1800).elevation < 30 for t in sets[side])
+    assert not sets["winter"]                                # April in the north
+    south = solar.Site(-48.0, 8.0, 300.0)
+    assert backtest.subsets(south, {DAY0: 1.0}, {}, set(), day)["winter"] == set()
+    july = DAY0 + 75 * 86400
+    assert backtest.subsets(south, {july: 1.0}, {}, set(), day)["winter"] == {july}

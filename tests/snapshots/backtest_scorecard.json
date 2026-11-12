@@ -1,0 +1,34 @@
+{
+ "all": {
+  "holdout": {"day_error": 0.0676, "hour_error": 0.073, "bias": -0.0676, "hour_mae_wh": 17.7, "days": 150, "hours": 1520},
+  "in_sample": {"day_error": 0.0675, "hour_error": 0.0726, "bias": -0.0675, "hour_mae_wh": 17.6, "days": 150, "hours": 1520}
+ },
+ "low_sun": {
+  "holdout": {"day_error": 0.1021, "hour_error": 0.1147, "bias": -0.1013, "hour_mae_wh": 17.0, "days": 150, "hours": 1001},
+  "in_sample": {"day_error": 0.1012, "hour_error": 0.1138, "bias": -0.1011, "hour_mae_wh": 16.9, "days": 150, "hours": 1001}
+ },
+ "winter": {
+  "holdout": {"day_error": 0.0708, "hour_error": 0.078, "bias": -0.0708, "hour_mae_wh": 17.1, "days": 120, "hours": 1148},
+  "in_sample": {"day_error": 0.0708, "hour_error": 0.0776, "bias": -0.0708, "hour_mae_wh": 17.0, "days": 120, "hours": 1148}
+ },
+ "morning": {
+  "holdout": {"day_error": 0.0641, "hour_error": 0.0641, "bias": -0.0641, "hour_mae_wh": 19.5, "days": 150, "hours": 439},
+  "in_sample": {"day_error": 0.064, "hour_error": 0.064, "bias": -0.064, "hour_mae_wh": 19.5, "days": 150, "hours": 439}
+ },
+ "afternoon": {
+  "holdout": {"day_error": 0.0723, "hour_error": 0.0774, "bias": -0.0685, "hour_mae_wh": 21.7, "days": 150, "hours": 442},
+  "in_sample": {"day_error": 0.0717, "hour_error": 0.0765, "bias": -0.0687, "hour_mae_wh": 21.5, "days": 150, "hours": 442}
+ },
+ "above_clear": {
+  "holdout": {"day_error": 0.2436, "hour_error": 0.2436, "bias": -0.2436, "hour_mae_wh": 45.7, "days": 46, "hours": 64},
+  "in_sample": {"day_error": 0.2356, "hour_error": 0.2356, "bias": -0.2356, "hour_mae_wh": 44.2, "days": 46, "hours": 64}
+ },
+ "steady": {
+  "holdout": {"day_error": 0.0395, "hour_error": 0.0461, "bias": -0.0395, "hour_mae_wh": 15.1, "days": 90, "hours": 916},
+  "in_sample": {"day_error": 0.0395, "hour_error": 0.0457, "bias": -0.0395, "hour_mae_wh": 15.0, "days": 90, "hours": 916}
+ },
+ "near_limit": {
+  "holdout": {"day_error": 0.0108, "hour_error": 0.0108, "bias": -0.0108, "hour_mae_wh": 7.5, "days": 36, "hours": 122},
+  "in_sample": {"day_error": 0.0109, "hour_error": 0.0109, "bias": -0.0109, "hour_mae_wh": 7.5, "days": 36, "hours": 122}
+ }
+}

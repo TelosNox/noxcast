@@ -14,6 +14,10 @@ each with a simple baseline (the same model without the learned shading map), as
 Hours are those learning uses (usable_samples: validity, full battery, exclusions); the archive's
 curtailed flag applies on top for the replay. Only hours with light count. Results are small and
 bounded: a few numbers per array and in total, no series.
+
+The overall hold-out error hardly moves when the model changes where little energy is (low sun, winter),
+so each array's hold-out also carries a fixed scorecard: the same errors on fixed subsets of its hours
+(SUBSETS). A model change shows on it where it acts.
 """
 from __future__ import annotations
 
@@ -24,8 +28,9 @@ from . import archive as fc_archive
 from . import explain
 from . import fine as fn
 from . import learning as ln
-from .model import LearnedArray, measured_forecast, usable_samples
-from .solar import Site
+from .band import CLEARNESS_MAX
+from .model import LearnedArray, clearsky_weather, forecast, measured_forecast, steady_hours, usable_samples
+from .solar import Site, sun_position
 from .const import Series
 
 VERSION = 1
@@ -37,6 +42,13 @@ MIN_FOLD_HOURS = 60              # ... and hours with light
 MIN_WH = 1.0                     # an hour counts when model or actual value exceed this (else: night)
 
 Pairs = dict[float, tuple[float, float]]         # hour start -> (model Wh, actual Wh)
+NearLimit = Callable[[str, float], bool]         # (array id, hour start) -> near a power limit
+
+# Scorecard subsets; the sun position is that of the middle of the hour.
+SUBSETS = ("all", "low_sun", "winter", "morning", "afternoon", "above_clear", "steady")
+LOW_SUN = 20.0                   # degrees: where the physics is weakest and winter production happens
+WINTER = {True: (11, 12, 1, 2), False: (5, 6, 7, 8)}     # local months, by hemisphere (north: True)
+SIDE_ELEVATION = (10.0, 30.0)    # morning and afternoon compared in the same elevation band
 
 
 def score(pairs: Pairs, day_of: Callable[[float], date]) -> dict:
@@ -134,13 +146,54 @@ def _even(t: float, day_of: Callable[[float], date]) -> bool:
     return day_of(t).toordinal() % 2 == 0
 
 
+def subsets(site: Site, hours: dict[float, float], clear: dict[float, float], steady: set[float],
+            day_of: Callable[[float], date], near_limit: Callable[[float], bool] | None = None) -> dict[str, set[float]]:
+    """The scorecard's subsets of an array's hours ({hour start: actual Wh}) by name.
+
+    all; low_sun: elevation below LOW_SUN; winter: the four darkest months; morning / afternoon: sun east /
+    west of the meridian within SIDE_ELEVATION, so both sides are compared at equal elevation; above_clear:
+    actual above the clear-sky output (clear, Wh) plus the band's tolerance, where that bound cuts real
+    output; steady: hours with a calm sky (model.steady_hours); near_limit: only with that predicate.
+    """
+    winter = WINTER[site.latitude >= 0]
+    low, high = SIDE_ELEVATION
+    out: dict[str, set[float]] = {name: set() for name in SUBSETS}
+    if near_limit is not None:
+        out["near_limit"] = set()
+    for t, actual in hours.items():
+        sun = sun_position(site, t + 1800)
+        out["all"].add(t)
+        if sun.elevation < LOW_SUN:
+            out["low_sun"].add(t)
+        if day_of(t).month in winter:
+            out["winter"].add(t)
+        if low <= sun.elevation < high:
+            out["morning" if sun.azimuth < 180 else "afternoon"].add(t)
+        if actual > CLEARNESS_MAX * clear.get(t, 0.0):
+            out["above_clear"].add(t)
+        if t in steady:
+            out["steady"].add(t)
+        if near_limit is not None and near_limit(t):
+            out["near_limit"].add(t)
+    return out
+
+
+def scorecard(runs: dict[str, Pairs], sets: dict[str, set[float]], day_of: Callable[[float], date]) -> dict:
+    """{subset: {"holdout": score, "in_sample": score}}: both on the same hours of the subset."""
+    return {name: {part: score({t: runs[part][t] for t in hours if t in runs[part]}, day_of)
+                   for part in ("holdout", "in_sample")} for name, hours in sets.items()}
+
+
 def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, now: float, soc_full: float,
-            exclusions: list[tuple[float, float]], day_of: Callable[[float], date]) -> dict:
+            exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
+            near_limit: NearLimit | None = None) -> dict:
     """{"arrays": {id: result}, "total": result}: result = {"status", "holdout", "in_sample", "baseline"} or not enough data.
 
     holdout: every day by the model learned on the other days; in_sample: by the model learned on its
     own half; baseline: the hold-out model without the shading map. All three on the same hours: those
     learning uses, with measured irradiance. Without satellite irradiance there is no such test.
+    An array's result also holds its "scorecard" (scorecard(), subsets()); above_clear compares with the
+    clear-sky output of the hold-out model. near_limit: the hours near a power limit, a further subset.
     """
     sat = history.satellite_ghi
     if not sat:
@@ -162,6 +215,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
         return {"arrays": out, "total": total}
 
     runs: dict[str, dict[str, Pairs]] = {sid: {"holdout": {}, "in_sample": {}, "baseline": {}} for sid in good}
+    clear: dict[str, dict[float, float]] = {sid: {} for sid in good}
     for even in (True, False):
         models = ln.learn_arrays(site, good, history, now, soc_full, exclusions,
                                  keep=lambda t, even=even: _even(t, day_of) == even)
@@ -169,6 +223,9 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
             hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tests[sid]]
             fc = measured_forecast(site, arr.geometry, models[sid], hours)
             base = measured_forecast(site, arr.geometry, without_map(models[sid]), hours)
+            clear[sid].update(forecast(site, arr.geometry, models[sid],
+                                       [clearsky_weather(site, t, temp) for t, _, temp in hours
+                                        if _even(t, day_of) != even]))
             for t, p in tests[sid].items():
                 if _even(t, day_of) == even:
                     runs[sid]["in_sample"][t] = (fc[t], p)
@@ -179,7 +236,12 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     def result(parts: dict[str, Pairs]) -> dict:
         return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}
 
-    out.update({sid: result(run) for sid, run in runs.items()})
+    for sid, run in runs.items():
+        steady = steady_hours([(history.power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
+                               for s in good[sid].sensors])
+        near = (lambda t, sid=sid: near_limit(sid, t)) if near_limit is not None else None
+        sets = subsets(site, tests[sid], clear[sid], steady, day_of, near)
+        out[sid] = {**result(run), "scorecard": scorecard(run, sets, day_of)}
     return {"arrays": out,
             "total": result({name: summed([run[name] for run in runs.values()])
                              for name in ("holdout", "in_sample", "baseline")})}
@@ -258,12 +320,16 @@ def local_day(tz: tzinfo) -> Callable[[float], date]:
 
 
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-        archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
-    """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing."""
+        archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo,
+        near_limit: NearLimit | None = None) -> dict:
+    """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing.
+
+    near_limit: (array id, hour start) -> whether the hour was near a power limit; adds that scorecard subset.
+    """
     day_of = local_day(tz)
     return {"version": VERSION, "computed_at": now,
             "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of),
-            "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of)}
+            "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit)}
 
 
 def valid(result: dict | None) -> dict | None:

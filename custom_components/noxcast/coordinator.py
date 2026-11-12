@@ -49,6 +49,7 @@ from . import hindcast as hc
 from . import learning as ln
 from . import load as lf
 from . import plan as pl
+from . import plateau as pt
 from .forecasting import NoxcastData
 from .learning import ArrayConfig, ConsumerConfig
 from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour
@@ -179,6 +180,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._fine_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.fine")
         self.fine: dict = {}
         self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
+        # power limits seen in the measurements (plateau.py): {"detected": {sensor: Plateau.as_dict()},
+        # "dismissed": {sensor: W the user said is no limit}}; only suggested, see issues.py
+        self.limits: dict = {"detected": {}, "dismissed": {}}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -196,6 +200,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
             self.model_compare = hc.valid(stored.get("model_compare"))
             self.battery_log = dict(stored.get("battery_log") or {})
+            limits = stored.get("limits") or {}
+            self.limits = {"detected": dict(limits.get("detected") or {}),
+                           "dismissed": {s: float(w) for s, w in (limits.get("dismissed") or {}).items()}}
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
                 self.load_profile = lf.Profile.from_dict(load["base"])
@@ -361,6 +368,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "pv_backtest": self.pv_backtest,
             "model_compare": self.model_compare,
             "battery_log": self.battery_log,
+            "limits": self.limits,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
             "last_learning_seconds": self.last_learning_seconds,
@@ -438,6 +446,36 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         hours = {sid: ct.limited_hours(self.installation, sid, peaks) for sid in limited}
         return lambda sid, t: t in hours.get(sid, ())
 
+    def _detect_limits(self, history: ln.PvHistory, now: float, exclusions: list[tuple[float, float]],
+                       fine: dict[str, Series]) -> dict[str, dict]:
+        """Executor. Sensor -> limit seen in its measurements (plateau.py), for every array's sensors.
+
+        Hours before the array's valid-since date and in excluded periods do not count, as for learning.
+        """
+        day_of = pv_backtest.local_day(dt_util.get_default_time_zone())
+        out = {}
+        for arr in self.arrays.values():
+            change = pt.clear_change(self.site, arr.geometry)
+
+            def keep(t: float, since=arr.valid_since) -> bool:
+                return (since is None or t >= since) and not any(a <= t < b for a, b in exclusions)
+
+            for s in arr.sensors:
+                f = history.factors.get(s, 1.0)
+                mean, low, high = ({t: v * f for t, v in (series.get(s) or {}).items() if v is not None and keep(t)}
+                                   for series in (history.power, history.power_min, history.power_max))
+                found = pt.detect(mean, low, high, now, day_of, change,
+                                  {t: v for t, v in (fine.get(s) or {}).items() if keep(t)})
+                if found is not None:
+                    out[s] = found.as_dict()
+        return out
+
+    def dismiss_limit(self, sensors: list[str], peak_w: float) -> None:
+        """The user said these sensors have no limit at this level: no notice until the level moves (plateau.py)."""
+        self.limits["dismissed"].update({s: float(peak_w) for s in sensors})
+        self._store.async_delay_save(self._store_data, 5)
+        self.async_update_listeners()
+
     def _run_backtest(self, learned: dict[str, LearnedArray], archive: dict, history: ln.PvHistory, now: float,
                       soc_full: float, exclusions: list[tuple[float, float]]) -> dict:
         """Executor. On copies: whatever happens here cannot reach the learned state or the archive."""
@@ -464,6 +502,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
         self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
         self.learned.update(learned)          # applied in one step on the event loop
+        try:
+            fine = {s: fn.series(self.fine, s) for a in self.arrays.values() for s in a.sensors}
+            self.limits["detected"] = await self.hass.async_add_executor_job(
+                self._detect_limits, history, now.timestamp(), exclusions, fine)
+        except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
+            _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
         self.band = await self.hass.async_add_executor_job(self._learn_band)
         await self._async_forecast_error()
         if self.house_load:

@@ -655,6 +655,35 @@
     "array_check": {
       "title": "PV array {name}: configuration does not fit the measurements",
       "description": "The measurements of **{name}** do not fit its configuration: peak power, tilt, azimuth or the power sensor may be wrong. In the Noxcast panel under *Learned*, the array shows what to check. Learned shade and efficiency stay questionable until it fits. After a correction, this report goes away with the next learning run (at night, or *Learn again now* in the panel)."
+    },
+    "limit_suggestion": {
+      "title": "PV array {name}: power seems to be limited at {peak} W",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Power limit for {name}?",
+            "description": "{sensors} never delivered more than {peak} W per sensor in the last {window_days} days, and stayed flat at that level on {flat_days} days while the sun would have changed it. This looks like a limit of the inverter or of its input.\n\nSet a limit of {limit} W per sensor? The forecast of **{name}** is then capped at it. Until you answer, nothing changes.",
+            "menu_options": {
+              "set_limit": "Set limit of {limit} W",
+              "other_value": "Other value",
+              "no_limit": "There is no limit"
+            }
+          },
+          "other_value": {
+            "title": "Power limit for {name}",
+            "description": "The most one sensor of **{name}** delivers, in W as the power sensors measure it ({sensors}). The measurements stayed at {peak} W.",
+            "data": {
+              "limit_w": "Each sensor delivers at most"
+            },
+            "data_description": {
+              "limit_w": "Applies to every sensor of this array. You can change or remove it later in the array's settings under *Power limit*."
+            }
+          }
+        },
+        "abort": {
+          "limit_gone": "The suggestion no longer holds: the array has a limit already, or its measurements no longer show one."
+        }
+      }
     }
   }
 }

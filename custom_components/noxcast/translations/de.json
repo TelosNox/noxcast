@@ -655,6 +655,35 @@
     "array_check": {
       "title": "PV-Gruppe {name}: Konfiguration passt nicht zu den Messwerten",
       "description": "Die Messwerte von **{name}** passen nicht zur Konfiguration: Spitzenleistung, Neigung, Azimut oder der Leistungssensor sind vielleicht falsch. Im Noxcast-Panel unter *Gelerntes* steht an der Gruppe, was zu prüfen ist. Bis es passt, sind gelernter Schatten und Wirkungsgrad fraglich. Nach einer Korrektur verschwindet die Meldung mit dem nächsten Lernlauf (nachts oder mit *Jetzt neu lernen* im Panel)."
+    },
+    "limit_suggestion": {
+      "title": "PV-Gruppe {name}: Leistung scheint bei {peak} W begrenzt",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Leistungsgrenze für {name}?",
+            "description": "{sensors} hat in den letzten {window_days} Tagen nie mehr als {peak} W je Sensor geliefert und blieb an {flat_days} Tagen flach auf diesem Wert, während die Sonne ihn verändert hätte. Das sieht nach einer Grenze des Wechselrichters oder seines Eingangs aus.\n\nEine Grenze von {limit} W je Sensor setzen? Die Prognose von **{name}** wird dann darauf begrenzt. Bis du antwortest, ändert sich nichts.",
+            "menu_options": {
+              "set_limit": "Grenze von {limit} W setzen",
+              "other_value": "Anderer Wert",
+              "no_limit": "Es gibt keine Grenze"
+            }
+          },
+          "other_value": {
+            "title": "Leistungsgrenze für {name}",
+            "description": "Das Höchste, was ein Sensor von **{name}** liefert, in W, wie die Leistungssensoren messen ({sensors}). Die Messwerte blieben bei {peak} W.",
+            "data": {
+              "limit_w": "Jeder Sensor liefert höchstens"
+            },
+            "data_description": {
+              "limit_w": "Gilt für jeden Sensor dieser PV-Gruppe. Ändern oder entfernen kannst du sie später in den Einstellungen der PV-Gruppe unter *Leistungsgrenze*."
+            }
+          }
+        },
+        "abort": {
+          "limit_gone": "Der Vorschlag gilt nicht mehr: Die PV-Gruppe hat schon eine Grenze, oder ihre Messwerte zeigen keine mehr."
+        }
+      }
     }
   }
 }

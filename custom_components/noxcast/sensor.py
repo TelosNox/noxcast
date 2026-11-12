@@ -165,7 +165,7 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
             attrs["correction"] = data.correction.get(self._sub_id)
         # a fixed power limit: what the cap takes off this value (Wh), and the array's limit
         uncapped = data.uncapped.get(self.entity_description.series, {}).get(self._sub_id) if data is not None else None
-        if uncapped is not None:
+        if uncapped is not None and (self._sub_id is TOTAL or self._sub_id in data.limits):
             if self._sub_id is not TOTAL:
                 attrs["limit_w"] = data.limits.get(self._sub_id)
             above = (self.entity_description.value(uncapped) or 0.0) - (self.native_value or 0.0)

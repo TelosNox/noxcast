@@ -129,3 +129,31 @@ def test_record_archive_flags_the_hours_of_a_limited_array():
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
     ln.record_archive(plain, SITE, ARRAYS, {}, history, t + 7200, 95.0)
     assert "limited" not in plain["2026-06-01"]["hours"][str(t)]
+
+
+def test_band_learning_leaves_out_hours_whose_forecast_was_capped():
+    store = {}
+    for d in range(50):
+        hours = {}
+        for h in (11, 12):
+            t = DAY_START + d * 86400 + h * 3600
+            hours[str(t)] = {"ghi": 800.0, "forecast": {"a": 400.0 if h == 12 else 300.0}, "actual": {"a": 200.0}}
+        store[(DAY.date() + timedelta(days=d)).isoformat()] = {"hours": hours}
+    kwargs = dict(clear_ghi=lambda ts: 900.0, clear_wh=lambda ts, ids: 1000.0)
+    every = bd.learn_band(store, **kwargs)
+    skipped = bd.learn_band(store, **kwargs, limits={"a": 400.0})
+    assert every["hourly"]["all"][2] == 100 and skipped["hourly"]["all"][2] == 50
+    assert skipped["hourly"]["all"][0] == -0.1                          # only the uncapped hours: (200 - 300) / 1000
+
+
+def test_the_archived_model_on_measured_weather_is_capped_like_the_forecast():
+    t = DAY_START + 12 * 3600
+    store = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
+    history = ln.PvHistory({"pv1": {t: 199.0}, "pv2": {t: 196.0}}, {}, {"pv1": {t: 200.0}, "pv2": {t: 199.0}}, {}, {},
+                           {t: 20.0}, {t: 900.0})
+    learned = {"a": model.LearnedArray(), "b": model.LearnedArray()}
+    ln.record_archive(store, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, 95.0, LIMITED)
+    assert store["2026-06-01"]["hours"][str(t)]["measured"]["a"] <= 400.0 + 1e-6
+    plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
+    ln.record_archive(plain, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, 95.0)
+    assert plain["2026-06-01"]["hours"][str(t)]["measured"]["a"] > 600.0

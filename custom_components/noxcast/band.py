@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from . import archive as fc_archive
+from .curtailment import LIMIT_MARGIN
 from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
 from .solar import Site
 from .const import Series
@@ -54,12 +55,15 @@ def _summary(groups: dict[str, list[float]], minimum: int) -> dict:
 
 
 def learn_band(archive: dict, clear_ghi: Callable[[float], float],
-               clear_wh: Callable[[float, list[str]], float], keep: Callable[[float], bool] | None = None) -> dict:
+               clear_wh: Callable[[float, list[str]], float], keep: Callable[[float], bool] | None = None,
+               limits: dict[str, float] | None = None) -> dict:
     """{"version", "daily": {class: [q10, q90, n]}, "hourly": {...}} of clearness shifts.
 
     clear_wh(hour_start, array ids): clear-sky output of these arrays in that hour (Wh), from the
     current learned model. Classes with too little data are left out. keep(hour_start): only these
-    hours count (meant to select whole days, see learning.py).
+    hours count (meant to select whole days, see learning.py). limits: arrays with a fixed limit (W); an hour
+    whose archived forecast of such an array reached it is left out, since that forecast was capped and its
+    shift would not be one of the clouds.
     """
     daily: dict[str, list[float]] = {}
     hourly: dict[str, list[float]] = {}
@@ -69,6 +73,8 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
         f_sum = a_sum = c_sum = ghi_sum = clear_sum = 0.0
         for h in day.hours:
             if h.curtailed or h.limited or (keep is not None and not keep(h.ts)):
+                continue
+            if limits and any(h.forecast.get(sid, 0.0) >= (1 - LIMIT_MARGIN) * w for sid, w in limits.items()):
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())
@@ -120,13 +126,13 @@ def hour_band(band: dict | None, hours: Series, clear: Series,
 
 
 def from_archive(archive: dict, site: Site, geometries: dict[str, ArrayGeometry], learned: dict[str, LearnedArray],
-                 keep: Callable[[float], bool] | None = None) -> dict:
+                 keep: Callable[[float], bool] | None = None, limits: dict[str, float] | None = None) -> dict:
     """The band of the current learned model: clear-sky output of the arrays still configured."""
     def clear_wh(ts: float, ids: list[str]) -> float:
         sky = [clearsky_weather(site, ts)]
         return sum(forecast(site, geometries[sid], learned.get(sid, LearnedArray()), sky).get(ts, 0.0)
                    for sid in ids if sid in geometries)
-    return learn_band(archive, lambda ts: clearsky_weather(site, ts).ghi, clear_wh, keep)
+    return learn_band(archive, lambda ts: clearsky_weather(site, ts).ghi, clear_wh, keep, limits)
 
 
 def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], total: Series,

@@ -428,12 +428,23 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.pv_backtest = result
         self._store.async_delay_save(self._store_data, 5)
 
+    def _near_limit(self, history: ln.PvHistory) -> pv_backtest.NearLimit | None:
+        """(array id, hour start) -> the hour was at the array's fixed limit; None without limits."""
+        limited = self.installation.limited_arrays()
+        if not limited:
+            return None
+        peaks = {s: {t: v * history.factors.get(s, 1.0) for t, v in values.items() if v is not None}
+                 for s, values in history.power_max.items()}
+        hours = {sid: ct.limited_hours(self.installation, sid, peaks) for sid in limited}
+        return lambda sid, t: t in hours.get(sid, ())
+
     def _run_backtest(self, learned: dict[str, LearnedArray], archive: dict, history: ln.PvHistory, now: float,
                       soc_full: float, exclusions: list[tuple[float, float]]) -> dict:
         """Executor. On copies: whatever happens here cannot reach the learned state or the archive."""
         start = time.monotonic()
         result = pv_backtest.run(self.site, self.arrays, copy.deepcopy(learned), history, copy.deepcopy(archive), now,
-                                 soc_full, exclusions, dt_util.get_default_time_zone())
+                                 soc_full, exclusions, dt_util.get_default_time_zone(),
+                                 limits=self.installation.limited_arrays(), near_limit=self._near_limit(history))
         seconds = round(time.monotonic() - start, 1)
         _LOGGER.info("PV backtest took %.1f s: replay %s, hold-out %s", seconds, result["replay"]["total"],
                      result["holdout"]["total"])
@@ -516,7 +527,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
         return bd.from_archive(self._eval_archive(), self.site, {sid: a.geometry for sid, a in self.arrays.items()},
-                               self.learned)
+                               self.learned, limits=self.installation.limited_arrays())
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:
         """House load and consumer power in W: {sensor: {hour start: mean W}}.

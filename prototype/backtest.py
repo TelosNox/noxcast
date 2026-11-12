@@ -69,7 +69,7 @@ def _array(cfg: dict, tz: ZoneInfo) -> tuple[str, ln.ArrayConfig]:
 
 
 def _cell(s: dict) -> str:
-    if not s["hours"]:
+    if not s["hours"] or s["hour_error"] is None:          # no hours, or no actual energy in them
         return "–"
     return f"{100 * s['hour_error']:.1f} % / {100 * s['bias']:+.1f} %"
 

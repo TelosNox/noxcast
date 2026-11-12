@@ -29,7 +29,7 @@ from . import explain
 from . import fine as fn
 from . import learning as ln
 from .band import CLEARNESS_MAX
-from .model import LearnedArray, clearsky_weather, forecast, measured_forecast, usable_samples
+from .model import LearnedArray, clearsky_weather, forecast, measured_forecast, steady_hours, usable_samples
 from .solar import Site, sun_position
 from .const import Series
 
@@ -237,7 +237,8 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
         return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}
 
     for sid, run in runs.items():
-        steady = ln.array_samples(good[sid], history, soc_full, exclusions)[1]
+        steady = steady_hours([(history.power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
+                               for s in good[sid].sensors])
         near = (lambda t, sid=sid: near_limit(sid, t)) if near_limit is not None else None
         sets = subsets(site, tests[sid], clear[sid], steady, day_of, near)
         out[sid] = {**result(run), "scorecard": scorecard(run, sets, day_of)}

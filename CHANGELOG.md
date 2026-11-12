@@ -16,6 +16,12 @@ breaking changes.
 - Panel, Overview: *So far* and the badge at the top (*As forecast*, *Sunnier* or *Duller than forecast*) compare
   the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
   measured hours during the day, so a day far below the morning forecast could still show *As forecast*.
+- The forecast archive keeps 400 days instead of 120, and the *Day* page goes back as far. For each day from now
+  on it also keeps the published P10–P90 range, the split of the irradiance into direct and diffuse for each
+  weather model, and the intraday correction applied each hour. Nothing changes in the forecast, the range or the
+  *Forecast accuracy* page, which still use the last 120 days: a year of days allows seasonal checks of the range
+  and the corrections and a fair comparison of weather sources later. The archive grows to about 9 MB over a year
+  with two arrays.
 
 ## [0.3.1] - 2026-11-09
 

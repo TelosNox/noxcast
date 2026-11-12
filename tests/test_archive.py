@@ -1,5 +1,6 @@
 """Forecast archive: snapshot, actuals, pruning and error."""
 import copy
+import json
 from datetime import date
 
 from conftest import load
@@ -175,3 +176,66 @@ def test_merged_keeps_what_the_loop_changed_meanwhile():
     assert str(int(T0 + 6 * 3600)) in out[DAY.isoformat()]["history"]
     untouched = {DAY.isoformat(): base[DAY.isoformat()]}
     assert archive.merged(untouched, base, work)[DAY.isoformat()] is work[DAY.isoformat()]
+
+
+def _new_fields(a):
+    split = {T0 + h * 3600: (300.0 + h, 40.04) for h in range(24)}
+    split[T0 + 2 * 3600] = (None, 40.0)                                        # one value missing: none kept
+    alt = {"icon": ({T0 + h * 3600: 50.0 * h for h in range(24)}, {"roof": {}})}
+    alt_split = {"icon": {T0 + 3600: (210.26, 30.0)}}
+    band = {T0 + 3600: (80.04, 120.06)}
+    archive.snapshot(a, DAY, "x", _weather(), {"roof": {}}, alt, split=split, alt_split=alt_split, band=band,
+                     day_band=[4.1234, 7.5678])
+
+
+def test_band_split_and_shift_are_stored_compactly():
+    a = {}
+    _new_fields(a)
+    day = a[DAY.isoformat()]
+    hours = day["hours"]
+    assert day["band"] == [4.123, 7.568]
+    assert {"dni", "dhi", "band"}.isdisjoint(hours[str(int(T0))])               # no light, no band published
+    assert hours[str(int(T0 + 3600))]["dni"] == 301.0 and hours[str(int(T0 + 3600))]["dhi"] == 40.0
+    assert hours[str(int(T0 + 3600))]["band"] == [80.0, 120.1]
+    assert "dni" not in hours[str(int(T0 + 2 * 3600))] and "band" not in hours[str(int(T0 + 2 * 3600))]
+    assert hours[str(int(T0 + 3600))]["alt"]["icon"]["dni"] == 210.3
+    assert "dni" not in hours[str(int(T0 + 2 * 3600))]["alt"]["icon"]
+    assert archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0}, {"roof": 0.12345, "wall": None})
+    assert archive.add_history(a, DAY, T0 + 7 * 3600, {T0 + 10 * 3600: 500.0}, {"roof": None})   # no shift: none kept
+    assert a[DAY.isoformat()]["shift"] == {str(int(T0 + 6 * 3600)): {"roof": 0.123}}
+    archive.snapshot(a, DAY, "y", _weather(), {"roof": {}})                       # kept on a later snapshot
+    assert a[DAY.isoformat()]["shift"] == {str(int(T0 + 6 * 3600)): {"roof": 0.123}} and "band" not in a[DAY.isoformat()]
+
+
+def test_recent_selects_days_without_copying_them():
+    a = {"2026-10-11": {}, "2026-10-12": {}, "2026-10-13": {}}
+    out = archive.recent(a, date(2026, 10, 12))
+    assert list(out) == ["2026-10-12", "2026-10-13"] and out["2026-10-12"] is a["2026-10-12"]
+
+
+def test_old_rows_load_without_the_new_fields():
+    # a store as written before the band, the irradiance split and the shift were archived
+    old = {"days": {DAY.isoformat(): {"issued": "x", "hours": {str(int(T0 + h * 3600)): {
+        "ghi": 100.0, "temp": 12.0, "forecast": {"roof": 9.0}, "alt": {"icon": {"ghi": 90.0, "forecast": {"roof": 8.0}}}}
+        for h in range(24)}, "history": {str(int(T0 + 6 * 3600)): {str(int(T0 + 10 * 3600)): 500}}}}}
+    d = archive.day(archive.from_store(old), DAY)
+    h = d.hours[0]
+    assert d.band is None and d.shift == [] and d.models == [] and len(d.history) == 1
+    assert h.dni is None and h.dhi is None and h.band is None and h.ens == {}
+    assert h.alt["icon"].dni is None and h.alt["icon"].dhi is None and h.alt["icon"].ghi == 90.0
+
+
+def test_store_round_trip_keeps_old_and_new_days():
+    a = {"2026-10-12": {"issued": "x", "hours": {str(int(T0 - 86400 + h * 3600)): {"ghi": 1.0, "forecast": {}}
+                                                 for h in range(24)}}}
+    _new_fields(a)
+    archive.add_history(a, DAY, T0 + 6 * 3600, {T0 + 10 * 3600: 500.0}, {"roof": 0.1})
+    archive.add_actuals(a, "roof", {T0 + 3600: 42.0}, before=T0 + 7200, curtailed={T0 + 3600})
+    loaded = archive.from_store(json.loads(json.dumps(archive.to_store(a))))     # what the Store writes and reads
+    assert loaded == a
+    old, new = archive.days(loaded)
+    assert old.band is None and old.hours[0].dni is None
+    h = new.hours[1]
+    assert new.band == [4.123, 7.568] and new.shift == [(T0 + 6 * 3600, {"roof": 0.1})]
+    assert (h.dni, h.dhi, h.band, h.actual, h.curtailed) == (301.0, 40.0, [80.0, 120.1], {"roof": 42.0}, True)
+    assert h.alt["icon"].dni == 210.3 and h.alt["icon"].dhi == 30.0

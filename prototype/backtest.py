@@ -16,6 +16,7 @@ JSON. To compare two model versions, run this script from both checkouts on the 
 --fine        the 5-minute archive, as stored (.storage/noxcast.<entry id>.fine) or plain {"days": ...}; optional.
               Adds "fine_holdout": would learning from it be better? Takes much longer than the rest.
 --now         ISO time of the run, the reference for ageing; default: the last hour of the statistics.
+--scorecard   print the hold-out scorecard as a Markdown table instead of the JSON, for a pull request.
 
 All these files hold personal data and stay out of the repository (*.local.json, prototype/data/).
 """
@@ -67,6 +68,27 @@ def _array(cfg: dict, tz: ZoneInfo) -> tuple[str, ln.ArrayConfig]:
     return sid, ln.ArrayConfig(sid, cfg["name"], tuple(cfg["sensors"]), geometry, valid_since, cfg.get("temp_coeff"))
 
 
+def _cell(s: dict) -> str:
+    if not s["hours"]:
+        return "–"
+    return f"{100 * s['hour_error']:.1f} % / {100 * s['bias']:+.1f} %"
+
+
+def scorecard_table(holdout: dict, names: dict[str, str]) -> str:
+    """The scorecard per array: hour error / bias of hold-out and in-sample, and the hours, per subset."""
+    cards = {sid: r["scorecard"] for sid, r in holdout["arrays"].items() if "scorecard" in r}
+    head = ["Subset"] + [f"{names[sid]} {part}" for sid in cards for part in ("hold-out", "in-sample", "hours")]
+    rows = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    subsets = list(dict.fromkeys(name for card in cards.values() for name in card))
+    for name in subsets:
+        cells = [name]
+        for card in cards.values():
+            part = card.get(name)
+            cells += [_cell(part["holdout"]), _cell(part["in_sample"]), str(part["holdout"]["hours"])] if part else ["–"] * 3
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows + ["", "Hour error / bias in % of the actual energy."])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest of the PV model on exported data")
     parser.add_argument("--config", required=True)
@@ -76,6 +98,7 @@ def main() -> None:
     parser.add_argument("--archive")
     parser.add_argument("--fine")
     parser.add_argument("--now")
+    parser.add_argument("--scorecard", action="store_true")
     args = parser.parse_args()
 
     config = json.loads(pathlib.Path(args.config).read_text(encoding="utf-8"))
@@ -110,6 +133,9 @@ def main() -> None:
         fine = fine.get("data", fine).get("days", {})
         result["fine_holdout"] = backtest.fine_holdout(site, arrays, history, fine, now, soc_full, exclusions, tz)
     names = {sid: arr.name for sid, arr in arrays.items()}
+    if args.scorecard:
+        print(scorecard_table(result["holdout"], names))
+        return
     print(json.dumps({"names": names, "seconds": {"learning": round(learning, 1),
                                                    "backtest": round(time.monotonic() - start - learning, 1)}, **result},
                      indent=2))

@@ -631,6 +631,15 @@ same hours: those learning uses (`usable_samples`: validity, full battery, exclu
 also without the archive's `curtailed` flag. Too little data (replay: 7 days; hold-out: 14 days and 60 hours in
 each half; or no satellite irradiance) gives an explicit `not_enough_data` with the reason, not a number.
 
+**Scorecard (#247):** the overall hold-out error hardly moves when a change acts where little energy is: steady
+hours are at a few percent already, and low winter sun carries a small share of the year. So each array's hold-out
+also carries a fixed `scorecard`: hold-out and in-sample with the same metrics on fixed subsets of its hours, the
+sun position taken at the middle of the hour. `all`; `low_sun` (elevation below 20°); `winter` (the four darkest
+local months, by hemisphere); `morning` and `afternoon` (sun east or west of the meridian, both at 10–30°
+elevation, so the two sides compare at equal elevation); `above_clear` (actual above 1.05 × the clear-sky output of
+the hold-out model, the band's bound: hours where that bound cuts real output); `steady` (calm sky,
+`model.steady_hours`); and `near_limit` once a power limit is known (`run(..., near_limit=)`).
+
 The coordinator starts it after the nightly learning as a background task in the executor, on the
 history that run fetched and on copies of the learned state and the archive. It writes nothing to
 either; a failure is logged and the last result stays. It does not run after a manual relearn. The
@@ -642,7 +651,8 @@ sends it to the accuracy view. No entities or attributes.
 **Rule for model changes:** a change of the model must show before its PR that it is better on
 unlearned days. `prototype/backtest.py` runs the same functions on exported data and prints the metrics
 as JSON; run it from both checkouts on the same files and put the hold-out, in-sample and baseline
-numbers per array into the PR. Better in-sample with a worse hold-out is overfitting and does not count.
+numbers per array into the PR, and the scorecard table (`--scorecard`) from both. Better in-sample with a worse
+hold-out is overfitting and does not count.
 
 **5-minute data (#130):** `backtest.fine_holdout` asks whether the 5-minute archive makes a better model. It
 learns per half of the archive's days from hours and from 5-minute means (`learning.fine_history`), and tests

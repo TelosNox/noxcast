@@ -25,6 +25,7 @@ from collections.abc import Callable
 from datetime import date, datetime, tzinfo
 
 from . import archive as fc_archive
+from . import curtailment as ct
 from . import explain
 from . import fine as fn
 from . import learning as ln
@@ -101,10 +102,13 @@ def summed(parts: list[Pairs]) -> Pairs:
 
 
 def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-           archive: dict, soc_full: float, exclusions: list[tuple[float, float]], day_of: Callable[[float], date]) -> dict:
+           archive: dict, soc_full: float, exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
+           limits: dict[str, float] | None = None) -> dict:
     """{"arrays": {id: result}, "total": result}: result = {"status", "then", "now", "baseline"} or not enough data.
 
-    Complete archived days only, as in archive.day_totals. All three on the same hours.
+    Complete archived days only, as in archive.day_totals. All three on the same hours. limits: arrays with a
+    fixed limit (W); the archived forecast was capped, so the replay is capped too (on the hourly mean: the
+    replay has no sub-steps).
     """
     known = {sid: arr for sid, arr in arrays.items() if sid in learned}
     geometries = {sid: arr.geometry for sid, arr in known.items()}
@@ -124,10 +128,13 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
                     continue
                 then, actual = h.forecast[sid], h.actual[sid]
                 fc = now[sid].get(h.ts, {}).get("result", 0.0)
+                bare_fc = base[sid].get(h.ts, {}).get("result", 0.0)
+                if limits and sid in limits:
+                    fc, bare_fc = ct.cap_hour(fc, limits[sid], None), ct.cap_hour(bare_fc, limits[sid], None)
                 if _lit(then, fc, actual):
                     run["then"][h.ts] = (then, actual)
                     run["now"][h.ts] = (fc, actual)
-                    run["baseline"][h.ts] = (base[sid].get(h.ts, {}).get("result", 0.0), actual)
+                    run["baseline"][h.ts] = (bare_fc, actual)
 
     def result(parts: dict[str, Pairs]) -> dict:
         n = len({day_of(t) for t in parts["now"]})
@@ -321,14 +328,15 @@ def local_day(tz: tzinfo) -> Callable[[float], date]:
 
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
         archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo,
-        near_limit: NearLimit | None = None) -> dict:
+        near_limit: NearLimit | None = None, limits: dict[str, float] | None = None) -> dict:
     """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing.
 
     near_limit: (array id, hour start) -> whether the hour was near a power limit; adds that scorecard subset.
+    limits: arrays with a fixed limit (W), for the replay.
     """
     day_of = local_day(tz)
     return {"version": VERSION, "computed_at": now,
-            "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of),
+            "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of, limits),
             "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit)}
 
 

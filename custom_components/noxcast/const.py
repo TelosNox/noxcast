@@ -64,6 +64,8 @@ CONF_HEATING = "heating"                 # cell heating in K at 1000 W/m², depe
 # further orientations of one array (modules facing different ways, measured together), each a section
 # with tilt, azimuth and its own peak power; the main fields above are then the first orientation
 CONF_ORIENTATIONS = ("orientation_2", "orientation_3", "orientation_4")
+# fixed power limit per power sensor (MPPT, micro-inverter): {entity_id: W}; not part of the geometry key
+CONF_SENSOR_LIMITS = "sensor_limits"
 
 # options (advanced): history archives used for learning
 CONF_ARCHIVE_TEMPERATURE = "archive_temperature"

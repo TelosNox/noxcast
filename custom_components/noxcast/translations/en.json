@@ -117,6 +117,16 @@
                 "peak_power": "Sum of module nameplate power of this orientation."
               }
             },
+            "limits": {
+              "name": "Power limit",
+              "description": "Only if the modules deliver more than an MPPT input or a micro-inverter lets through, so the power stays flat at a maximum on sunny days.",
+              "data": {
+                "sensor_limit_w": "Each sensor delivers at most"
+              },
+              "data_description": {
+                "sensor_limit_w": "The limit of one input or micro-inverter in W, as one of the power sensors above measures it (e.g. 800 for an 800 W micro-inverter). Applies to every sensor of this array. The forecast is capped at it; empty = no limit."
+              }
+            },
             "advanced": {
               "name": "Advanced",
               "description": "Usually not needed.",
@@ -180,6 +190,16 @@
               },
               "data_description": {
                 "peak_power": "Sum of module nameplate power of this orientation."
+              }
+            },
+            "limits": {
+              "name": "Power limit",
+              "description": "Only if the modules deliver more than an MPPT input or a micro-inverter lets through, so the power stays flat at a maximum on sunny days.",
+              "data": {
+                "sensor_limit_w": "Each sensor delivers at most"
+              },
+              "data_description": {
+                "sensor_limit_w": "The limit of one input or micro-inverter in W, as one of the power sensors above measures it (e.g. 800 for an 800 W micro-inverter). Applies to every sensor of this array. The forecast is capped at it; empty = no limit."
               }
             },
             "advanced": {

@@ -334,10 +334,11 @@ orientation changes the geometry key and starts relearning.
 
 ## Requirements
 
-- **Primary measurement required:** power per array, preferably DC per MPPT. Systems whose
-  inverter clips systematically (e.g. 800 W inverter on 2 kWp) are rejected during setup:
-  if more than ~20 % of clear midday hours sit on a plateau, geometry, efficiency and shading
-  cannot be learned. Occasional clipping is detected and excluded from learning.
+- **Primary measurement required:** power per array, preferably DC per MPPT. A system whose input or
+  inverter clips systematically (e.g. 800 W micro-inverter on 2 kWp) needs its limit configured per sensor, so
+  the forecast is capped (see Data filters); efficiency and shade at high sun are only partly identifiable
+  there, since the modules never show what they could deliver. Neither setup nor learning detects clipping
+  by itself yet.
 - **Open-Meteo as the only weather source** (GHI / DNI / DHI, free for non-commercial use, no key).
   Global irradiance is split into direct and diffuse (e.g. Erbs) if only GHI is available.
   - Several models are averaged hour by hour (GHI, DNI and DHI alike, so the mean stays
@@ -388,14 +389,25 @@ orientation changes the geometry key and starts relearning.
 
 ## Data filters
 
-- Curtailment: full battery with zero export, export limits, inverter AC limit (learned as a
-  plateau and applied as a cap in the forecast).
+- Curtailment by a state (`curtailment.py`): an hour in which the highest state of charge of the configured
+  batteries reaches "full" is left out of learning and flagged `curtailed` in the archive. Export limits and an
+  inverter AC limit behind a battery are not detected yet (devices, #250).
+- Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,
+  micro-inverter). An hour whose maximum reaches 95 % of it is at the limit (`limited` in the archive; the band
+  skips it, the forecast error does not, since forecast and measurement are both capped). It still enters
+  learning: dropping it selects hours on their measured value, and with a strong limit only clouded and shaded
+  "clear" hours stay. Experiment E1 (#248, limits at 50 % and 70 % of the P99 of two unclipped arrays): dropping
+  moved the efficiency by -4 to -90 points against -3 to -15 for keeping, and the hold-out error rose in 3 of 4
+  cases. Kept hours bend efficiency and midday shade low; the forecast cap hides most of it on sunny hours.
+  Learning that counts them as lower bounds ("at least this much") is the planned fix. There is no automatic
+  plateau detection yet; a detected limit will only act after the user confirms it.
 - Snow: zero output under clear sky and frost.
 - Outages: `unavailable`, all-zero days, incomplete hours.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
   its mean (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are
   left out of efficiency, direction factor, reflection and the clear-hour median of the shading
-  map – unless the sensors disagree strongly, which is a shadow on part of the array.
+  map – unless the sensors disagree strongly, which is a shadow on part of the array. A fully clipped hour is the
+  steadiest hour there is: this filter does not remove a plateau.
 - Time reference: an hourly mean belongs to the sun position at the middle of the hour.
   Learning and forecasting (`model.py`) also take another period length: a sample is the mean of that
   period, and minimum numbers of hours stay the same observed time. Everything running uses hours.
@@ -408,7 +420,7 @@ orientation changes the geometry key and starts relearning.
   output of the current learned model, grouped by the clearness of the forecast (overcast below
   0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI), gives the 10th and 90th
   percentile; a class with fewer than 8 days (40 hours) falls back to all days together, and hours
-  with possible curtailment are left out. The band varies the clouds, not the output: P10 and P90
+  with possible curtailment or at a fixed limit are left out. The band varies the clouds, not the output: P10 and P90
   stay between no sun and a clear sky plus 5 % (geometry and shading errors, cloud enhancement), or the
   forecast itself if the weather source reports more irradiance than the clear-sky model.
   A first version used the ratio actual / forecast; on a mixed day it put P90 at 2.2 times the

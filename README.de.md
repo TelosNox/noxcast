@@ -33,7 +33,7 @@ deinem Verlauf, was auf deinem Dach anders ist.
 | **Erklärung** | Je Stunde vom klaren Himmel über Wolken, Schatten, Reflexion, Richtung und Wärme bis zur Prognose. Keine Blackbox: zuerst Physik, dann gelernte Werte, zuletzt eine statistische Korrektur. |
 | **Bandbreite** | P10–P90 aus deinem eigenen Archiv vergangener Prognosen. Es verschiebt die Wolken und liegt deshalb nie über klarem Himmel. |
 | **Genauigkeit** | Jede Vortagsprognose wird archiviert und mit dem verglichen, was passiert ist. Mit dem Satellitenfilter (eine Option) wird der Fehler jedes Tages in Wetteranteil und Modellanteil aufgeteilt. |
-| **Datenqualität** | Stunden mit vollem Akku, Nulleinspeisung, Wechselrichtergrenze oder Ausfällen bleiben beim Lernen außen vor. |
+| **Datenqualität** | Stunden mit vollem Akku, ausgeschlossenen Zeiträumen oder Ausfällen bleiben beim Lernen außen vor. Eine Leistungsgrenze eines Eingangs oder Mikrowechselrichters deckelt die Prognose. |
 | **Montage** | Mehrere Ausrichtungen an einem Eingang (Ost + West, senkrechte Balkonmodule) als eine PV-Gruppe. |
 | **Wetter** | Open-Meteo, ICON und ECMWF IFS stundenweise gemittelt. Kein Konto, kein API-Schlüssel, kostenlos für private Nutzung. |
 | **Datenschutz** | Läuft in Home Assistant. Nur deine Koordinaten gehen an Open-Meteo. |
@@ -189,6 +189,7 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 | Konfiguration gültig seit (*Erweitert*) | Optional: Verlauf vor diesem Datum ignorieren (z. B. nach einem Umbau) |
 | Temperaturkoeffizient (*Erweitert*) | Optional: Pmax-Koeffizient aus dem Datenblatt in %/K; sonst gelernt |
 | Montage | Frei hinterlüftet (Balkon, Aufständerung; 30 K Erwärmung der Zellen bei 1000 W/m²), dachparallel (50 K) oder ins Dach integriert (60 K). Ein eigener Wert in K steht unter *Erweitert* |
+| Jeder Sensor liefert höchstens (*Leistungsgrenze*) | Optional: wenn ein MPPT-Eingang oder ein Mikrowechselrichter weniger durchlässt, als die Module liefern, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt. In W, wie die Leistungssensoren messen (z. B. 800), für jeden Sensor der PV-Gruppe. Die Prognose wird darauf begrenzt |
 
 Gelernt wird sofort aus dem vorhandenen Verlauf und danach jede Nacht (01:30).
 
@@ -384,8 +385,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 ### Lernen (nachts, aus der Langzeitstatistik)
 
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
-  außen vor. Ein Plateau an der Wechselrichtergrenze wird gelernt und als Deckel angewandt. Unruhige Stunden
-  (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und Reflexion.
+  außen vor. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
+  Reflexion. Stunden an einer *Leistungsgrenze* zählen vorerst mit: Ohne sie blieben von den sonnigen Stunden nur
+  bewölkte und verschattete übrig, und der Wirkungsgrad würde noch stärker verbogen. Bei einer Grenze deutlich unter
+  dem, was die Module liefern, werden Wirkungsgrad und Mittagsschatten deshalb etwas zu niedrig gelernt; ein Lernen,
+  das diese Stunden als „mindestens so viel“ zählt, folgt später.
 - **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter, sobald die Schattenkarte genug
   freie Sonnenpositionen kennt, nur aus Stunden an diesen Positionen, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
   drückt. Die Plausibilitätsprüfung von Neigung und Azimut (*Geometrie prüfen*) nutzt ebenfalls nur freie Stunden
@@ -418,6 +422,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 - Das **P10–P90-Band** kommt aus dem Archiv: wie weit die Klarheit von Ist und Prognose an vergangenen Tagen mit
   ähnlichem Wetter auseinanderlag. Es verschiebt die Wolken und liegt deshalb nie über klarem Himmel (plus 5 % für
   Modellfehler).
+- Mit einer **Leistungsgrenze** werden Prognose, Korrektur und Band ohne sie gerechnet, und die Grenze deckelt das
+  Ergebnis zuletzt: je 10-Minuten-Schritt jeder Stunde, sodass eine Stunde, die die Grenze nur zeitweise erreicht,
+  nur diesen Teil verliert. Eine Stunde an der Grenze zählt für die Korrektur nur, wenn sie sonniger war als
+  vorhergesagt. Die Prognosesensoren der PV-Gruppe zeigen `limit_w` und `limited_wh` (Energie über der Grenze), die
+  Gesamtsensoren `limited_wh`.
 
 ### Wetter
 

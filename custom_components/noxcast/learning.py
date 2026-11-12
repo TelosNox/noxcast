@@ -15,12 +15,15 @@ from datetime import datetime, timezone, tzinfo
 from . import archive as fc_archive
 from . import arraycheck as ac
 from . import events as ev
+from . import curtailment as ct
 from . import fine as fn
 from . import load as lf
 from . import plan as pl
 from .model import (
-    HOUR, ArrayGeometry, LearnedArray, clearsky_weather, learn, measured_forecast, steady_hours, usable_samples,
+    HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
+    steady_hours, usable_samples,
 )
+from .installation import Installation
 from .solar import Site
 from .const import Series
 
@@ -216,14 +219,28 @@ def learn_arrays(site: Site, arrays: dict[str, ArrayConfig], history: PvHistory,
 
 
 def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray],
-                   history: PvHistory, now: float, soc_full: float) -> None:
-    """Add the measured hours to the day-ahead archive, and the model on measured weather (satellite)."""
+                   history: PvHistory, now: float, soc_full: float, inst: Installation | None = None) -> None:
+    """Add the measured hours to the day-ahead archive, and the model on measured weather (satellite).
+
+    inst: the installation; hours in which an array was at a fixed limit are flagged, and the model on measured
+    weather is capped like the forecast, so the split into weather and model error stays fair.
+    """
     full = {t for t, v in history.soc.items() if v >= soc_full}
+    peaks = {s: {t: v * history.factors.get(s, 1.0) for t, v in values.items() if v is not None}
+             for s, values in history.power_max.items()} if inst and inst.limited_arrays() else {}
     for sid, arr in arrays.items():
-        fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now, full)
+        limited = ct.limited_hours(inst, sid, peaks) if peaks else set()
+        fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now, full,
+                               limited)
         if history.satellite_ghi:
-            def predict(hours, geo=arr.geometry, result=learned[sid]):
-                return measured_forecast(site, geo, result, hours)
+            limit = inst.array_limit(sid) if inst else None
+
+            def predict(hours, geo=arr.geometry, result=learned[sid], limit=limit):
+                out = measured_forecast(site, geo, result, hours)
+                if limit is None:
+                    return out
+                temps = {t: temp for t, _, temp in hours}
+                return ct.cap(out, limit, lambda t: clearsky_profile(site, geo, result, t, temps.get(t), SUBSTEPS))
             fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp, predict, now)
 
 

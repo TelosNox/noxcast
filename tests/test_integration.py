@@ -345,7 +345,8 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
             context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id})
         fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         expanded = {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"}
-        assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True, "advanced": False}
+        assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True, "limits": False,
+                            "advanced": False}
         done = await hass.config_entries.subentries.async_configure(form["flow_id"], {**ARRAY, "orientation_2": {}})
         assert done["type"] is FlowResultType.ABORT
         await hass.async_block_till_done()
@@ -422,6 +423,20 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
             res["flow_id"], {**ARRAY, "mounting": "roof", "advanced": {"heating": 42, "valid_since": "2026-01-01"}})
         await hass.async_block_till_done()
         assert data("array")[1]["heating"] == 42 and data("array")[1]["valid_since"] == "2026-01-01"
+
+        # a power limit: one value for every sensor, stored per sensor; an empty one removes it
+        res = await flow("array", {**ARRAY, "limits": {"sensor_limit_w": 800}}, subentry_id=sid)
+        assert data("array")[1]["sensor_limits"] == {s: 800.0 for s in ARRAY["power_sensors"]}
+        coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert coordinator.installation.array_limit(sid) == 800.0 * len(ARRAY["power_sensors"])
+        res = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, "array"), context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": sid})
+        fields = probatio.to_field_list(res["data_schema"], custom_serializer=cv.custom_serializer)
+        limits = next(f for f in fields if f["name"] == "limits")
+        assert limits["expanded"] is True
+        await hass.config_entries.subentries.async_configure(res["flow_id"], {**ARRAY, "limits": {}})
+        await hass.async_block_till_done()
+        assert "sensor_limits" not in data("array")[1]
 
         # a consumer: the second step shows only the fields of its timing
         first = await flow("consumer", {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible"})

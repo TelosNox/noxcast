@@ -168,7 +168,7 @@ integration page (⋮ → *Add PV array* / *Add consumer* / *Add battery*).
 
 | Field | Meaning |
 |---|---|
-| Battery state of charge sensors | Hours in which a battery is full are left out of learning (output may be curtailed) |
+| Battery state of charge sensors | Hours in which a battery is full are left out of learning, and the correction of today's forecast does not read them as clouds (output may be curtailed) |
 | Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
@@ -411,7 +411,8 @@ temperature turn this irradiance into the clear-sky power of the array.
 - **Forecast today** is fixed at 06:00. **Expected today** = measured hours + the rest corrected by
   how much clearer or cloudier the last hours were than forecast (half the shift for the current
   hour, halving every further hour, never above clear sky). The running hour counts from 15
-  measured minutes.
+  measured minutes. An hour with a full battery counts only if it was sunnier than forecast: the
+  inverter may have held back, so less output says nothing about clouds.
 - The **P10–P90 band** comes from the archive: how far the clearness of actual and forecast differed
   on past days with similar weather. It shifts the clouds, so it never goes above a clear sky (plus
   5 % for model errors).

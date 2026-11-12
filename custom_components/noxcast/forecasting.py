@@ -17,7 +17,7 @@ from .explain import hour_steps
 from .const import MORNING_HOUR, TOTAL, Series
 from .effects import day_effects
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
-from .learning import ArrayConfig, ConsumerConfig, scaled_sum
+from .learning import ArrayConfig, ConsumerConfig, highest, scaled_sum
 from .model import LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast
 from .solar import Site
 
@@ -106,15 +106,32 @@ def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, f
     return hours, running
 
 
+def curtailed_hours(hourly: dict[str, dict[float, float | None]], recent: dict[str, dict[float, float | None]],
+                    live: list[float], soc_full: float, now: float) -> set[float]:
+    """Today's hour starts in which the PV was possibly curtailed: the highest state of charge reached soc_full.
+
+    The same criterion as learning (model.usable_samples) and the archive's curtailed flag. hourly: hourly
+    maxima since midnight; recent: 5-minute maxima since the previous hour, since hourly statistics come a
+    few minutes after the hour; live: the current states, which count for the running hour.
+    """
+    hours = {t for t, v in highest(hourly).items() if v >= soc_full}
+    hours |= {t - t % 3600 for t, v in highest(recent).items() if v >= soc_full}
+    if live and max(live) >= soc_full:
+        hours.add(now - now % 3600)
+    return hours
+
+
 def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray], weather: list[WeatherHour],
        models: dict[str, list[WeatherHour]], before: Today, actual: dict[str, Series],
        running: dict[str, tuple[float, float, float]], now: datetime, local_now: datetime, day_start: float,
-       day_end: float) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
+       day_end: float, curtailed: set[float] | frozenset[float] = frozenset()
+       ) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
     """PV forecast per array and in total: weather forecast, morning fix, clear sky, today's expected hours.
 
     weather: hours from local midnight to the horizon; models: each weather model on its own (for the
-    archive); now: UTC, local_now: the same in the local time zone. Returns (data, the new Today, the
-    forecast per model and array).
+    archive); now: UTC, local_now: the same in the local time zone; curtailed: today's hour starts with possibly
+    curtailed PV (curtailed_hours), which the intraday correction does not read as clouds. Returns (data, the
+    new Today, the forecast per model and array).
     """
     ts_now = now.timestamp()
     result = NoxcastData(day_start=day_start)
@@ -171,7 +188,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
             measured = profile[:round(share * len(profile))]
             if measured and sum(profile) > 0:
                 partial = Partial(start, power, share, (sum(measured) / len(measured)) / (sum(profile) / len(profile)))
-        shift = clearness_shift(day, actual.get(sub_id, {}), clear, ts_now, arr.geometry.peak_w, partial)
+        shift = clearness_shift(day, actual.get(sub_id, {}), clear, ts_now, arr.geometry.peak_w, partial, curtailed)
         result.correction[sub_id] = None if shift is None else round(shift, 3)
         result.expected[sub_id] = expected_hours(day, actual.get(sub_id, {}), clear, ts_now, shift)
         corrected = {t: v for t, v in result.expected[sub_id].items() if t > ts_now}

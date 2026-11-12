@@ -11,6 +11,11 @@ weather forecast itself is updated during the day.
 The running hour enters as a partial observation once part of it is measured (5-minute statistics):
 forecast and clear sky are scaled to the measured part with the clear-sky profile of the hour, and
 its weight is the measured share, so a change in the weather shows within half an hour.
+
+An hour in which the PV was possibly curtailed (full battery) measured less than the sun offered: it says
+the sky was at least that clear, not how clear. Such an hour can therefore raise the shift but never lower
+it; the window does not reach further back for it, since the sky an hour earlier says less about the rest
+of the day. With nothing left to compare there is no correction.
 """
 from __future__ import annotations
 
@@ -35,27 +40,39 @@ class Partial:
     profile: float               # clear-sky power over the measured part / over the whole hour
 
 
-def clearness_shift(forecast: Series, actual: Series, clear: Series,
-                    now: float, peak_w: float, partial: Partial | None = None) -> float | None:
+def clearness_shift(forecast: Series, actual: Series, clear: Series, now: float, peak_w: float,
+                    partial: Partial | None = None, curtailed: set[float] | frozenset[float] = frozenset()
+                    ) -> float | None:
     """Measured minus forecast clearness of the last hours, energy weighted; None if too dark.
 
     Observations are (actual, forecast, clear sky) of completed hours, newest first, optionally
-    preceded by the measured part of the running hour.
+    preceded by the measured part of the running hour. curtailed: hour starts in which the PV was
+    possibly curtailed; such an hour only counts where it raises the shift (see the module text).
     """
     ended = sorted((t for t in actual if t + 3600 <= now and t in forecast and t in clear),
                    reverse=True)[:WINDOW_HOURS]
-    obs = [(actual[t], forecast[t], clear[t], 1.0) for t in ended]
+    obs = [(actual[t], forecast[t], clear[t], 1.0, t in curtailed) for t in ended]
     if partial is not None and partial.share > 0 and partial.start in forecast and partial.start in clear:
         k = partial.profile
-        obs.insert(0, (partial.power, forecast[partial.start] * k, clear[partial.start] * k, partial.share))
+        obs.insert(0, (partial.power, forecast[partial.start] * k, clear[partial.start] * k, partial.share,
+                       partial.start in curtailed))
         obs = obs[:WINDOW_HOURS + 1]
-    if not obs:
+    # the weight belongs to the position in the window, so leaving out an hour does not move the others up
+    weighted = [(RECENT_WEIGHT ** i * share, a, f, c, cut) for i, (a, f, c, share, cut) in enumerate(obs)]
+    free = [o for o in weighted if not o[4]]
+    # a curtailed hour that was clearer than forecast is a lower bound of the sky: it may only raise the shift
+    raised = free + [o for o in weighted if o[4] and o[1] >= o[2]]
+    shifts = [s for s in (_shift(free, peak_w), _shift(raised, peak_w)) if s is not None]
+    return max(shifts) if shifts else None
+
+
+def _shift(obs: list[tuple[float, float, float, float, bool]], peak_w: float) -> float | None:
+    """Energy-weighted clearness difference of (weight, actual, forecast, clear sky, curtailed); None if too dark."""
+    weight = sum(w for w, *_ in obs)
+    clear_sum = sum(w * c for w, _, _, c, _ in obs)
+    if not obs or clear_sum < MIN_CLEAR_SHARE * peak_w * weight:
         return None
-    weights = [RECENT_WEIGHT ** i * share for i, (_, _, _, share) in enumerate(obs)]
-    clear_sum = sum(w * c for w, (_, _, c, _) in zip(weights, obs))
-    if clear_sum < MIN_CLEAR_SHARE * peak_w * sum(weights):
-        return None
-    deviation = sum(w * (a - f) for w, (a, f, _, _) in zip(weights, obs))
+    deviation = sum(w * (a - f) for w, a, f, _, _ in obs)
     return max(min(deviation / clear_sum, CLEARNESS_MAX), -CLEARNESS_MAX)
 
 

@@ -931,6 +931,29 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return {}, {}
         return fc.today_actual(self.arrays, power, recent, self._factors, day_start, now)
 
+    async def _async_curtailed(self, day_start: float, now: float) -> set[float]:
+        """Today's hours with possibly curtailed PV (see forecasting.curtailed_hours)."""
+        options = self.config_entry.data
+        soc_ids = list(options.get(CONF_SOC_SENSORS) or [])
+        if not soc_ids:
+            return set()
+        live = []
+        for sid in soc_ids:
+            try:
+                live.append(float(self.hass.states.get(sid).state))
+            except (AttributeError, TypeError, ValueError):
+                pass
+        hour_now = now - now % 3600
+        try:
+            hourly = await async_hourly_statistics(self.hass, soc_ids, dt_util.utc_from_timestamp(day_start), "max")
+            recent = await async_hourly_statistics(self.hass, soc_ids,
+                                                   dt_util.utc_from_timestamp(max(hour_now - 3600, day_start)),
+                                                   "max", "5minute")
+        except Exception as err:  # noqa: BLE001 – the live state still covers the running hour
+            _LOGGER.debug("Today's state of charge statistics unavailable: %s", err)
+            hourly, recent = {}, {}
+        return fc.curtailed_hours(hourly, recent, live, float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), now)
+
     async def _async_update_data(self) -> NoxcastData:
         try:
             fetched, weather, per_model = await self._async_fetch_weather()
@@ -953,10 +976,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         now = utc_now.timestamp()
         actual, running = await self._async_today_actual(day_start, now)
+        curtailed = await self._async_curtailed(day_start, now)
         learned = dict(self.learned)        # the same model for the forecast and its archived steps
         result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
             fc.pv, self.site, self.arrays, learned, weather, models, self._today, actual, running, utc_now,
-            local_now, day_start, day_end)
+            local_now, day_start, day_end, curtailed)
         result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
         result.outlook = outlook
 

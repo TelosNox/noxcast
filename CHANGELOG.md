@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Noxcast suggests a power limit when the measurements show one: if every power sensor of a PV array stays flat at
+  or near its maximum on several days while the sun would have changed the power, and never goes above it, a Repairs notice
+  asks whether to set that maximum as the array's *Power limit* (*Set limit*, *Other value*, *There is no limit*).
+  Nothing changes until you answer; "There is no limit" stops the notice until the level moves.
 - PV arrays can have a power limit (*Power limit* in the array's settings): when an MPPT input or a micro-inverter
   lets through less than the modules deliver, the forecast, *Expected today*, the P10–P90 range and the battery
   forecast are capped at it. The cap comes last, so the correction during the day and the range still see the

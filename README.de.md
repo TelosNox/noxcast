@@ -189,7 +189,7 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 | Konfiguration gültig seit (*Erweitert*) | Optional: Verlauf vor diesem Datum ignorieren (z. B. nach einem Umbau) |
 | Temperaturkoeffizient (*Erweitert*) | Optional: Pmax-Koeffizient aus dem Datenblatt in %/K; sonst gelernt |
 | Montage | Frei hinterlüftet (Balkon, Aufständerung; 30 K Erwärmung der Zellen bei 1000 W/m²), dachparallel (50 K) oder ins Dach integriert (60 K). Ein eigener Wert in K steht unter *Erweitert* |
-| Jeder Sensor liefert höchstens (*Leistungsgrenze*) | Optional: wenn ein MPPT-Eingang oder ein Mikrowechselrichter weniger durchlässt, als die Module liefern, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt. In W, wie die Leistungssensoren messen (z. B. 800), für jeden Sensor der PV-Gruppe. Die Prognose wird darauf begrenzt |
+| Jeder Sensor liefert höchstens (*Leistungsgrenze*) | Optional: wenn ein MPPT-Eingang oder ein Mikrowechselrichter weniger durchlässt, als die Module liefern, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt. In W, wie die Leistungssensoren messen (z. B. 800), für jeden Sensor der PV-Gruppe. Die Prognose wird darauf begrenzt. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter [Reparaturen](#reparaturen) vor |
 
 Gelernt wird sofort aus dem vorhandenen Verlauf und danach jede Nacht (01:30).
 
@@ -347,6 +347,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
 | Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
+| Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 
 ## Dienste
 

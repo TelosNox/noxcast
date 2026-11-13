@@ -916,7 +916,7 @@ class NoxcastCard extends HTMLElement {
       const zone = (h) => {                       // red: at the limit with surplus (lost), orange: within 5 % of it
         const f = h + H <= now ? m.socAt(h + H / 2) : sim.at(h + H / 2);
         if (f === null) return null;
-        if (f >= bat.max - 0.01 && exp(h) > lv(h)) return P.lost;
+        if (f >= bat.max - 0.02 && exp(h) > lv(h)) return P.lost;   // the tolerance of battery.LIMIT_TOLERANCE
         return f >= bat.max - 0.05 ? P.near : null;
       };
       // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable

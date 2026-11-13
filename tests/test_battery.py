@@ -30,6 +30,30 @@ def test_surplus_fills_up_then_is_lost():
     assert sim.lost_from == 11 * H and sim.max_soc == 1.0
 
 
+def test_battery_just_below_its_limit_counts_as_full_while_it_has_surplus():
+    # the battery stopped charging at 96 % with a limit of 97 %: the surplus is lost from now on
+    b = bt.Battery(5000, 0.96, max_soc=0.97, efficiency=1.0)
+    out = bt.day_simulation([b], flat(800, [14]), flat(300, [14]), None, 14 * H, 15 * H)
+    sim = out["sim"]
+    assert abs(out["held_wh"] - 50) < 1e-6
+    assert sim.full_at == 14 * H and sim.lost_from == 14 * H and sim.charged_wh == 0
+    # without surplus now the level says nothing about where it stops: it charges up to the limit later
+    out = bt.day_simulation([b], flat(800, [15]), {14 * H: 500, 15 * H: 300}, None, 14 * H, 16 * H)
+    assert out["held_wh"] == 0.0 and out["sim"].charged_wh > 0
+    # further below the tolerance it still charges up to the limit
+    out = bt.day_simulation([bt.Battery(5000, 0.94, max_soc=0.97, efficiency=1.0)], flat(800, [14]), flat(300, [14]),
+                            None, 14 * H, 15 * H)
+    assert out["held_wh"] == 0.0 and abs(out["sim"].charged_wh - 150) < 1e-6
+
+
+def test_held_back_is_per_battery():
+    full = bt.Battery(5000, 0.96, max_soc=0.97)                    # stopped: 50 Wh held back
+    charging = bt.Battery(5000, 0.50, max_soc=1.0)                 # still takes everything up to its limit
+    above = bt.Battery(1000, 0.99, max_soc=0.97)                   # above its limit: nothing to hold back
+    assert abs(bt.held_back([full, charging, above]) - 50) < 1e-6
+    assert bt.held_back([bt.Battery(5000, None)]) == 0.0
+
+
 def test_charge_power_limit_loses_surplus_without_being_full():
     b = bt.Battery(5000, 0.2, efficiency=1.0, max_charge_w=300)
     sim = bt.simulate(b, flat(1000, [12]), flat(200, [12]), 12 * H, 13 * H)

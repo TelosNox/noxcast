@@ -25,6 +25,7 @@ from .const import Series
 H = 3600.0
 COUPLING_DC, COUPLING_AC = "dc", "ac"
 DEFAULT_EFFICIENCY = {COUPLING_DC: 0.95, COUPLING_AC: 0.90}   # round trip
+LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
 
 
 @dataclass(frozen=True)
@@ -120,16 +121,18 @@ class Simulation:
 
 
 def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
-             caps: Limits | None = None) -> Simulation:
+             caps: Limits | None = None, held_wh: float = 0.0) -> Simulation:
     """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour).
 
     caps: the output caps (see limits); pv is all PV, the capped part goes to the battery only.
+    held_wh: room below the upper limit the batteries will not use (see held_back).
     """
     caps = caps or Limits()
     sim = Simulation()
     cap = battery.capacity_wh
     e = (battery.soc if battery.soc is not None else battery.min_soc) * cap
     e_max, e_min = battery.max_soc * cap, battery.min_soc * cap
+    e_max = max(e_max - held_wh, 0.0)
     eta = math.sqrt(max(0.01, min(1.0, battery.efficiency)))
     sim.points.append((now, e / cap))
     sim.max_soc, sim.max_soc_at = e / cap, now
@@ -191,6 +194,17 @@ def charge_start(pv: Series, load: Series, start: float, end: float) -> float | 
     return None
 
 
+def held_back(batteries: list[Battery]) -> float:
+    """Room (Wh) below the upper limit of the batteries that stand within the tolerance of it.
+
+    Many batteries stop charging a little below their set limit. While there is surplus, one that already
+    stands within the tolerance counts as full: else the last percent of room would hide the surplus that
+    is already lost. Per battery, so a full one does not fill up a neighbour that still charges.
+    """
+    return sum(max(b.max_soc - b.soc, 0.0) * b.capacity_wh for b in batteries
+               if b.capacity_wh > 0 and b.soc is not None and b.soc >= b.max_soc - LIMIT_TOLERANCE)
+
+
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
                    pv_arrays: dict[str, Series] | None = None) -> dict | None:
@@ -211,8 +225,11 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     # caps for every hour ahead, also past the charge start: the consumer plan for tomorrow and the card use them
     hours = sorted(t for t in set(pv) | set(load) if t + H > now)
     caps = limits(batteries, pv_arrays, hours)
-    sim = simulate(storage, pv, load, now, start, caps)
-    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps}
+    # a level near the limit only says "it stops here" while it has surplus to take, not after a discharge
+    hour = now - now % H
+    held = held_back(batteries) if pv.get(hour, 0.0) > load.get(hour, math.inf) else 0.0
+    sim = simulate(storage, pv, load, now, start, caps, held)
+    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held}
     if band_hours:
         # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
         sims = []
@@ -221,7 +238,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             # each array scaled like the total, so the caps see the weak and the strong case too
             scale = {t: variant[t] / pv[t] for t in band_hours if pv.get(t)}
             arrays = {a: {t: v * scale.get(t, 1.0) for t, v in s.items()} for a, s in pv_arrays.items()}
-            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours)))
+            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours), held))
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
                                       for s in sims],
                        "full_at": [s.full_at for s in sims]}
@@ -255,7 +272,6 @@ def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_o
 
 # ---------------------------------------------------------------- prediction against what happened
 
-LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
 PREDICTION_DAYS = 30            # predictions kept
 
 

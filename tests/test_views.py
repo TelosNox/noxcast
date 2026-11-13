@@ -196,6 +196,7 @@ def test_battery_entry_and_reviews():
     d.battery["storage"] = bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000)
     assert out["sim"] == {"full": A + 14 * H, "empty": None, "lost_wh": 11, "grid_wh": 1, "charged_wh": 100}
     assert out["storage"]["max_charge_w"] == 2000 and out["storage"]["max_discharge_w"] is None
+    assert out["storage"]["held_wh"] == 0.0                       # the room batteries near their limit do not use
     stats = {"sensor.soc": [{"start": A, "min": 20.0, "max": 60.0}, {"start": datetime.fromtimestamp(A + H, timezone.utc),
                                                                      "min": 30.0, "max": 90.0},
                             {"start": A + 2 * H, "min": None, "max": 50.0}]}

@@ -373,7 +373,7 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
         out.update({
             "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
-                        "max_discharge_w": st.max_discharge_w},
+                        "max_discharge_w": st.max_discharge_w, "held_wh": round(b.get("held_wh", 0.0), 1)},
             "hours": columns(((t, round(pv.get(t, 0.0), 1), round(load[t], 1), round(caps.capped.get(t, 0.0), 1),
                                # as battery.day_simulation: without a cap of the hour, the storage's own discharge power
                                None if (w := caps.discharge.get(t, st.max_discharge_w)) is None else round(w, 1))

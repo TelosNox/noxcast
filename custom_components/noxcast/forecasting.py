@@ -209,7 +209,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
                                            day_start)
         result.held[sub_id] = today.held[sub_id]
         result.effects[sub_id] = day_effects(site, arr.geometry, learned.get(sub_id), weather, day,
-                                             result.expected[sub_id], day_start, day_end)
+                                             result.expected[sub_id], day_start, day_end, clear_weather)
     limits = {sid: w for sid, w in (inst.limited_arrays() if inst else {}).items() if sid in arrays}
     if limits:
         _cap(result, alt, site, arrays, learned, limits, temps, actual, ts_now)

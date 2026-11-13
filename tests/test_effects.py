@@ -58,3 +58,20 @@ def test_reflection_gain_is_a_period():
     loss, gain = effects.hourly_effects(SITE, GEO, learned, _weather())
     periods = effects.significant_periods(SITE, GEO, learned, DAY, loss, gain, 300)
     assert any(p["type"] == "reflection" for p in periods)
+
+
+def test_scaled_loss_stays_below_the_unshaded_clear_sky():
+    # a shaded hour measured above its (diffuse) forecast must not blow the loss up beyond what the sun delivers
+    learned = _morning_shade()
+    weather = _weather()
+    base = model.forecast(SITE, GEO, learned, weather)
+    free = model.forecast(SITE, GEO, model.LearnedArray(efficiency=0.9), weather)
+    hour = max(base, key=lambda t: free.get(t, 0.0) - base[t])
+    expected = dict(base)
+    expected[hour] = base[hour] * 1.6                    # as measured on a clear November morning
+    clear = [model.clearsky_weather(SITE, DAY + h * 3600, 12.0) for h in range(24)]
+    unbounded = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400)
+    bounded = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400, clear)
+    assert expected[hour] + unbounded["loss"][hour] > free[hour] * 1.05
+    sun = model.forecast(SITE, GEO, model.LearnedArray(efficiency=0.9), clear)
+    assert 0 < bounded["loss"][hour] and expected[hour] + bounded["loss"][hour] <= sun[hour] + 1e-6

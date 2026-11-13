@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+## [0.4.0b1] - 2026-11-13
+
+The first pre-release of 0.4.0. Arrays with a power limit learn differently, so it runs through a nightly learning
+run before 0.4.0. Nothing needs to be done after the update; arrays without a power limit learn as before.
+
 ### Added
 - Noxcast suggests a power limit when the measurements show one: if every power sensor of a PV array stays flat at
   or near its maximum on several days while the sun would have changed the power, and never goes above it, a Repairs notice

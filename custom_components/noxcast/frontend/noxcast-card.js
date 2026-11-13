@@ -32,21 +32,21 @@ const TEXT = {
     import: "Bezug", export: "Einspeisung",
     lg: { actual: "Ist", expected: "Erwartung", forecast: "Prognose", load: "Hauslast", deficit: "Last über PV", band: "Spanne P10–P90",
       loss: "Schattenverlust", bat: "Akku", lost: "voll, Überschuss verfällt",
-      near: "fast voll" } },
+      risk: "voll bei mehr Sonne" } },
   en: { pv: "PV", home: "Home", grid: "Grid", battery: "Battery", tomorrow: "tomorrow", shade: "shade",
     full: "full", load: "House load", soc: "Battery level", lost: "Lost to shade",
     noData: "No Noxcast data yet", kwh: "kWh", actual: "Actual", expected: "expected", morning: "forecast",
     import: "Import", export: "Export",
     lg: { actual: "actual", expected: "expected", forecast: "forecast", load: "house load", deficit: "load above PV", band: "range P10–P90",
       loss: "lost to shade", bat: "battery", lost: "full, surplus lost",
-      near: "almost full" } },
+      risk: "full with more sun" } },
 };
 
 const PALETTE = {
   light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
-    shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)", lost: "#D93025", near: "#F29900" },
+    shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)", lost: "#E37400" },
   dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
-    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)", lost: "#F2635A", near: "#F5A524" },
+    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)", lost: "#F58A2C" },
 };
 
 // with range "day" a night hour gets this share of a day hour's width in the day chart
@@ -898,13 +898,14 @@ class NoxcastCard extends HTMLElement {
     const S0 = Ly + 4, Sh = 44, ys = (f) => S0 + Sh - Math.max(0, Math.min(1, f)) * Sh;
     const bat = this._show("battery") ? m.battery : null;
     let batSvg = "", sim = null;
-    const seenZones = new Set();
+    const warned = { lost: false, risk: false };
     if (bat) {
       const srv = this._data.today && this._data.today.battery;
       if (srv) {                                   // Noxcast's simulation (batteries configured in the integration)
         bat.max = srv.max; bat.min = srv.min;
         const pts = tsRows(srv.points, "soc");
-        sim = { points: pts, full: srv.full, at: (ts) => {
+        const lostRows = srv.lost ? tsRows(srv.lost, "wh", "p90") : [];
+        sim = { points: pts, full: srv.full, lost: new Map(lostRows.map(([t, wh, p90]) => [t, [wh, p90]])), at: (ts) => {
           if (!pts.length) return null;
           if (ts <= pts[0][0]) return pts[0][1];
           for (let i = 1; i < pts.length; i++) if (pts[i][0] >= ts) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (ts - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0] || 1);
@@ -912,15 +913,7 @@ class NoxcastCard extends HTMLElement {
         } };
       } else if (dayH.some((h) => h + H > now && load(h) !== null)) sim = this._simulate(bat, now, t1, exp, load);
       // without a known house load the level ahead cannot be estimated: only the measured level is drawn
-      else sim = { points: [], full: null, at: () => null };
-      const zone = (h) => {                       // red: at the limit with surplus (lost), orange: within 5 % of it
-        const f = h + H <= now ? m.socAt(h + H / 2) : sim.at(h + H / 2);
-        if (f === null) return null;
-        if (f >= bat.max - 0.02 && exp(h) > lv(h)) return P.lost;   // the tolerance of battery.LIMIT_TOLERANCE
-        return f >= bat.max - 0.05 ? P.near : null;
-      };
-      // ahead: the whole strip height as a warning; already happened: a stripe on top, so the level stays readable
-      const zones = dayH.map((h) => { const c = zone(h), done = h + H <= now; if (c) seenZones.add(c); return c ? `<rect x="${x(h).toFixed(1)}" y="${S0}" width="${(x(h + H) - x(h) + 0.3).toFixed(1)}" height="${done ? 5 : Sh}" fill="${c}" fill-opacity="${done ? 0.9 : 0.85}"></rect>` : ""; }).join("");
+      else sim = { points: [], full: null, lost: new Map(), at: () => null };
       const past = m.socPast.filter(([ts]) => ts >= t0 && ts <= Math.min(now, t1)).map(([ts, f]) => [x(ts), ys(f)]);
       // like PV, the measured level reaches the chart edge (and now): the level there, not the first sample
       const pastEnd = Math.min(now, t1), f0 = m.socAt(t0), f1 = m.socAt(pastEnd);
@@ -930,9 +923,27 @@ class NoxcastCard extends HTMLElement {
       const futStart = Math.max(now, t0), fStart = futStart === pastEnd && f1 !== null ? f1 : sim.at(futStart);
       const fut = [...(fStart === null ? [] : [[futStart, fStart]]), ...sim.points.filter(([ts]) => ts > futStart && ts <= t1)]
         .map(([ts, f]) => [x(ts), ys(f)]);
+      // the warning ahead only: hours in which the simulation has surplus without room colour the level line
+      // and the area below it; hours in which that happens only with PV at P90 are hatched. Both fade out
+      // downwards, so a full battery reads as a soft tint under its line, not as a block. Nothing for the past.
+      const spans = (pick) => dayH.filter((h) => h + H > now && pick(sim.lost.get(h) || [0, 0]) > 1).map((h) => {
+        const a = Math.max(h, now, sim.full !== null && sim.full > h && sim.full < h + H && pick === lostWh ? sim.full : h);
+        // reaching above the strip, so the amber line at the very top keeps its full width
+        return `<rect x="${x(a).toFixed(1)}" y="${S0 - 3}" width="${Math.max(x(h + H) - x(a) + 0.3, 0).toFixed(1)}" height="${Sh + 3}"></rect>`;
+      }).join("");
+      const lostWh = ([wh]) => wh, riskWh = ([wh, p90]) => (wh > 1 ? 0 : p90);
+      const lostClip = fut.length > 1 ? spans(lostWh) : "", riskClip = fut.length > 1 ? spans(riskWh) : "";
+      const futArea = fut.length > 1 ? `${line(fut)} L${fut[fut.length - 1][0].toFixed(1)},${S0 + Sh} L${fut[0][0].toFixed(1)},${S0 + Sh} Z` : "";
+      warned.lost = !!lostClip; warned.risk = !!riskClip;
       batSvg = `<rect x="${X0}" y="${S0}" width="${X1 - X0}" height="${Sh}" rx="3" fill="${P.rail}"></rect>
-        ${past.length > 1 ? `<path d="${line(past)} L${past[past.length - 1][0].toFixed(1)},${S0 + Sh} L${past[0][0].toFixed(1)},${S0 + Sh} Z" fill="${P.bat}" fill-opacity=".45"></path>` : ""}${zones}
+        ${past.length > 1 ? `<path d="${line(past)} L${past[past.length - 1][0].toFixed(1)},${S0 + Sh} L${past[0][0].toFixed(1)},${S0 + Sh} Z" fill="${P.bat}" fill-opacity=".45"></path>` : ""}
+        ${lostClip || riskClip ? `<linearGradient id="nx-fade-g" gradientUnits="userSpaceOnUse" x1="0" y1="${S0}" x2="0" y2="${S0 + Sh}">
+          <stop offset="0" stop-color="#fff"></stop><stop offset=".75" stop-color="#fff" stop-opacity="0"></stop></linearGradient>
+          <mask id="nx-fade"><rect x="${X0}" y="${S0}" width="${X1 - X0}" height="${Sh}" fill="url(#nx-fade-g)"></rect></mask>` : ""}
+        ${riskClip ? `<clipPath id="nx-risk-at">${riskClip}</clipPath><g clip-path="url(#nx-risk-at)"><path d="${futArea}" fill="url(#nx-risk)" mask="url(#nx-fade)"></path></g>` : ""}
+        ${lostClip ? `<clipPath id="nx-lost-at">${lostClip}</clipPath><g clip-path="url(#nx-lost-at)"><path d="${futArea}" fill="${P.lost}" fill-opacity=".5" mask="url(#nx-fade)"></path></g>` : ""}
         ${fut.length > 1 ? `<path d="${line(fut)}" fill="none" stroke="${P.bat}" stroke-width="1.8" stroke-dasharray="3 3"></path>` : ""}
+        ${lostClip ? `<path d="${line(fut)}" fill="none" stroke="${P.lost}" stroke-width="3" stroke-linecap="round" clip-path="url(#nx-lost-at)"></path>` : ""}
         ${sim.full !== null && sim.full < t1 ? `<circle cx="${x(sim.full).toFixed(1)}" cy="${ys(bat.max).toFixed(1)}" r="3" fill="var(--card-background-color, #fff)" stroke="${P.bat}" stroke-width="1.6"></circle>` : ""}`;
     }
     const bottom = bat ? S0 + Sh + 14 : Ly + 14;
@@ -957,12 +968,16 @@ class NoxcastCard extends HTMLElement {
       if (Math.abs(fc(h) - exp(h)) >= 1 || !done) rows.push([t.lg.forecast, fc(h), P.pvDark]);
       if (loss(h) >= 1) rows.push([t.lg.loss, -loss(h), P.shade]);
       if (load(h) !== null) rows.push([t.lg.load, lv(h), "var(--primary-text-color)"]);
+      const [lostW, riskW] = (sim && h + H > now && sim.lost.get(h)) || [0, 0];
+      if (lostW > 1) rows.push([t.lg.lost, lostW, P.lost]);
+      if (riskW > lostW + 1) rows.push([t.lg.risk, riskW, P.lost]);
       const soc = socAt(Math.min(h + H, Math.max(h, now)));
       return { label: `${this._hm(h)}–${this._hm(h + H)}`, rows, soc, x: x(h + H / 2) };
     });
     const hits = dayH.map((h, i) => `<rect data-tip="${i}" x="${x(h).toFixed(1)}" y="0" width="${(x(h + H) - x(h)).toFixed(1)}" height="${bottom - 14}" fill="transparent"></rect>`).join("");
     const svg = `<svg viewBox="0 0 ${W} ${bottom}" role="img" aria-label="${t.pv}, ${t.load}, ${t.soc}">
       <defs>
+        <pattern id="nx-risk" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><line x1="0" y1="0" x2="0" y2="5" stroke="${P.lost}" stroke-width="1.3" stroke-opacity=".75"></line></pattern>
         <clipPath id="nx-past"><rect x="0" y="0" width="${(nowX ?? (now >= t1 ? W : 0)).toFixed(1)}" height="${Hp}"></rect></clipPath>
         <pattern id="nx-shade" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${P.shade}" fill-opacity=".15"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="${P.shade}" stroke-width="1.6" stroke-opacity=".7"></line></pattern>
       </defs>
@@ -989,7 +1004,7 @@ class NoxcastCard extends HTMLElement {
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({
         actual: now > prodStart, loss: lossTotal > 1, band: !!bandPath, load: hasLoad, deficit: hasLoad && dayH.some((h) => lv(h) > exp(h) + 1),
-        bat: !!bat, lost: seenZones.has(P.lost), near: seenZones.has(P.near) })}
+        bat: !!bat, lost: warned.lost, risk: warned.risk })}
       <div class="row nums">${numbers}
         ${lossTotal >= 50 ? `<span style="color:${P.shade}">${t.shade} −${this._kwh(lossTotal)}</span>` : ""}
         <span class="muted">${t.tomorrow} <b style="color:var(--primary-text-color);font-weight:500">${this._kwh(tomorrow)}</b></span>
@@ -1031,7 +1046,8 @@ class NoxcastCard extends HTMLElement {
       [on.actual, box(P.pv), l.actual], [true, box(P.pv, 0.3), l.expected], [true, dash(P.pvDark, true), l.forecast], [on.band, box(P.pv, 0.2), l.band],
       [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
       [on.load, dash(P.home, false), l.load], [on.deficit, box(P.home, 0.16), l.deficit],
-      [on.bat, box(P.bat, 0.45), l.bat], [on.lost, box(P.lost, 0.85), l.lost], [on.near, box(P.near, 0.85), l.near],
+      [on.bat, box(P.bat, 0.45), l.bat], [on.lost, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="${P.lost}" fill-opacity=".22"></rect><line x1="1" y1="2" x2="15" y2="2" stroke="${P.lost}" stroke-width="2.5"></line>`), l.lost],
+      [on.risk, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-risk)"></rect>`), l.risk],
     ];
     return `<div class="legend">${items.filter(([show]) => show).map(([, icon, text]) => `<span>${icon}${text}</span>`).join("")}</div>`;
   }
@@ -1101,7 +1117,7 @@ class NoxcastCard extends HTMLElement {
 
   // battery from now until `end`: level points and when it is full
   _simulate(bat, now, end, pv, load) {
-    const H = 3600, points = [];
+    const H = 3600, points = [], lost = new Map();
     let e = (bat.now ?? bat.min) * bat.cap, full = null;
     const eMax = bat.max * bat.cap, eMin = bat.min * bat.cap;
     points.push([now, e / bat.cap]);
@@ -1112,6 +1128,7 @@ class NoxcastCard extends HTMLElement {
       if (net > 0) {
         const add = Math.min(Math.max(eMax - e, 0), net);
         if (full === null && add < net && e + add >= eMax - 1) full = from + (add / net) * (h + H - from);
+        if (net - add > 0) lost.set(h, [net - add, 0]);
         e += add;
       } else if (net < 0) e -= Math.min(Math.max(e - eMin, 0), -net);
       points.push([h + H, e / bat.cap]);
@@ -1124,7 +1141,7 @@ class NoxcastCard extends HTMLElement {
       }
       return points[points.length - 1][1];
     };
-    return { points, full, at };
+    return { points, full, lost, at };
   }
 
   _hm(ts) { return hm(ts, this._lang, this._tz); }

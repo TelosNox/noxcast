@@ -46,6 +46,13 @@ def test_battery_just_below_its_limit_counts_as_full_while_it_has_surplus():
     assert out["held_wh"] == 0.0 and abs(out["sim"].charged_wh - 150) < 1e-6
 
 
+def test_lost_when_full_leaves_out_surplus_above_the_charge_power():
+    b = bt.Battery(1000, 0.5, max_soc=1.0, efficiency=1.0, max_charge_w=300)
+    sim = bt.simulate(b, flat(1000, range(10, 13)), flat(200, range(10, 13)), 10 * H, 13 * H)
+    # 10 h: 300 Wh charged, 500 Wh above the charge power (battery at 80 %); 11 h: full after 200 Wh
+    assert sim.hours[10 * H]["lost"] == 500 and bt.lost_when_full(sim, 1.0) == {11 * H: 600.0, 12 * H: 800.0}
+
+
 def test_held_back_is_per_battery():
     full = bt.Battery(5000, 0.96, max_soc=0.97)                    # stopped: 50 Wh held back
     charging = bt.Battery(5000, 0.50, max_soc=1.0)                 # still takes everything up to its limit

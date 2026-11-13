@@ -36,6 +36,9 @@ breaking changes.
   9 MB over a year with two arrays.
 
 ### Fixed
+- The shade loss in the day card no longer shows a peak above what the sun can deliver: in a shaded hour that
+  produced a little more diffuse light than forecast, the loss was scaled up with it. The output without shade that the
+  card draws now stays below the unshaded clear-sky output.
 - The correction of today's forecast from the measured hours no longer reads PV cut by a full battery as clouds.
   Before, a battery that was full at noon lowered the expected PV for the rest of the day. An hour in which a
   battery reached *Battery considered full at* now only counts when it was sunnier than forecast;

@@ -61,8 +61,15 @@ def significant_periods(site: Site, geo: ArrayGeometry, learned: LearnedArray, d
 
 def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, weather: list[WeatherHour],
                 forecast_wh: Series, expected: Series, day_start: float,
-                day_end: float) -> dict:
-    """Shade loss and reflection gain of the day, scaled like the expected output, with significant periods."""
+                day_end: float, clear_weather: list[WeatherHour] | None = None,
+                held: Series | None = None) -> dict:
+    """Shade loss and reflection gain of the day, scaled like the expected output, with significant periods.
+
+    The scaled loss is bounded so that expected output plus loss, and the held forecast plus loss that the
+    day card draws, never exceed the unshaded output under clear sky. In a shaded past hour the forecast is mostly diffuse light, so the ratio of measured to
+    forecast says little about the direct light the shade takes; unbounded, a little more diffuse light
+    than forecast inflated the loss beyond what the sun can deliver.
+    """
     if learned is None:
         return {"loss": {}, "gain": {}, "periods": []}
     loss, gain = hourly_effects(site, geo, learned, [w for w in weather if day_start <= w.start < day_end])
@@ -71,5 +78,11 @@ def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, we
         return {t: v * (expected.get(t, 0.0) / forecast_wh[t] if forecast_wh.get(t) else 1.0) for t, v in series.items()}
 
     loss, gain = scaled(loss), scaled(gain)
+    if clear_weather:
+        free = forecast(site, geo, replace(learned, cells={}, facade=None),
+                        [w for w in clear_weather if day_start <= w.start < day_end])
+        held = held or {}
+        loss = {t: min(v, max(free.get(t, 0.0) - max(expected.get(t, 0.0), held.get(t, 0.0)), 0.0))
+                for t, v in loss.items()}
     periods = significant_periods(site, geo, learned, day_start, loss, gain, sum(expected.values()))
     return {"loss": loss, "gain": gain, "periods": periods}

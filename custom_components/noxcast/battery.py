@@ -25,6 +25,7 @@ from .const import Series
 H = 3600.0
 COUPLING_DC, COUPLING_AC = "dc", "ac"
 DEFAULT_EFFICIENCY = {COUPLING_DC: 0.95, COUPLING_AC: 0.90}   # round trip
+LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,10 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
     cap = battery.capacity_wh
     e = (battery.soc if battery.soc is not None else battery.min_soc) * cap
     e_max, e_min = battery.max_soc * cap, battery.min_soc * cap
+    # many batteries stop charging a little below their set limit; one that already stands within the
+    # tolerance is full, else the last percent of room would hide the surplus that is already lost
+    if battery.soc is not None and battery.soc >= battery.max_soc - LIMIT_TOLERANCE:
+        e_max = min(e_max, e)
     eta = math.sqrt(max(0.01, min(1.0, battery.efficiency)))
     sim.points.append((now, e / cap))
     sim.max_soc, sim.max_soc_at = e / cap, now
@@ -255,7 +260,6 @@ def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_o
 
 # ---------------------------------------------------------------- prediction against what happened
 
-LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
 PREDICTION_DAYS = 30            # predictions kept
 
 

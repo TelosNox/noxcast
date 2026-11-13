@@ -30,6 +30,18 @@ def test_surplus_fills_up_then_is_lost():
     assert sim.lost_from == 11 * H and sim.max_soc == 1.0
 
 
+def test_battery_just_below_its_limit_counts_as_full():
+    # the battery stopped charging at 96 % with a limit of 97 %: the surplus is lost from now on
+    b = bt.Battery(5000, 0.96, max_soc=0.97, efficiency=1.0)
+    sim = bt.simulate(b, flat(800, [14]), flat(300, [14]), 14 * H, 15 * H)
+    assert sim.full_at == 14 * H and sim.lost_from == 14 * H
+    assert sim.charged_wh == 0 and sim.lost_wh == 500
+    # further below the tolerance it still charges up to the limit
+    sim = bt.simulate(bt.Battery(5000, 0.94, max_soc=0.97, efficiency=1.0), flat(800, [14]), flat(300, [14]),
+                      14 * H, 15 * H)
+    assert abs(sim.charged_wh - 150) < 1e-6 and abs(sim.lost_wh - 350) < 1e-6
+
+
 def test_charge_power_limit_loses_surplus_without_being_full():
     b = bt.Battery(5000, 0.2, efficiency=1.0, max_charge_w=300)
     sim = bt.simulate(b, flat(1000, [12]), flat(200, [12]), 12 * H, 13 * H)

@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- A battery that stops charging just below its upper limit now counts as full: within 2 percentage points of the
+  limit, the battery forecast treats further surplus as lost from now on (*Full at*, the day card's warning), instead
+  of expecting it to fit the last percent. The day card uses the same tolerance.
+
 ## [0.4.0b1] - 2026-11-13
 
 The first pre-release of 0.4.0. Arrays with a power limit learn differently, so it runs through a nightly learning

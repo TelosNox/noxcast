@@ -41,6 +41,13 @@ class ArrayConfig:
     geometry: ArrayGeometry
     valid_since: float | None
     temp_coeff: float | None = None          # per K, from the datasheet
+    limits: tuple[tuple[str, float], ...] = ()   # (sensor, fixed limit in W): periods at a limit are lower bounds
+
+    @property
+    def limit_w(self) -> float | None:
+        """The array's fixed limit: the sum of its sensors' limits, if every sensor has one (installation.py)."""
+        limited = dict(self.limits)
+        return sum(limited.values()) if self.sensors and all(s in limited for s in self.sensors) else None
 
 
 @dataclass(frozen=True)
@@ -157,9 +164,21 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
                      air or None, satellite or None)
 
 
+def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
+    """Periods in which a sensor of the array reached its fixed limit (curtailment.at_limit on the period maximum,
+    the mean where there is none): the array's power then is only a lower bound."""
+    out: set[float] = set()
+    for sensor, limit in arr.limits:
+        factor = history.factors.get(sensor, 1.0)
+        peaks = history.power_max.get(sensor) or history.power.get(sensor, {})
+        out |= {t for t, v in peaks.items() if v is not None and ct.at_limit(v * factor, limit)}
+    return out
+
+
 def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
-                  keep: Keep | None = None) -> tuple[list[tuple[float, float]], set[float]]:
-    """An array's usable (period start, mean W) samples and its steady hours: what learning sees."""
+                  keep: Keep | None = None) -> tuple[list[tuple[float, float]], set[float], set[float]]:
+    """An array's usable (period start, mean W) samples, its steady hours and its hours at a fixed limit: what
+    learning sees."""
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
@@ -168,7 +187,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
                            for s in arr.sensors])
-    return samples, steady
+    return samples, steady, floor_hours(arr, history)
 
 
 def learning_hours(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray], history: PvHistory,
@@ -178,9 +197,9 @@ def learning_hours(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str
     for sid, arr in arrays.items():
         if sid not in learned:
             continue
-        samples, steady = array_samples(arr, history, soc_full, exclusions)
+        samples, steady, floors = array_samples(arr, history, soc_full, exclusions)
         out[sid] = ac.hour_table(site, arr.geometry, learned[sid], samples, history.satellite_ghi, history.air_temp,
-                                 steady)
+                                 steady, floors)
     return out
 
 
@@ -194,15 +213,16 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     if missing:
         _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
                         arr.name, ", ".join(missing))
-    samples, steady = array_samples(arr, history, soc_full, exclusions, keep)
+    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep)
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
-                   datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period)
+                   datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
+                   limit_w=arr.limit_w)
     if result.samples and not 0.5 <= result.efficiency <= 1.2:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
     if result.samples and period == HOUR:
         ac.annotate(site, arr.geometry, result, samples, history.air_temp, history.satellite_ghi,
-                    datetime.fromtimestamp(now, timezone.utc).year, steady)
+                    datetime.fromtimestamp(now, timezone.utc).year, steady, floors)
     _LOGGER.info("Learned %s: efficiency %.3f, temperature coefficient %.3f %%/K, %d shading cells, "
                  "coverage %.0f %%, %d samples, clear filter %s, steady filter %s, agreement %s",
                  arr.name, result.efficiency, result.temp_coeff * 100, len(result.cells),

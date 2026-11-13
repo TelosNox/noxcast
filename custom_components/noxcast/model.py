@@ -197,6 +197,9 @@ class LearnedArray:
     hints: list[str] = field(default_factory=list)             # implausible values worth checking, see arraycheck.hints
     # a row of buildings opposite: {"direction", "height", "start", "end", "gain"}, see learn_facade
     facade: dict | None = None
+    # cells whose hours were mostly at a power limit: shade there is hidden down to the limit, so the cell holds
+    # the physics default (no shade, 1.0) instead of a learned value
+    limit_cells: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)
@@ -281,6 +284,28 @@ def weighted_quantile(values: list[float], weights: list[float], q: float) -> fl
 
 def _quantile(values: list[float], q: float) -> float:
     return weighted_quantile(values, [1.0] * len(values), q)
+
+
+def censored_quantile(values: list[float], weights: list[float], floors: list[bool], q: float) -> float | None:
+    """Weighted q-quantile when some values are only lower bounds (floors: the period was at a power limit).
+
+    Kaplan-Meier: a lower bound stays in the weight still to be distributed until its value is passed, then its
+    weight goes to the measured values above it in proportion. None when the bounds hide the quantile (more
+    than 1 - q of the weight is known only as "at least"). Without bounds this is weighted_quantile.
+    """
+    if not any(floors):
+        return weighted_quantile(values, weights, q)
+    # a measured value before a bound of the same value: the bound says "at least", so it may be higher
+    items = sorted(zip(values, floors, weights), key=lambda x: (x[0], x[1]))
+    remaining = sum(weights)
+    above = 1.0                                          # share of the distribution above the values passed
+    for v, floor, w in items:
+        if not floor and remaining > 0:
+            above *= 1 - w / remaining
+            if 1 - above >= q - 1e-9:
+                return v
+        remaining -= w
+    return None
 
 
 def _correlation(xs: list[float], ys: list[float]) -> float | None:
@@ -443,13 +468,18 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
     return out
 
 
-def _learn_temp_coeff(rows: list[tuple[float, float, float]], period: float = HOUR) -> tuple[float, bool]:
-    """(cell temperature, ratio, _) rows -> temperature coefficient from the upper envelope per bin."""
-    bins: dict[int, list[float]] = {}
-    for t_cell, ratio, _ in rows:
-        bins.setdefault(int(t_cell // TEMP_BIN_K), []).append(ratio)
-    env = [((b + 0.5) * TEMP_BIN_K, _quantile(v, 0.9)) for b, v in sorted(bins.items())
-           if len(v) >= _periods(TEMP_MIN_BIN_SAMPLES, period)]
+def _learn_temp_coeff(rows: list[tuple], period: float = HOUR) -> tuple[float, bool]:
+    """(cell temperature, ratio, _[, floor]) rows -> temperature coefficient from the upper envelope per bin.
+
+    A row with floor True is a lower bound (an hour at a power limit). A bin whose envelope the bounds hide is
+    left out: hot clear bins are the ones a limit cuts, and counting their plateau would bend the slope.
+    """
+    bins: dict[int, list[tuple[float, bool]]] = {}
+    for t_cell, ratio, _, *floor in rows:
+        bins.setdefault(int(t_cell // TEMP_BIN_K), []).append((ratio, bool(floor and floor[0])))
+    env = [((b + 0.5) * TEMP_BIN_K, q) for b, v in sorted(bins.items())
+           if len(v) >= _periods(TEMP_MIN_BIN_SAMPLES, period)
+           and (q := censored_quantile([r for r, _ in v], [1.0] * len(v), [f for _, f in v], 0.9)) is not None]
     if len(env) < 4 or env[-1][0] - env[0][0] < 15:
         return DEFAULT_TEMP_COEFF, False
     xs, ys = [x for x, _ in env], [y for _, y in env]
@@ -466,7 +496,8 @@ def _learn_temp_coeff(rows: list[tuple[float, float, float]], period: float = HO
 def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
           air_temp: Series | None = None, satellite_ghi: Series | None = None,
           datasheet_temp_coeff: float | None = None, half_life_days: float = HALF_LIFE_DAYS,
-          steady: set[float] | None = None, period: float = HOUR) -> LearnedArray:
+          steady: set[float] | None = None, period: float = HOUR, floors: set[float] | None = None,
+          limit_w: float | None = None) -> LearnedArray:
     """Learn efficiency, temperature coefficient, shading map and sky view from (period start, mean power W) samples.
 
     air_temp: air temperature (°C) at the middle of each period.
@@ -477,23 +508,33 @@ def learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], no
     steady: hour starts in which the power stayed steady (see steady_hours); efficiency, direction
       factor and reflection then use only those of the clear hours.
     period: length of a sample in seconds; air_temp, satellite_ghi and steady use the same period starts.
+    floors: period starts in which the array was at a fixed power limit. Their power is a lower bound ("at least
+      this much"): quantiles treat it as such (censored_quantile), fits only where the model falls short of it.
+      Leaving such periods out would select the hours on their measured value; keeping them as measured would
+      take the plateau for the sun.
+    limit_w: the array's fixed limit (W) when every sensor has one. Hours count as strong for the efficiency from
+      40 % of the expected output's maximum or of the limit, whichever is lower: above the limit every hour is a
+      lower bound, so with a strong limit the efficiency is identifiable only from the hours below it.
 
     The sky view needs satellite irradiance. It and the other parameters depend on each other, so
     they are learned alternately until the sky view settles.
     """
+    floors = floors or set()
     args = dict(air_temp=air_temp, satellite_ghi=satellite_ghi, datasheet_temp_coeff=datasheet_temp_coeff,
-                half_life_days=half_life_days, steady=steady, period=period)
+                half_life_days=half_life_days, steady=steady, period=period, floors=floors, limit_w=limit_w)
     learned = _learn(site, geo, samples, now, sky_view=1.0, **args)
     if satellite_ghi is None:
         return learned
+    # overcast hours hardly ever reach a limit; one that does says nothing exact about the diffuse light
+    measured = [s for s in samples if s[0] not in floors] if floors else samples
     for _ in range(SKY_VIEW_ITERATIONS):
-        sky = learn_sky_view(site, geo, learned, samples, satellite_ghi, air_temp, period)
+        sky = learn_sky_view(site, geo, learned, measured, satellite_ghi, air_temp, period)
         if sky is None or abs(sky - learned.sky_view) < 0.01:
             break
         learned = _learn(site, geo, samples, now, sky_view=sky, **args)
     # whether there are enough overcast hours depends only on the samples, not on the other parameters
     learned.sky_view_learned = sky is not None
-    learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp, period)
+    learned.facade = learn_facade(site, geo, learned, samples, satellite_ghi, air_temp, period, floors)
     return learned
 
 
@@ -542,7 +583,8 @@ def learn_sky_view(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], now: float, *,
            air_temp: Series | None, satellite_ghi: Series | None,
            datasheet_temp_coeff: float | None, half_life_days: float, sky_view: float,
-           steady: set[float] | None = None, period: float = HOUR) -> LearnedArray:
+           steady: set[float] | None = None, period: float = HOUR, floors: set[float] = frozenset(),
+           limit_w: float | None = None) -> LearnedArray:
     rows = []
     for t, p in samples:
         beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, sky_view, period)
@@ -554,7 +596,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             kt = satellite_ghi[t] / cs_ghi
         temp = air_temp.get(t) if air_temp else None
         heating = clearsky_heating(site, geo, t, sky_view, period) if temp is not None else geo.heating
-        rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating))
+        rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating, t in floors))
     if not rows:
         return LearnedArray(sky_view=sky_view, learned_at=now)
 
@@ -578,11 +620,11 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         return min(r[8], 1.2) if clear_filter else 1.0
 
     exp = {r[0]: geo.peak_w * (r[2] + r[3]) / 1000 * scale(r) for r in basis}
-    limit = 0.4 * max(exp.values())
+    limit = 0.4 * max(exp.values()) if limit_w is None else 0.4 * min(max(exp.values()), limit_w)
     strong = [r for r in basis if exp[r[0]] > limit and r[1] / exp[r[0]] <= 1.5]
 
     # temperature coefficient from the upper envelope per cell-temperature bin
-    temp_rows = [(r[9] + r[10] * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6])
+    temp_rows = [(r[9] + r[10] * (r[2] + r[3]) / 1000, r[1] / exp[r[0]], r[6], r[11])
                  for r in strong if r[9] is not None]
     if datasheet_temp_coeff is not None:
         temp_coeff, temp_learned, temp_source = datasheet_temp_coeff, False, "datasheet"
@@ -600,8 +642,14 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
 
     # efficiency at 25 °C from strong expected hours
     def eff_quantile(source, q: float) -> float:
-        ratios = [(r[1] / (exp[r[0]] * f_temp(r)), r[6]) for r in source]
-        return weighted_quantile([v for v, _ in ratios], [w for _, w in ratios], q) if ratios else DEFAULT_EFFICIENCY
+        """The quantile. Where hours at a limit hide it, the data say only that it is at least the quantile with
+        those hours taken as measured; then the typical efficiency, unless that bound is higher."""
+        ratios = [(r[1] / (exp[r[0]] * f_temp(r)), r[6], r[11]) for r in source]
+        if not ratios:
+            return DEFAULT_EFFICIENCY
+        values, weights = [v for v, _, _ in ratios], [w for _, w, _ in ratios]
+        value = censored_quantile(values, weights, [f for _, _, f in ratios], q)
+        return value if value is not None else max(weighted_quantile(values, weights, q), DEFAULT_EFFICIENCY)
 
     efficiency = eff_quantile(strong, 0.95)
 
@@ -615,31 +663,45 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             if beam_w <= MIN_BEAM_W:
                 continue
             tr = (p / (efficiency * f_temp(r)) - geo.peak_w * diff / 1000 * k) / beam_w
-            obs.setdefault(_cell(az, el), []).append((min(max(tr, -0.2), 1.3), weight, age))
+            obs.setdefault(_cell(az, el), []).append((min(max(tr, -0.2), 1.3), weight, age, r[11]))
         return obs
 
+    hidden: set[str] = set()                             # cells whose quantile the hours at a limit hide
+
     def cell_values(obs, q: float) -> dict[str, float]:
+        """Quantile per cell; a cell the bounds hide gets 1.0 (no shade down to the limit) and goes to hidden."""
         out = {}
         for (ai, ei), items in obs.items():
             if len(items) < _periods(MIN_CELL_SAMPLES, period):
                 continue
-            value = weighted_quantile([v for v, _, _ in items], [w for _, w, _ in items], q)
-            recent = [v for v, _, a in items if a <= RECENT_DAYS]
+            key = _key(ai, ei)
+            value = censored_quantile([v for v, _, _, _ in items], [w for _, w, _, _ in items],
+                                      [f for _, _, _, f in items], q)
+            if value is None:
+                hidden.add(key)
+                out[key] = 1.0
+                continue
+            hidden.discard(key)
+            recent = [(v, f) for v, _, a, f in items if a <= RECENT_DAYS]
             if len(recent) >= _periods(3, period):
-                recent_value = _quantile(recent, q)
-                if abs(recent_value - value) > CHANGE_THRESHOLD:     # e.g. a tree was cut or a building added
+                recent_value = censored_quantile([v for v, _ in recent], [1.0] * len(recent),
+                                                 [f for _, f in recent], q)
+                # e.g. a tree was cut or a building added
+                if recent_value is not None and abs(recent_value - value) > CHANGE_THRESHOLD:
                     value = recent_value
-            out[_key(ai, ei)] = round(min(max(value, 0.0), 1.0), 3)
+            out[key] = round(min(max(value, 0.0), 1.0), 3)
         return out
 
     def envelope() -> dict[str, float]:
         """P90 over all hours; with the satellite only in cells that also have clear hours, since
         in a cell with hardly any clear hour (winter noon) the P90 is a cloud, not a shadow."""
+        hidden.clear()
         out = cell_values(observe(rows, scaled=False), 0.9)
         if not clear_filter:
             return out
         seen = {_key(*c) for c, items in observe(basis, scaled=False).items()
                 if len(items) >= _periods(MIN_CELL_SAMPLES, period)}
+        hidden.intersection_update(seen)
         return {k: v for k, v in out.items() if k in seen}
 
     cells = envelope()
@@ -648,10 +710,13 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         # Unshaded means known as free; while the map knows too few positions (new installation) also those it
         # has not learned yet, and with less still all clear hours: shadows pull it slightly low, the safe side,
         # while a high percentile over clear hours would only pick satellite errors.
-        probe = LearnedArray(cells=cells)
+        # A cell the limit hides is not known as free: its hours would be nearly all lower bounds, and the median
+        # needs the measured ones. Without hidden cells this is the map as learned.
+        probe = LearnedArray(cells={k: v for k, v in cells.items() if k not in hidden} if hidden else cells)
         unshaded = [r for r in strong if known_free(probe, r[4], r[5])]
         if len(unshaded) < _periods(MIN_UNSHADED_HOURS, period):
-            unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= FREE_TRANSMISSION]
+            unshaded = [r for r in strong if transmission(probe, r[4], r[5]) >= FREE_TRANSMISSION
+                        and _key(*_cell(r[4], r[5])) not in hidden]
         steady_unshaded = [r for r in unshaded if r[0] in steady] if steady_filter else []
         if len(steady_unshaded) >= _periods(MIN_UNSHADED_HOURS, period):
             unshaded = steady_unshaded
@@ -661,9 +726,10 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             cells = envelope()
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
         if steady_filter:
-            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale, period)
+            cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale, period, hidden)
 
     cells = shape_cells(cells)
+    hidden &= set(cells)
     direction: dict[str, float] = {}
     reflection: dict[str, float] = {}
     if clear_filter:
@@ -680,30 +746,36 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
                 continue
             f = temperature_factor(temp_coeff, r[9], beam + diff, heating) if r[9] is not None else 1.0
             observed = p * 1000 / (geo.peak_w * efficiency * f)
-            parts.append(((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), observed, beam, diff, dni))
+            parts.append(((int(az // DIRECTION_AZ_STEP), int(el // DIRECTION_EL_STEP)), observed, beam, diff, dni,
+                          r[11]))
+
+        def median(items: list[tuple[float, bool]]) -> float | None:
+            return censored_quantile([v for v, _ in items], [1.0] * len(items), [f for _, f in items], 0.5)
 
         # reflected light where the module itself gets little direct light: sunlit walls in front
-        refl_obs: dict[tuple[int, int], list[float]] = {}
-        for b, observed, beam, diff, dni in parts:
+        refl_obs: dict[tuple[int, int], list[tuple[float, bool]]] = {}
+        for b, observed, beam, diff, dni, floor in parts:
             if beam < REFLECTION_MAX_BEAM_SHARE * dni:
-                refl_obs.setdefault(b, []).append((observed - beam - diff) / dni)
-        refl_bins = {b: min(max(_quantile(v, 0.5), 0.0), REFLECTION_LIMIT) for b, v in refl_obs.items()
-                     if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period)}
+                refl_obs.setdefault(b, []).append(((observed - beam - diff) / dni, floor))
+        refl_bins = {b: min(max(m, 0.0), REFLECTION_LIMIT) for b, v in refl_obs.items()
+                     if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period) and (m := median(v)) is not None}
         reflection = {_key(*b): round(v, 3) for b, v in refl_bins.items() if v >= 0.005}
 
-        # the rest on the beam part, in both directions: geometry and model errors
-        dir_obs: dict[tuple[int, int], list[float]] = {}
-        for b, observed, beam, diff, dni in parts:
+        # the rest on the beam part, in both directions: geometry and model errors. A bin the limit hides keeps
+        # the default 1: the factor may exceed 1 there, but nothing shows by how much.
+        dir_obs: dict[tuple[int, int], list[tuple[float, bool]]] = {}
+        for b, observed, beam, diff, dni, floor in parts:
             if geo.peak_w * beam / 1000 <= MIN_BEAM_W:
                 continue
-            dir_obs.setdefault(b, []).append((observed - diff - refl_bins.get(b, 0.0) * dni) / beam)
-        direction = {_key(*b): round(min(max(_quantile(v, 0.5), DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
-                     for b, v in dir_obs.items() if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period)}
+            dir_obs.setdefault(b, []).append(((observed - diff - refl_bins.get(b, 0.0) * dni) / beam, floor))
+        direction = {_key(*b): round(min(max(m, DIRECTION_LIMITS[0]), DIRECTION_LIMITS[1]), 3)
+                     for b, v in dir_obs.items()
+                     if len(v) >= _periods(DIRECTION_MIN_SAMPLES, period) and (m := median(v)) is not None}
     learned = LearnedArray(efficiency=round(efficiency, 4), temp_coeff=round(temp_coeff, 5), temp_learned=temp_learned,
                            temp_source=temp_source,
                            cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
                            samples=len(rows), clear_filter=clear_filter, steady_filter=steady_filter,
-                           first_sample=rows[0][0], learned_at=now)
+                           first_sample=rows[0][0], learned_at=now, limit_cells=sorted(hidden))
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
     if with_kt:
@@ -711,7 +783,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         for r in with_kt:
             t, p, beam, diff, az, el = r[:6]
             e = geo.peak_w * (beam + diff) / 1000
-            if el < 15 or geo.peak_w * beam / 1000 < 150 or transmission(learned, az, el) < 0.95:
+            if r[11] or el < 15 or geo.peak_w * beam / 1000 < 150 or transmission(learned, az, el) < 0.95:
                 continue
             xs.append(min(r[8], 1.3))
             ys.append(min(p / (efficiency * f_temp(r) * e), 1.3))
@@ -735,7 +807,7 @@ def _bilinear(azimuth: float, elevation: float) -> list[tuple[tuple[int, int], f
 
 def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[str, float],
                factor: Callable[[tuple], float], scale: Callable[[tuple], float],
-               period: float = HOUR) -> dict[str, float]:
+               period: float = HOUR, fixed: set[str] = frozenset()) -> dict[str, float]:
     """Shading cells such that the forecast, integrated over the sub-steps of each hour, meets the hourly means.
 
     The per-cell estimate gives each hour to the cell of its mid-hour sun position, so a shadow
@@ -749,8 +821,15 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
     direct take part; otherwise errors of the diffuse model (sun nearly behind the plane) would
     darken the cells. rows: steady clear hours; factor(row): efficiency x temperature factor;
     scale(row): satellite clearness.
+
+    An hour at a power limit (row[11]) says only "at least". The fit needs exact hours: its sun path spans
+    several cells, and the bound is met by any bright one of them, so only the measured hours, those that
+    stayed below the limit, would decide the others and darken them. The cells such hours cross therefore
+    keep their per-cell estimate, which counts the hour as a lower bound (censored_quantile), and so do the
+    fixed cells (those the limit hides).
     """
     eqs = []
+    hold = {tuple(map(int, k.split(","))) for k in fixed}
     n = _substeps(period)
     for r in rows:
         t, p, _, diff = r[:4]
@@ -767,7 +846,12 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
         beam = sum(coef.values())
         if geo.peak_w * beam / 1000 <= MIN_BEAM_W or beam < SHADE_FIT_BEAM_SHARE * (beam + diff * k):
             continue
+        if r[11]:
+            hold.update(c for c, a in coef.items() if a > 0)
+            continue
         eqs.append((p * 1000 / (geo.peak_w * factor(r)) - diff * k, coef, r[6]))
+    if hold:
+        eqs = [e for e in eqs if not hold.intersection(e[1])]
     if len(eqs) < _periods(MIN_STEADY_HOURS, period):
         return cells
     probe = LearnedArray(cells=cells)                     # cells without an estimate start from their neighbours
@@ -792,6 +876,8 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
         for _ in range(SHADE_FIT_SWEEPS):
             change = 0.0
             for c, row in normal.items():
+                if c in hold:
+                    continue
                 v = (rhs[c] - sum(a * value[c2] for c2, a in row.items() if c2 != c)) / row[c]
                 v = min(max(v, 0.0), 1.0)
                 change = max(change, abs(v - value[c]))
@@ -931,14 +1017,16 @@ def facade_cells(learned: LearnedArray) -> dict[str, float]:
 
 
 def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
-                 satellite_ghi: Series | None, air_temp: Series | None = None, period: float = HOUR) -> dict | None:
+                 satellite_ghi: Series | None, air_temp: Series | None = None, period: float = HOUR,
+                 floors: set[float] = frozenset()) -> dict | None:
     """A row of buildings opposite, fitted to clear hours with the learned parameters, or None.
 
     Per row direction and height the clear hours are forecast with the facade and without any shade.
     The facade's sector grows from its direction to both sides, 10° at a time, as long as the facade
     explains those hours at least as well as a free sky; azimuths without such hours do not stop it,
     which draws the row on into sun positions only winter reaches. Only a facade that removes
-    FACADE_MIN_GAIN of the error in its sector over FACADE_MIN_SPAN degrees is kept.
+    FACADE_MIN_GAIN of the error in its sector over FACADE_MIN_SPAN degrees is kept. An hour at a power limit
+    (floors) counts as an error only where the forecast stays below it.
     """
     if not satellite_ghi:
         return None
@@ -961,9 +1049,12 @@ def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples:
                           diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni, heating, temp))
             low = low or (sun.elevation < FACADE_MAX_EL and beam > 0)
         if low:                                           # only hours a facade could shade tell facades apart
-            hours.append((int(sun_position(site, t + period / 2).azimuth // AZ_STEP), p, steps))
+            hours.append((int(sun_position(site, t + period / 2).azimuth // AZ_STEP), p, steps, t in floors))
     if not hours:
         return None
+
+    def miss(forecast: float, p: float, floor: bool) -> float:
+        return 0.0 if floor and forecast >= p else (forecast - p) ** 2
 
     def energy(steps, shade) -> float:
         total = 0.0
@@ -973,15 +1064,16 @@ def learn_facade(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples:
         return geo.peak_w * learned.efficiency * total / 1000 / n
 
     free: dict[int, float] = {}
-    for col, p, steps in hours:
-        free[col] = free.get(col, 0.0) + (energy(steps, lambda az, el: 1.0) - p) ** 2
+    for col, p, steps, floor in hours:
+        free[col] = free.get(col, 0.0) + miss(energy(steps, lambda az, el: 1.0), p, floor)
 
     def evaluate(direction: float, height: float) -> tuple[float, dict] | None:
         f = {"direction": direction, "height": height, "start": 0.0, "end": 360.0}
         err: dict[int, float] = {}
-        for col, p, steps in hours:
+        for col, p, steps, floor in hours:
             if abs((col + 0.5) * AZ_STEP - direction) < FACADE_MAX_ANGLE:
-                err[col] = err.get(col, 0.0) + (energy(steps, lambda az, el: facade_transmission(f, az, el)) - p) ** 2
+                err[col] = err.get(col, 0.0) + miss(energy(steps, lambda az, el: facade_transmission(f, az, el)), p,
+                                                    floor)
         centre = int(direction // AZ_STEP)
         if err.get(centre, 0.0) > free.get(centre, 0.0):
             return None

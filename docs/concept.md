@@ -336,9 +336,9 @@ orientation changes the geometry key and starts relearning.
 
 - **Primary measurement required:** power per array, preferably DC per MPPT. A system whose input or
   inverter clips systematically (e.g. 800 W micro-inverter on 2 kWp) needs its limit configured per sensor, so
-  the forecast is capped (see Data filters); efficiency and shade at high sun are only partly identifiable
-  there, since the modules never show what they could deliver. Neither setup nor learning detects clipping
-  by itself yet.
+  the forecast is capped and learning counts hours at the limit as lower bounds (see Data filters); efficiency
+  and shade at high sun are only partly identifiable there, since the modules never show what they could
+  deliver. A flat maximum in the measurements is suggested as a limit (`plateau.py`), it acts once confirmed.
 - **Open-Meteo as the only weather source** (GHI / DNI / DHI, free for non-commercial use, no key).
   Global irradiance is split into direct and diffuse (e.g. Erbs) if only GHI is available.
   - Several models are averaged hour by hour (GHI, DNI and DHI alike, so the mean stays
@@ -394,13 +394,37 @@ orientation changes the geometry key and starts relearning.
   inverter AC limit behind a battery are not detected yet (devices, #250).
 - Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,
   micro-inverter). An hour whose maximum reaches 95 % of it is at the limit (`limited` in the archive; the band
-  skips it, the forecast error does not, since forecast and measurement are both capped). It still enters
-  learning: dropping it selects hours on their measured value, and with a strong limit only clouded and shaded
-  "clear" hours stay. Experiment E1 (#248, limits at 50 % and 70 % of the P99 of two unclipped arrays): dropping
-  moved the efficiency by -4 to -90 points against -3 to -15 for keeping, and the hold-out error rose in 3 of 4
-  cases. Kept hours bend efficiency and midday shade low; the forecast cap hides most of it on sunny hours.
-  Learning that counts them as lower bounds ("at least this much") is the planned fix. There is no automatic
-  plateau detection yet; a detected limit will only act after the user confirms it.
+  skips it, the forecast error does not, since forecast and measurement are both capped). In learning it is a
+  lower bound ("at least this much", `floors` in `model.learn`). Dropping it would select hours on their
+  measured value: with a strong limit only clouded and shaded "clear" hours stay (E1, #248: efficiency -4 to
+  -90 points, hold-out worse in 3 of 4 cases); keeping it as measured bends efficiency and midday shade low
+  (-3 to -15 points). Every statistic of the learning is either a quantile or a fit, and each treats a bound
+  in its own way:
+  - Quantiles are Kaplan-Meier quantiles (`censored_quantile`): a bound stays in the weight still to be
+    distributed until its value is passed, then passes its weight to the measured values above it. Without
+    bounds this is the plain weighted quantile, bit for bit. When more than 1 - q of the weight is known only
+    as "at least", the quantile is hidden: a shading cell then holds the physics default 1 (no shade) and is
+    listed in `limit_cells` ("at the power limit" on the map), a temperature bin and a bin of the direction
+    factor or reflection are left out (default 1 / 0), a month or sun sector of the panel's efficiency is not
+    shown. The efficiency median, when hidden, takes the typical 0.9 unless the median with the bounds taken
+    as measured is higher. A cell at the limit does not count as known free for the efficiency, since nearly
+    all its hours are bounds.
+  - The shading fit needs exact hours: a bound is met by any bright cell on the hour's sun path, so the
+    measured hours, those below the limit, would alone decide the others and darken them. Cells such hours
+    cross keep their per-cell estimate, and measured hours that cross one of them leave the fit (with them the
+    fit would put the shade into the neighbours of a held cell). The facade search counts a bound as an error only where the forecast stays below it; sky view and
+    the satellite agreement leave bounds out (overcast hours hardly ever reach a limit).
+  - Strong hours for the efficiency start at 40 % of the lower of the expected maximum and the array's limit,
+    so that hours below the limit remain. These are low-sun, morning and evening hours, where the model's
+    errors are largest: E1 rerun (limits at 50 % / 70 % of the P99): efficiency +4.4 / +0.1 points (Balcony),
+    -4.2 / +5.1 (Roof) against -15 / -3 and -14 / -4 for keeping the bounds as measured; with only a few
+    measured clear hours a median outside 0.5-1.2 is not taken (typical value instead). Hold-out error against
+    the clipped truth with the forecast cap lower in all four cases (13.4 / 12.1 / 11.8 / 11.2 % against
+    14.1 / 12.1 / 13.4 / 12.1 %; with the sub-step cap 13.2 / 12.0 / 11.9 / 11.2 % against 15.6 / 12.9 / 14.7 /
+    12.9 %). Of the cells that keeping the bounds darkened by more than 0.03, all but two (Roof 70 %) are within
+    0.03 or at the limit. Not identifiable, and said here rather than hidden: the efficiency at high sun with a
+    strong limit, the direction factor in bins that are mostly at the limit (they keep 1), and shade that never
+    pushes the power below the limit (it costs only on hazy days).
 - Snow: zero output under clear sky and frost.
 - Outages: `unavailable`, all-zero days, incomplete hours.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
@@ -943,7 +967,7 @@ archive).
    throttle in steps. A plateau-only detection is not used: a constant state of charge can also
    mean PV exactly covers the load.
 3. **Optional power limit per sensor** (e.g. 500 W per MPPT): forecast capped per sensor;
-   hours near the limit are excluded from learning.
+   hours at the limit count as lower bounds in learning.
 4. **Finer shading map from 5-minute statistics** (kept ~10 days by the recorder) for narrow,
    moving shadows such as masts or chimneys; aggregates per cell are stored because the raw
    data expires.

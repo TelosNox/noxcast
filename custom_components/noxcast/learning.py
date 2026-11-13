@@ -20,7 +20,7 @@ from . import fine as fn
 from . import load as lf
 from . import plan as pl
 from .model import (
-    HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
+    EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
     steady_hours, usable_samples,
 )
 from .installation import Installation
@@ -217,7 +217,7 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
                    datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
                    limit_w=arr.limit_w)
-    if result.samples and not 0.5 <= result.efficiency <= 1.2:
+    if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
     if result.samples and period == HOUR:

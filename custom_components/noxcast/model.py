@@ -70,6 +70,7 @@ MIN_CELL_SAMPLES = 4
 RECENT_DAYS = 60                 # window for change detection per cell
 CHANGE_THRESHOLD = 0.25
 DEFAULT_EFFICIENCY = 0.9
+EFFICIENCY_PLAUSIBLE = (0.5, 1.2)  # outside: peak power or sensor unit wrong, or (with a limit) too few hours show it
 HALF_LIFE_DAYS = 365.0
 
 TEMP_REF = 25.0
@@ -599,6 +600,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         rows.append((t, p, beam, diff, az, el, 0.5 ** (age / half_life_days), age, kt, temp, heating, t in floors))
     if not rows:
         return LearnedArray(sky_view=sky_view, learned_at=now)
+    limited = any(r[11] for r in rows)
 
     # optional satellite pre-filter: only clear hours are used for efficiency and shading
     with_kt = [r for r in rows if r[8] is not None]
@@ -723,6 +725,10 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         source = unshaded if len(unshaded) >= _periods(MIN_UNSHADED_HOURS, period) else strong
         if source:
             efficiency = eff_quantile(source, 0.5)
+            # With a limit the median rests on the hours below it, low sun and off-axis ones. Outside the plausible
+            # range those few hours show shade or model errors at low sun, not the modules: the typical value.
+            if limited and not EFFICIENCY_PLAUSIBLE[0] <= efficiency <= EFFICIENCY_PLAUSIBLE[1]:
+                efficiency = DEFAULT_EFFICIENCY
             cells = envelope()
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
         if steady_filter:
@@ -826,7 +832,9 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
     several cells, and the bound is met by any bright one of them, so only the measured hours, those that
     stayed below the limit, would decide the others and darken them. The cells such hours cross therefore
     keep their per-cell estimate, which counts the hour as a lower bound (censored_quantile), and so do the
-    fixed cells (those the limit hides).
+    fixed cells (those the limit hides). A measured hour that crosses such a cell leaves the fit too: the held
+    cell's default (no shade) is not known to be right, and the fit would put the hour's shade into the
+    neighbours instead (E1, #248).
     """
     eqs = []
     hold = {tuple(map(int, k.split(","))) for k in fixed}

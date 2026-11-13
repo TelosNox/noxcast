@@ -18,13 +18,15 @@ TEXT = {
            "summer": "Jun 21", "winter": "Dec 21", "equinox": "Mar/Sep", "today": "today", "no_data": "no data", "facade": "from the horizon line",
            "elevation": "Sun elevation", "not_learned": "not learned yet", "modules": "modules",
            "normal": "sun perpendicular to the modules",
-           "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules"},
+           "legend": "green = free · red = shaded · grey = no data yet · light = sun behind the modules",
+           "limit": "at the power limit", "legend_limit": " · dot = at the power limit"},
     "de": {"efficiency": "Wirkungsgrad", "direction": "Richtungsfaktor", "temp": "Temp.-Koeff.", "coverage": "Abdeckung", "agreement": "Satellit",
            "datasheet": "Datenblatt", "learned": "gelernt", "default": "typisch", "none": "aus",
            "summer": "21. Jun", "winter": "21. Dez", "equinox": "Mär/Sep", "today": "heute", "no_data": "keine Daten", "facade": "aus der Horizontlinie",
            "elevation": "Sonnenhöhe", "not_learned": "noch nicht gelernt", "modules": "Module",
            "normal": "Sonne senkrecht auf den Modulen",
-           "legend": "grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen"},
+           "legend": "grün = frei · rot = verschattet · grau = noch keine Daten · hell = Sonne hinter den Modulen",
+           "limit": "an der Leistungsgrenze", "legend_limit": " · Punkt = an der Leistungsgrenze"},
 }
 COMPASS = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW", 360: "N"}
 COMPASS_DE = {"NE": "NO", "E": "O", "SE": "SO"}
@@ -103,6 +105,7 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
     rng = (a0, a1)
     cells = {**facade_cells(learned), **learned.cells} if learned else {}
     derived = set(cells) - set(learned.cells) if learned else set()
+    at_limit = set(learned.limit_cells) if learned else set()
 
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}" '
            'font-family="sans-serif" font-size="12">',
@@ -125,6 +128,8 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
             fill, label, cls = transmission_color(value), f"{value:.2f}", "gap"
             if f"{ai},{ei}" in derived:
                 label += f" ({t['facade']})"
+            if f"{ai},{ei}" in at_limit:
+                label += f" ({t['limit']})"
         elif (ai, ei) in reachable:
             fill, label, cls = "#c8c8c8", t["no_data"], "gap nodata"
         else:
@@ -132,6 +137,10 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
         tip = f"{az:.0f}–{az + AZ_STEP:.0f}° / {el:.0f}–{el + EL_STEP:.0f}°: {label}"
         out.append(f'<rect class="{cls}" x="{_x(az, rng):.1f}" y="{_y(el + EL_STEP):.1f}" width="{w:.1f}" height="{h:.1f}" '
                    f'fill="{fill}" stroke="#ffffff" stroke-width="0.5"><title>{escape(tip)}</title></rect>')
+        if f"{ai},{ei}" in at_limit and value is not None:
+            # no shade learned there: the array was at its limit in most clear hours
+            out.append(f'<circle cx="{_x(az + AZ_STEP / 2, rng):.1f}" cy="{_y(el + EL_STEP / 2):.1f}" r="1.8" '
+                       f'fill="#333333"/>')
 
     # axes and grid
     for el in range(0, int(EL_MAX) + 1, 10):
@@ -191,6 +200,7 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
     else:
         figures = t["not_learned"]
     out.append(f'<text x="{LEFT}" y="{HEIGHT - 26}">{escape(figures)}</text>')
-    out.append(f'<text x="{LEFT}" y="{HEIGHT - 8}" class="muted" fill="#666666" font-size="11">{escape(t["legend"])}</text>')
+    legend = t["legend"] + (t["legend_limit"] if at_limit else "")
+    out.append(f'<text x="{LEFT}" y="{HEIGHT - 8}" class="muted" fill="#666666" font-size="11">{escape(legend)}</text>')
     out.append("</svg>")
     return "\n".join(out)

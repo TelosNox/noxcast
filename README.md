@@ -385,10 +385,12 @@ temperature turn this irradiance into the clear-sky power of the array.
 
 - **Data filters:** hours with a full battery, excluded periods, outages and incomplete hours are
   left out. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
-  Hours at a *Power limit* still count for now: left out, only clouded and shaded hours would remain of the
-  sunny ones, which bends the efficiency even further. With a limit well below what the modules deliver,
-  efficiency and midday shade are therefore learned somewhat too low; learning that counts these hours as
-  "at least this much" follows later.
+  Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,
+  they would make efficiency and midday shade look too low; left out, only the clouded and shaded ones of the sunny
+  hours would remain. Sun positions where most clear hours were at the limit show no shade on the map (marked *at
+  the power limit*): shade there is visible only once it pushes the power below the limit. With a limit far below
+  what the modules deliver, the efficiency comes from low sun and morning or evening hours, where the model is
+  least exact, and may be a few percent off; the limit caps the forecast on sunny hours anyway.
 - **Efficiency:** from hours with strong expected output. With the satellite filter, once the shading map knows
   enough free sun positions, only from hours at those positions, so shade it does not know yet (trees) does not pull it down. The
   plausibility check of tilt and azimuth (*Check geometry*) also uses only free hours and needs them on both sides

@@ -387,10 +387,13 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
   außen vor. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
-  Reflexion. Stunden an einer *Leistungsgrenze* zählen vorerst mit: Ohne sie blieben von den sonnigen Stunden nur
-  bewölkte und verschattete übrig, und der Wirkungsgrad würde noch stärker verbogen. Bei einer Grenze deutlich unter
-  dem, was die Module liefern, werden Wirkungsgrad und Mittagsschatten deshalb etwas zu niedrig gelernt; ein Lernen,
-  das diese Stunden als „mindestens so viel“ zählt, folgt später.
+  Reflexion. Stunden an einer *Leistungsgrenze* zählen als „mindestens so viel“: Die Module hätten mehr liefern
+  können. Als Messwert genommen, ließen sie Wirkungsgrad und Mittagsschatten zu niedrig erscheinen; ohne sie blieben
+  von den sonnigen Stunden nur die bewölkten und verschatteten übrig. Sonnenstände, an denen die meisten klaren
+  Stunden an der Grenze lagen, zeigt die Karte ohne Schatten (markiert *an der Leistungsgrenze*): Ein Schatten ist
+  dort erst zu sehen, wenn er die Leistung unter die Grenze drückt. Liegt die Grenze weit unter dem, was die Module
+  liefern, kommt der Wirkungsgrad aus Stunden mit tiefer Sonne, morgens und abends, wo das Modell am ungenauesten ist,
+  und kann einige Prozent danebenliegen; an sonnigen Stunden deckelt ohnehin die Grenze die Prognose.
 - **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter, sobald die Schattenkarte genug
   freie Sonnenpositionen kennt, nur aus Stunden an diesen Positionen, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
   drückt. Die Plausibilitätsprüfung von Neigung und Azimut (*Geometrie prüfen*) nutzt ebenfalls nur freie Stunden

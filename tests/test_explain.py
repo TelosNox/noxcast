@@ -30,3 +30,12 @@ def test_clearness_pairs_weather_with_clear_sky():
     out = explain.clearness(SITE, [model.WeatherHour(DAY + 12 * 3600, 400.0), model.WeatherHour(DAY, 0.0)])
     ghi, cs = out[DAY + 12 * 3600]
     assert ghi == 400.0 and cs > 800 and DAY not in out
+
+
+def test_limit_step_ends_the_steps_at_the_capped_forecast():
+    step = explain.unpacked([900.0, -100.0, 0.0, 0.0, 0.0, -20.0])            # 780 Wh before the cap
+    out = explain.with_limit({1.0: step, 2.0: step, 3.0: step, 4.0: step}, {1.0: 600.0, 2.0: 780.0, 4.0: 779.7})
+    assert out[1.0]["limit"] == -180.0 and out[1.0]["result"] == 600.0
+    assert sum(out[1.0][k] for k in (*explain.STEPS, "limit")) == 600.0       # the steps still add up
+    assert all("limit" not in out[t] for t in (2.0, 3.0, 4.0))                # equal, no value, only rounding
+    assert step["result"] == 780.0                                             # the input is left as it was

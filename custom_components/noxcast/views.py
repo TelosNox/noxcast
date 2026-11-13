@@ -464,6 +464,16 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
             steps, source = stored, "day_ahead"
         else:
             steps, source = live[sid], "current" if current else "replay"
+        # the forecast these steps explain, where a fixed limit capped it after the steps
+        if source == "morning" and sid in data.limits:
+            steps = explain.with_limit(steps, data.morning.get(sid, {}))
+        elif source == "current" and sid in data.limits:
+            steps = explain.with_limit(steps, data.forecast.get(sid, {}))
+        elif source == "day_ahead" and (limit := getattr(arr, "limit_w", None)) is not None:
+            # capped wherever the forecast was above the limit, whether or not the actual reached it; a capped
+            # value is never above the limit, so an archived forecast above it differs for another reason
+            steps = explain.with_limit(steps, {h.ts: h.forecast[sid] for h in arch
+                                               if sid in h.forecast and h.forecast[sid] <= limit + explain.LIMIT_TOLERANCE_WH})
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
                  "steps": {str(int(t)): s for t, s in sorted(steps.items()) if a <= t < b}, "steps_from": source,
                  "efficiency": (learned.get(sid) or LearnedArray()).efficiency}

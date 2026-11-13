@@ -500,7 +500,8 @@ orientation changes the geometry key and starts relearning.
     and with the day-ahead forecast in the archive (`steps`), so a newer weather report or a model
     learned since does not change them. Today the waterfall goes on with the change from newer weather
     (the latest forecast), today's correction (the expectation, for hours still ahead) and the
-    actual value. Days archived without steps are replayed from the archived weather with the
+    actual value. For an array with a power limit a last step *Limit* leads from the steps down to the
+    capped forecast (`explain.with_limit`); it is not stored, it follows from the forecast. Days archived without steps are replayed from the archived weather with the
     current model and say so. Past days come from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
     whole day (all arrays) is recorded in the archive (`history`); the day view draws these
     snapshots as a fan of curves from early to late next to the day-ahead forecast, and the day

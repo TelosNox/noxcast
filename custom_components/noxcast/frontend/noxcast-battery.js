@@ -52,7 +52,8 @@ const H = 3600;
 function simulate(st, hours, now, end) {
   const cap = st.capacity_wh, eta = Math.sqrt(Math.max(0.01, Math.min(1, st.efficiency)));
   let e = (st.soc ?? st.min) * cap;
-  const eMax = st.max * cap, eMin = st.min * cap;
+  // held_wh: room of batteries that stopped just below their limit (battery.held_back); an added battery keeps its own
+  const eMax = Math.max(st.max * cap - (st.held_wh || 0), 0), eMin = st.min * cap;
   const r = { points: [[now, e / cap]], full: null, empty: null, lost: 0, grid: 0 };
   // capped: PV above an inverter's output limit, only the battery can take it; discharge: limit of the hour (null = none)
   for (const [t, pv, load, capped, discharge] of hours) {

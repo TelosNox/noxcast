@@ -8,9 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
-- A battery that stops charging just below its upper limit now counts as full: within 2 percentage points of the
-  limit, the battery forecast treats further surplus as lost from now on (*Full at*, the day card's warning), instead
-  of expecting it to fit the last percent. The day card uses the same tolerance.
+- A battery that stops charging just below its upper limit now counts as full: while there is surplus, a battery
+  within 2 percentage points of its limit takes nothing more in the battery forecast, so *Full at*, the day card's
+  warning and the panel's *Battery & surplus* show the surplus as lost from now on instead of expecting it to fit the
+  last percent. With several batteries this applies to each one on its own. The day card uses the same tolerance.
 
 ## [0.4.0b1] - 2026-11-13
 

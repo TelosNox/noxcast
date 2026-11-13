@@ -297,6 +297,8 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
         return best
 
     configured = spread(geo.tilt, geo.azimuth)
+    if not math.isfinite(configured):                    # hours at a power limit hide the spread
+        return None
     s, tilt, az = search(geo.tilt, geo.azimuth, 5.0, 10.0, 3)
     s, tilt, az = search(tilt, az, 2.0, 4.0, 2)
     improvement = 1 - s / configured if configured > 0 and math.isfinite(configured) else 0.0

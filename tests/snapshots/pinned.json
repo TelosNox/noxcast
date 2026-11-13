@@ -6358,7 +6358,8 @@
      "max_power_t": 1776016800.0,
      "hints": [],
      "facade": null,
-     "limit_cells": []
+     "limit_cells": [],
+     "efficiency_source": "learned"
     },
     "EW": {
      "__": "LearnedArray",
@@ -6588,7 +6589,8 @@
      "max_power_t": 1779645600.0,
      "hints": [],
      "facade": null,
-     "limit_cells": []
+     "limit_cells": [],
+     "efficiency_source": "learned"
     }
    },
    "band": {
@@ -7008,7 +7010,8 @@
        "max_power_t": 1776016800.0,
        "hints": [],
        "facade": null,
-       "limit_cells": []
+       "limit_cells": [],
+       "efficiency_source": "learned"
       }
      },
      "EW": {
@@ -7240,7 +7243,8 @@
        "max_power_t": 1779645600.0,
        "hints": [],
        "facade": null,
-       "limit_cells": []
+       "limit_cells": [],
+       "efficiency_source": "learned"
       }
      }
     },
@@ -16536,7 +16540,8 @@
      "max_power_t": "= previous",
      "hints": "= previous",
      "facade": "= previous",
-     "limit_cells": "= previous"
+     "limit_cells": "= previous",
+     "efficiency_source": "= previous"
     },
     "EW": {
      "__": "= previous",
@@ -16585,7 +16590,8 @@
      "max_power_t": "= previous",
      "hints": "= previous",
      "facade": "= previous",
-     "limit_cells": "= previous"
+     "limit_cells": "= previous",
+     "efficiency_source": "= previous"
     }
    },
    "band": "= previous",
@@ -16753,7 +16759,8 @@
        "max_power_t": "= previous",
        "hints": "= previous",
        "facade": "= previous",
-       "limit_cells": "= previous"
+       "limit_cells": "= previous",
+       "efficiency_source": "= previous"
       }
      },
      "EW": {
@@ -16804,7 +16811,8 @@
        "max_power_t": "= previous",
        "hints": "= previous",
        "facade": "= previous",
-       "limit_cells": "= previous"
+       "limit_cells": "= previous",
+       "efficiency_source": "= previous"
       }
      }
     },
@@ -23621,7 +23629,8 @@
        "max_power_t": 1776016800.0,
        "hints": [],
        "facade": null,
-       "limit_cells": []
+       "limit_cells": [],
+       "efficiency_source": "learned"
       },
       "facade_cells": {},
       "last_learning": "2026-06-10T12:30:00+00:00"
@@ -23860,7 +23869,8 @@
        "max_power_t": 1779645600.0,
        "hints": [],
        "facade": null,
-       "limit_cells": []
+       "limit_cells": [],
+       "efficiency_source": "learned"
       },
       "facade_cells": {},
       "last_learning": "2026-06-10T12:30:00+00:00"
@@ -36259,7 +36269,8 @@
        "max_power_t": "= previous",
        "hints": "= previous",
        "facade": "= previous",
-       "limit_cells": "= previous"
+       "limit_cells": "= previous",
+       "efficiency_source": "= previous"
       },
       "facade_cells": "= previous",
       "last_learning": "2026-06-11T08:30:00+00:00"
@@ -36317,7 +36328,8 @@
        "max_power_t": "= previous",
        "hints": "= previous",
        "facade": "= previous",
-       "limit_cells": "= previous"
+       "limit_cells": "= previous",
+       "efficiency_source": "= previous"
       },
       "facade_cells": "= previous",
       "last_learning": "2026-06-11T08:30:00+00:00"

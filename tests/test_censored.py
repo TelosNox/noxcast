@@ -136,3 +136,15 @@ def test_hour_table_flags_hours_at_the_limit():
     table = ac.hour_table(SITE, GEO, model.LearnedArray(efficiency=EFF), lit, sat, steady=steady, floors={lit[3][0]})
     col = ac.HOUR_COLUMNS.index("at_limit")
     assert [r[col] for r in table["rows"]].count(True) == 1
+
+
+def test_efficiency_hidden_by_the_limit_takes_the_typical_value():
+    samples, sat, steady = clear_days(days=120)
+    limit = 0.5 * max(p for _, p in samples)
+    clipped = [(t, min(p, limit)) for t, p in samples]
+    every = {t for t, p in samples if p > 0}                 # nothing measured below the limit: all lower bounds
+    learned = model.learn(SITE, GEO, clipped, now=START + 180 * 86400, satellite_ghi=sat, steady=steady,
+                          floors=every, limit_w=limit)
+    assert learned.efficiency == model.DEFAULT_EFFICIENCY and learned.efficiency_source == "typical"
+    plain = model.learn(SITE, GEO, samples, now=START + 180 * 86400, satellite_ghi=sat, steady=steady)
+    assert plain.efficiency_source == "learned"

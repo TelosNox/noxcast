@@ -333,6 +333,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # further orientations only when there are any, so the key of a single-plane array stays as it was
         if a.geometry.extra:
             key.append([[p.tilt, p.azimuth, p.peak_w] for p in a.geometry.extra])
+        # power limits change what is learned (hours at the limit are lower bounds); only when there are any
+        if a.limits:
+            key.append([list(x) for x in a.limits])
         return key
 
     def _load_key(self) -> list:

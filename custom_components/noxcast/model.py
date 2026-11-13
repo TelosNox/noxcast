@@ -201,6 +201,8 @@ class LearnedArray:
     # cells whose hours were mostly at a power limit: shade there is hidden down to the limit, so the cell holds
     # the physics default (no shade, 1.0) instead of a learned value
     limit_cells: list[str] = field(default_factory=list)
+    # learned | typical: hours at a power limit hid the efficiency, or the few hours below it gave an implausible one
+    efficiency_source: str = "learned"
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)
@@ -643,15 +645,22 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         return temperature_factor(temp_coeff, r[9], r[2] + r[3], r[10]) if r[9] is not None else 1.0
 
     # efficiency at 25 °C from strong expected hours
+    typical = [False]                                    # the efficiency is the typical value, not learned
+
     def eff_quantile(source, q: float) -> float:
         """The quantile. Where hours at a limit hide it, the data say only that it is at least the quantile with
         those hours taken as measured; then the typical efficiency, unless that bound is higher."""
+        typical[0] = False
         ratios = [(r[1] / (exp[r[0]] * f_temp(r)), r[6], r[11]) for r in source]
         if not ratios:
             return DEFAULT_EFFICIENCY
         values, weights = [v for v, _, _ in ratios], [w for _, w, _ in ratios]
         value = censored_quantile(values, weights, [f for _, _, f in ratios], q)
-        return value if value is not None else max(weighted_quantile(values, weights, q), DEFAULT_EFFICIENCY)
+        if value is not None:
+            return value
+        bound = weighted_quantile(values, weights, q)
+        typical[0] = bound < DEFAULT_EFFICIENCY
+        return max(bound, DEFAULT_EFFICIENCY)
 
     efficiency = eff_quantile(strong, 0.95)
 
@@ -688,8 +697,13 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             if len(recent) >= _periods(3, period):
                 recent_value = censored_quantile([v for v, _ in recent], [1.0] * len(recent),
                                                  [f for _, f in recent], q)
+                if recent_value is None:
+                    # hidden by the limit: at least the recent hours taken as measured (a tree cut, now at the limit)
+                    bound = _quantile([v for v, _ in recent], q)
+                    if bound - value > CHANGE_THRESHOLD:
+                        value = bound
                 # e.g. a tree was cut or a building added
-                if recent_value is not None and abs(recent_value - value) > CHANGE_THRESHOLD:
+                elif abs(recent_value - value) > CHANGE_THRESHOLD:
                     value = recent_value
             out[key] = round(min(max(value, 0.0), 1.0), 3)
         return out
@@ -728,7 +742,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             # With a limit the median rests on the hours below it, low sun and off-axis ones. Outside the plausible
             # range those few hours show shade or model errors at low sun, not the modules: the typical value.
             if limited and not EFFICIENCY_PLAUSIBLE[0] <= efficiency <= EFFICIENCY_PLAUSIBLE[1]:
-                efficiency = DEFAULT_EFFICIENCY
+                efficiency, typical[0] = DEFAULT_EFFICIENCY, True
             cells = envelope()
         cells.update(cell_values(observe(calm, scaled=True), 0.5))
         if steady_filter:
@@ -781,7 +795,8 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
                            temp_source=temp_source,
                            cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
                            samples=len(rows), clear_filter=clear_filter, steady_filter=steady_filter,
-                           first_sample=rows[0][0], learned_at=now, limit_cells=sorted(hidden))
+                           first_sample=rows[0][0], learned_at=now, limit_cells=sorted(hidden),
+                           efficiency_source="typical" if typical[0] else "learned")
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)
     if with_kt:
@@ -884,8 +899,6 @@ def _fit_cells(site: Site, geo: ArrayGeometry, rows: list[tuple], cells: dict[st
         for _ in range(SHADE_FIT_SWEEPS):
             change = 0.0
             for c, row in normal.items():
-                if c in hold:
-                    continue
                 v = (rhs[c] - sum(a * value[c2] for c2, a in row.items() if c2 != c)) / row[c]
                 v = min(max(v, 0.0), 1.0)
                 change = max(change, abs(v - value[c]))

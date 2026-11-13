@@ -59,7 +59,7 @@ const TEXT = {
     facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
-    atLimit: "an der Leistungsgrenze", notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
+    atLimit: "an der Leistungsgrenze", typical: "typischer Wert, an der Grenze nicht messbar", notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
     sunPathOn: "Sonnenbahn am", jun: "21. Juni", equ: "März/Sept.", dec: "21. Dez.",
     dayStrip: "Dieser Tag als Zeitleiste", selected: "Ausgewähltes Feld", sunHere: "Sonne steht hier", normal: "Sonne senkrecht auf den Modulen",
     never: "nie im Lauf des Jahres", close: "Schließen", noData: "Noch keine PV-Gruppe. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → PV-Gruppe hinzufügen; Noxcast lernt sie dann sofort aus der Historie.",
@@ -128,7 +128,7 @@ const TEXT = {
     facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
-    atLimit: "at the power limit", notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
+    atLimit: "at the power limit", typical: "typical value, not measurable at the limit", notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
     sunPathOn: "Sun path on", jun: "21 June", equ: "Mar/Sep", dec: "21 Dec",
     dayStrip: "This day as a timeline", selected: "Selected cell", sunHere: "Sun is here", normal: "Sun perpendicular to the modules",
     never: "never during the year", close: "Close", noData: "No PV array yet. Add one under Settings → Devices & services → Noxcast → ⋮ → Add PV array; Noxcast then learns it from the history right away.",
@@ -684,7 +684,7 @@ class NoxcastPanel extends HTMLElement {
     const dir = Object.values(la.direction || {}), refl = Object.values(la.reflection || {});
     const date = (s) => s ? new Date(typeof s === "number" ? s * 1000 : s).toLocaleDateString(this._lang, { timeZone: this._data.time_zone }) : "–";
     return [
-      [t.efficiency, pct(la.efficiency)],
+      [t.efficiency, la.efficiency_source === "typical" ? `${pct(la.efficiency)} (${t.typical})` : pct(la.efficiency)],
       // stored before the flag existed: undefined, shown as before until the next learning run
       [t.skyView, la.sky_view_learned === false ? t.notLearned : pct(la.sky_view ?? 1, 0)],
       [t.tempCoeff, `${num(la.temp_coeff * 100)} %/K`],

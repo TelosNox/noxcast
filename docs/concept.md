@@ -407,7 +407,8 @@ orientation changes the geometry key and starts relearning.
     listed in `limit_cells` ("at the power limit" on the map), a temperature bin and a bin of the direction
     factor or reflection are left out (default 1 / 0), a month or sun sector of the panel's efficiency is not
     shown. The efficiency median, when hidden, takes the typical 0.9 unless the median with the bounds taken
-    as measured is higher. A cell at the limit does not count as known free for the efficiency, since nearly
+    as measured is higher; `efficiency_source` is then "typical" (panel, image, a warning in the log), as when
+    the median of the few measured hours falls outside 0.5-1.2. A cell at the limit does not count as known free for the efficiency, since nearly
     all its hours are bounds.
   - The shading fit needs exact hours: a bound is met by any bright cell on the hour's sun path, so the
     measured hours, those below the limit, would alone decide the others and darken them. Cells such hours
@@ -415,7 +416,9 @@ orientation changes the geometry key and starts relearning.
     fit would put the shade into the neighbours of a held cell). The facade search counts a bound as an error only where the forecast stays below it; sky view and
     the satellite agreement leave bounds out (overcast hours hardly ever reach a limit).
   - Strong hours for the efficiency start at 40 % of the lower of the expected maximum and the array's limit,
-    so that hours below the limit remain. These are low-sun, morning and evening hours, where the model's
+    so that hours below the limit remain (this holds for a configured limit even before it was ever reached;
+    without a limit the learning is the same as before, bit for bit). The limits are part of the geometry key,
+    so setting one relearns the array at once. These are low-sun, morning and evening hours, where the model's
     errors are largest: E1 rerun (limits at 50 % / 70 % of the P99): efficiency +4.4 / +0.1 points (Balcony),
     -4.2 / +5.1 (Roof) against -15 / -3 and -14 / -4 for keeping the bounds as measured; with only a few
     measured clear hours a median outside 0.5-1.2 is not taken (typical value instead). Hold-out error against

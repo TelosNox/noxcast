@@ -30,8 +30,9 @@ breaking changes.
   "at least this much" instead of as the real output, which made the efficiency too low and midday look shaded.
   Sun positions where most clear hours were at the limit show no shade on the panel's map and the shading image,
   marked *at the power limit*. With a limit far below what the modules deliver, the efficiency comes from low sun
-  and may be a few percent off. The diagnostics' hour table gets an `at_limit` column. Arrays without a limit learn
-  exactly as before.
+  and may be a few percent off; where even those hours do not show it, the typical 90 % is used and the panel says
+  so. Setting or changing a limit relearns the array at once. The diagnostics' hour table gets an `at_limit` column.
+  Arrays without a limit learn exactly as before.
 - Panel, Overview: *So far* and the badge at the top (*As forecast*, *Sunnier* or *Duller than forecast*) compare
   the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
   measured hours during the day, so a day far below the morning forecast could still show *As forecast*.

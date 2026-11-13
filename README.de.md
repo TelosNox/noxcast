@@ -393,7 +393,8 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   Stunden an der Grenze lagen, zeigt die Karte ohne Schatten (markiert *an der Leistungsgrenze*): Ein Schatten ist
   dort erst zu sehen, wenn er die Leistung unter die Grenze drückt. Liegt die Grenze weit unter dem, was die Module
   liefern, kommt der Wirkungsgrad aus Stunden mit tiefer Sonne, morgens und abends, wo das Modell am ungenauesten ist,
-  und kann einige Prozent danebenliegen; an sonnigen Stunden deckelt ohnehin die Grenze die Prognose.
+  und kann einige Prozent danebenliegen; an sonnigen Stunden deckelt ohnehin die Grenze die Prognose. Zeigen auch
+  diese Stunden ihn nicht, rechnet Noxcast mit typischen 90 % und markiert das im Panel (*typischer Wert*).
 - **Wirkungsgrad:** aus Stunden mit hoher erwarteter Leistung. Mit Satellitenfilter, sobald die Schattenkarte genug
   freie Sonnenpositionen kennt, nur aus Stunden an diesen Positionen, damit Schatten, den sie noch nicht kennt (Bäume), ihn nicht
   drückt. Die Plausibilitätsprüfung von Neigung und Azimut (*Geometrie prüfen*) nutzt ebenfalls nur freie Stunden

@@ -189,7 +189,8 @@ def render_shading_map(site: Site, learned: LearnedArray | None, reachable: set[
 
     # key figures
     if learned and learned.learned_at:
-        parts = [f'{t["efficiency"]} {learned.efficiency * 100:.1f} %',
+        typical = f' ({t["default"]})' if learned.efficiency_source == "typical" else ""
+        parts = [f'{t["efficiency"]} {learned.efficiency * 100:.1f} %{typical}',
                  f'{t["temp"]} {learned.temp_coeff * 100:.2f} %/K ({t.get(learned.temp_source, learned.temp_source)})',
                  f'{t["coverage"]} {learned.coverage * 100:.0f} %']
         if learned.direction:

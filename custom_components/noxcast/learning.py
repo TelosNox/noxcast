@@ -170,8 +170,11 @@ def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
     out: set[float] = set()
     for sensor, limit in arr.limits:
         factor = history.factors.get(sensor, 1.0)
-        peaks = history.power_max.get(sensor) or history.power.get(sensor, {})
-        out |= {t for t, v in peaks.items() if v is not None and ct.at_limit(v * factor, limit)}
+        high = history.power_max.get(sensor, {})
+        for t, mean in history.power.get(sensor, {}).items():
+            peak = high.get(t) if high.get(t) is not None else mean
+            if peak is not None and ct.at_limit(peak * factor, limit):
+                out.add(t)
     return out
 
 
@@ -220,6 +223,10 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
+    if result.efficiency_source == "typical":
+        _LOGGER.warning("%s: the hours below the power limit do not show the efficiency, the typical %.0f %% is "
+                        "used – if this stays, check peak power and power sensor units", arr.name,
+                        result.efficiency * 100)
     if result.samples and period == HOUR:
         ac.annotate(site, arr.geometry, result, samples, history.air_temp, history.satellite_ghi,
                     datetime.fromtimestamp(now, timezone.utc).year, steady, floors)

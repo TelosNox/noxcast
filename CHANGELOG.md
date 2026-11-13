@@ -7,7 +7,45 @@ breaking changes.
 
 ## Unreleased
 
+## [0.4.0] - 2026-11-13
+
+All changes since 0.3.1: the pre-release 0.4.0b1 (its single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)) and, since then, the battery level in
+the day card, a full battery just below its upper limit and the limit step in the day view. Nothing needs to be done
+after the update; arrays without a power limit learn as before.
+
+### Added
+- Noxcast suggests a power limit when the measurements show one: if every power sensor of a PV array stays flat at
+  or near its maximum on several days while the sun would have changed the power, and never goes above it, a Repairs notice
+  asks whether to set that maximum as the array's *Power limit* (*Set limit*, *Other value*, *There is no limit*).
+  Nothing changes until you answer; "There is no limit" stops the notice until the level moves.
+- PV arrays can have a power limit (*Power limit* in the array's settings): when an MPPT input or a micro-inverter
+  lets through less than the modules deliver, the forecast, *Expected today*, the P10–P90 range and the battery
+  forecast are capped at it. The cap comes last, so the correction during the day and the range still see the
+  clouds. An hour that reaches the limit only for part of the time loses only that part. The forecast sensors show
+  `limit_w` and `limited_wh` (energy above the limit), and the forecast archive marks hours at the limit.
+- The forecast archive keeps, for each hour of tomorrow, how far the runs of the weather ensembles (ICON-EPS,
+  ECMWF ENS) spread. Noxcast does not use it yet: after a few weeks it shows whether the range of a forecast
+  can tell sure days from unsure ones better than now. One more request to Open-Meteo every 3 hours.
+- The forecast archive also keeps, for each day from now on, the published P10–P90 range, the split of the
+  irradiance into direct and diffuse for each weather model, and the intraday correction applied each hour. Nothing
+  uses them yet: they allow seasonal checks of the range and the corrections and a fair comparison of weather
+  sources later.
+
 ### Changed
+- Arrays with a power limit learn efficiency and shade correctly from hours at the limit: such an hour counts as
+  "at least this much" instead of as the real output, which made the efficiency too low and midday look shaded.
+  Sun positions where most clear hours were at the limit show no shade on the panel's map and the shading image,
+  marked *at the power limit*. With a limit far below what the modules deliver, the efficiency comes from low sun
+  and may be a few percent off; where even those hours do not show it, the typical 90 % is used and the panel says
+  so. Setting or changing a limit relearns the array at once. The diagnostics' hour table gets an `at_limit` column.
+  Arrays without a limit learn exactly as before.
+- Panel, Overview: *So far* and the badge at the top (*As forecast*, *Sunnier* or *Duller than forecast*) compare
+  the measured hours with the morning forecast. Before, they compared with the latest forecast, which follows the
+  measured hours during the day, so a day far below the morning forecast could still show *As forecast*.
+- The forecast archive keeps 400 days instead of 120, and the *Day* page goes back as far. The range (P10–P90) and
+  the *Forecast accuracy* page still use the last 120 days, so nothing changes there. The archive grows to about
+  9 MB over a year with two arrays.
 - The day card shows a full battery in the battery level instead of as boxes: ahead, the simulated line and a soft
   tint below it turn amber in the hours in which the battery is full and surplus is lost, from the moment it is
   full; hours in which that happens only with more sun (PV at P90) are hatched. Surplus above a battery's charge
@@ -15,6 +53,14 @@ breaking changes.
   marking are no longer shown. The legend says *full, surplus lost* and *full with more sun*.
 
 ### Fixed
+- The shade loss in the day card no longer shows a peak above what the sun can deliver: in a shaded hour that
+  produced a little more diffuse light than forecast, the loss was scaled up with it. The output without shade that the
+  card draws now stays below the unshaded clear-sky output.
+- The correction of today's forecast from the measured hours no longer reads PV cut by a full battery as clouds.
+  Before, a battery that was full at noon lowered the expected PV for the rest of the day. An hour in which a
+  battery reached *Battery considered full at* now only counts when it was sunnier than forecast;
+  if every recent hour was cut and duller than forecast, today's forecast stays as it is. This needs *Battery state
+  of charge sensors* in the settings.
 - A battery that stops charging just below its upper limit now counts as full: while there is surplus, a battery
   within 2 percentage points of its limit takes nothing more in the battery forecast, so *Full at*, the day card's
   warning and the panel's *Battery & surplus* show the surplus as lost from now on instead of expecting it to fit the

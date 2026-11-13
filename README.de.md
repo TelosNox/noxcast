@@ -347,7 +347,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
 | Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
-| Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
+| Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 
 ## Dienste
 

@@ -47,6 +47,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         },
         "learning_hours_error": learning_error,
         "exclusions": coordinator.exclusions,
+        # limits seen in the measurements, and the levels the user answered "There is no limit" to (plateau.py)
+        "limits": coordinator.limits,
         "last_learning": coordinator.last_learning.isoformat() if coordinator.last_learning else None,
         "last_learning_error": coordinator.last_learning_error,
         "forecast_archive": coordinator.forecast_archive,

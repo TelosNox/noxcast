@@ -116,11 +116,14 @@ async def test_the_fix_flow_writes_the_limit_or_remembers_the_answer(hass: HomeA
                                 data=data, subentry_type="array", title="Roof", unique_id=None, subentry_id="r")])
     entry.add_to_hass(hass)
     rejected: list = []
+
+    async def dismiss(sensors, peak):
+        rejected.append((sensors, peak))
     arrays = {"r": SimpleNamespace(name="Roof", sensors=("sensor.a", "sensor.b"))}
     entry.runtime_data = SimpleNamespace(
         arrays=arrays, installation=installation.build({"r": ["sensor.a", "sensor.b"]}),
         limits={"detected": {"sensor.a": PLATEAU, "sensor.b": {**PLATEAU, "peak_w": 497.0}}, "dismissed": {}},
-        dismiss_limit=lambda sensors, peak: rejected.append((sensors, peak)))
+        async_dismiss_limit=dismiss)
 
     async def flow():
         f = await repairs.async_create_fix_flow(hass, "limit_suggestion_r", {"entry_id": entry.entry_id,

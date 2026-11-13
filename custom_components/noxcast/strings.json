@@ -662,7 +662,7 @@
         "step": {
           "init": {
             "title": "Power limit for {name}?",
-            "description": "{sensors} never delivered more than {peak} W per sensor in the last {window_days} days, and stayed flat at that level on {flat_days} days while the sun would have changed it. This looks like a limit of the inverter or of its input.\n\nSet a limit of {limit} W per sensor? The forecast of **{name}** is then capped at it. Until you answer, nothing changes.",
+            "description": "No sensor of {sensors} delivered more than {peak} W in the last {window_days} days, and they stayed flat at or near that level on {flat_days} days while the sun would have changed it. This looks like a limit of the inverter or of its input.\n\nSet a limit of {limit} W per sensor? The forecast of **{name}** is then capped at it. Until you answer, nothing changes.",
             "menu_options": {
               "set_limit": "Set limit of {limit} W",
               "other_value": "Other value",

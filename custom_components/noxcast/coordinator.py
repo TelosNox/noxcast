@@ -446,34 +446,43 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         hours = {sid: ct.limited_hours(self.installation, sid, peaks) for sid in limited}
         return lambda sid, t: t in hours.get(sid, ())
 
-    def _detect_limits(self, history: ln.PvHistory, now: float, exclusions: list[tuple[float, float]],
-                       fine: dict[str, Series]) -> dict[str, dict]:
+    def _detect_limits(self, history: ln.PvHistory, now: float, soc_full: float,
+                       exclusions: list[tuple[float, float]], fine_days: dict) -> dict[str, dict]:
         """Executor. Sensor -> limit seen in its measurements (plateau.py), for every array's sensors.
 
-        Hours before the array's valid-since date and in excluded periods do not count, as for learning.
+        Hours that learning leaves out do not count either: before the array's valid-since date, in excluded
+        periods, and with a full battery, whose cut (zero export, feed-in limit) can look flat but is no fixed limit.
+        fine_days: the days of the 5-minute archive within the window.
         """
         day_of = pv_backtest.local_day(dt_util.get_default_time_zone())
+        full = {t for t, v in history.soc.items() if v is not None and v >= soc_full}
         out = {}
         for arr in self.arrays.values():
             change = pt.clear_change(self.site, arr.geometry)
 
             def keep(t: float, since=arr.valid_since) -> bool:
-                return (since is None or t >= since) and not any(a <= t < b for a, b in exclusions)
+                return ((since is None or t >= since) and t - t % 3600 not in full
+                        and not any(a <= t < b for a, b in exclusions))
 
             for s in arr.sensors:
                 f = history.factors.get(s, 1.0)
                 mean, low, high = ({t: v * f for t, v in (series.get(s) or {}).items() if v is not None and keep(t)}
                                    for series in (history.power, history.power_min, history.power_max))
                 found = pt.detect(mean, low, high, now, day_of, change,
-                                  {t: v for t, v in (fine.get(s) or {}).items() if keep(t)})
+                                  {t: v for t, v in fn.series(fine_days, s).items() if keep(t)})
                 if found is not None:
                     out[s] = found.as_dict()
         return out
 
-    def dismiss_limit(self, sensors: list[str], peak_w: float) -> None:
-        """The user said these sensors have no limit at this level: no notice until the level moves (plateau.py)."""
-        self.limits["dismissed"].update({s: float(peak_w) for s in sensors})
-        self._store.async_delay_save(self._store_data, 5)
+    async def async_dismiss_limit(self, sensors: list[str], peak_w: float) -> None:
+        """The user said these sensors have no limit at this level: no notice until the level moves (plateau.py).
+
+        Saved at once: a reload right after (another notice answered with a limit) reads the file anew.
+        """
+        configured = {s for a in self.arrays.values() for s in a.sensors}
+        dismissed = {s: w for s, w in self.limits["dismissed"].items() if s in configured}
+        self.limits["dismissed"] = {**dismissed, **{s: float(peak_w) for s in sensors}}
+        await self._store.async_save(self._store_data())
         self.async_update_listeners()
 
     def _run_backtest(self, learned: dict[str, LearnedArray], archive: dict, history: ln.PvHistory, now: float,
@@ -503,9 +512,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
         self.learned.update(learned)          # applied in one step on the event loop
         try:
-            fine = {s: fn.series(self.fine, s) for a in self.arrays.values() for s in a.sensors}
+            # only the window's days of the 5-minute archive, which holds years; expanded in the executor
+            first = (dt_util.now() - timedelta(days=pt.WINDOW_DAYS + 1)).date().isoformat()
+            fine_days = {d: dict(v) for d, v in self.fine.items() if d >= first}
             self.limits["detected"] = await self.hass.async_add_executor_job(
-                self._detect_limits, history, now.timestamp(), exclusions, fine)
+                self._detect_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
         except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
             _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
         self.band = await self.hass.async_add_executor_job(self._learn_band)

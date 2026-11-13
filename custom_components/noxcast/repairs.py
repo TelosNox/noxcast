@@ -70,7 +70,7 @@ class LimitSuggestionFlow(RepairsFlow):
         if current is None:
             return self.async_abort(reason="limit_gone")
         entry, sub, suggested = current
-        entry.runtime_data.dismiss_limit(list(sub.data[CONF_POWER_SENSORS]), suggested["peak_w"])
+        await entry.runtime_data.async_dismiss_limit(list(sub.data[CONF_POWER_SENSORS]), suggested["peak_w"])
         return self.async_create_entry(data={})
 
     def _apply(self, current: tuple[Any, Any, dict], limit_w: float) -> RepairsFlowResult:

@@ -662,7 +662,7 @@
         "step": {
           "init": {
             "title": "Leistungsgrenze für {name}?",
-            "description": "{sensors} hat in den letzten {window_days} Tagen nie mehr als {peak} W je Sensor geliefert und blieb an {flat_days} Tagen flach auf diesem Wert, während die Sonne ihn verändert hätte. Das sieht nach einer Grenze des Wechselrichters oder seines Eingangs aus.\n\nEine Grenze von {limit} W je Sensor setzen? Die Prognose von **{name}** wird dann darauf begrenzt. Bis du antwortest, ändert sich nichts.",
+            "description": "Kein Sensor von {sensors} hat in den letzten {window_days} Tagen mehr als {peak} W geliefert, und an {flat_days} Tagen blieben sie flach auf oder nahe diesem Wert, während die Sonne ihn verändert hätte. Das sieht nach einer Grenze des Wechselrichters oder seines Eingangs aus.\n\nEine Grenze von {limit} W je Sensor setzen? Die Prognose von **{name}** wird dann darauf begrenzt. Bis du antwortest, ändert sich nichts.",
             "menu_options": {
               "set_limit": "Grenze von {limit} W setzen",
               "other_value": "Anderer Wert",

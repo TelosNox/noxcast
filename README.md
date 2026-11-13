@@ -345,7 +345,7 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | Sensors missing | A configured entity does not exist (renamed or removed) |
 | No weather forecast | Open-Meteo could not be reached for more than a day |
 | Configuration does not fit | A PV array delivers more than its configured modules can: peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
-| Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
+| Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at or near its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
 
 ## Services
 

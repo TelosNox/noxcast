@@ -205,13 +205,22 @@ def held_back(batteries: list[Battery]) -> float:
                if b.capacity_wh > 0 and b.soc is not None and b.soc >= b.max_soc - LIMIT_TOLERANCE)
 
 
+def lost_when_full(sim: Simulation, max_soc: float) -> dict[float, float]:
+    """Surplus lost per hour (Wh) in the hours that end with the battery at its upper limit.
+
+    The simulation also loses surplus above the charge power of a battery that is far from full; that is not
+    what a "full, surplus lost" warning means, so those hours are left out.
+    """
+    return {t: h["lost"] for t, h in sim.hours.items() if h["lost"] > 0 and h.get("soc", 0.0) >= max_soc - LIMIT_TOLERANCE}
+
+
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
                    pv_arrays: dict[str, Series] | None = None) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
-    the time full with PV at P10 and at P90, and the surplus lost per hour at P90. None without batteries or load forecast.
+    the time full with PV at P10 and at P90, and the surplus lost per hour with a full battery at P90. None without batteries or load forecast.
     pv_arrays: PV per array, for batteries with an output cap behind an array.
     """
     if not batteries or load is None:
@@ -242,7 +251,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
                                       for s in sims],
                        "full_at": [s.full_at for s in sims],
-                       "lost_p90": {t: h["lost"] for t, h in sims[1].hours.items()}}   # per hour, in the strong case
+                       "lost_p90": lost_when_full(sims[1], storage.max_soc)}   # per hour, in the strong case
     return out
 
 

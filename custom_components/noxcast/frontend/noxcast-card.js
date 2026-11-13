@@ -46,7 +46,7 @@ const PALETTE = {
   light: { pv: "#F2B233", pvDark: "#C27A06", pvText: "#9A6400", grid: "#2F80C8", home: "#4F5964", bat: "#23874A",
     shade: "#C0392B", rail: "rgba(0,0,0,0.08)", unused: "#2F80C8", unusedBg: "rgba(47,128,200,0.12)", lost: "#E37400" },
   dark: { pv: "#F2B233", pvDark: "#C58410", pvText: "#F2B233", grid: "#5AA6E8", home: "#B4BCC4", bat: "#4CC77A",
-    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)", lost: "#F5A524" },
+    shade: "#F07058", rail: "rgba(255,255,255,0.10)", unused: "#5AA6E8", unusedBg: "rgba(90,166,232,0.15)", lost: "#F58A2C" },
 };
 
 // with range "day" a night hour gets this share of a day hour's width in the day chart
@@ -928,7 +928,8 @@ class NoxcastCard extends HTMLElement {
       // downwards, so a full battery reads as a soft tint under its line, not as a block. Nothing for the past.
       const spans = (pick) => dayH.filter((h) => h + H > now && pick(sim.lost.get(h) || [0, 0]) > 1).map((h) => {
         const a = Math.max(h, now, sim.full !== null && sim.full > h && sim.full < h + H && pick === lostWh ? sim.full : h);
-        return `<rect x="${x(a).toFixed(1)}" y="${S0}" width="${Math.max(x(h + H) - x(a) + 0.3, 0).toFixed(1)}" height="${Sh}"></rect>`;
+        // reaching above the strip, so the amber line at the very top keeps its full width
+        return `<rect x="${x(a).toFixed(1)}" y="${S0 - 3}" width="${Math.max(x(h + H) - x(a) + 0.3, 0).toFixed(1)}" height="${Sh + 3}"></rect>`;
       }).join("");
       const lostWh = ([wh]) => wh, riskWh = ([wh, p90]) => (wh > 1 ? 0 : p90);
       const lostClip = fut.length > 1 ? spans(lostWh) : "", riskClip = fut.length > 1 ? spans(riskWh) : "";
@@ -967,6 +968,9 @@ class NoxcastCard extends HTMLElement {
       if (Math.abs(fc(h) - exp(h)) >= 1 || !done) rows.push([t.lg.forecast, fc(h), P.pvDark]);
       if (loss(h) >= 1) rows.push([t.lg.loss, -loss(h), P.shade]);
       if (load(h) !== null) rows.push([t.lg.load, lv(h), "var(--primary-text-color)"]);
+      const [lostW, riskW] = (sim && h + H > now && sim.lost.get(h)) || [0, 0];
+      if (lostW > 1) rows.push([t.lg.lost, lostW, P.lost]);
+      if (riskW > lostW + 1) rows.push([t.lg.risk, riskW, P.lost]);
       const soc = socAt(Math.min(h + H, Math.max(h, now)));
       return { label: `${this._hm(h)}–${this._hm(h + H)}`, rows, soc, x: x(h + H / 2) };
     });

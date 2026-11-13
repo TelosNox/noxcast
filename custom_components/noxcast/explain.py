@@ -19,6 +19,7 @@ from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, f
 from .solar import Site
 
 STEPS = ("clear", "clouds", "shade", "reflection", "direction", "heat")
+LIMIT_TOLERANCE_WH = 1.0      # below the rounding of the steps, far below any real cap
 
 
 def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> dict[float, dict]:
@@ -60,6 +61,22 @@ def unpacked(values: list[float]) -> dict:
     step = dict(zip(STEPS, values, strict=True))
     step["result"] = round(sum(values), 1)
     return step
+
+
+def with_limit(steps: dict[float, dict], capped: dict[float, float]) -> dict[float, dict]:
+    """The steps with a last step "limit": the published forecast of a limited array is capped after the steps
+    (forecasting._cap), so without it the steps would end above the value the view shows.
+
+    capped: per hour start the forecast in Wh as published. An hour whose value is not clearly below its result (the
+    steps are rounded) keeps its steps; else the step is the (negative) difference, so the steps still add up.
+    """
+    out = {}
+    for t, step in steps.items():
+        c = capped.get(t)
+        if c is not None and c < step["result"] - LIMIT_TOLERANCE_WH:
+            step = {**step, "limit": round(c - step["result"], 1), "result": round(c, 1)}
+        out[t] = step
+    return out
 
 
 def archived_weather(day: Day | None) -> list[WeatherHour]:

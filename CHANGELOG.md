@@ -19,6 +19,9 @@ breaking changes.
   within 2 percentage points of its limit takes nothing more in the battery forecast, so *Full at*, the day card's
   warning and the panel's *Battery & surplus* show the surplus as lost from now on instead of expecting it to fit the
   last percent. With several batteries this applies to each one on its own.
+- Panel, Day: for an array with a power limit, *How the hour comes about* and the energy flow end with the step
+  *Limit* at the capped forecast. Before, the steps ended at the value without the limit, above the forecast in the
+  chart.
 
 ## [0.4.0b1] - 2026-11-13
 

@@ -259,6 +259,20 @@ def test_day_view_of_today_merges_archive_and_current_data():
     roof, wall = view["arrays"]
     assert roof["steps_from"] == "morning" and roof["steps"] == {str(int(A + 12 * H)): fixed[A + 12 * H]}
     assert roof["steps"][str(int(A + 12 * H))]["result"] == 300.0 and wall["steps_from"] == "current"
+    # a fixed limit capped the morning forecast after the steps: a last step leads down to it
+    before = d.morning
+    d.limits, d.morning = {"roof": 250.0}, {**before, "roof": {A + 12 * H: 250.0}}
+    view = views.day_view(SITE, arrays(), {"roof": model.LearnedArray(efficiency=0.9)}, archive.day(arc, DAY), d,
+                          A, A + 86400, A + 12.5 * H)
+    noon = view["arrays"][0]["steps"][str(int(A + 12 * H))]
+    assert noon["limit"] == -50.0 and noon["result"] == 250.0 and "limit" not in view["arrays"][1]["steps"].get(str(int(A + 12 * H)), {})
+    d.limits, d.morning = {}, before
+    # a past day: the archived forecast was capped, the archived steps were not
+    past = {"2026-07-01": {"issued": "x", "hours": {str(int(A + 12 * H)): {
+        "ghi": 500.0, "temp": 15.0, "forecast": {"roof": 250.0}, "steps": {"roof": [500.0, -150.0, -20.0, 0.0, 0.0, -30.0]}}}}}
+    old = views.day_view(SITE, arrays(), {}, archive.day(past, DAY), None, A, A + 86400, A + 30 * H)["arrays"][0]
+    noon = old["steps"][str(int(A + 12 * H))]
+    assert old["steps_from"] == "day_ahead" and noon["limit"] == -50.0 and noon["result"] == 250.0
     # a coming day: no archive, only the forecast
     later = views.day_view(SITE, arrays(), {}, None, d, A + 86400, A + 2 * 86400, A + 12.5 * H)
     assert list(later["arrays"][0]) == ["id", "name", "peak_w", "steps", "steps_from", "efficiency", "day_ahead", "actual",

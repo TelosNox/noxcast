@@ -106,7 +106,10 @@ def test_surplus_band_battery_and_plan():
     runs = [pl.RunProfile("w", 500, 60)]
     fc.surplus(result, SITE, band, [battery], runs, DAY_START + 9 * 3600, DAY_END)
     assert set(result.band) == {"hours", "days", "rest"} and result.band["days"][1][0] < result.band["days"][1][1]
-    assert result.battery["sim"].full_at and set(result.battery["band"]) == {"lost_today", "full_at"}
+    assert result.battery["sim"].full_at and set(result.battery["band"]) == {"lost_today", "full_at", "lost_p90"}
+    # the strong case loses at least as much as expected, hour by hour
+    p90 = result.battery["band"]["lost_p90"]
+    assert all(p90[t] >= h["lost"] - 1e-6 for t, h in result.battery["sim"].hours.items()) and sum(p90.values()) > 0
     assert result.plan["w"]["today"].pv_share == 1.0
     fc.surplus(result, SITE, None, [], [], DAY_START + 9 * 3600, DAY_END)
     assert result.band is None and result.battery is None and result.plan == {}

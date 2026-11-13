@@ -148,11 +148,15 @@ def today_totals(data, consumers: dict, days: int, today: date, day_start: Calla
     b = data.battery
     if b:
         sim, storage = b["sim"], b["storage"]
+        p90 = (b.get("band") or {}).get("lost_p90", {})
         out["battery"] = {
             "points": columns(((t, round(f, 4)) for t, f in sim.points), "soc"),
             "full": sim.full_at, "empty": sim.empty_at,
             "lost_today": round(sum(h["lost"] for t, h in sim.hours.items() if t < b["day_end"]), 1),
             "charge_start": b["charge_start"], "max": storage.max_soc, "min": storage.min_soc,
+            # surplus without room per hour (Wh), expected and with PV at P90: the card's warning in the battery strip
+            "lost": columns(((t, h["lost"], round(p90.get(t, 0.0), 1)) for t, h in sorted(sim.hours.items())
+                             if h["lost"] > 0 or p90.get(t, 0.0) > 0), "wh", "p90"),
         }
     names = {sid: c.name for sid, c in consumers.items()}
     out["plan"] = [{"name": names.get(sid, sid), "now": round(p["now"].pv_share, 3),

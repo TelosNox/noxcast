@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The day card shows a full battery in the battery level instead of as boxes: ahead, the simulated line and a soft
+  tint below it turn amber in the hours in which the battery is full and surplus is lost, from the moment it is
+  full; hours in which that happens only with more sun (PV at P90) are hatched. Past hours and the "almost full"
+  marking are no longer shown. The legend says *full, surplus lost* and *full with more sun*.
+
 ### Fixed
 - A battery that stops charging just below its upper limit now counts as full: while there is surplus, a battery
   within 2 percentage points of its limit takes nothing more in the battery forecast, so *Full at*, the day card's

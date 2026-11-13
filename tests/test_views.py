@@ -77,8 +77,9 @@ def test_today_arrays_and_totals():
     assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == {"t": [], "wh": []}
     assert out[1]["tomorrow_wh"] == 0
     sim = bt.Simulation(points=[(A + 12 * H, 0.512345)], full_at=A + 14 * H,
-                        hours={A + 12 * H: {"lost": 10.04}, A + 30 * H: {"lost": 99.0}})
-    d.battery = {"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1), "day_end": A + 86400, "charge_start": A + 32 * H}
+                        hours={A + 11 * H: {"lost": 0.0}, A + 12 * H: {"lost": 10.04}, A + 30 * H: {"lost": 99.0}})
+    d.battery = {"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1), "day_end": A + 86400, "charge_start": A + 32 * H,
+                 "band": {"lost_p90": {A + 11 * H: 20.04, A + 12 * H: 30.0}}}
     d.load = lf.LoadForecast({A + 12 * H: 456.78}, {}, {}, 1.0)
     d.plan = {"c1": {"now": SimpleNamespace(pv_share=0.12345), "today": SimpleNamespace(start=1.0, end=2.0, pv_share=0.5)},
               "c2": {"now": SimpleNamespace(pv_share=0.0), "today": None}}
@@ -87,7 +88,10 @@ def test_today_arrays_and_totals():
     assert totals["load"] == {"t": [A + 12 * H], "wh": [456.8]}
     assert totals["band"] == {"t": [A + 12 * H], "p10": [250.0], "p90": [350.1]}
     assert totals["battery"] == {"points": {"t": [A + 12 * H], "soc": [0.5123]}, "full": A + 14 * H, "empty": None, "lost_today": 10.0,
-                                 "charge_start": A + 32 * H, "max": 0.9, "min": 0.1}
+                                 "charge_start": A + 32 * H, "max": 0.9, "min": 0.1,
+                                 # only hours with surplus lost, expected or with PV at P90
+                                 "lost": {"t": [A + 11 * H, A + 12 * H, A + 30 * H], "wh": [0.0, 10.04, 99.0],
+                                          "p90": [20.0, 30.0, 0.0]}}
     assert totals["plan"] == [{"name": "Washer", "now": 0.123, "start": 1.0, "end": 2.0, "pv": 0.5},
                               {"name": "c2", "now": 0.0, "start": None, "end": None, "pv": None}]
     assert list(views.today_totals(data(band=None), {}, 3, DAY, day_start)) == ["days", "plan"]

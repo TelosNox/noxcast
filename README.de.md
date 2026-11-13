@@ -270,7 +270,9 @@ Darstellung.
   wie bei PV-Gruppen und Akkus, listet sie diese zuerst mit ihren aktuellen Werten; ein Tipp auf eine Zeile öffnet
   diese Entität.
 - **Tagesdiagramm:** PV-Ist (durchgezogen), Erwartung und Prognose (gestrichelt), Schattenverlust schraffiert,
-  Hausverbrauch, Akkustand (gemessen, dann simuliert; rot, wo er voll ist und Überschuss verloren geht), P10–P90-Band,
+  Hausverbrauch, Akkustand (gemessen, dann simuliert; voraus färben sich die Linie und eine weiche Tönung darunter
+  bernsteinfarben, wo der Akku voll ist und Überschuss verloren geht, schraffiert, wo das nur bei mehr Sonne
+  (P90) passiert), P10–P90-Band,
   je PV-Gruppe eine Spur mit Schatten- und Reflexionszeiten, oben Wettersymbole je Stunde. Das Diagramm nutzt die
   ganze Kartenbreite, die Skala steht darin. Überfahren oder Antippen einer Stunde zeigt ihre Werte.
 - **Zahlen des Tages** unter dem Diagramm: Ist, Erwartung, die Prognose vom Morgen, Schattenverlust und die Prognose

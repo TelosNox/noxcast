@@ -269,7 +269,8 @@ display.
   Tapping a figure opens its entity. With several entities behind it, as with PV arrays and
   batteries, it first lists them with their current values; tapping a row opens that entity.
 - **Day chart:** PV actual (solid), expectation and forecast (dashed), shade loss hatched, house
-  load, battery level (measured, then simulated; red where it is full and surplus is lost), P10–P90
+  load, battery level (measured, then simulated; ahead, the line and a soft tint below it turn amber where the battery is
+  full and surplus is lost, hatched where that happens only with more sun, at P90), P10–P90
   band, a lane per array with shade and reflection periods, hourly weather symbols on top. The chart
   uses the full card width, the scale sits inside it. Hover or tap an hour for its values.
 - **Numbers of the day** below the chart: actual, expected, the morning forecast, shade loss and

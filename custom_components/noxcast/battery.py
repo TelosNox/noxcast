@@ -211,7 +211,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
-    the time full with PV at P10 and at P90. None without batteries or load forecast.
+    the time full with PV at P10 and at P90, and the surplus lost per hour at P90. None without batteries or load forecast.
     pv_arrays: PV per array, for batteries with an output cap behind an array.
     """
     if not batteries or load is None:
@@ -241,7 +241,8 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours), held))
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
                                       for s in sims],
-                       "full_at": [s.full_at for s in sims]}
+                       "full_at": [s.full_at for s in sims],
+                       "lost_p90": {t: h["lost"] for t, h in sims[1].hours.items()}}   # per hour, in the strong case
     return out
 
 

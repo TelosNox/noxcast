@@ -11,8 +11,8 @@ import math
 from datetime import datetime, timezone
 
 from .model import (
-    CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, clearsky_heating, clearsky_hour, clearsky_profile,
-    known_free, temperature_factor, transmission,
+    CLEAR_KT, SUBSTEPS, ArrayGeometry, LearnedArray, _quantile, censored_quantile, clearsky_heating, clearsky_hour,
+    clearsky_profile, known_free, temperature_factor, transmission,
 )
 from .solar import Site, clearsky_simplified_solis, extra_radiation, plane_of_array, sun_position
 from .const import Series
@@ -74,10 +74,11 @@ def month_balance(site: Site, geo: ArrayGeometry, learned: LearnedArray, year: i
 
 def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
           satellite_ghi: Series | None, air_temp: Series | None,
-          steady: set[float] | None = None) -> list[dict]:
+          steady: set[float] | None = None, floors: set[float] | None = None) -> list[dict]:
     """Hours that show the plane itself: clear (by satellite, if there is one), unshaded, well lit.
 
-    With steady hours (see model.steady_hours) only those, when there are enough of them.
+    With steady hours (see model.steady_hours) only those, when there are enough of them. floors: hours at a
+    fixed power limit, whose power is a lower bound (row "floor").
     """
     rows = []
     for t, p in samples:
@@ -93,7 +94,7 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
         if not known_free(learned, az, el, margin=True):
             continue
         temp = (air_temp or {}).get(t)
-        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp, "az": az,
+        rows.append({"t": t, "p": p, "poa": beam + diff, "kt": kt, "temp": temp, "az": az, "floor": t in (floors or ()),
                      "heating": clearsky_heating(site, geo, t, learned.sky_view) if temp is not None else geo.heating})
     if steady is not None:
         calm = [r for r in rows if r["t"] in steady]
@@ -108,7 +109,7 @@ def _rows(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[t
 def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                         satellite_ghi: Series | None = None,
                         air_temp: Series | None = None,
-                        steady: set[float] | None = None) -> dict[str, list]:
+                        steady: set[float] | None = None, floors: set[float] | None = None) -> dict[str, list]:
     """Efficiency at 25 °C per calendar month: {"YYYY-MM": [efficiency, hours]}.
 
     With the satellite filter the median of clear hours, otherwise the 95th percentile of all strong
@@ -116,14 +117,14 @@ def efficiency_by_month(site: Site, geo: ArrayGeometry, learned: LearnedArray, s
     seasonal swing rather at model errors at low sun.
     """
     return _efficiency_by(lambda r: _month(r["t"]), MONTH_MIN_HOURS,
-                          _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady), geo, learned,
+                          _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady, floors), geo, learned,
                           satellite_ghi is not None)
 
 
 def efficiency_by_direction(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                             satellite_ghi: Series | None = None,
                             air_temp: Series | None = None,
-                            steady: set[float] | None = None) -> dict[str, list]:
+                            steady: set[float] | None = None, floors: set[float] | None = None) -> dict[str, list]:
     """Efficiency at 25 °C per sun direction (45° sectors, see SECTORS): {"SE": [efficiency, hours]}.
 
     The same hours as by month. With the right azimuth the morning and the afternoon agree; a wrong
@@ -133,22 +134,29 @@ def efficiency_by_direction(site: Site, geo: ArrayGeometry, learned: LearnedArra
     def sector(r) -> str:
         return SECTORS[int(((r["az"] + 22.5) % 360) // 45)]
 
-    out = _efficiency_by(sector, DIRECTION_MIN_HOURS, _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady),
+    out = _efficiency_by(sector, DIRECTION_MIN_HOURS,
+                         _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady, floors),
                          geo, learned, satellite_ghi is not None)
     return {s: out[s] for s in SECTORS if s in out}
 
 
 def _efficiency_by(key, min_hours: int, rows: list[dict], geo: ArrayGeometry, learned: LearnedArray,
                    satellite: bool) -> dict[str, list]:
-    groups: dict[str, list[float]] = {}
+    """A group whose quantile the hours at a power limit hide is left out, as cells are in the learning."""
+    groups: dict[str, list[tuple[float, bool]]] = {}
     for r in rows:
         exp = geo.peak_w * r["poa"] / 1000 * (r["kt"] or 1.0)
         f = temperature_factor(learned.temp_coeff, r["temp"], r["poa"], r["heating"]) if r["temp"] is not None else 1.0
         ratio = r["p"] / (exp * f)
         if ratio <= 1.5:
-            groups.setdefault(key(r), []).append(ratio)
+            groups.setdefault(key(r), []).append((ratio, r["floor"]))
     q = 0.5 if satellite else 0.95
-    return {k: [round(_quantile(v, q), 4), len(v)] for k, v in sorted(groups.items()) if len(v) >= min_hours}
+    out = {}
+    for k, v in sorted(groups.items()):
+        if len(v) >= min_hours and (value := censored_quantile([x for x, _ in v], [1.0] * len(v),
+                                                               [f for _, f in v], q)) is not None:
+            out[k] = [round(value, 4), len(v)]
+    return out
 
 
 def hints(geo: ArrayGeometry, learned: LearnedArray) -> list[str]:
@@ -176,12 +184,12 @@ def hints(geo: ArrayGeometry, learned: LearnedArray) -> list[str]:
     return out
 
 
-HOUR_COLUMNS = ["start", "power_w", "clear_w", "kt", "air_temp", "steady", "shade", "efficiency", "check"]
+HOUR_COLUMNS = ["start", "power_w", "clear_w", "kt", "air_temp", "steady", "shade", "efficiency", "check", "at_limit"]
 
 
 def hour_table(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                satellite_ghi: Series | None = None, air_temp: Series | None = None,
-               steady: set[float] | None = None) -> dict:
+               steady: set[float] | None = None, floors: set[float] | None = None) -> dict:
     """Every learning hour with the sun up, for the diagnostics download: {"columns": [...], "rows": [[...]]}.
 
     clear_w: clear-sky power of the configured planes at an efficiency of 100 %; kt: the satellite's
@@ -190,9 +198,10 @@ def hour_table(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: l
     check: one of the clear, unshaded, well lit hours behind the efficiency by month and the geometry
     check. An efficiency far above 1 in these hours, all day long, points at the peak power or the
     sensor; only in the morning or the afternoon, at the azimuth; rising towards winter, at the tilt.
+    at_limit: a sensor was at its fixed power limit, so power and efficiency of the hour are lower bounds.
     Sun positions are left out: with the time they would give the location.
     """
-    check = {r["t"] for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)}
+    check = {r["t"] for r in _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady, floors)}
     rows = []
     for t, p in samples:
         beam, diff, az, el, cs_ghi = clearsky_hour(site, geo, t, learned.sky_view)
@@ -210,18 +219,23 @@ def hour_table(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: l
             eff = round(p / (clear_w * kt * f), 3)
         rows.append([datetime.fromtimestamp(t, timezone.utc).isoformat(), round(p, 1), round(clear_w, 1),
                      round(kt, 3) if kt is not None else None, temp, t in steady if steady is not None else None,
-                     round(transmission(learned, az, el), 3), eff, t in check])
+                     round(transmission(learned, az, el), 3), eff, t in check, t in (floors or ())])
     return {"columns": HOUR_COLUMNS, "rows": rows}
 
 
-def _spread(ratios: list[float]) -> float:
-    mid = _quantile(ratios, 0.5)
-    return (_quantile(ratios, 0.75) - _quantile(ratios, 0.25)) / mid if mid > 0 else math.inf
+def _spread(ratios: list[float], floors: list[bool] | None = None) -> float:
+    """Interquartile range over the median; floors: ratios that are lower bounds (an hour at a power limit)."""
+    if not floors or not any(floors):
+        mid = _quantile(ratios, 0.5)
+        return (_quantile(ratios, 0.75) - _quantile(ratios, 0.25)) / mid if mid > 0 else math.inf
+    low, mid, high = (censored_quantile(ratios, [1.0] * len(ratios), floors, q) for q in (0.25, 0.5, 0.75))
+    return (high - low) / mid if None not in (low, mid, high) and mid > 0 else math.inf
 
 
 def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
                    satellite_ghi: Series | None = None,
-                   air_temp: Series | None = None, steady: set[float] | None = None) -> dict | None:
+                   air_temp: Series | None = None, steady: set[float] | None = None,
+                   floors: set[float] | None = None) -> dict | None:
     """Tilt and azimuth under which clear unshaded hours fit one efficiency best.
 
     With the right geometry the ratio of measured to modelled power stays the same over the day and the
@@ -234,7 +248,7 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
     """
     if satellite_ghi is None or geo.extra:
         return None
-    rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+    rows = _rows(site, geo, learned, samples, satellite_ghi, air_temp, steady, floors)
     if len(rows) < GEOMETRY_MIN_HOURS:
         return None
     # An azimuth error shows as one side of the plane's direction against the other. With free hours on one
@@ -257,7 +271,7 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
         prepared.append((r, subs))
 
     def spread(tilt: float, azimuth: float) -> float:
-        ratios = []
+        ratios, bounds = [], []
         for r, subs in prepared:
             poa = 0.0
             for sun, ghi, dni, dhi, dni_extra in subs:
@@ -268,7 +282,8 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
                 continue
             f = temperature_factor(learned.temp_coeff, r["temp"], poa, geo.heating) if r["temp"] is not None else 1.0
             ratios.append(r["p"] / (geo.peak_w * poa / 1000 * r["kt"] * f))
-        return _spread(ratios) if len(ratios) >= GEOMETRY_MIN_HOURS else math.inf
+            bounds.append(r["floor"])
+        return _spread(ratios, bounds) if len(ratios) >= GEOMETRY_MIN_HOURS else math.inf
 
     def search(tilt0: float, az0: float, d_tilt: float, d_az: float, n: int) -> tuple[float, float, float]:
         best = (math.inf, tilt0, az0)
@@ -282,6 +297,8 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
         return best
 
     configured = spread(geo.tilt, geo.azimuth)
+    if not math.isfinite(configured):                    # hours at a power limit hide the spread
+        return None
     s, tilt, az = search(geo.tilt, geo.azimuth, 5.0, 10.0, 3)
     s, tilt, az = search(tilt, az, 2.0, 4.0, 2)
     improvement = 1 - s / configured if configured > 0 and math.isfinite(configured) else 0.0
@@ -295,14 +312,15 @@ def check_geometry(site: Site, geo: ArrayGeometry, learned: LearnedArray, sample
 
 def annotate(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: list[tuple[float, float]],
              air_temp: Series | None, satellite_ghi: Series | None, year: int,
-             steady: set[float] | None = None) -> None:
+             steady: set[float] | None = None, floors: set[float] | None = None) -> None:
     """Set the panel explanations on a freshly learned array; a failure never stops the learning."""
     try:
         learned.months = month_balance(site, geo, learned, year, air_temp)
-        learned.efficiency_months = efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady)
-        learned.geometry_check = check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady)
+        learned.efficiency_months = efficiency_by_month(site, geo, learned, samples, satellite_ghi, air_temp, steady,
+                                                        floors)
+        learned.geometry_check = check_geometry(site, geo, learned, samples, satellite_ghi, air_temp, steady, floors)
         learned.efficiency_directions = efficiency_by_direction(site, geo, learned, samples, satellite_ghi, air_temp,
-                                                                steady)
+                                                                steady, floors)
         if samples:
             learned.max_power_t, learned.max_power_w = max(samples, key=lambda s: s[1])
             learned.max_power_w = round(learned.max_power_w, 1)

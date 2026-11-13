@@ -102,7 +102,9 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
                                    float(d[CONF_PEAK_POWER]) + sum(p.peak_w for p in extra),
                                    float(d[CONF_HEATING]) if d.get(CONF_HEATING) is not None else HEATING_K, extra),
             valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None,
-            temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None)
+            temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None,
+            limits=tuple((s, float(w)) for s, w in sorted((d.get(CONF_SENSOR_LIMITS) or {}).items())
+                         if s in d[CONF_POWER_SENSORS] and w is not None and float(w) > 0))
     return configs
 
 
@@ -331,6 +333,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # further orientations only when there are any, so the key of a single-plane array stays as it was
         if a.geometry.extra:
             key.append([[p.tilt, p.azimuth, p.peak_w] for p in a.geometry.extra])
+        # power limits change what is learned (hours at the limit are lower bounds); only when there are any
+        if a.limits:
+            key.append([list(x) for x in a.limits])
         return key
 
     def _load_key(self) -> list:

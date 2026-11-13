@@ -59,7 +59,7 @@ const TEXT = {
     facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
-    notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
+    atLimit: "an der Leistungsgrenze", typical: "typischer Wert, an der Grenze nicht messbar", notLearned: "nicht gelernt", behind: "Sonne hinter Modul", today: "Heute", play: "Jahr abspielen", pause: "Anhalten",
     sunPathOn: "Sonnenbahn am", jun: "21. Juni", equ: "März/Sept.", dec: "21. Dez.",
     dayStrip: "Dieser Tag als Zeitleiste", selected: "Ausgewähltes Feld", sunHere: "Sonne steht hier", normal: "Sonne senkrecht auf den Modulen",
     never: "nie im Lauf des Jahres", close: "Schließen", noData: "Noch keine PV-Gruppe. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → PV-Gruppe hinzufügen; Noxcast lernt sie dann sofort aus der Historie.",
@@ -67,6 +67,7 @@ const TEXT = {
     help: {
       shade: "Jedes Feld ist eine Sonnenposition. Die Farbe zeigt, wie viel Direktlicht dort ankommt. Folge einer Sonnenbahn von links nach rechts, um einen Tag abzulesen.",
       facade: "Felder mit dem Hinweis „aus der Horizontlinie“ sind nicht gemessen. Für Sonnenstände ohne genug klare Stunden, meist im Winter, rechnet Noxcast mit einer geraden Linie für das Hindernis am Horizont, etwa Häuser, Wald oder Hügel. Sie gleicht Unebenheiten aus, einzelne höhere Gebäude oder Bäume fehlen darin. Sobald ein Feld gemessen ist, ersetzt der Messwert die Linie.",
+      limit: "Felder mit Punkt liegen an der Leistungsgrenze: Dort erreichte die PV-Gruppe in den meisten klaren Stunden ihre Grenze. Ein Schatten ist dort nur zu sehen, wenn er die Leistung unter die Grenze drückt, deshalb rechnet Noxcast an diesen Sonnenständen ohne Schatten. An klaren Tagen begrenzt ohnehin die Grenze die Prognose.",
       refl: "Zusätzliches Licht von beschienenen Wänden oder Dächern, in Prozent der Direktstrahlung. Gelernt nur dort, wo das Modul selbst wenig Direktlicht bekommt.",
       dir: "Was nach Schatten und Reflexion übrig bleibt: Geometrie- und Modellfehler. Werte nahe 1 sind gut.",
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
@@ -127,7 +128,7 @@ const TEXT = {
     facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
-    notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
+    atLimit: "at the power limit", typical: "typical value, not measurable at the limit", notLearned: "not learned yet", behind: "sun behind module", today: "Today", play: "Play year", pause: "Pause",
     sunPathOn: "Sun path on", jun: "21 June", equ: "Mar/Sep", dec: "21 Dec",
     dayStrip: "This day as a timeline", selected: "Selected cell", sunHere: "Sun is here", normal: "Sun perpendicular to the modules",
     never: "never during the year", close: "Close", noData: "No PV array yet. Add one under Settings → Devices & services → Noxcast → ⋮ → Add PV array; Noxcast then learns it from the history right away.",
@@ -135,6 +136,7 @@ const TEXT = {
     help: {
       shade: "Each cell is a sun position. The colour shows how much direct light arrives there. Follow a sun path from left to right to read a day.",
       facade: "Cells marked \"from the horizon line\" are not measured. For sun positions without enough clear hours, mostly in winter, Noxcast uses one straight line for the obstacle on the horizon, such as houses, a forest or a hill. It evens out irregularities, so a single taller building or tree is missing from it. Once a cell is measured, the measurement replaces the line.",
+      limit: "Cells with a dot are at the power limit: there the array reached its limit in most clear hours. Shade shows there only when it pushes the power below the limit, so Noxcast assumes no shade at these sun positions. On clear days the limit caps the forecast anyway.",
       refl: "Extra light from sunlit walls or roofs, in percent of the direct normal irradiance. Learned only where the module itself gets little direct light.",
       dir: "What remains after shade and reflection: geometry and model errors. Values close to 1 are good.",
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
@@ -558,6 +560,7 @@ class NoxcastPanel extends HTMLElement {
     if (shade === null) return { kind: "unlearned" };
     return {
       kind: "value", shade, facade: !(`${ai},${ei}` in (la.cells || {})) && `${ai},${ei}` in (arr.facade_cells || {}),
+      limit: (la.limit_cells || []).includes(`${ai},${ei}`),
       refl: coarse(la.reflection, az, el, 0),
       dir: coarse(la.direction, az, el, 1),
     };
@@ -681,7 +684,7 @@ class NoxcastPanel extends HTMLElement {
     const dir = Object.values(la.direction || {}), refl = Object.values(la.reflection || {});
     const date = (s) => s ? new Date(typeof s === "number" ? s * 1000 : s).toLocaleDateString(this._lang, { timeZone: this._data.time_zone }) : "–";
     return [
-      [t.efficiency, pct(la.efficiency)],
+      [t.efficiency, la.efficiency_source === "typical" ? `${pct(la.efficiency)} (${t.typical})` : pct(la.efficiency)],
       // stored before the flag existed: undefined, shown as before until the next learning run
       [t.skyView, la.sky_view_learned === false ? t.notLearned : pct(la.sky_view ?? 1, 0)],
       [t.tempCoeff, `${num(la.temp_coeff * 100)} %/K`],
@@ -732,13 +735,13 @@ class NoxcastPanel extends HTMLElement {
           <div class="tabs" role="tablist">${modeTabs}</div>
           ${s.mode === "pano" ? "" : `<div class="chips">${layerTabs}${s.mode === "map" ? `<span class="muted small hint">${t.clickHint}</span>` : ""}</div>`}
           ${main}
-          ${s.mode === "pano" ? this._panoLegend() : this._legend(s.layer)}
+          ${s.mode === "pano" ? this._panoLegend() : this._legend(s.layer, ((arr.learned || {}).limit_cells || []).length > 0)}
           ${this._checks(arr)}
         </div>
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
           <section class="card pad"><h2>${esc(arr.name)}</h2>${figs}</section>
-          <section class="card pad"><h3>${s.mode === "pano" ? t.pano : s.mode === "grid" ? t.grid : t[s.layer]}</h3>${[].concat(s.mode === "pano" ? t.help.pano : s.mode === "grid" ? t.help.grid : t.help[s.layer]).map((x) => `<p class="help">${x}</p>`).join("")}${(s.layer === "shade" || s.mode === "pano") && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}</section>
+          <section class="card pad"><h3>${s.mode === "pano" ? t.pano : s.mode === "grid" ? t.grid : t[s.layer]}</h3>${[].concat(s.mode === "pano" ? t.help.pano : s.mode === "grid" ? t.help.grid : t.help[s.layer]).map((x) => `<p class="help">${x}</p>`).join("")}${(s.layer === "shade" || s.mode === "pano") && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}${s.mode !== "pano" && s.layer === "shade" && ((arr.learned || {}).limit_cells || []).length ? `<p class="help">${t.help.limit}</p>` : ""}</section>
         </aside>
       </div>`;
   }
@@ -764,6 +767,8 @@ class NoxcastPanel extends HTMLElement {
       const c = this._cell(arr, ai, ei);
       const sel = !mini && this._state.sel && this._state.sel[0] === ai && this._state.sel[1] === ei;
       rects += `<rect x="${(g.x(az) + 0.5).toFixed(1)}" y="${(g.y((ei + 1) * EL_STEP) + 0.5).toFixed(1)}" width="${(cw - 1).toFixed(1)}" height="${(ch - 1).toFixed(1)}" fill="${this._fill(c, layer)}" ${mini ? "" : `data-action="cell" data-ai="${ai}" data-ei="${ei}" class="cell${sel ? " sel" : ""}"`}></rect>`;
+      // at the power limit: no shade learned there, the dot says why
+      if (c.limit && layer === "shade") rects += `<circle cx="${(g.x(az + AZ_STEP / 2)).toFixed(1)}" cy="${(g.y((ei + 0.5) * EL_STEP)).toFixed(1)}" r="${mini ? 1 : 2}" class="lim"></circle>`;
     }
     const year = new Date().getFullYear(), tz = this._data.time_zone;
     const path = (doy) => this._path(arr, localMidnight(year, doy, tz), g);
@@ -883,7 +888,7 @@ class NoxcastPanel extends HTMLElement {
     else {
       const label = c.shade >= 0.9 ? t.free : c.shade >= 0.7 ? t.partial : t.shaded;
       rows = `<div class="tiles">
-        <div class="tile"><span class="muted small">${t.shade}</span><b class="mono">${num(c.shade)}</b><span class="small">${label}${c.facade ? ` · ${t.fromFacade}` : ""}</span></div>
+        <div class="tile"><span class="muted small">${t.shade}</span><b class="mono">${num(c.shade)}</b><span class="small">${label}${c.facade ? ` · ${t.fromFacade}` : ""}${c.limit ? ` · ${t.atLimit}` : ""}</span></div>
         <div class="tile"><span class="muted small">${t.refl}</span><b class="mono">${c.refl > 0.004 ? `+${num(c.refl * 100, 1)} %` : "–"}</b></div>
         <div class="tile"><span class="muted small">${t.dir}</span><b class="mono">${num(c.dir)}</b></div>
       </div>`;
@@ -1220,7 +1225,7 @@ class NoxcastPanel extends HTMLElement {
     this._panoFull = setTimeout(() => this._drawPano(), 160);
   }
 
-  _legend(layer) {
+  _legend(layer, limit = false) {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
     const items = layer === "refl" ? [[rgb(P.refl[0]), t.none], [rgb(P.refl[1]), "+3 %"], [rgb(P.refl[2]), "+6 %"]]
@@ -1233,6 +1238,7 @@ class NoxcastPanel extends HTMLElement {
       <span class="lg"><svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" class="sp" stroke-dasharray="6 4"></line></svg>${t.equ}</span>
       <span class="lg"><svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" class="sp" stroke-dasharray="2 4"></line></svg>${t.dec}</span>`;
     return `<div class="legend">${items.map(([c, l]) => `<span class="lg">${sw(c)}${l}</span>`).join("")}
+      ${limit && layer === "shade" ? `<span class="lg"><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="2.5" class="lim"></circle></svg>${t.atLimit}</span>` : ""}
       <span class="lg">${hatch}${t.notLearned}</span><span class="lg">${sw(P.behind)}${t.behind}</span>${this._state.mode === "grid" && this._state.view === "array" ? "" : lines}</div>`;
   }
 
@@ -1346,6 +1352,7 @@ class NoxcastPanel extends HTMLElement {
       .chip.on { border-color: var(--primary-color); color: var(--primary-color); font-weight: 500; }
       .hint { margin-left: auto; }
       .cell { cursor: pointer; }
+      .lim { fill: ${P.path}; pointer-events: none; }
       .cell:hover { stroke: ${P.path}; stroke-width: 1.5; }
       .cell.sel { stroke: ${P.path}; stroke-width: 3; }
       .sp { fill: none; stroke: ${P.path}; stroke-opacity: 0.55; stroke-width: 1.5; }

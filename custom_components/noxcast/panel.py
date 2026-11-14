@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import systems, views
+from . import flowchart, systems, views
 from .const import ARCHIVE_DAYS, CONF_FEED_IN_MODE, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +71,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # after_dependencies only: imported where they are loaded
     from homeassistant.components import panel_custom
     from homeassistant.components.http import StaticPathConfig
+
+    hass.http.register_view(_diagram_view())
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
@@ -310,14 +312,61 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
                                        "review_days": REVIEW_DAYS, "entries": entries})
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_INSTALLATION})
+def installation_tree(entry: Any) -> dict[str, Any]:
+    """A config entry's installation as systems.tree builds it from the subentries."""
+    return systems.tree(entry.data, {sid: (sub.subentry_type, sub.title, dict(sub.data))
+                                     for sid, sub in entry.subentries.items()})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_INSTALLATION, vol.Optional("language"): str})
 @callback
 def ws_installation(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """The installation as entered (household, systems, arrays, batteries) and how far each setting counts."""
-    _send(connection, msg, {"entries": [
-        {"title": e.title, **systems.tree(e.data, {sid: (sub.subentry_type, sub.title, dict(sub.data))
-                                                    for sid, sub in e.subentries.items()})}
-        for e in hass.config_entries.async_loaded_entries(DOMAIN)]})
+    """The installation as entered (household, systems, arrays, batteries), how far each setting counts, and the
+    flow diagram (flowchart.render)."""
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    entries = []
+    for e in hass.config_entries.async_loaded_entries(DOMAIN):
+        tree = installation_tree(e)
+        entries.append({"title": e.title, **tree, "diagram": flowchart.render(tree, lang)})
+    _send(connection, msg, {"entries": entries})
+
+
+# no ".svg" ending: the Markdown filter of the forms might drop SVG images by their name; the content type says it
+DIAGRAM_URL = "/api/noxcast/installation_diagram"
+
+
+def diagram_markdown(hass: HomeAssistant, entry: Any) -> str:
+    """The flow diagram as a Markdown image for the description of a configuration form: a signed address, since
+    an image request carries no token. Empty before the first system exists."""
+    if getattr(hass, "http", None) is None or not installation_tree(entry)["systems"]:
+        return ""
+    from homeassistant.components.http.auth import async_sign_path
+
+    lang = (hass.config.language or "en")[:2]
+    path = async_sign_path(hass, f"{DIAGRAM_URL}?entry={entry.entry_id}&lang={lang}", timedelta(minutes=30))
+    return f"![]({path})"
+
+
+def _diagram_view() -> Any:
+    from homeassistant.components.http import HomeAssistantView
+    from aiohttp import web
+
+    class InstallationDiagramView(HomeAssistantView):
+        """The flow diagram as an SVG image, for the configuration forms."""
+
+        url = DIAGRAM_URL
+        name = "api:noxcast:installation"
+        requires_auth = True
+
+        async def get(self, request: web.Request) -> web.Response:
+            hass = request.app["hass"]
+            entry = hass.config_entries.async_get_entry(request.query.get("entry", ""))
+            if entry is None or entry.domain != DOMAIN:
+                return web.Response(status=404)
+            svg = flowchart.render(installation_tree(entry), request.query.get("lang", "en")[:2])
+            return web.Response(text=svg, content_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+    return InstallationDiagramView()
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_CARD})

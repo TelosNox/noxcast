@@ -206,9 +206,10 @@ Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar.
 | Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
 
-Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet; der Panel-Reiter *Anlage* zeigt je
-Einstellung, ob sie genau, vereinfacht oder noch nicht zählt. Spätere Versionen verrechnen mehr davon, ohne dass du etwas
-neu eintragen musst.
+Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet. Der Panel-Reiter *Anlage* zeichnet die
+Anlage als Flussbild (PV-Gruppen, Systeme mit ihren Akkus und Grenzen, Haus, Netz); ein Tipp auf einen Teil zeigt seine
+Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Die Formulare für Systeme, PV-Gruppen und Akkus
+zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 

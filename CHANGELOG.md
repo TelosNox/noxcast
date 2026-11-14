@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The *Installation* tab draws the installation as a flow diagram: PV arrays, systems with their batteries and limits,
+  house and grid, with a dot per part for how far Noxcast computes its settings. Tapping a part shows its settings.
+  The forms for systems, PV arrays and batteries show the same diagram on top.
+
 ## [0.5.0b1] - 2026-11-14
 
 The first pre-release of 0.5.0. The update converts the configuration into systems and changes which hours learning

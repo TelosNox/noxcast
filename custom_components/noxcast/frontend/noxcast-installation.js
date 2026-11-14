@@ -1,5 +1,6 @@
-// Noxcast panel section "Installation": the installation as entered (household -> systems -> subsystems -> PV arrays
-// and battery) and, per setting, how far Noxcast already computes it: exact, simplified or not yet.
+// Noxcast panel section "Installation": the installation as a flow diagram (PV arrays -> systems -> house -> grid,
+// drawn by the backend, flowchart.py) and, for the node clicked, its settings and how far Noxcast already computes
+// each: exact, simplified or not yet.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/installation".
 const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
@@ -23,7 +24,8 @@ const INST_TEXT = {
       whenFull: { all: "alles abgeben", load: "weiter nur den Verbrauch decken" },
       chargeMissing: "braucht Sensor Akkuleistung und max. Ladeleistung" },
     battery: "Akku", array: "PV-Gruppe", sensors: "{n} Sensoren", sensor: "1 Sensor", sub: "Teilsystem",
-    empty: "enthält noch nichts",
+    empty: "enthält noch nichts", pick: "Auf einen Knoten im Bild tippen, um seine Einstellungen zu sehen.",
+    openEntry: "Einträge öffnen", noSettings: "Keine Einstellungen, die Noxcast verrechnet.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -44,7 +46,8 @@ const INST_TEXT = {
       whenFull: { all: "deliver everything", load: "keep covering the load only" },
       chargeMissing: "needs the battery power sensor and max charge power" },
     battery: "Battery", array: "PV array", sensors: "{n} sensors", sensor: "1 sensor", sub: "Subsystem",
-    empty: "contains nothing yet",
+    empty: "contains nothing yet", pick: "Tap a node in the picture to see its settings.",
+    openEntry: "Open entries", noSettings: "No settings Noxcast computes.",
   },
 };
 
@@ -53,7 +56,15 @@ class NoxcastInstallation extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this.shadowRoot.addEventListener("click", (ev) => {
-      if (ev.composedPath().some((n) => n.dataset && n.dataset.refresh)) this._load();
+      const path = ev.composedPath();
+      if (path.some((n) => n.dataset && n.dataset.refresh)) { this._load(); return; }
+      if (path.some((n) => n.dataset && n.dataset.entries)) {
+        history.pushState(null, "", "/config/integrations/integration/noxcast");
+        window.dispatchEvent(new CustomEvent("location-changed"));
+        return;
+      }
+      const node = path.find((n) => n.getAttribute && n.getAttribute("data-node"));
+      if (node) { this._sel = node.getAttribute("data-node"); this._render(); }
     });
   }
 
@@ -70,7 +81,7 @@ class NoxcastInstallation extends HTMLElement {
 
   async _load() {
     try {
-      const data = await ask(this._hass, { type: "noxcast/installation" });
+      const data = await ask(this._hass, { type: "noxcast/installation", language: this._lang });
       if (data.v !== WS_SCHEMA) { this._data = null; this._error = this._t.outdated; this._render(); return; }
       this._data = data;
       this._error = null;
@@ -107,21 +118,35 @@ class NoxcastInstallation extends HTMLElement {
       <span class="st ${e.status}" title="${t.status[e.status]}"><span class="dot"></span>${t.status[e.status]}</span></li>`).join("")}</ul>`;
   }
 
-  _system(s, depth) {
+  // the node clicked in the diagram: house, a system (with subsystems), or a PV array
+  _find(e, id) {
     const t = this._t;
-    const parts = [
-      ...s.arrays.map((a) => `<div class="part"><ha-icon icon="mdi:solar-panel"></ha-icon><div><div>${esc(a.name)}</div>
-        <div class="muted small">${t.array} · ${a.sensors === 1 ? t.sensor : t.sensors.replace("{n}", a.sensors)}</div>
-        ${this._settings(a.id)}</div></div>`),
-      s.battery ? `<div class="part"><ha-icon icon="mdi:battery-high"></ha-icon><div><div>${esc(s.battery.name)}</div>
-        <div class="muted small">${t.battery}</div></div></div>` : "",
-      ...s.children.map((c) => this._system(c, depth + 1)),
-    ].filter(Boolean);
-    return `<div class="system ${s.template === "group" ? "loose" : ""} ${depth ? "sub" : ""}">
-      <div class="head"><span class="title">${esc(s.name)}</span>
-        <span class="muted small">${depth ? `${t.sub} · ` : ""}${t.templates[s.template] || ""}</span></div>
-      ${this._settings(s.id)}
-      <div class="parts">${parts.length ? parts.join("") : `<div class="muted small">${t.empty}</div>`}</div></div>`;
+    if (id === "house") return { title: t.house, sub: "", ids: ["house"] };
+    const walk = (list, parent) => {
+      for (const s of list) {
+        if (s.id === id) {
+          const sub = [parent ? `${t.sub} · ${parent.name}` : "", t.templates[s.template] || "",
+            s.battery ? `${t.battery}: ${s.battery.name}` : ""].filter(Boolean).join(" · ");
+          return { title: s.name, sub, ids: [s.id] };
+        }
+        const a = s.arrays.find((x) => x.id === id);
+        if (a) return { title: a.name, sub: `${t.array} · ${s.name} · ${a.sensors === 1 ? t.sensor : t.sensors.replace("{n}", a.sensors)}`, ids: [a.id] };
+        const found = walk(s.children, s);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walk(e.systems, null);
+  }
+
+  _detail(e, sel) {
+    const t = this._t;
+    const node = sel && this._find(e, sel);
+    if (!node) return `<div class="muted small">${t.pick}</div>`;
+    const rows = node.ids.map((id) => this._settings(id)).join("");
+    return `<div class="head"><span class="title">${esc(node.title)}</span></div>
+      ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
+      ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}`;
   }
 
   _render() {
@@ -131,10 +156,12 @@ class NoxcastInstallation extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else body = this._data.entries.map((e) => {
       this._effects = e.effects || [];
-      return `<section class="card pad house"><div class="head"><ha-icon icon="mdi:home-lightning-bolt"></ha-icon>
-        <span class="title">${t.house}</span></div>${this._settings("house")}
-        <div class="systems">${e.systems.length ? e.systems.map((s) => this._system(s, 0)).join("") : `<div class="muted">${t.noSystems}</div>`}</div>
-        <p class="help">${t.help} ${t.edit}</p></section>`;
+      const sel = this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke-width: 2.4; }</style>` : "";
+      return `<section class="card pad">${sel}
+        ${e.systems.length ? `<div class="flow">${e.diagram || ""}</div>` : `<div class="muted">${t.noSystems}</div>`}
+        <div class="detail">${this._detail(e, e.systems.length ? this._sel : "house")}</div>
+        <p class="help">${t.help} ${t.edit}</p>
+        <button class="chip" data-entries="1">${t.openEntry}</button></section>`;
     }).join("");
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">
       <div class="bar"><button class="chip" data-refresh="1">${t.refresh}</button></div>${body}</div>`;
@@ -154,13 +181,13 @@ class NoxcastInstallation extends HTMLElement {
       .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
       .head ha-icon { --mdc-icon-size: 20px; align-self: center; }
       .title { font-size: 15px; font-weight: 500; }
-      .systems { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
-      .system { border: 1px solid var(--divider-color); border-radius: 10px; padding: 12px; min-width: 0; }
-      .system.loose { border-style: dashed; }
-      .system.sub { background: none; }
-      .parts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-      .part { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
-      .part ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); flex: none; }
+      .flow { overflow-x: auto; --nx-text: var(--primary-text-color); --nx-muted: var(--secondary-text-color);
+        --nx-line: var(--secondary-text-color); --nx-node: var(--secondary-background-color, var(--card-background-color));
+        --nx-frame: var(--secondary-text-color); --nx-font: var(--ha-font-family-body, var(--paper-font-body1_-_font-family));
+        ${d ? "--nx-pv: #3d2f16; --nx-pv-line: #e0a43c; --nx-sys: #15362c; --nx-sys-line: #4cc7a0; --nx-limit: #43231a; --nx-limit-line: #e88a68;"
+            : "--nx-pv: #fbf1df; --nx-pv-line: #c98a12; --nx-sys: #e3f4ee; --nx-sys-line: #2e9e7b; --nx-limit: #fae8e2; --nx-limit-line: #d0603a;"} }
+      .flow svg { display: block; width: 100%; max-width: 680px; height: auto; }
+      .detail { border-top: 1px solid var(--divider-color); margin-top: 12px; padding-top: 12px; }
       .settings { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
       .settings li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
       .settings .name { color: var(--secondary-text-color); }

@@ -73,7 +73,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage",
@@ -85,7 +85,7 @@
         },
         "reconfigure": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage",
@@ -136,7 +136,7 @@
       "step": {
         "user": {
           "title": "PV-Gruppe",
-          "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.",
+          "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.\n\n{diagram}",
           "data": {
             "name": "Name",
             "power_sensors": "Leistungssensoren",
@@ -288,7 +288,8 @@
                 "heating": "Eigener Wert statt der Montage: wie stark sich die Zellen bei 1000 W/m² über die Luft erwärmen. Leer = aus der Montage."
               }
             }
-          }
+          },
+          "description": "{diagram}"
         }
       },
       "error": {
@@ -395,7 +396,7 @@
       "step": {
         "user": {
           "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "Ladestand",
@@ -443,7 +444,7 @@
         },
         "reconfigure": {
           "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "Ladestand",

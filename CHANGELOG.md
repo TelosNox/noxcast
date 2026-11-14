@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b1] - 2026-11-14
+
+The first pre-release of 0.5.0. The update converts the configuration into systems and changes which hours learning
+uses, so it runs through a nightly learning run before 0.5.0. After the update, check the Repairs notices and the new
+*Installation* tab, which shows per setting how far it counts.
+
 ### Added
 - Systems: a new entry *System* describes how modules and batteries reach the house: an inverter, a device with PV
   and battery, a battery at the house grid, devices that coordinate (e.g. EcoFlow Stream), or several systems summed

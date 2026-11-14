@@ -24,6 +24,16 @@ breaking changes.
   clear what belongs together. The update moves existing PV arrays, batteries and subsystems into their systems;
   their devices, entities, history and what was learned stay. Deleting a system now deletes what is inside it
   as well, with what was learned for its PV arrays.
+- **Breaking:** Regulation and what a system does when its battery is full are now set on the system only, and
+  its subsystems follow it. Subsystems are devices one control coordinates (EcoFlow Stream, for example), so they
+  cannot choose differently. The update moves a subsystem's value to its system where the system had none and its
+  subsystems agreed, and drops it from the subsystems otherwise. If a subsystem was set differently from its
+  system, it is a device that control does not regulate: make it a system of its own (*Belongs to* empty), or it
+  now follows its system, also in what learning leaves out. The *Installation* tab shows the system's values on
+  its subsystems.
+- The template *Summarize only* is gone. The update turns its subsystems into systems of their own, with the
+  behaviour they had, and removes the empty group; a group with an output limit or balancing batteries becomes
+  *Coupled systems*. Their PV arrays keep their entities, history and what was learned.
 
 ## [0.5.0b2] - 2026-11-14
 

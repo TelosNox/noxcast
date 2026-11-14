@@ -81,7 +81,7 @@
         },
         "basics": {
           "title": "System",
-          "description": "What the system is and where it belongs. A system with \"Belongs to\" is a subsystem of another: its shared limit and behaviour hold here as well.\n\n{diagram}",
+          "description": "What the system is and where it belongs. A system with \"Belongs to\" is a subsystem of another: a device that its control coordinates. Its shared limit and its regulation hold here as well.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template",
@@ -93,7 +93,7 @@
         },
         "settings": {
           "title": "Settings of {name}",
-          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts.",
+          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts. A subsystem follows the regulation of its system and what that does when the battery is full; a device that does not follow it is a system of its own.",
           "data": {
             "output_limit_w": "Output limit",
             "limit_per_phase": "Limit holds per phase",
@@ -108,7 +108,7 @@
             "output_limit_w": "What the system delivers at most, e.g. 800 W or the AC power of the inverter. With subsystems: what they deliver together. Without a battery, enter it as the PV power sensors measure it at the limit: sensors of DC power show a few percent more than the AC power. When the measurements show a limit, Noxcast suggests it under Repairs.",
             "limit_per_phase": "Switch on if the limit holds for each phase on its own (several balcony devices on different phases).",
             "phase": "The phase this subsystem feeds into.",
-            "regulation": "Delivers everything (plain inverter), covers the house load (zero export with a meter) or delivers a fixed power. Empty in a subsystem: as its system.",
+            "regulation": "Delivers everything (plain inverter), follows a smart meter to cover the house load (zero export) or delivers a fixed power. Holds for all its subsystems.",
             "fixed_power_w": "Only with fixed power: what the system delivers.",
             "when_full": "Deliver everything up to the output limit, or keep covering the load only (then PV above the load is curtailed).",
             "charges_from": "Own PV: the battery sits before the output (compact device, hybrid inverter). The household: own inverter at the house grid, it charges from surplus of the house.",
@@ -391,8 +391,7 @@
         "inverter": "Inverter without battery",
         "pv_battery": "PV with battery in one device",
         "ac_battery": "Battery at the house grid",
-        "coupled": "Coupled systems",
-        "group": "Summarize only"
+        "coupled": "Coupled systems"
       }
     },
     "phase": {

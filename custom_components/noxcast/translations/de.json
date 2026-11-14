@@ -81,7 +81,7 @@
         },
         "basics": {
           "title": "System",
-          "description": "Was das System ist und wozu es gehört. Ein System mit „Gehört zu“ ist Teilsystem eines anderen: dessen gemeinsame Grenze und Verhalten gelten dann auch hier.\n\n{diagram}",
+          "description": "Was das System ist und wozu es gehört. Ein System mit „Gehört zu“ ist Teilsystem eines anderen: ein Gerät, das dessen Steuerung mitregelt. Dessen gemeinsame Grenze und Regelung gelten dann auch hier.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage",
@@ -93,7 +93,7 @@
         },
         "settings": {
           "title": "Einstellungen von {name}",
-          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt.",
+          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt. Ein Teilsystem folgt der Regelung seines Systems und dem, was es bei vollem Akku tut; ein Gerät, das dem nicht folgt, ist ein eigenes System.",
           "data": {
             "output_limit_w": "Ausgangsgrenze",
             "limit_per_phase": "Grenze gilt pro Phase",
@@ -108,7 +108,7 @@
             "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter Reparaturen vor.",
             "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
             "phase": "Die Phase, in die dieses Teilsystem einspeist.",
-            "regulation": "Gibt alles ab (einfacher Wechselrichter), deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Leer in einem Teilsystem: wie sein System.",
+            "regulation": "Gibt alles ab (einfacher Wechselrichter), richtet sich nach einem Smart Meter und deckt den Hausverbrauch (Nulleinspeisung) oder gibt eine feste Leistung ab. Gilt für alle seine Teilsysteme.",
             "fixed_power_w": "Nur bei fester Leistung: was das System abgibt.",
             "when_full": "Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken (dann wird PV über dem Verbrauch abgeregelt).",
             "charges_from": "Eigener PV: Der Akku sitzt vor dem Ausgang (Kompaktgerät, Hybrid-Wechselrichter). Dem Haushalt: eigener Wechselrichter am Hausnetz, lädt aus dem Überschuss des Hauses.",
@@ -391,8 +391,7 @@
         "inverter": "Wechselrichter ohne Akku",
         "pv_battery": "PV mit Akku in einem Gerät",
         "ac_battery": "Akku am Hausnetz",
-        "coupled": "Gekoppelte Systeme",
-        "group": "Nur zusammenfassen"
+        "coupled": "Gekoppelte Systeme"
       }
     },
     "phase": {

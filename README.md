@@ -196,13 +196,12 @@ entries shows what sits inside what.
 | PV with battery in one device | Balcony device with battery, hybrid inverter, a DC battery between modules and micro-inverter |
 | Battery at the house grid | Plug-in battery or battery inverter with its own inverter, without PV |
 | Coupled systems | Devices that coordinate and share a limit, e.g. EcoFlow Stream with several units; they become its subsystems |
-| Summarize only | Groups systems for the overview without changing any number, e.g. an old installation and a retrofitted battery |
 
 | Setting | Meaning |
 |---|---|
 | Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins. Without a battery below it the limit is fixed: learning counts hours at it as "at least this much", and it caps the PV forecast; with several PV arrays their sum, each array giving up its share of the power above. Without a battery, enter it as the PV power sensors measure it at the limit: sensors of DC power show a few percent more than the AC rating. When the measurements show a limit, Noxcast suggests it under [Repairs](#repairs) |
 | Limit holds per phase, phase | Several devices on different phases; each subsystem names its phase |
-| Regulation | Delivers everything, covers the house load (zero export with a meter) or delivers a fixed power. A subsystem left empty behaves like its system |
+| Regulation | Delivers everything, follows a smart meter to cover the house load (zero export) or delivers a fixed power. Set on the system only: its subsystems are devices one control coordinates and follow it, as for *When the battery is full*. A device that does not follow that control is a system of its own |
 | When the battery is full | Deliver everything up to the output limit, or keep covering the load only |
 | Battery charges from | Own PV (before the output) or the household (own inverter at the house grid) |
 | Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |

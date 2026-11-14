@@ -11,9 +11,10 @@ const INST_TEXT = {
     refresh: "Aktualisieren", house: "Haushalt", noSystems: "Noch kein System eingetragen.",
     edit: "Ändern unter Einstellungen → Geräte & Dienste → Noxcast.",
     status: { exact: "rechnet genau", simplified: "rechnet vereinfacht", not_yet: "noch nicht berücksichtigt" },
+    inherited: "vom System",
     help: "Jede Angabe wird gespeichert, auch wenn Noxcast sie noch nicht verrechnet. Spätere Versionen rechnen sie genauer, ohne dass du etwas neu eintragen musst.",
     templates: { inverter: "Wechselrichter ohne Akku", pv_battery: "PV mit Akku in einem Gerät", ac_battery: "Akku am Hausnetz",
-      coupled: "Gekoppelte Systeme", group: "Nur zusammenfassen" },
+      coupled: "Gekoppelte Systeme" },
     settings: { feed_in: "Einspeisung", old_soc: "Akku-Ladestände, die das Lernen aller PV-Gruppen auslassen",
       one_storage: "Akkus werden als ein Speicher simuliert", output_limit: "Ausgangsgrenze",
       limit_per_phase: "Grenze gilt pro Phase", phase: "Phase", regulation: "Regelung", fixed_power: "Feste Leistung",
@@ -36,9 +37,10 @@ const INST_TEXT = {
     refresh: "Refresh", house: "Household", noSystems: "No system entered yet.",
     edit: "Change under Settings → Devices & services → Noxcast.",
     status: { exact: "computed exactly", simplified: "computed simplified", not_yet: "not used yet" },
+    inherited: "from its system",
     help: "Every setting is stored, even where Noxcast does not compute it yet. Later versions compute it more precisely without you entering anything again.",
     templates: { inverter: "Inverter without battery", pv_battery: "PV with battery in one device", ac_battery: "Battery at the house grid",
-      coupled: "Coupled systems", group: "Summarize only" },
+      coupled: "Coupled systems" },
     settings: { feed_in: "Feed-in", old_soc: "Battery states of charge that leave learning out for all PV arrays",
       one_storage: "Batteries are simulated as one storage", output_limit: "Output limit",
       limit_per_phase: "Limit holds per phase", phase: "Phase", regulation: "Regulation", fixed_power: "Fixed power",
@@ -165,7 +167,7 @@ class NoxcastInstallation extends HTMLElement {
     const rows = this._effects.filter((e) => e.node === node);
     if (!rows.length) return "";
     return `<ul class="settings">${rows.map((e) => `<li><span class="name">${t.settings[e.setting] || esc(e.setting)}</span>
-      <span class="val">${this._value(e.setting, e.value)}</span>
+      <span class="val">${this._value(e.setting, e.value)}</span>${e.inherited ? `<span class="name">(${t.inherited})</span>` : ""}
       <span class="st ${e.status}" title="${t.status[e.status]}"><span class="dot"></span>${t.status[e.status]}</span></li>`).join("")}</ul>`;
   }
 

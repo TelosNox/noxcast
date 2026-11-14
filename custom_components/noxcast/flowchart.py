@@ -27,13 +27,13 @@ TEXT = {
            "together": "zusammen", "balance": "gleicht aus", "empty": "noch keine PV und kein Akku",
            "no_systems": "Noch keine Systeme", "per_phase": "je Phase",
            "templates": {"inverter": "Wechselrichter", "pv_battery": "PV mit Akku", "ac_battery": "Akku am Hausnetz",
-                         "coupled": "Geräte, die sich abstimmen", "group": "Gruppe"}},
+                         "coupled": "Geräte, die sich abstimmen"}},
     "en": {"house": "House", "grid": "Grid", "array": "PV array", "battery": "Battery", "free": "free",
            "none": "zero export", "load": "covers the house load", "all": "delivers everything",
            "fixed": "fixed power", "together": "together", "balance": "balances", "empty": "no PV and no battery yet",
            "no_systems": "No systems yet", "per_phase": "per phase",
            "templates": {"inverter": "Inverter", "pv_battery": "PV with battery", "ac_battery": "Battery at the house",
-                         "coupled": "Devices that coordinate", "group": "Group"}},
+                         "coupled": "Devices that coordinate"}},
 }
 STATUS_ORDER = ("not_yet", "simplified", "exact")     # the worst status of a node's settings colours its dot
 

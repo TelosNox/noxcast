@@ -87,9 +87,10 @@ def test_normalize_gives_every_part_a_system():
     assert not sy.normalize(after, _ids())
 
 
-def test_behaviour_is_inherited_and_limits_both_hold():
+def test_behaviour_is_the_systems_and_limits_both_hold():
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load",
                                        "when_full": "load", "output_limit_w": 800, "balance": True}),
+            # a value left on a subsystem (stored before) does not count: the subsystem follows its system
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "output_limit_w": 800,
                                       "when_full": "all"}),
             "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p"}),
@@ -97,7 +98,7 @@ def test_behaviour_is_inherited_and_limits_both_hold():
             "bu": ("battery", "Ultra battery", {"system": "u"}), "ba": ("battery", "AC Pro battery", {"system": "a"})}
     systems = sy.systems_of(subs)
     assert systems["p"].children == ("a", "u") and systems["u"].arrays == ("south",) and systems["u"].battery == "bu"
-    assert sy.behaviour(systems, "a", "regulation") == "load" and sy.behaviour(systems, "u", "when_full") == "all"
+    assert sy.behaviour(systems, "a", "regulation") == "load" and sy.behaviour(systems, "u", "when_full") == "load"
     tree = sy.tree({"feed_in_mode": "limited", "feed_in_limit_w": 7000}, subs)
     stream = tree["systems"][0]
     assert stream["name"] == "Stream" and [c["name"] for c in stream["children"]] == ["AC Pro", "Ultra"]
@@ -164,3 +165,71 @@ def test_the_flow_diagram_shows_every_part_and_the_limits():
     assert "Pro &lt;&amp;&gt;" in svg and "<&>" not in svg                  # names are escaped
     assert svg.startswith("<svg") and svg.endswith("</svg>")
     assert "Noch keine Systeme" in fl.render(sy.tree({}, {}), "de")
+
+
+def test_behaviour_moves_to_the_system_and_a_group_dissolves():
+    ids = iter(f"n{i}" for i in range(9))
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "regulation": "load",
+                                      "when_full": "load"}),
+            "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "regulation": "load"}),
+            "g": ("system", "Group", {"name": "Group", "template": "group", "regulation": "all"}),
+            "old": ("system", "Old roof", {"name": "Old roof", "template": "inverter", "parent": "g", "phase": "l1"}),
+            "plug": ("system", "Plug battery", {"name": "Plug battery", "template": "ac_battery", "parent": "g",
+                                                "regulation": "load"}),
+            "roof": ("array", "Roof", {"system": "old"}), "bp": ("battery", "Plug", {"system": "plug"})}
+    changes = sy.normalize(subs, lambda: next(ids))
+    after = sy.apply(subs, changes)
+    # the subsystems agreed: the system takes their value, and they keep none
+    assert after["p"][2]["regulation"] == "load" and after["p"][2]["when_full"] == "load"
+    assert not any(k in after[c][2] for c in ("u", "a") for k in sy.BEHAVIOUR)
+    # the group held independent systems: they stand on their own, with what they did, and the group goes
+    assert "g" not in after and changes.remove == ["g"]
+    assert after["old"][2] == {"name": "Old roof", "template": "inverter", "regulation": "all"}
+    assert after["plug"][2]["regulation"] == "load" and "parent" not in after["plug"][2]
+    assert not sy.normalize(after, lambda: next(ids))                     # nothing left to do
+    # subsystems that disagreed: the system keeps its own value or none, they keep none
+    split = {**subs, "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p",
+                                                "regulation": "all"})}
+    after = sy.apply(split, sy.normalize(split, lambda: next(ids)))
+    assert "regulation" not in after["p"][2] and after["p"][2]["when_full"] == "load"
+    # a group sharing a limit coordinated its devices
+    shared = {"g": ("system", "Group", {"name": "Group", "template": "group", "output_limit_w": 800})}
+    assert sy.apply(shared, sy.normalize(shared, lambda: next(ids)))["g"][2]["template"] == "coupled"
+
+
+def test_a_subsystem_moved_out_keeps_behaving_as_its_system_made_it():
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load", "when_full": "load"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "phase": "l2"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"})}
+    assert sy.moved(subs, "u", "") == {"name": "Ultra", "template": "pv_battery", "regulation": "load", "when_full": "load"}
+    assert sy.moved(subs, "r", "p") == {"name": "Roof", "template": "inverter", "parent": "p"}
+
+
+def test_a_fixed_power_goes_up_with_its_regulation():
+    ids = iter(f"m{i}" for i in range(9))
+
+    def lifted(*kids):
+        subs = {"p": ("system", "P", {"name": "P", "template": "coupled"}),
+                **{f"k{i}": ("system", f"K{i}", {"name": f"K{i}", "template": "inverter", "parent": "p", **k})
+                   for i, k in enumerate(kids)}}
+        return sy.apply(subs, sy.normalize(subs, lambda: next(ids)))["p"][2]
+    assert lifted({"regulation": "fixed", "fixed_power_w": 300}, {"regulation": "fixed", "fixed_power_w": 300.0}) == {
+        "name": "P", "template": "coupled", "regulation": "fixed", "fixed_power_w": 300}
+    # different powers: no regulation of the system is made up
+    assert "regulation" not in lifted({"regulation": "fixed", "fixed_power_w": 300}, {"regulation": "fixed", "fixed_power_w": 500})
+    # a stray power without "fixed" is not taken along
+    assert lifted({"regulation": "load", "fixed_power_w": 300}) == {"name": "P", "template": "coupled", "regulation": "load"}
+
+
+def test_a_group_holding_parts_keeps_a_template_that_fits():
+    subs = {"g": ("system", "G", {"name": "G", "template": "group"}),
+            "a": ("array", "A", {"system": "g"}), "b": ("battery", "B", {"system": "g"})}
+    after = sy.apply(subs, sy.normalize(subs, lambda: "x"))
+    assert after["g"][2]["template"] == "pv_battery"
+    tree = sy.tree({}, {**after, "s": ("system", "S", {"name": "S", "template": "pv_battery", "parent": "c"}),
+                        "c": ("system", "C", {"name": "C", "template": "coupled", "regulation": "fixed",
+                                              "fixed_power_w": 400})})
+    rows = {(e["node"], e["setting"]): e for e in tree["effects"]}
+    assert rows[("s", "regulation")]["inherited"] and rows[("s", "regulation")]["value"] == "fixed"
+    assert rows[("s", "fixed_power")]["value"] == 400 and "inherited" not in rows[("c", "regulation")]

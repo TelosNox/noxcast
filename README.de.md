@@ -199,13 +199,12 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 | PV mit Akku in einem Gerät | Balkongerät mit Akku, Hybrid-Wechselrichter, ein DC-Speicher zwischen Modulen und Mikro-Wechselrichter |
 | Akku am Hausnetz | Steckerspeicher oder Speicher-Wechselrichter mit eigenem Wechselrichter, ohne PV |
 | Gekoppelte Systeme | Geräte, die sich absprechen und eine Grenze teilen, z. B. EcoFlow Stream mit mehreren Geräten; sie werden seine Teilsysteme |
-| Nur zusammenfassen | Fasst Systeme für die Übersicht zusammen, ohne eine Zahl zu ändern, z. B. eine Altanlage und einen nachgerüsteten Speicher |
 
 | Einstellung | Bedeutung |
 |---|---|
 | Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose; bei mehreren PV-Gruppen ihre Summe, jede gibt ihren Anteil an der Leistung darüber ab. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter [Reparaturen](#reparaturen) vor |
 | Grenze gilt pro Phase, Phase | Mehrere Geräte auf verschiedenen Phasen; jedes Teilsystem nennt seine Phase |
-| Regelung | Gibt alles ab, deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Ein leeres Teilsystem verhält sich wie sein System |
+| Regelung | Gibt alles ab, richtet sich nach einem Smart Meter und deckt den Hausverbrauch (Nulleinspeisung) oder gibt eine feste Leistung ab. Nur am System: Seine Teilsysteme sind Geräte, die eine Steuerung gemeinsam regelt, und folgen ihm, ebenso bei *Wenn der Akku voll ist*. Ein Gerät, das dieser Steuerung nicht folgt, ist ein eigenes System |
 | Wenn der Akku voll ist | Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken |
 | Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |

@@ -17,6 +17,11 @@ breaking changes.
   needed. Learning may change for such installations from the next nightly run on. The battery forecast does not
   split the surplus at the limit yet.
 
+### Changed
+- The menu of a system says what each item does: ✎ changes something that exists, ＋ adds, － removes, with a
+  short description under the general items. Removing a part asks first and names what goes with it; until then
+  nothing is removed.
+
 ### Fixed
 - A system with the regulation *Self-consumption* and no battery delivers only what the house draws, so on days
   with a low load it held PV back, and learning read that as weak sun: efficiency and shade came out too low. With

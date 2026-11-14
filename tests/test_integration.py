@@ -444,7 +444,7 @@ async def test_a_system_holds_its_subsystems_in_one_entry(hass: HomeAssistant) -
         assert ents and all(e.config_subentry_id == stream for e in ents)
 
         # remove the subsystem from the menu: its array goes with it, and so do its device and entities
-        res = await system_flow(hass, entry, "remove", {"part": ultra}, subentry_id=stream)
+        res = await system_flow(hass, entry, "remove", {"part": ultra}, "remove_yes", subentry_id=stream)
         assert res["type"] is FlowResultType.MENU
     assert not parts_of(hass, entry, "array") and ultra not in parts_of(hass, entry, "system")
     assert not [d for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
@@ -541,7 +541,12 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
 
         # removing it from the menu: the system stays, empty
         sid = stored["system"]
+        # choosing it only asks; cancelling keeps it
         res = await system_flow(hass, entry, "remove", {"part": bid}, subentry_id=sid)
+        assert res["type"] is FlowResultType.MENU and res["step_id"] == "remove_confirm"
+        res = await hass.config_entries.subentries.async_configure(res["flow_id"], {"next_step_id": "menu"})
+        assert res["step_id"] == "menu" and parts_of(hass, entry, "battery")
+        res = await system_flow(hass, entry, "remove", {"part": bid}, "remove_yes", subentry_id=sid)
         assert res["type"] is FlowResultType.MENU and not parts_of(hass, entry, "battery")
         assert "parts" not in hass.config_entries.async_get_entry(entry.entry_id).subentries[sid].data
 

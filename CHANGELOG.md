@@ -35,6 +35,17 @@ breaking changes.
   behaviour they had, and removes the empty group; a group with an output limit or balancing batteries becomes
   *Coupled systems*. Their PV arrays keep their entities, history and what was learned.
 
+### Fixed
+- The household's zero export no longer makes a battery count for PV it is not coupled with. Learning left out
+  the hours of every PV array whenever a battery at the house grid was full, although an inverter that holds the
+  export at zero does not know that battery and curtails the same with it or without; and it counted hours in
+  which a battery charged at its maximum as "at least this much" also in a system that delivers everything, whose
+  rest goes out. What counts now follows from the systems alone: the battery of the PV array's own system, and
+  those of subsystems that follow the house load together or share an output limit. Learning may use more hours
+  from the next nightly run on. A system that covers the house load without a battery is still not checked for
+  the hours it held back (the *Installation* tab says "not used yet"). The household setting *Battery state of
+  charge* still counts for every array.
+
 ## [0.5.0b2] - 2026-11-14
 
 The second pre-release of 0.5.0: the *Installation* tab shows the installation as a flow diagram, and parts

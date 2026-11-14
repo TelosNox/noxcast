@@ -160,13 +160,13 @@ def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[st
     lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
     """
     out: dict[str, list[Store]] = {}
-    for sid, arrays in sy.curtailed_arrays(systems, feed_in_mode).items():
+    for sid, arrays in sy.curtailed_arrays(systems).items():
         d = batteries.get(systems[sid].battery or "")
         if not d or not d.get(CONF_SOC_SENSOR):
             continue
         charger = (Charger(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT)), float(d[CONF_MAX_CHARGE]))
                    if d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE)
-                   and sy.charge_curtails(systems, sid, feed_in_mode) else None)
+                   and sy.charge_curtails(systems, sid) else None)
         store = Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(systems[sid].battery or "",
                                                                             d.get(CONF_MAX_SOC) or 100))
                                               - FULL_TOLERANCE), charger)

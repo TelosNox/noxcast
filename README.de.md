@@ -491,8 +491,8 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   Akku), deckelt in jedem Schritt ihre Summe; jede PV-Gruppe folgt innerhalb der Stunde ihrem eigenen Verlauf bei
   klarem Himmel und gibt den Teil darüber im Verhältnis ihrer Leistung in diesem Schritt ab. Eine Stunde an der
   Grenze zählt für die Korrektur nur, wenn sie sonniger war als vorhergesagt. Die Prognosesensoren der PV-Gruppe
-  zeigen `limited_wh` (Energie über der Grenze) und bei einer eigenen Grenze `limit_w`, die Gesamtsensoren
-  `limited_wh`.
+  zeigen `limited_wh` (Energie über der Grenze) und `limit_w` (ihre eigene Grenze, leer, wenn sie sich nur eine
+  teilt), die Gesamtsensoren `limited_wh`.
 
 ### Wetter
 

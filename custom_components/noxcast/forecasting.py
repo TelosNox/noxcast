@@ -152,7 +152,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     forecast per model and array).
 
     Everything up to the published values works on the uncapped forecast, so the intraday correction and the
-    band vary the clouds; the cap comes last (curtailment.cap) and the uncapped values stay in data.uncapped.
+    band vary the clouds; the cap comes last (curtailment.cap_group) and the uncapped values stay in data.uncapped.
     """
     ts_now = now.timestamp()
     result = NoxcastData(day_start=day_start)

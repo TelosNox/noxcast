@@ -282,15 +282,31 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
                                full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset()),
                                limited)
         if history.satellite_ghi:
-            limit = inst.array_limit(sid) if inst else None
+            fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp,
+                                    _capped_measured(site, arrays, learned, inst, sid), now)
 
-            def predict(hours, geo=arr.geometry, result=learned[sid], limit=limit):
-                out = measured_forecast(site, geo, result, hours)
-                if limit is None:
-                    return out
-                temps = {t: temp for t, _, temp in hours}
-                return ct.cap(out, limit, lambda t: clearsky_profile(site, geo, result, t, temps.get(t), SUBSTEPS))
-            fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp, predict, now)
+
+def _capped_measured(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray],
+                     inst: Installation | None, sid: str) -> Callable[[list[tuple[float, float, float | None]]], Series]:
+    """The model on measured weather for one array, capped like the forecast (forecasting._cap): by its own limit
+    and by a limit it shares with other arrays, whose model on the same weather counts in the sum."""
+    own = {a: w for a in arrays if inst and (w := inst.array_limit(a)) is not None}
+    caps = [(tuple(a for a in group if a in arrays and a in learned), w)
+            for group, w in (inst.forecast_caps() if inst else []) if sid in group]
+    group = {sid} | {a for members, _ in caps for a in members}
+
+    def predict(hours: list[tuple[float, float, float | None]]) -> Series:
+        raw = {a: measured_forecast(site, arrays[a].geometry, learned[a], hours) for a in group}
+        if sid not in own and not caps:
+            return raw[sid]
+        temps = {t: temp for t, _, temp in hours}
+
+        def profile(a: str, t: float) -> list[float]:
+            return clearsky_profile(site, arrays[a].geometry, learned[a], t, temps.get(t), SUBSTEPS)
+        return {t: ct.cap_group({a: raw[a].get(t, 0.0) for a in group}, lambda a, t=t: profile(a, t),
+                                {a: w for a, w in own.items() if a in group}, caps)[sid]
+                for t in raw[sid]}
+    return predict
 
 
 def learn_load(house_load: str, consumers: dict[str, ConsumerConfig], history: LoadHistory, zone: tzinfo,

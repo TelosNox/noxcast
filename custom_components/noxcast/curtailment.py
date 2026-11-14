@@ -179,7 +179,9 @@ def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] |
         if a in own and max(power[a]) > own[a]:
             power[a] = [min(w, own[a]) for w in power[a]]
             changed.add(a)
-    for members, limit in shared:
+    # the inner limits first (a subsystem's before its parent's): the outer one then takes only what is left
+    # above it, while the other way round the inner one would cut arrays the outer one had already cut
+    for members, limit in sorted(shared, key=lambda c: len(c[0])):
         group = [a for a in members if a in power]
         for j in range(n):
             total = sum(power[a][j] for a in group)

@@ -482,8 +482,8 @@ temperature turn this irradiance into the clear-sky power of the array.
   that part. A limit shared by several PV arrays (the output limit of a system without battery) caps their sum in
   each step; each array follows its own clear-sky course within the hour and gives up the part above in proportion
   to its power at that step. An hour at the limit counts for the correction only if it was sunnier than forecast.
-  The forecast sensors of the array show `limited_wh` (energy above the limit) and, for a limit of its own,
-  `limit_w`; the total sensors `limited_wh`.
+  The forecast sensors of the array show `limited_wh` (energy above the limit) and `limit_w` (its own limit, empty
+  where it only shares one); the total sensors `limited_wh`.
 
 ### Weather
 

@@ -354,3 +354,24 @@ def test_band_learning_leaves_out_hours_whose_sum_reached_a_shared_limit():
     kwargs = dict(clear_ghi=lambda ts: 900.0, clear_wh=lambda ts, ids: 1000.0)
     skipped = bd.learn_band(store, **kwargs, caps=[(("a", "b"), 900.0)])
     assert skipped["hourly"]["all"][2] == 50 and skipped["hourly"]["all"][0] == -0.3     # (400 - 700) / 1000
+
+
+def test_nested_shared_limits_cut_from_the_inside_out():
+    flat = {"a": [1.0], "b": [1.0], "c": [1.0]}.get
+    out = ct.cap_group({"a": 400.0, "b": 400.0, "c": 600.0}, flat, {}, [(("a", "b", "c"), 1000.0), (("a", "b"), 500.0)])
+    # the subsystem first: a and b at 250, then the parent takes 1000 of 1100 off all three
+    assert abs(sum(out.values()) - 1000.0) < 1e-9 and abs(out["a"] + out["b"] - 500.0 * 1000 / 1100) < 1e-9
+
+
+def test_the_archived_model_on_measured_weather_is_capped_by_a_shared_limit():
+    t = DAY_START + 12 * 3600
+    store = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 500.0, "b": 400.0}}}}}
+    history = ln.PvHistory({"pv1": {t: 300.0}, "pv2": {t: 300.0}, "pv3": {t: 300.0}}, {}, {}, {}, {},
+                           {t: 20.0}, {t: 900.0})
+    learned = {"a": model.LearnedArray(), "b": model.LearnedArray()}
+    ln.record_archive(store, SITE, ARRAYS, learned, history, t + 7200, 95.0, SHARED_INST)
+    measured = store["2026-06-01"]["hours"][str(t)]["measured"]
+    assert measured["a"] + measured["b"] <= 900.0 + 0.2
+    plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 500.0, "b": 400.0}}}}}
+    ln.record_archive(plain, SITE, ARRAYS, learned, history, t + 7200, 95.0)
+    assert sum(plain["2026-06-01"]["hours"][str(t)]["measured"].values()) > 1000.0

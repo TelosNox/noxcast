@@ -32646,7 +32646,7 @@
      {"name": "battery", "invert": false, "soc": "sensor.soc", "capacity": 5, "max_soc": 100, "min_soc": 10, "reserve": 5},
      {"name": "battery", "invert": false, "soc": "sensor.soc2", "capacity": 2, "max_soc": "sensor.max_soc", "min_soc": 20}
     ],
-    "export": false,
+    "export": true,
     "weather": "weather.noxcast_weather"
    },
    "backtest": {

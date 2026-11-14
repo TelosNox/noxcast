@@ -11,19 +11,19 @@ const INST_TEXT = {
     refresh: "Aktualisieren", house: "Haushalt", noSystems: "Noch kein System eingetragen.",
     edit: "Ändern unter Einstellungen → Geräte & Dienste → Noxcast.",
     status: { exact: "rechnet genau", simplified: "rechnet vereinfacht", not_yet: "noch nicht berücksichtigt" },
-    inherited: "vom System",
+    inherited: "vom System", fromHouse: "Vorgabe des Haushalts",
     help: "Jede Angabe wird gespeichert, auch wenn Noxcast sie noch nicht verrechnet. Spätere Versionen rechnen sie genauer, ohne dass du etwas neu eintragen musst.",
     templates: { inverter: "Wechselrichter ohne Akku", pv_battery: "PV mit Akku in einem Gerät", ac_battery: "Akku am Hausnetz",
       coupled: "Gekoppelte Systeme" },
-    settings: { feed_in: "Einspeisung", old_soc: "Akku-Ladestände, die das Lernen aller PV-Gruppen auslassen",
+    settings: { feed_in: "Einspeisevorgabe", old_soc: "Akku-Ladestände, die das Lernen aller PV-Gruppen auslassen",
       one_storage: "Akkus werden als ein Speicher simuliert", output_limit: "Ausgangsgrenze",
       limit_per_phase: "Grenze gilt pro Phase", phase: "Phase", regulation: "Regelung", fixed_power: "Feste Leistung",
-      when_full: "Wenn der Akku voll ist", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
+      feed_in_rule: "Einspeisung", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
       sensor_limit: "Jeder Sensor liefert höchstens", full_learning: "PV-Gruppen, deren Lernen Stunden mit vollem Akku auslässt",
       charge_learning: "Stunden mit größter Ladeleistung zählen als „mindestens“" },
-    values: { free: "frei", none: "keine (Nulleinspeisung)", all: "gibt alles ab", load: "deckt den Hausverbrauch", fixed: "feste Leistung",
+    values: { free: "frei", none: "Nulleinspeisung", all: "volle Leistung", load: "Eigenverbrauch", fixed: "feste Leistung",
+      export: "speist den Rest trotzdem ein", never: "speist nie ein",
       own_pv: "eigener PV", house: "dem Haushalt", l1: "L1", l2: "L2", l3: "L3", three: "dreiphasig", yes: "ja", no: "nein",
-      whenFull: { all: "alles abgeben", load: "weiter nur den Verbrauch decken" },
       chargeMissing: "braucht Sensor Akkuleistung und max. Ladeleistung" },
     battery: "Akku", array: "PV-Gruppe", sensors: "{n} Sensoren", sensor: "1 Sensor", sub: "Teilsystem",
     empty: "enthält noch nichts", pick: "Auf einen Knoten im Bild tippen, um seine Einstellungen zu sehen.",
@@ -37,19 +37,19 @@ const INST_TEXT = {
     refresh: "Refresh", house: "Household", noSystems: "No system entered yet.",
     edit: "Change under Settings → Devices & services → Noxcast.",
     status: { exact: "computed exactly", simplified: "computed simplified", not_yet: "not used yet" },
-    inherited: "from its system",
+    inherited: "from its system", fromHouse: "the household's rule",
     help: "Every setting is stored, even where Noxcast does not compute it yet. Later versions compute it more precisely without you entering anything again.",
     templates: { inverter: "Inverter without battery", pv_battery: "PV with battery in one device", ac_battery: "Battery at the house grid",
       coupled: "Coupled systems" },
-    settings: { feed_in: "Feed-in", old_soc: "Battery states of charge that leave learning out for all PV arrays",
+    settings: { feed_in: "Feed-in rule", old_soc: "Battery states of charge that leave learning out for all PV arrays",
       one_storage: "Batteries are simulated as one storage", output_limit: "Output limit",
       limit_per_phase: "Limit holds per phase", phase: "Phase", regulation: "Regulation", fixed_power: "Fixed power",
-      when_full: "When the battery is full", charges_from: "Battery charges from", balance: "Batteries balance each other",
+      feed_in_rule: "Feed-in", charges_from: "Battery charges from", balance: "Batteries balance each other",
       sensor_limit: "Each sensor delivers at most", full_learning: "PV arrays whose learning leaves out hours with the battery full",
       charge_learning: "Hours charging at the maximum count as \"at least\"" },
-    values: { free: "free", none: "none (zero export)", all: "delivers everything", load: "covers the house load", fixed: "fixed power",
+    values: { free: "free", none: "zero export", all: "full power", load: "self-consumption", fixed: "fixed power",
+      export: "feeds the rest in anyway", never: "never feeds in",
       own_pv: "own PV", house: "the household", l1: "L1", l2: "L2", l3: "L3", three: "three-phase", yes: "yes", no: "no",
-      whenFull: { all: "deliver everything", load: "keep covering the load only" },
       chargeMissing: "needs the battery power sensor and max charge power" },
     battery: "Battery", array: "PV array", sensors: "{n} sensors", sensor: "1 sensor", sub: "Subsystem",
     empty: "contains nothing yet", pick: "Tap a node in the picture to see its settings.",
@@ -155,8 +155,8 @@ class NoxcastInstallation extends HTMLElement {
     if (Array.isArray(v)) return v.map((x) => this._w(x)).join(", ");
     if (["output_limit", "fixed_power"].includes(setting)) return this._w(v);
     if (setting === "charge_learning") return v == null ? t.chargeMissing : this._w(v);
-    if (setting === "feed_in" && typeof v === "number") return `≤ ${this._w(v)}`;
-    if (setting === "when_full") return t.whenFull[v] || esc(v);
+    if (["feed_in", "feed_in_rule"].includes(setting) && typeof v === "number") return `≤ ${this._w(v)}`;
+    if (v && typeof v === "object" && "pct" in v) return `≤ ${Number(v.pct).toLocaleString(this._lang)} %`;
     if (setting === "old_soc") return String(v);
     return t[v] || esc(String(v));
   }
@@ -167,7 +167,7 @@ class NoxcastInstallation extends HTMLElement {
     const rows = this._effects.filter((e) => e.node === node);
     if (!rows.length) return "";
     return `<ul class="settings">${rows.map((e) => `<li><span class="name">${t.settings[e.setting] || esc(e.setting)}</span>
-      <span class="val">${this._value(e.setting, e.value)}</span>${e.inherited ? `<span class="name">(${t.inherited})</span>` : ""}
+      <span class="val">${this._value(e.setting, e.value)}</span>${e.inherited ? `<span class="name">(${e.inherited === "house" ? t.fromHouse : t.inherited})</span>` : ""}
       <span class="st ${e.status}" title="${t.status[e.status]}"><span class="dot"></span>${t.status[e.status]}</span></li>`).join("")}</ul>`;
   }
 

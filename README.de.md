@@ -177,7 +177,7 @@ Formular.
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist) |
-| Einspeisung, Einspeisegrenze | Frei, begrenzt auf einen Wert in W, oder keine (Nulleinspeisung: Überschuss bei vollen Akkus zählt als ungenutzt). Die Grenze wird gespeichert und zählt in einer späteren Version |
+| Einspeisevorgabe, Einspeisegrenze | Was der Haushalt einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst: frei, höchstens eine Leistung in W, höchstens ein Anteil der PV-Leistung in % oder Nulleinspeisung (nie etwas; Überschuss bei vollen Akkus zählt als ungenutzt). Jedes System folgt dieser Vorgabe, außer es nennt eine Abweichung. Die Grenze wird gespeichert und zählt in einer späteren Version |
 | Prognosetage | 2–7, heute eingeschlossen (Standard 3) |
 
 ### 2. Systeme (wie die Module zum Haus kommen)
@@ -204,8 +204,8 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 |---|---|
 | Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose; bei mehreren PV-Gruppen ihre Summe, jede gibt ihren Anteil an der Leistung darüber ab. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter [Reparaturen](#reparaturen) vor |
 | Grenze gilt pro Phase, Phase | Mehrere Geräte auf verschiedenen Phasen; jedes Teilsystem nennt seine Phase |
-| Regelung | Gibt alles ab, richtet sich nach einem Smart Meter und deckt den Hausverbrauch (Nulleinspeisung) oder gibt eine feste Leistung ab. Nur am System: Seine Teilsysteme sind Geräte, die eine Steuerung gemeinsam regelt, und folgen ihm, ebenso bei *Wenn der Akku voll ist*. Ein Gerät, das dieser Steuerung nicht folgt, ist ein eigenes System |
-| Wenn der Akku voll ist | Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken |
+| Regelung | *Volle Leistung* gibt alles ab, was die PV liefert (einfacher Wechselrichter), *Eigenverbrauch* richtet sich nach einem Smart Meter und deckt den Hausverbrauch, *Feste Leistung* gibt eine eingestellte Leistung ab. Bei einer Leistung, die nach Zeitplan wechselt, Eigenverbrauch wählen, oder feste Leistung mit dem Durchschnitt. Nur am System: Seine Teilsysteme sind Geräte, die eine Steuerung gemeinsam regelt, und folgen ihm, auch bei der Einspeisung. Ein Gerät, das dieser Steuerung nicht folgt, ist ein eigenes System |
+| Abweichung von der Einspeisevorgabe | Optional, meist leer: Das System folgt der Einspeisevorgabe des Haushalts. *Speist den Rest trotzdem ein*: ein Wechselrichter mit voller Leistung, der keine Nulleinspeisung einhalten kann, oder ein Gerät, dessen Einspeisekontrolle aus ist. *Speist nie ein*: ein Gerät, das bei vollem Akku weiter nur den Verbrauch deckt, während der Haushalt einspeisen darf. Der Reiter *Anlage* zeigt je System, welcher Regel es folgt |
 | Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
 

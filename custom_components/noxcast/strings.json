@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: battery sensors for learning, house load, grid and feed-in. Add your systems, PV arrays and batteries afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: battery sensors for learning, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
         "data": {
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
@@ -12,8 +12,7 @@
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
           "forecast_days": "Forecast days",
-          "feed_in_mode": "Feed-in",
-          "feed_in_limit_w": "Feed-in limit"
+          "feed_in_mode": "Feed-in rule"
         },
         "data_description": {
           "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered.",
@@ -23,8 +22,21 @@
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
-          "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
-          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most."
+          "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation."
+        },
+        "sections": {
+          "feed_in_limit": {
+            "name": "Feed-in limit",
+            "description": "Only with a limited feed-in rule.",
+            "data": {
+              "feed_in_limit_w": "At most (W)",
+              "feed_in_limit_pct": "At most (% of the PV peak power)"
+            },
+            "data_description": {
+              "feed_in_limit_w": "What the household may feed in at most, e.g. 800 W.",
+              "feed_in_limit_pct": "Share of the installed PV peak power, e.g. 60 %."
+            }
+          }
         }
       },
       "reconfigure": {
@@ -37,8 +49,7 @@
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
           "forecast_days": "Forecast days",
-          "feed_in_mode": "Feed-in",
-          "feed_in_limit_w": "Feed-in limit"
+          "feed_in_mode": "Feed-in rule"
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
@@ -46,9 +57,22 @@
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
-          "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
-          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most.",
+          "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation.",
           "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered."
+        },
+        "sections": {
+          "feed_in_limit": {
+            "name": "Feed-in limit",
+            "description": "Only with a limited feed-in rule.",
+            "data": {
+              "feed_in_limit_w": "At most (W)",
+              "feed_in_limit_pct": "At most (% of the PV peak power)"
+            },
+            "data_description": {
+              "feed_in_limit_w": "What the household may feed in at most, e.g. 800 W.",
+              "feed_in_limit_pct": "Share of the installed PV peak power, e.g. 60 %."
+            }
+          }
         }
       }
     },
@@ -57,7 +81,8 @@
       "sensor_missing": "The selected sensor does not exist.",
       "sensor_unit": "Power sensors must report W or kW.",
       "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
-      "feed_in_limit_needed": "Limited feed-in needs the feed-in limit."
+      "feed_in_limit_needed": "A feed-in rule limited to a power needs the limit in W.",
+      "feed_in_pct_needed": "A feed-in rule limited to a share needs the limit in %."
     },
     "abort": {
       "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
@@ -93,26 +118,52 @@
         },
         "settings": {
           "title": "Settings of {name}",
-          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts. A subsystem follows the regulation of its system and what that does when the battery is full; a device that does not follow it is a system of its own.",
+          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts. A subsystem follows its system's regulation and feed-in; a device that does not follow it is a system of its own.",
           "data": {
             "output_limit_w": "Output limit",
-            "limit_per_phase": "Limit holds per phase",
-            "phase": "Phase",
             "regulation": "Regulation",
-            "fixed_power_w": "Fixed power",
-            "when_full": "When the battery is full",
             "charges_from": "Battery charges from",
             "balance": "Batteries balance each other"
           },
           "data_description": {
             "output_limit_w": "What the system delivers at most, e.g. 800 W or the AC power of the inverter. With subsystems: what they deliver together. Without a battery, enter it as the PV power sensors measure it at the limit: sensors of DC power show a few percent more than the AC power. When the measurements show a limit, Noxcast suggests it under Repairs.",
-            "limit_per_phase": "Switch on if the limit holds for each phase on its own (several balcony devices on different phases).",
-            "phase": "The phase this subsystem feeds into.",
-            "regulation": "Delivers everything (plain inverter), follows a smart meter to cover the house load (zero export) or delivers a fixed power. Holds for all its subsystems.",
-            "fixed_power_w": "Only with fixed power: what the system delivers.",
-            "when_full": "Deliver everything up to the output limit, or keep covering the load only (then PV above the load is curtailed).",
+            "regulation": "Full power: delivers everything the PV gives (plain inverter). Self-consumption: follows a smart meter and covers the house load. Fixed power: delivers a set power. Holds for all its subsystems. For a power that changes by a schedule, choose self-consumption, or fixed power with the average.",
             "charges_from": "Own PV: the battery sits before the output (compact device, hybrid inverter). The household: own inverter at the house grid, it charges from surplus of the house.",
             "balance": "Switch on if the batteries of the subsystems even out their state of charge (e.g. EcoFlow Stream). Then they get one battery forecast."
+          },
+          "sections": {
+            "fixed": {
+              "name": "Fixed power",
+              "description": "Only with the regulation Fixed power.",
+              "data": {
+                "fixed_power_w": "Fixed power"
+              },
+              "data_description": {
+                "fixed_power_w": "What the system delivers."
+              }
+            },
+            "deviation": {
+              "name": "Deviation from the feed-in rule",
+              "description": "Empty: the system follows the household's feed-in rule. Set only what differs: an inverter at full power that cannot hold zero export feeds the rest in anyway; a device that keeps covering only the load when its battery is full never feeds in.",
+              "data": {
+                "own_feed_in": "Feed-in"
+              },
+              "data_description": {
+                "own_feed_in": "Holds for all its subsystems."
+              }
+            },
+            "phases": {
+              "name": "Phases",
+              "description": "Several devices on different phases.",
+              "data": {
+                "limit_per_phase": "Limit holds per phase",
+                "phase": "Phase"
+              },
+              "data_description": {
+                "limit_per_phase": "Switch on if the limit holds for each phase on its own (several balcony devices on different phases).",
+                "phase": "The phase this subsystem feeds into."
+              }
+            }
           }
         },
         "menu": {
@@ -268,7 +319,7 @@
         "soc_unit": "The state of charge must be in %.",
         "system_taken": "This system already has a battery. A second one is a subsystem of its own.",
         "parent_not_possible": "This system cannot be a part: it holds subsystems itself, or the chosen system holds PV arrays or a battery.",
-        "fixed_power_needed": "Fixed power needs a value."
+        "fixed_power_needed": "The regulation Fixed power needs a value under Fixed power."
       },
       "abort": {
         "saved": "Saved."
@@ -382,8 +433,9 @@
     "feed_in_mode": {
       "options": {
         "free": "Free",
-        "limited": "Limited",
-        "none": "None (zero export)"
+        "limited": "At most a power (W)",
+        "percent": "At most a share of the PV peak power (%)",
+        "none": "Zero export"
       }
     },
     "template": {
@@ -404,21 +456,21 @@
     },
     "regulation": {
       "options": {
-        "all": "Delivers everything",
-        "load": "Covers the house load",
+        "all": "Full power",
+        "load": "Self-consumption",
         "fixed": "Fixed power"
-      }
-    },
-    "when_full": {
-      "options": {
-        "all": "Deliver everything",
-        "load": "Keep covering the load only"
       }
     },
     "charges_from": {
       "options": {
         "own_pv": "Own PV",
         "house": "The household"
+      }
+    },
+    "own_feed_in": {
+      "options": {
+        "export": "Feeds the rest in anyway",
+        "never": "Never feeds in"
       }
     }
   },

@@ -8,6 +8,8 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- The household's feed-in rule can also limit the feed-in to a share of the PV peak power (e.g. 60 %). It is
+  stored and counts in a later version, like the limit in W.
 - The output limit of a system without battery now caps the forecast also when several PV arrays share it, such
   as east and west on one inverter: their sum stays below the limit in every 10-minute step, and each array gives
   up its share of what lies above. Forecast sensors, band, battery forecast and day view follow. The
@@ -19,6 +21,16 @@ breaking changes.
   5-minute values Noxcast has kept since its installation and PV arrays that have been learned.
 
 ### Changed
+- *When the battery is full* is replaced by an optional *Deviation from the feed-in rule* on the
+  system. A system follows the household's feed-in rule unless it deviates: *feeds the rest in anyway* or *never
+  feeds in*. The update turns the old setting into a deviation where it disagreed with the household's rule, and
+  gives a system at full power a *feeds the rest in anyway* under zero export, since such an inverter cannot hold
+  the export at zero; so everything computes as before, and the day card now shows feed-in for such a household.
+  Check the *Installation* tab: it shows per system which rule it follows.
+- The regulation options are named *Full power*, *Self-consumption* and *Fixed power*, and the household setting
+  is the *Feed-in rule* with *Zero export* as one of its options.
+- Rare settings sit in sections that open where they hold a value: the household's feed-in limit, and a
+  system's fixed power, deviation from the feed-in rule and phases.
 - Each system is one entry with its PV arrays, battery and subsystems inside. Opening it shows a menu with
   everything in it, and each item opens the form you know. The list of entries shows only the systems, so it is
   clear what belongs together. The update moves existing PV arrays, batteries and subsystems into their systems;

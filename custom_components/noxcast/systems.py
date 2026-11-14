@@ -30,7 +30,7 @@ from .const import (
     CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSORS, CONF_SYSTEM,
-    CONF_TEMPLATE, CONF_WHEN_FULL, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
+    CONF_TEMPLATE, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
 )
 
 type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -> (type, title, data)
@@ -38,12 +38,13 @@ type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -
 # what a template fills in; a setting not named stays empty (no limit); a subsystem takes no behaviour from it
 TEMPLATES: dict[str, dict[str, Any]] = {
     "inverter": {CONF_REGULATION: "all"},
-    "pv_battery": {CONF_CHARGES_FROM: "own_pv", CONF_REGULATION: "load", CONF_WHEN_FULL: "all"},
+    "pv_battery": {CONF_CHARGES_FROM: "own_pv", CONF_REGULATION: "load"},
     "ac_battery": {CONF_CHARGES_FROM: "house", CONF_REGULATION: "load"},
-    "coupled": {CONF_BALANCE: True, CONF_REGULATION: "load", CONF_WHEN_FULL: "all"},
+    "coupled": {CONF_BALANCE: True, CONF_REGULATION: "load"},
 }
-# set on the system only; its subsystems follow it (behaviour)
-BEHAVIOUR = (CONF_REGULATION, CONF_FIXED_POWER, CONF_WHEN_FULL)
+# set on the system only; its subsystems follow it (behaviour). The feed-in deviation is optional: without one the
+# system follows the household's feed-in rule (an outer rule holds inside unless a deviation is set)
+BEHAVIOUR = (CONF_REGULATION, CONF_FIXED_POWER, CONF_OWN_FEED_IN)
 GROUP = "group"          # the former template "only group them": independent systems, dissolved by normalize
 AC_EFFICIENCY_PCT = 90                               # battery.DEFAULT_EFFICIENCY of the former AC coupling
 
@@ -182,8 +183,8 @@ def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
         if not kids:
             continue
         lifted = dict(pdata)
-        # the regulation goes up with its fixed power, as one setting; "when full" on its own
-        for keys in ((CONF_REGULATION, CONF_FIXED_POWER), (CONF_WHEN_FULL,)):
+        # the regulation goes up with its fixed power, as one setting; the feed-in deviation on its own
+        for keys in ((CONF_REGULATION, CONF_FIXED_POWER), (CONF_OWN_FEED_IN,)):
             values = []
             for c in kids:
                 v = tuple(data_of[c].get(k) for k in keys)
@@ -206,6 +207,33 @@ def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
             new = new_id()
             changes.add.append((new, title, template_data(template, **{CONF_NAME: title})))
             changes.update[sid] = {**data, CONF_SYSTEM: new}
+    return changes
+
+
+def feed_in_rules(household: Mapping[str, Any], subs: Subs) -> Changes:
+    """1.7: "when the battery is full" becomes a deviation from the household's feed-in rule where the two
+    disagreed, so every system computes as before.
+
+    - Delivering everything when full under zero export: the system feeds the rest in anyway.
+    - Covering only the load when full while the household may feed in: the system never feeds in.
+    - Full power without that setting under zero export: such an inverter cannot hold the export at zero, it fed
+      in what was left before too.
+    A subsystem follows its system (normalize), so its old setting is only dropped.
+    """
+    mode = household.get(CONF_FEED_IN_MODE, "none")
+    changes = Changes()
+    for sid, (title, d) in sorted(_of(subs, SUBENTRY_SYSTEM).items()):
+        if CONF_WHEN_FULL not in d and not (d.get(CONF_REGULATION) == "all" and mode == "none"):
+            continue
+        new = _without(d, CONF_WHEN_FULL)
+        if not d.get(CONF_PARENT) and not d.get(CONF_OWN_FEED_IN):
+            full = d.get(CONF_WHEN_FULL) or ("all" if d.get(CONF_REGULATION) == "all" else None)
+            if full == "all" and mode == "none":
+                new[CONF_OWN_FEED_IN] = "export"
+            elif full == "load" and mode != "none":
+                new[CONF_OWN_FEED_IN] = "never"
+        if new != dict(d):
+            changes.update[sid] = new
     return changes
 
 
@@ -354,6 +382,31 @@ def behaviour(systems: Mapping[str, System], sid: str, key: str) -> Any:
     return systems[s.parent].get(key) if s.parent is not None else s.get(key)
 
 
+def feed_in(household: Mapping[str, Any], systems: Mapping[str, System], sid: str) -> tuple[str, bool]:
+    """What a system may feed in: free, limited, percent or none, and whether that is its own deviation (or its
+    system's) rather than the household's rule."""
+    own = behaviour(systems, sid, CONF_OWN_FEED_IN)
+    if own:
+        return ("free" if own == "export" else "none"), True
+    return household.get(CONF_FEED_IN_MODE, "none"), False
+
+
+def exports(household: Mapping[str, Any], systems: Mapping[str, System]) -> bool:
+    """Whether anything of the household can go into the grid: its rule allows it, or a system feeds in anyway."""
+    return any(feed_in(household, systems, sid)[0] != "none" for sid in systems) or (
+        not systems and household.get(CONF_FEED_IN_MODE, "none") != "none")
+
+
+def _rule_value(household: Mapping[str, Any]) -> Any:
+    """The household's feed-in rule for the Installation tab: free / none, the limit in W, or {"pct": n}."""
+    mode = household.get(CONF_FEED_IN_MODE, "none")
+    if mode == "limited":
+        return household.get(CONF_FEED_IN_LIMIT)
+    if mode == "percent":
+        return {"pct": household.get(CONF_FEED_IN_PCT)}
+    return mode
+
+
 def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
     return sid in systems and systems[sid].get(CONF_CHARGES_FROM) == "house"
 
@@ -410,8 +463,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
     curtailed = curtailed_arrays(systems)
     batteries = {bid: d for bid, (_, d) in _of(subs, SUBENTRY_BATTERY).items()}
     # free and none are what the battery forecast and the day card have always known; a limit counts later
-    add("house", "feed_in", NOT_YET if mode == "limited" else EXACT,
-        household.get(CONF_FEED_IN_LIMIT) if mode == "limited" else mode)
+    add("house", "feed_in", NOT_YET if mode in ("limited", "percent") else EXACT, _rule_value(household))
     if household.get(CONF_SOC_SENSORS):
         add("house", "old_soc", EXACT, len(household[CONF_SOC_SENSORS]))
     # every battery is simulated in one storage: exact only where they all balance in one system
@@ -445,12 +497,20 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
                 else NOT_YET, regulation, sub)
         if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER):
             add(sid, "fixed_power", NOT_YET, behaviour(systems, sid, CONF_FIXED_POWER), sub)
-        when_full = behaviour(systems, sid, CONF_WHEN_FULL)
-        if when_full:
+        # the feed-in rule it follows: the household's, or its own deviation (a subsystem: its system's).
+        # Feeding in what is left is what Noxcast has always assumed; holding it at zero counts through the
+        # battery whose full hours learning leaves out; a limit counts later
+        effective, own = feed_in(household, systems, sid)
+        if s.battery or s.children or own or mode != "free":
             batteries_below = any(x.battery for x in below) or (
                 sub and any(systems[c].battery for c in systems[s.parent].children))
-            add(sid, "when_full", EXACT if when_full == "all" else SIMPLIFIED if batteries_below else NOT_YET,
-                when_full, sub)
+            status = EXACT if effective == "free" else SIMPLIFIED if effective == "none" and batteries_below \
+                else NOT_YET
+            if own:
+                add(sid, "feed_in_rule", status, behaviour(systems, sid, CONF_OWN_FEED_IN), sub)
+            else:
+                out.append({"node": sid, "setting": "feed_in_rule", "status": status, "value": _rule_value(household),
+                            "inherited": "house"})
         if s.battery and s.get(CONF_CHARGES_FROM):
             add(sid, "charges_from", SIMPLIFIED, s.get(CONF_CHARGES_FROM))
         if curtailed.get(sid):
@@ -493,7 +553,7 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
             "output_limit_w": s.get(CONF_OUTPUT_LIMIT), "limit_per_phase": bool(s.get(CONF_LIMIT_PER_PHASE)),
             "phase": s.get(CONF_PHASE),
             "regulation": behaviour(systems, sid, CONF_REGULATION), "fixed_power_w": behaviour(systems, sid, CONF_FIXED_POWER),
-            "when_full": behaviour(systems, sid, CONF_WHEN_FULL), "charges_from": s.get(CONF_CHARGES_FROM),
+            "own_feed_in": behaviour(systems, sid, CONF_OWN_FEED_IN), "charges_from": s.get(CONF_CHARGES_FROM),
             "balance": bool(s.get(CONF_BALANCE)) if s.children else None,
             "arrays": [{"id": a, "name": arrays[a][0], "sensors": len(arrays[a][1].get(CONF_POWER_SENSORS) or []),
                         "sensor_limits": sorted(set((arrays[a][1].get(CONF_SENSOR_LIMITS) or {}).values()))}
@@ -509,6 +569,7 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
             moves[part] = {"now": o[0], "to": [[sid, name] for sid, name in o[1].items()]}
     return {
         "feed_in": household.get(CONF_FEED_IN_MODE, "none"), "feed_in_limit_w": household.get(CONF_FEED_IN_LIMIT),
+        "feed_in_limit_pct": household.get(CONF_FEED_IN_PCT),
         "old_soc": len(household.get(CONF_SOC_SENSORS) or []),
         "systems": [node(sid) for sid in top],
         "effects": effects(household, systems, subs),

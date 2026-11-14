@@ -29,9 +29,9 @@ from .const import (
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY,
     CONF_BATTERY_POWER, CONF_BATTERY_INVERT, CONF_OUTPUT_LIMIT,
-    CONF_FEED_IN_MODE, CONF_FEED_IN_LIMIT, FEED_IN_OPTIONS, SUBENTRY_SYSTEM, CONF_SYSTEM, CONF_PARENT, CONF_TEMPLATE,
+    CONF_FEED_IN_MODE, CONF_FEED_IN_LIMIT, CONF_FEED_IN_PCT, FEED_IN_OPTIONS, SUBENTRY_SYSTEM, CONF_SYSTEM, CONF_PARENT, CONF_TEMPLATE,
     TEMPLATE_OPTIONS, CONF_LIMIT_PER_PHASE, CONF_PHASE, PHASE_OPTIONS, CONF_REGULATION, REGULATION_OPTIONS,
-    CONF_FIXED_POWER, CONF_WHEN_FULL, WHEN_FULL_OPTIONS, CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS, CONF_BALANCE,
+    CONF_FIXED_POWER, CONF_OWN_FEED_IN, OWN_FEED_IN_OPTIONS, CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS, CONF_BALANCE,
 )
 from . import store
 from . import systems as sy
@@ -44,9 +44,16 @@ def _select(options, key: str) -> selector.SelectSelector:
     return selector.SelectSelector(selector.SelectSelectorConfig(options=list(options), translation_key=key))
 
 
+MAIN_SECTIONS = ("feed_in_limit",)
+
+
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
     """The household. The battery sensors here leave full-battery hours out of learning for every array; they stay
-    until the systems' own batteries take that over (a later computation step)."""
+    until the systems' own batteries take that over (a later computation step). The limit of the feed-in rule is
+    rare: its section opens where one is set."""
+    box = selector.NumberSelectorMode.BOX
+    limited = defaults.get(CONF_FEED_IN_MODE) in ("limited", "percent") or any(
+        defaults.get(k) for k in (CONF_FEED_IN_LIMIT, CONF_FEED_IN_PCT))
     return vol.Schema({
         vol.Optional(CONF_SOC_SENSORS, default=defaults.get(CONF_SOC_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
@@ -59,9 +66,14 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_GRID_INVERT, default=defaults.get(CONF_GRID_INVERT, False)): selector.BooleanSelector(),
         vol.Required(CONF_FEED_IN_MODE, default=defaults.get(CONF_FEED_IN_MODE, "none")):
             _select(FEED_IN_OPTIONS, CONF_FEED_IN_MODE),
-        vol.Optional(CONF_FEED_IN_LIMIT, description={"suggested_value": defaults.get(CONF_FEED_IN_LIMIT)}):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100000, step=10, unit_of_measurement="W",
-                                                                  mode=selector.NumberSelectorMode.BOX)),
+        vol.Optional("feed_in_limit"): section(vol.Schema({
+            vol.Optional(CONF_FEED_IN_LIMIT, description={"suggested_value": defaults.get(CONF_FEED_IN_LIMIT)}):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100000, step=10,
+                                                                      unit_of_measurement="W", mode=box)),
+            vol.Optional(CONF_FEED_IN_PCT, description={"suggested_value": defaults.get(CONF_FEED_IN_PCT)}):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=1,
+                                                                      unit_of_measurement="%", mode=box)),
+        }), {"collapsed": not limited}),
         vol.Optional(CONF_FORECAST_DAYS, default=defaults.get(CONF_FORECAST_DAYS, FORECAST_DAYS)):
             selector.NumberSelector(selector.NumberSelectorConfig(min=2, max=MAX_FORECAST_DAYS, step=1,
                                                                   mode=selector.NumberSelectorMode.BOX)),
@@ -236,22 +248,27 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
         state = flow.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
             return {CONF_SOC_SENSORS: "soc_unit"}
+    # the limit sits in a section: its problem is shown on top of the form
     if user_input.get(CONF_FEED_IN_MODE) == "limited" and not user_input.get(CONF_FEED_IN_LIMIT):
-        return {CONF_FEED_IN_LIMIT: "feed_in_limit_needed"}
+        return {"base": "feed_in_limit_needed"}
+    if user_input.get(CONF_FEED_IN_MODE) == "percent" and not user_input.get(CONF_FEED_IN_PCT):
+        return {"base": "feed_in_pct_needed"}
     return {}
 
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 6              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+    MINOR_VERSION = 7              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
                                    # 1.4: discontinued ICON models replaced, 1.5: systems, 1.6: one entry per
-                                   # system with its parts inside (migrations in __init__)
+                                   # system with its parts inside, 1.7: feed-in deviation per system
+                                   # (migrations in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
         errors = {}
         if user_input is not None:
+            user_input = _flatten(user_input, MAIN_SECTIONS)
             errors = await _validate_main(self, user_input)
             if not errors:
                 return self.async_create_entry(title="Noxcast", data=user_input)
@@ -261,6 +278,7 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reconfigure_entry()
         errors = {}
         if user_input is not None:
+            user_input = _flatten(user_input, MAIN_SECTIONS)
             errors = await _validate_main(self, user_input)
             if not errors:
                 # the update listener reloads; reloading here as well is an error from Home Assistant 2026.12
@@ -529,26 +547,37 @@ def _system_basics(d: dict[str, Any], parents: dict[str, str]) -> vol.Schema:
     return vol.Schema(fields)
 
 
+SYSTEM_SECTIONS = ("fixed", "deviation", "phases")
+
+
 def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool) -> vol.Schema:
     """Only the settings that can apply: battery settings for templates with a battery, the shared settings for
-    systems with subsystems, the phase for subsystems. Regulation and "when full" only on a system of the top
-    level: a subsystem follows its system (systems.behaviour)."""
+    systems with subsystems, the phase for subsystems. Regulation, fixed power and the feed-in deviation only on a
+    system of the top level: a subsystem follows its system (systems.behaviour). What most systems need is on top;
+    what few need sits in sections that open where they hold a value."""
     def choice(key: str, options) -> tuple:
         return vol.Optional(key, description={"suggested_value": d.get(key)}), _select(options, key)
 
     fields = dict([_number(d, CONF_OUTPUT_LIMIT, 10, 100000, 10, "W")])
-    if group:
-        fields[vol.Optional(CONF_LIMIT_PER_PHASE, default=bool(d.get(CONF_LIMIT_PER_PHASE)))] = selector.BooleanSelector()
-    if sub:
-        fields.update(dict([choice(CONF_PHASE, PHASE_OPTIONS)]))
     if not sub:
-        fields.update(dict([choice(CONF_REGULATION, REGULATION_OPTIONS), _number(d, CONF_FIXED_POWER, 0, 100000, 10, "W")]))
-    if (battery or group) and not sub:
-        fields.update(dict([choice(CONF_WHEN_FULL, WHEN_FULL_OPTIONS)]))
+        fields.update(dict([choice(CONF_REGULATION, REGULATION_OPTIONS)]))
     if battery:
         fields.update(dict([choice(CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS)]))
     if group:
         fields[vol.Optional(CONF_BALANCE, default=bool(d.get(CONF_BALANCE)))] = selector.BooleanSelector()
+    if not sub:
+        fields[vol.Optional("fixed")] = section(vol.Schema(dict([_number(d, CONF_FIXED_POWER, 0, 100000, 10, "W")])),
+                                                {"collapsed": not (d.get(CONF_FIXED_POWER) or d.get(CONF_REGULATION) == "fixed")})
+        fields[vol.Optional("deviation")] = section(vol.Schema(dict([choice(CONF_OWN_FEED_IN, OWN_FEED_IN_OPTIONS)])),
+                                                    {"collapsed": not d.get(CONF_OWN_FEED_IN)})
+    phases = {}
+    if group:
+        phases[vol.Optional(CONF_LIMIT_PER_PHASE, default=bool(d.get(CONF_LIMIT_PER_PHASE)))] = selector.BooleanSelector()
+    if sub:
+        phases.update(dict([choice(CONF_PHASE, PHASE_OPTIONS)]))
+    if phases:
+        fields[vol.Optional("phases")] = section(vol.Schema(phases),
+                                                 {"collapsed": not (d.get(CONF_LIMIT_PER_PHASE) or d.get(CONF_PHASE))})
     return vol.Schema(fields)
 
 
@@ -738,8 +767,9 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
         battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
         errors = {}
         if user_input is not None:
+            user_input = _flatten(user_input, SYSTEM_SECTIONS)
             if user_input.get(CONF_REGULATION) == "fixed" and not user_input.get(CONF_FIXED_POWER):
-                errors = {CONF_FIXED_POWER: "fixed_power_needed"}
+                errors = {"base": "fixed_power_needed"}
             else:
                 data = {k: v for k, v in {**self._basics, **user_input}.items() if v not in (None, "", False)}
                 if sub:

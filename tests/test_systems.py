@@ -89,16 +89,16 @@ def test_normalize_gives_every_part_a_system():
 
 def test_behaviour_is_the_systems_and_limits_both_hold():
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load",
-                                       "when_full": "load", "output_limit_w": 800, "balance": True}),
+                                       "own_feed_in": "never", "output_limit_w": 800, "balance": True}),
             # a value left on a subsystem (stored before) does not count: the subsystem follows its system
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "output_limit_w": 800,
-                                      "when_full": "all"}),
+                                      "own_feed_in": "export"}),
             "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p"}),
             "south": ("array", "South", {"system": "u", "power_sensors": ["sensor.s"]}),
             "bu": ("battery", "Ultra battery", {"system": "u"}), "ba": ("battery", "AC Pro battery", {"system": "a"})}
     systems = sy.systems_of(subs)
     assert systems["p"].children == ("a", "u") and systems["u"].arrays == ("south",) and systems["u"].battery == "bu"
-    assert sy.behaviour(systems, "a", "regulation") == "load" and sy.behaviour(systems, "u", "when_full") == "load"
+    assert sy.behaviour(systems, "a", "regulation") == "load" and sy.behaviour(systems, "u", "own_feed_in") == "never"
     tree = sy.tree({"feed_in_mode": "limited", "feed_in_limit_w": 7000}, subs)
     stream = tree["systems"][0]
     assert stream["name"] == "Stream" and [c["name"] for c in stream["children"]] == ["AC Pro", "Ultra"]
@@ -171,7 +171,7 @@ def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     ids = iter(f"n{i}" for i in range(9))
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800}),
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "regulation": "load",
-                                      "when_full": "load"}),
+                                      "own_feed_in": "never"}),
             "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "regulation": "load"}),
             "g": ("system", "Group", {"name": "Group", "template": "group", "regulation": "all"}),
             "old": ("system", "Old roof", {"name": "Old roof", "template": "inverter", "parent": "g", "phase": "l1"}),
@@ -181,7 +181,7 @@ def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     changes = sy.normalize(subs, lambda: next(ids))
     after = sy.apply(subs, changes)
     # the subsystems agreed: the system takes their value, and they keep none
-    assert after["p"][2]["regulation"] == "load" and after["p"][2]["when_full"] == "load"
+    assert after["p"][2]["regulation"] == "load" and after["p"][2]["own_feed_in"] == "never"
     assert not any(k in after[c][2] for c in ("u", "a") for k in sy.BEHAVIOUR)
     # the group held independent systems: they stand on their own, with what they did, and the group goes
     assert "g" not in after and changes.remove == ["g"]
@@ -192,17 +192,17 @@ def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     split = {**subs, "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p",
                                                 "regulation": "all"})}
     after = sy.apply(split, sy.normalize(split, lambda: next(ids)))
-    assert "regulation" not in after["p"][2] and after["p"][2]["when_full"] == "load"
+    assert "regulation" not in after["p"][2] and after["p"][2]["own_feed_in"] == "never"
     # a group sharing a limit coordinated its devices
     shared = {"g": ("system", "Group", {"name": "Group", "template": "group", "output_limit_w": 800})}
     assert sy.apply(shared, sy.normalize(shared, lambda: next(ids)))["g"][2]["template"] == "coupled"
 
 
 def test_a_subsystem_moved_out_keeps_behaving_as_its_system_made_it():
-    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load", "when_full": "load"}),
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load", "own_feed_in": "never"}),
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "phase": "l2"}),
             "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"})}
-    assert sy.moved(subs, "u", "") == {"name": "Ultra", "template": "pv_battery", "regulation": "load", "when_full": "load"}
+    assert sy.moved(subs, "u", "") == {"name": "Ultra", "template": "pv_battery", "regulation": "load", "own_feed_in": "never"}
     assert sy.moved(subs, "r", "p") == {"name": "Roof", "template": "inverter", "parent": "p"}
 
 
@@ -233,3 +233,39 @@ def test_a_group_holding_parts_keeps_a_template_that_fits():
     rows = {(e["node"], e["setting"]): e for e in tree["effects"]}
     assert rows[("s", "regulation")]["inherited"] and rows[("s", "regulation")]["value"] == "fixed"
     assert rows[("s", "fixed_power")]["value"] == 400 and "inherited" not in rows[("c", "regulation")]
+
+
+def test_when_full_becomes_a_deviation_where_it_disagreed_with_the_household():
+    subs = {"s": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load", "when_full": "all"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "s", "when_full": "load"}),
+            "b": ("system", "Balcony", {"name": "Balcony", "template": "pv_battery", "regulation": "load",
+                                        "when_full": "load"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"})}
+    zero = sy.apply(subs, sy.feed_in_rules({"feed_in_mode": "none"}, subs))
+    # delivering everything when full under zero export: it feeds the rest in anyway; full power the same
+    assert zero["s"][2]["own_feed_in"] == "export" and zero["r"][2]["own_feed_in"] == "export"
+    # covering the load when full is what zero export means: it follows; a subsystem follows its system
+    assert "own_feed_in" not in zero["b"][2] and "own_feed_in" not in zero["u"][2]
+    assert not any("when_full" in d for _, _, d in zero.values())
+    free = sy.apply(subs, sy.feed_in_rules({"feed_in_mode": "free"}, subs))
+    assert "own_feed_in" not in free["s"][2] and free["b"][2]["own_feed_in"] == "never" and "own_feed_in" not in free["r"][2]
+    assert not sy.feed_in_rules({"feed_in_mode": "none"}, zero)                   # nothing left to do
+
+
+def test_a_system_follows_the_household_rule_unless_it_deviates():
+    subs = {"r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all", "own_feed_in": "export"}),
+            "s": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "s"}),
+            "bu": ("battery", "Ultra battery", {"system": "u"})}
+    systems = sy.systems_of(subs)
+    house = {"feed_in_mode": "none"}
+    assert sy.feed_in(house, systems, "r") == ("free", True) and sy.feed_in(house, systems, "u") == ("none", False)
+    assert sy.exports(house, systems) and not sy.exports(house, {k: v for k, v in systems.items() if k != "r"})
+    rows = {(e["node"], e["setting"]): e for e in sy.effects(house, systems, subs)}
+    assert rows[("r", "feed_in_rule")]["value"] == "export" and rows[("r", "feed_in_rule")]["status"] == sy.EXACT
+    # following zero export: counts through the battery whose full hours learning leaves out
+    assert rows[("u", "feed_in_rule")] == {"node": "u", "setting": "feed_in_rule", "status": sy.SIMPLIFIED,
+                                           "value": "none", "inherited": "house"}
+    pct = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "percent", "feed_in_limit_pct": 60},
+                                                            systems, subs)}
+    assert pct[("house", "feed_in")]["value"] == {"pct": 60} and pct[("s", "feed_in_rule")]["status"] == sy.NOT_YET

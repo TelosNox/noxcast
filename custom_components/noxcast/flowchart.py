@@ -23,13 +23,13 @@ NAME_CHARS = 20                       # what fits on one line of a box at 13 px
 
 TEXT = {
     "de": {"house": "Haus", "grid": "Netz", "array": "PV-Gruppe", "battery": "Akku", "free": "frei",
-           "none": "Nulleinspeisung", "load": "deckt Hausverbrauch", "all": "gibt alles ab", "fixed": "feste Leistung",
+           "none": "Nulleinspeisung", "load": "Eigenverbrauch", "all": "volle Leistung", "fixed": "feste Leistung",
            "together": "zusammen", "balance": "gleicht aus", "empty": "noch keine PV und kein Akku",
            "no_systems": "Noch keine Systeme", "per_phase": "je Phase",
            "templates": {"inverter": "Wechselrichter", "pv_battery": "PV mit Akku", "ac_battery": "Akku am Hausnetz",
                          "coupled": "Geräte, die sich abstimmen"}},
     "en": {"house": "House", "grid": "Grid", "array": "PV array", "battery": "Battery", "free": "free",
-           "none": "zero export", "load": "covers the house load", "all": "delivers everything",
+           "none": "zero export", "load": "self-consumption", "all": "full power",
            "fixed": "fixed power", "together": "together", "balance": "balances", "empty": "no PV and no battery yet",
            "no_systems": "No systems yet", "per_phase": "per phase",
            "templates": {"inverter": "Inverter", "pv_battery": "PV with battery", "ac_battery": "Battery at the house",
@@ -181,8 +181,9 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
         body.append(f'<path class="ln" marker-end="url(#nx-arrow)" d="M{BUS_X - 14} {min(outputs):.0f} '
                     f'V{max(outputs):.0f} M{BUS_X - 14} {house_y + ROW / 2:.0f} H{HOUSE_X - 3}"/>')
     feed = tree.get("feed_in") or "none"
-    feed_label = f'≤ {_w(tree["feed_in_limit_w"])}' if feed == "limited" and tree.get("feed_in_limit_w") \
-        else t.get(feed, feed)
+    feed_label = (f'≤ {_w(tree["feed_in_limit_w"])}' if feed == "limited" and tree.get("feed_in_limit_w")
+                  else f'≤ {tree["feed_in_limit_pct"]:g} %' if feed == "percent" and tree.get("feed_in_limit_pct")
+                  else t.get(feed, feed))
     body.append(f'<g data-node="house"><rect class="node" x="{HOUSE_X}" y="{house_y:.0f}" width="{HOUSE_W}" '
                 f'height="{ROW}" rx="8"/>' + _text(HOUSE_X + HOUSE_W / 2, house_y + ROW / 2, "t", t["house"])
                 + _dot(HOUSE_X + HOUSE_W - 10, house_y + 10, _status(effects, "house")) + "</g>")

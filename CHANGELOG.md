@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b2] - 2026-11-14
+
+The second pre-release of 0.5.0: the *Installation* tab shows the installation as a flow diagram, and parts
+can be moved to another system there. Learning is unchanged from 0.5.0b1.
+
 ### Added
 - In the *Installation* tab, *Belongs to* moves a PV array, a battery or a system to another system without opening
   its form. The same rules apply as in the forms, and Noxcast reloads afterwards.

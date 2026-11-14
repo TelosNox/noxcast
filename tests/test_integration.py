@@ -21,6 +21,39 @@ import snapshot
 pytestmark = pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
 
 ARRAY = {"name": "Roof", "power_sensors": ["sensor.pv1", "sensor.pv2"], "tilt": 30, "azimuth": 180, "peak_power": 1000}
+INVERTER = ({"name": "Inverter", "template": "inverter"}, {})      # a new system: what it is, then its settings
+
+
+async def system_flow(hass: HomeAssistant, entry, *steps, subentry_id: str | None = None):
+    """The system flow: a dict is a form's input, a str the menu item chosen. subentry_id: the system of the top
+    level to open (reconfigure); None adds a new one."""
+    context = {"source": config_entries.SOURCE_USER} if subentry_id is None else \
+        {"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry_id}
+    res = await hass.config_entries.subentries.async_init((entry.entry_id, "system"), context=context)
+    for step in steps:
+        res = await hass.config_entries.subentries.async_configure(
+            res["flow_id"], {"next_step_id": step} if isinstance(step, str) else step)
+    await hass.async_block_till_done()
+    return res
+
+
+def parts_of(hass: HomeAssistant, entry, kind: str) -> dict:
+    """Part id -> data of every part of a kind, wherever it is stored."""
+    from custom_components.noxcast import store
+
+    return {pid: dict(p.data) for pid, p in store.parts(hass.config_entries.async_get_entry(entry.entry_id)).items()
+            if p.subentry_type == kind}
+
+
+async def edit_part(hass: HomeAssistant, entry, part: str, *steps):
+    """Open a part from the menu of the system it sits in (through its subsystem, if any)."""
+    from custom_components.noxcast import store
+
+    e = hass.config_entries.async_get_entry(entry.entry_id)
+    parts, home = store.parts(e), store.locations(e)[part]
+    system = parts[part].data.get("system")
+    path = ([f"open_{system}"] if system and system != home else []) + [f"open_{part}"]
+    return await system_flow(hass, entry, *path, *steps, subentry_id=home)
 
 
 def _clear_hours(site: solar.Site, start: float, hours: int) -> list[model.WeatherHour]:
@@ -72,12 +105,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         entry = result["result"]
         await hass.async_block_till_done()
 
-        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                              context={"source": config_entries.SOURCE_USER})
-        assert sub["type"] is FlowResultType.FORM
-        sub = await hass.config_entries.subentries.async_configure(sub["flow_id"], ARRAY)
-        assert sub["type"] is FlowResultType.CREATE_ENTRY
-        await hass.async_block_till_done()
+        sub = await system_flow(hass, entry, *INVERTER, "add_array", ARRAY)
+        assert sub["type"] is FlowResultType.MENU                     # saved, back in the system's menu
 
         coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         await coordinator.async_learn()
@@ -171,10 +200,7 @@ async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> No
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {})
         entry = result["result"]
-        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                              context={"source": config_entries.SOURCE_USER})
-        sub = await hass.config_entries.subentries.async_configure(
-            sub["flow_id"], {**ARRAY, "power_sensors": ["sensor.pv_kwh"]})
+        sub = await system_flow(hass, entry, *INVERTER, "add_array", {**ARRAY, "power_sensors": ["sensor.pv_kwh"]})
     assert sub["type"] is FlowResultType.FORM
     assert sub["errors"] == {"power_sensors": "sensor_unit"}
 
@@ -254,7 +280,7 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 5
+    assert entry.minor_version == 6
     assert dict(entry.data) == {"soc_full_pct": 95, "feed_in_mode": "none"}
     assert dict(entry.options) == {"satellite": False}
 
@@ -270,7 +296,7 @@ async def test_migration_replaces_discontinued_icon_models(hass: HomeAssistant) 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})) as fetch:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 5 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
+    assert entry.minor_version == 6 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
     assert fetch.call_args.args[-1] == ["icon_seamless", "ecmwf_ifs"]
 
 
@@ -308,16 +334,16 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
         async def configure(data: dict):
-            sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                                  context={"source": config_entries.SOURCE_USER})
-            return await hass.config_entries.subentries.async_configure(sub["flow_id"], data)
+            return await system_flow(hass, entry, *INVERTER, "add_array", data)
 
-        form = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                               context={"source": config_entries.SOURCE_USER})
+        form = await system_flow(hass, entry, *INVERTER, "add_array")
         fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         sections = [f for f in fields if f["name"].startswith("orientation_")]
         assert len(sections) == 3 and all(f["type"] == "expandable" and f["expanded"] is False for f in sections)
         hass.config_entries.subentries.async_abort(form["flow_id"])
+        empty = next(iter(parts_of(hass, entry, "system")))          # the form saved its system already
+        hass.config_entries.async_remove_subentry(hass.config_entries.async_get_entry(entry.entry_id), empty)
+        await hass.async_block_till_done()
 
         bad = await configure({**ARRAY, "orientation_2": {"tilt": 30, "azimuth": 90}})
         assert bad["type"] is FlowResultType.FORM and bad["errors"] == {"base": "orientation_incomplete"}
@@ -325,70 +351,104 @@ async def test_array_with_further_orientations(hass: HomeAssistant) -> None:
         assert bad["errors"] == {"base": "orientation_duplicate"}                # same as the main plane
         with pytest.raises(InvalidData):
             await configure({**ARRAY, "orientation_2": {"tilt": 95, "azimuth": 90, "peak_power": 400}})
+        for sid in parts_of(hass, entry, "system"):                    # the systems the rejected forms saved
+            hass.config_entries.async_remove_subentry(hass.config_entries.async_get_entry(entry.entry_id), sid)
+        await hass.async_block_till_done()
 
         sub = await configure({**ARRAY, "orientation_2": {"tilt": 30, "azimuth": 90, "peak_power": 400},
                                "orientation_3": {}, "orientation_4": {"tilt": 30, "azimuth": 270, "peak_power": 500}})
-        assert sub["type"] is FlowResultType.CREATE_ENTRY
-        await hass.async_block_till_done()
+        assert sub["type"] is FlowResultType.MENU
 
-    subentry = next(s for s in hass.config_entries.async_get_entry(entry.entry_id).subentries.values())
-    assert "orientation_3" not in subentry.data and subentry.data["orientation_2"]["azimuth"] == 90
+    sid, stored = next(iter(parts_of(hass, entry, "array").items()))
+    assert "orientation_3" not in stored and stored["orientation_2"]["azimuth"] == 90
     coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
-    geo = coordinator.arrays[subentry.subentry_id].geometry
+    geo = coordinator.arrays[sid].geometry
     assert geo.extra == (Plane(30, 90, 400), Plane(30, 270, 500)) and geo.peak_w == 1900
     assert [p["peak_w"] for p in geo.describe()] == [1000, 400, 500]
-    assert coordinator._geometry_key(subentry.subentry_id)[-1] == [[30, 90, 400], [30, 270, 500]]
+    assert coordinator._geometry_key(sid)[-1] == [[30, 90, 400], [30, 270, 500]]
 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
-        form = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, "array"),
-            context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id})
+        form = await edit_part(hass, entry, sid)
         fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         expanded = {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"}
         assert expanded == {"orientation_2": True, "orientation_3": False, "orientation_4": True, "limits": False,
                             "advanced": False}
         done = await hass.config_entries.subentries.async_configure(form["flow_id"], {**ARRAY, "orientation_2": {}})
-        assert done["type"] is FlowResultType.ABORT
+        assert done["type"] is FlowResultType.MENU
         await hass.async_block_till_done()
-    data = hass.config_entries.async_get_entry(entry.entry_id).subentries[subentry.subentry_id].data
-    assert "orientation_2" not in data and "orientation_4" not in data          # removed again: one plane
+    stored = parts_of(hass, entry, "array")[sid]
+    assert "orientation_2" not in stored and "orientation_4" not in stored          # removed again: one plane
 
     # a battery in the array's system: the system's output limit counts for PV and battery together
     hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
-
-    async def add(kind: str, *steps: dict, subentry_id: str | None = None):
-        context = {"source": config_entries.SOURCE_USER} if subentry_id is None else \
-            {"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": subentry_id}
-        res = await hass.config_entries.subentries.async_init((entry.entry_id, kind), context=context)
-        for data in steps:
-            res = await hass.config_entries.subentries.async_configure(res["flow_id"], data)
-        await hass.async_block_till_done()
-        return res
-
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
-        own = hass.config_entries.async_get_entry(entry.entry_id).subentries[subentry.subentry_id].data["system"]
-        settings = await add("system", {"name": "Balcony", "template": "pv_battery"})
+        own = stored["system"]
+        settings = await system_flow(hass, entry, {"name": "Balcony", "template": "pv_battery"})
         assert settings["step_id"] == "settings"
         names = [f["name"] for f in probatio.to_field_list(settings["data_schema"], custom_serializer=cv.custom_serializer)]
         assert "charges_from" in names and "balance" not in names and "phase" not in names
-        done = await hass.config_entries.subentries.async_configure(settings["flow_id"], {"output_limit_w": 1600,
+        menu = await hass.config_entries.subentries.async_configure(settings["flow_id"], {"output_limit_w": 1600,
                                                                                           "charges_from": "own_pv"})
-        assert done["type"] is FlowResultType.CREATE_ENTRY
+        assert menu["type"] is FlowResultType.MENU and "add_battery" in menu["menu_options"]
         await hass.async_block_till_done()
-        system = next(sid for sid, s in hass.config_entries.async_get_entry(entry.entry_id).subentries.items()
-                      if s.subentry_type == "system" and s.title == "Balcony")
-        assert (await add("array", {**ARRAY, "system": system}, subentry_id=subentry.subentry_id))["type"] is FlowResultType.ABORT
-        battery = {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2, "system": system,
+        system = next(sid for sid, d in parts_of(hass, entry, "system").items() if d["name"] == "Balcony")
+        assert (await edit_part(hass, entry, sid, {**ARRAY, "system": system}))["type"] is FlowResultType.MENU
+        battery = {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2,
                    "limits": {"max_soc": 100, "min_soc": 10, "reserve": 0}}
-        assert (await add("battery", battery))["type"] is FlowResultType.CREATE_ENTRY
-        with pytest.raises(InvalidData):                     # one battery per system: no longer offered
-            await add("battery", battery)
+        done = await system_flow(hass, entry, "add_battery", battery, subentry_id=system)
+        assert done["type"] is FlowResultType.MENU and "add_battery" not in done["menu_options"]  # one per system
     entry = hass.config_entries.async_get_entry(entry.entry_id)
-    assert entry.subentries[subentry.subentry_id].data["system"] == system != own   # moved to the new system
+    assert parts_of(hass, entry, "array")[sid]["system"] == system != own   # moved to the new system
+    # stored inside the system's entry, the old system's entry is gone with nothing left in it... it stays, empty
+    assert set(entry.subentries[system].data["parts"]) == {sid, next(iter(parts_of(hass, entry, "battery")))}
     unit = entry.runtime_data._battery_units()[0]
-    assert unit.output_w == 1600 and unit.arrays == (subentry.subentry_id,) and unit.efficiency == 0.95
-    stored = next(s for s in entry.subentries.values() if s.subentry_type == "battery").data
+    assert unit.output_w == 1600 and unit.arrays == (sid,) and unit.efficiency == 0.95
+    stored = next(iter(parts_of(hass, entry, "battery").values()))
     assert stored["min_soc"] == 10 and stored["system"] == system and "limits" not in stored   # flat as before
+
+
+async def test_a_system_holds_its_subsystems_in_one_entry(hass: HomeAssistant) -> None:
+    """The menu adds a subsystem with its PV array; everything is stored in the system's entry, the array's
+    entities belong to it, and removing the subsystem removes the array with its device."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        entry = (await hass.config_entries.flow.async_configure(result["flow_id"], {}))["result"]
+        await hass.async_block_till_done()
+
+        menu = await system_flow(hass, entry, {"name": "Stream", "template": "coupled"}, {})
+        assert menu["type"] is FlowResultType.MENU and {"add_sub", "add_array", "finish"} <= set(menu["menu_options"])
+        menu = await hass.config_entries.subentries.async_configure(menu["flow_id"], {"next_step_id": "add_sub"})
+        for step in ({"name": "Ultra", "template": "pv_battery"}, {}, {"next_step_id": "add_array"}, ARRAY):
+            menu = await hass.config_entries.subentries.async_configure(menu["flow_id"], step)
+        assert "back" in menu["menu_options"] and "add_sub" not in menu["menu_options"]       # two levels at most
+        menu = await hass.config_entries.subentries.async_configure(menu["flow_id"], {"next_step_id": "back"})
+        ultra = next(sid for sid, d in parts_of(hass, entry, "system").items() if d["name"] == "Ultra")
+        assert f"open_{ultra}" in menu["menu_options"] and "add_array" not in menu["menu_options"]
+        done = await hass.config_entries.subentries.async_configure(menu["flow_id"], {"next_step_id": "finish"})
+        assert done["type"] is FlowResultType.ABORT and done["reason"] == "saved"
+        await hass.async_block_till_done()
+
+        entry = hass.config_entries.async_get_entry(entry.entry_id)
+        stream = next(iter(entry.subentries))
+        assert [s.title for s in entry.subentries.values()] == ["Stream"]           # one entry for all of it
+        array = next(iter(parts_of(hass, entry, "array")))
+        assert set(entry.subentries[stream].data["parts"]) == {ultra, array}
+        ents = [e for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+                if e.unique_id.startswith(array)]
+        assert ents and all(e.config_subentry_id == stream for e in ents)
+
+        # remove the subsystem from the menu: its array goes with it, and so do its device and entities
+        res = await system_flow(hass, entry, "remove", {"part": ultra}, subentry_id=stream)
+        assert res["type"] is FlowResultType.MENU
+    assert not parts_of(hass, entry, "array") and ultra not in parts_of(hass, entry, "system")
+    assert not [d for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+                if (DOMAIN, array) in d.identifiers]
 
 
 async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
@@ -417,16 +477,18 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
             return res
 
         def data(kind: str) -> tuple[str, dict]:
+            if kind in ("array", "battery", "system"):
+                return next(iter(parts_of(hass, entry, kind).items()))
             sub = next(s for s in hass.config_entries.async_get_entry(entry.entry_id).subentries.values()
                        if s.subentry_type == kind)
             return sub.subentry_id, dict(sub.data)
 
         # an array: the mounting becomes the heating; an own value in K wins
-        assert (await flow("array", {**ARRAY, "mounting": "roof"}))["type"] is FlowResultType.CREATE_ENTRY
+        res = await system_flow(hass, entry, *INVERTER, "add_array", {**ARRAY, "mounting": "roof"})
+        assert res["type"] is FlowResultType.MENU
         sid, stored = data("array")
         assert stored["heating"] == 50.0 and "mounting" not in stored and "advanced" not in stored
-        res = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, "array"), context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": sid})
+        res = await edit_part(hass, entry, sid)
         fields = probatio.to_field_list(res["data_schema"], custom_serializer=cv.custom_serializer)
         assert next(f for f in fields if f["name"] == "mounting")["default"] == "roof"
         await hass.config_entries.subentries.async_configure(
@@ -435,12 +497,11 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
         assert data("array")[1]["heating"] == 42 and data("array")[1]["valid_since"] == "2026-01-01"
 
         # a power limit: one value for every sensor, stored per sensor; an empty one removes it
-        res = await flow("array", {**ARRAY, "limits": {"sensor_limit_w": 800}}, subentry_id=sid)
+        await edit_part(hass, entry, sid, {**ARRAY, "limits": {"sensor_limit_w": 800}})
         assert data("array")[1]["sensor_limits"] == {s: 800.0 for s in ARRAY["power_sensors"]}
         coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert coordinator.installation.array_limit(sid) == 800.0 * len(ARRAY["power_sensors"])
-        res = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, "array"), context={"source": config_entries.SOURCE_RECONFIGURE, "subentry_id": sid})
+        res = await edit_part(hass, entry, sid)
         fields = probatio.to_field_list(res["data_schema"], custom_serializer=cv.custom_serializer)
         limits = next(f for f in fields if f["name"] == "limits")
         assert limits["expanded"] is True
@@ -468,15 +529,21 @@ async def test_forms_store_flat_data(hass: HomeAssistant) -> None:
 
         # a battery with the sections left closed keeps the default limits
         hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
-        assert (await flow("battery", {"name": "Home", "soc_sensor": "sensor.soc", "capacity": 5})
-                )["type"] is FlowResultType.CREATE_ENTRY
+        res = await system_flow(hass, entry, {"name": "Home", "template": "ac_battery"}, {}, "add_battery",
+                                {"name": "Home", "soc_sensor": "sensor.soc", "capacity": 5})
+        assert res["type"] is FlowResultType.MENU
         bid, stored = data("battery")
         assert stored["max_soc"] == 100 and stored["min_soc"] == 0 and stored["reserve"] == 0
         assert not set(stored) & {"limits", "power"}
-        # left without a system it gets one of its own, at the house: it cuts no PV
-        system = hass.config_entries.async_get_entry(entry.entry_id).subentries[stored["system"]]
-        assert system.subentry_type == "system" and system.data["template"] == "ac_battery"
-        assert system.data["charges_from"] == "house" and system.title == "Home"
+        # it belongs to the system whose menu it was added from
+        system = parts_of(hass, entry, "system")[stored["system"]]
+        assert system["template"] == "ac_battery"
+
+        # removing it from the menu: the system stays, empty
+        sid = stored["system"]
+        res = await system_flow(hass, entry, "remove", {"part": bid}, subentry_id=sid)
+        assert res["type"] is FlowResultType.MENU and not parts_of(hass, entry, "battery")
+        assert "parts" not in hass.config_entries.async_get_entry(entry.entry_id).subentries[sid].data
 
 
 def _state(c) -> dict:
@@ -744,10 +811,7 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         entry = result["result"]
         await hass.async_block_till_done()
-        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                              context={"source": config_entries.SOURCE_USER})
-        await hass.config_entries.subentries.async_configure(sub["flow_id"], ARRAY)
-        await hass.async_block_till_done()
+        await system_flow(hass, entry, *INVERTER, "add_array", ARRAY)
         c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert await c.async_learn() and c._backtest_task is None        # a manual learning run does not start it
 
@@ -831,10 +895,7 @@ async def test_weather_model_comparison_waits_only_after_success(hass: HomeAssis
         await hass.async_block_till_done()
         c = entry.runtime_data
         assert c.compare_blocked() == ("not_learned", None)
-        sub = await hass.config_entries.subentries.async_init((entry.entry_id, "array"),
-                                                              context={"source": config_entries.SOURCE_USER})
-        await hass.config_entries.subentries.async_configure(sub["flow_id"], ARRAY)
-        await hass.async_block_till_done()
+        await system_flow(hass, entry, *INVERTER, "add_array", ARRAY)
         c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert await c.async_learn()
         client = await hass_ws_client(hass)
@@ -909,6 +970,8 @@ async def test_old_array_entry_loads_unchanged(hass: HomeAssistant) -> None:
 
 
 async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None:
+    from custom_components.noxcast.store import parts as store_parts
+
     """1.4 -> 1.5: every array and battery gets its system; the batteries compute as before, entities stay."""
     from homeassistant.helpers import issue_registry as ir
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -927,15 +990,28 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
             ("b2", "battery", {"name": "Cellar battery", "soc_sensor": "sensor.soc2", "capacity": 5, "coupling": "dc",
                                "max_soc": 100, "min_soc": 0, "reserve": 0}))])
     entry.add_to_hass(hass)
+    # an entity of the balcony array that the platform does not create again (e.g. renamed by the user before):
+    # it must move with the array, not be deleted
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    device = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, config_subentry_id="balcony",
+                                                    identifiers={(DOMAIN, "balcony")})
+    legacy = er.async_get(hass).async_get_or_create("sensor", DOMAIN, "balcony_legacy", config_entry=entry,
+                                                    config_subentry_id="balcony", device_id=device.id)
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 5 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
+    assert entry.minor_version == 6 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
+    kept = er.async_get(hass).async_get(legacy.entity_id)
+    assert kept is not None and kept.id == legacy.id and kept.config_subentry_id in entry.subentries
+    assert dr.async_get(hass).async_get(device.id).config_subentry_id == kept.config_subentry_id
     units = {u.capacity_wh: u for u in entry.runtime_data._battery_units()}
     assert units[2000].output_w == 1600 and units[2000].arrays == ("balcony",)       # as before the migration
     assert units[5000].output_w is None and units[5000].arrays == ()
-    assert {sid for sid, s in entry.subentries.items() if s.subentry_type == "system"} == set(entry.runtime_data.systems)
     assert len(entry.runtime_data.systems) == 4             # roof, balcony with battery, cellar battery, the parent
+    # 1.6: one entry per system of the top level (roof, the parent), everything else inside
+    assert sorted(s.title for s in entry.subentries.values()) == ["Batteries", "Roof"]
+    assert {"roof", "balcony", "b1", "b2"} <= set(store_parts(entry)) and "balcony" not in entry.subentries
     # the cellar battery charges before an output, but no array is known for it: a repair asks
     assert ir.async_get(hass).async_get_issue(DOMAIN, "battery_without_pv_b2") is not None
     assert ir.async_get(hass).async_get_issue(DOMAIN, "battery_without_pv_b1") is None
@@ -960,7 +1036,13 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
         await client.send_json_auto_id({"type": "noxcast/move_part", "entry_id": entry.entry_id, "part": "balcony",
                                         "to": roof})
         msg = await client.receive_json()
-        assert msg["success"] and entry.subentries["balcony"].data["system"] == roof
+        assert msg["success"] and parts_of(hass, entry, "array")["balcony"]["system"] == roof
+        # stored in the roof's entry now, and its entities went with it
+        from homeassistant.helpers import entity_registry as er
+        assert "balcony" in entry.subentries[roof].data["parts"]
+        balcony = [e for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+                   if e.unique_id.startswith("balcony")]
+        assert balcony and all(e.config_subentry_id == roof for e in balcony)
         moved = msg["result"]["entries"][0]
         assert [a["name"] for a in next(s for s in moved["systems"] if s["id"] == roof)["arrays"]] == ["Balcony", "Roof"]
         await hass.async_block_till_done()

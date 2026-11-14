@@ -2,8 +2,12 @@
 
 A system is everything that delivers through one output to the house or to its parent system: its PV arrays,
 at most one battery, its regulation. A system holds either arrays and a battery, or subsystems, never both, and
-there are at most two levels. Every PV array belongs to a system. Arrays, batteries and systems are config
-subentries; each names its parent (CONF_SYSTEM, CONF_PARENT), so the tree is read from the children.
+there are at most two levels. Every PV array belongs to a system. Each part names its parent (CONF_SYSTEM,
+CONF_PARENT), so the tree is read from the children.
+
+Stored, a system of the top level is one config subentry, and its subsystems, arrays and battery sit inside it
+(PARTS), so the list of entries shows what belongs together. The functions here see every part flat, by its id
+(flatten); nest gives the stored form back.
 
 The common installations are templates of the same block, not types of their own (docs/concept.md,
 installation model). A template only fills in the settings; every setting stays changeable.
@@ -50,6 +54,63 @@ class Changes:
 
     def __bool__(self) -> bool:
         return bool(self.add or self.update)
+
+
+def apply(subs: Subs, changes: Changes) -> dict[str, tuple[str, str, Mapping[str, Any]]]:
+    """The parts with the changes made: new systems added, changed data replaced."""
+    out = dict(subs)
+    for sid, title, data in changes.add:
+        out[sid] = (SUBENTRY_SYSTEM, title, data)
+    for sid, data in changes.update.items():
+        out[sid] = (out[sid][0], out[sid][1], data)
+    return out
+
+
+PARTS = "parts"          # in a system subentry: its subsystems, arrays and battery, id -> {type, title, data}
+INSTALLATION = (SUBENTRY_SYSTEM, SUBENTRY_ARRAY, SUBENTRY_BATTERY)
+
+
+def flatten(stored: Subs) -> dict[str, tuple[str, str, Mapping[str, Any]]]:
+    """Every part by its own id, as the rest of Noxcast sees it. Subentries without parts (consumers, and arrays
+    or batteries stored on their own before 1.6) stay as they are."""
+    out: dict[str, tuple[str, str, Mapping[str, Any]]] = {}
+    for sid, (kind, title, data) in stored.items():
+        parts = data.get(PARTS) if kind == SUBENTRY_SYSTEM else None
+        out[sid] = (kind, title, {k: v for k, v in data.items() if k != PARTS} if parts is not None else data)
+        for pid, p in (parts or {}).items():
+            out[pid] = (p["type"], p["title"], p["data"])
+    return out
+
+
+def home(subs: Subs, part: str) -> str | None:
+    """The system of the top level a part belongs to, whose subentry stores it; None for a part outside the
+    installation or without a system."""
+    kind, _, data = subs[part]
+    systems = _of(subs, SUBENTRY_SYSTEM)
+    sid = part if kind == SUBENTRY_SYSTEM else data.get(CONF_SYSTEM) if kind in INSTALLATION else None
+    if sid not in systems:
+        return None
+    parent = systems[sid][1].get(CONF_PARENT)
+    if parent in systems and systems[parent][1].get(CONF_PARENT) in systems:
+        return None              # three levels: normalize drops the parent at the next setup
+    return parent if parent in systems else sid
+
+
+def nest(subs: Subs) -> dict[str, tuple[str, str, Mapping[str, Any]]]:
+    """The stored form of flat parts: per system of the top level one subentry with its parts inside, in the
+    order of the flat parts. A part without a system and every other subentry stay on their own."""
+    out: dict[str, tuple[str, str, Mapping[str, Any]]] = {}
+    inside: dict[str, dict[str, Any]] = {}
+    for pid, (kind, title, data) in subs.items():
+        top = home(subs, pid) if kind in INSTALLATION else None
+        if top is None or top == pid:
+            out[pid] = (kind, title, data)
+        else:
+            inside.setdefault(top, {})[pid] = {"type": kind, "title": title, "data": dict(data)}
+    for top, parts in inside.items():
+        kind, title, data = out[top]
+        out[top] = (kind, title, {**data, PARTS: parts})
+    return out
 
 
 def template_data(template: str, **values: Any) -> dict[str, Any]:

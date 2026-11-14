@@ -73,26 +73,22 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.\n\n{diagram}",
+          "description": "A system is everything that delivers power to the house through one output: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Choose what fits; the template fills in the settings, each stays changeable. Then add its PV arrays, its battery or its subsystems in the system's menu.\n\n{diagram}",
           "data": {
             "name": "Name",
-            "template": "Template",
-            "parent": "Part of"
-          },
-          "data_description": {
-            "parent": "Optional: the system this one is a subsystem of, e.g. one device of an EcoFlow Stream system. Its shared limit and behaviour then hold for this one too."
+            "template": "Template"
           }
         },
-        "reconfigure": {
+        "basics": {
           "title": "System",
-          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.\n\n{diagram}",
+          "description": "What the system is and where it belongs. A system with \"Belongs to\" is a subsystem of another: its shared limit and behaviour hold here as well.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template",
-            "parent": "Part of"
+            "parent": "Belongs to"
           },
           "data_description": {
-            "parent": "Optional: the system this one is a subsystem of, e.g. one device of an EcoFlow Stream system. Its shared limit and behaviour then hold for this one too."
+            "parent": "Empty: a system of its own at the household. Otherwise the system this one is a subsystem of, e.g. a device of an EcoFlow Stream system."
           }
         },
         "settings": {
@@ -118,23 +114,12 @@
             "charges_from": "Own PV: the battery sits before the output (compact device, hybrid inverter). The household: own inverter at the house grid, it charges from surplus of the house.",
             "balance": "Switch on if the batteries of the subsystems even out their state of charge (e.g. EcoFlow Stream). Then they get one battery forecast."
           }
-        }
-      },
-      "error": {
-        "parent_not_possible": "This system cannot be a part: it holds subsystems itself, or the chosen system holds PV arrays or a battery.",
-        "fixed_power_needed": "Fixed power needs a value."
-      },
-      "abort": {
-        "reconfigure_successful": "System saved."
-      }
-    },
-    "array": {
-      "entry_type": "PV array",
-      "initiate_flow": {
-        "user": "Add PV array"
-      },
-      "step": {
-        "user": {
+        },
+        "menu": {
+          "title": "{name}",
+          "description": "Everything inside {name}. Each form saves when you send it.\n\n{diagram}"
+        },
+        "array": {
           "title": "PV array",
           "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.\n\n{diagram}",
           "data": {
@@ -144,14 +129,14 @@
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
             "mounting": "Mounting",
-            "system": "System"
+            "system": "Belongs to"
           },
           "data_description": {
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
             "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K.",
-            "system": "What lies between these modules and the house: the inverter or device they belong to. Empty: the array gets a system of its own (an inverter without battery), which you can change under Systems."
+            "system": "The system this PV array sits in. Empty: the system whose menu you opened it from."
           },
           "sections": {
             "orientation_2": {
@@ -214,96 +199,79 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "PV array",
+        "battery": {
+          "title": "Battery",
+          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
           "data": {
             "name": "Name",
-            "power_sensors": "Power sensors",
-            "tilt": "Tilt",
-            "azimuth": "Azimuth",
-            "peak_power": "Peak power",
-            "mounting": "Mounting",
-            "system": "System"
+            "soc_sensor": "State of charge",
+            "capacity": "Capacity",
+            "system": "Belongs to"
           },
           "data_description": {
-            "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
-            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K.",
-            "system": "What lies between these modules and the house: the inverter or device they belong to. Empty: the array gets a system of its own (an inverter without battery), which you can change under Systems."
+            "system": "The system the battery sits in; one battery per system. Empty: the system whose menu you opened it from."
           },
           "sections": {
-            "orientation_2": {
-              "name": "Further orientation 2",
-              "description": "Only for modules on the same power sensors that face another way (e.g. east and west on one input). Tilt, azimuth and the peak power of these modules; leave empty if not needed.",
-              "data": {
-                "tilt": "Tilt",
-                "azimuth": "Azimuth",
-                "peak_power": "Peak power"
-              },
-              "data_description": {
-                "peak_power": "Sum of module nameplate power of this orientation."
-              }
-            },
-            "orientation_3": {
-              "name": "Further orientation 3",
-              "data": {
-                "tilt": "Tilt",
-                "azimuth": "Azimuth",
-                "peak_power": "Peak power"
-              },
-              "data_description": {
-                "peak_power": "Sum of module nameplate power of this orientation."
-              }
-            },
-            "orientation_4": {
-              "name": "Further orientation 4",
-              "data": {
-                "tilt": "Tilt",
-                "azimuth": "Azimuth",
-                "peak_power": "Peak power"
-              },
-              "data_description": {
-                "peak_power": "Sum of module nameplate power of this orientation."
-              }
-            },
             "limits": {
-              "name": "Power limit",
-              "description": "Only if the modules deliver more than an MPPT input or a micro-inverter lets through, so the power stays flat at a maximum on sunny days.",
+              "name": "Limits",
+              "description": "Charge and discharge limits. Defaults: 0–100 %, no reserve.",
               "data": {
-                "sensor_limit_w": "Each sensor delivers at most"
+                "max_soc": "Upper limit",
+                "max_soc_entity": "Upper limit as entity",
+                "min_soc": "Lower limit",
+                "min_soc_entity": "Lower limit as entity",
+                "reserve": "Reserve above the lower limit"
               },
               "data_description": {
-                "sensor_limit_w": "The limit of one input or micro-inverter in W, as one of the power sensors above measures it (e.g. 800 for an 800 W micro-inverter). Applies to every sensor of this array. The forecast is capped at it; empty = no limit."
+                "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
+                "min_soc_entity": "Optional: the current discharge limit from the device.",
+                "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
               }
             },
-            "advanced": {
-              "name": "Advanced",
-              "description": "Usually not needed.",
+            "power": {
+              "name": "Power",
+              "description": "Power sensor, efficiency and power limits. All optional.",
               "data": {
-                "valid_since": "Configuration valid since",
-                "temp_coeff": "Temperature coefficient (datasheet)",
-                "heating": "Module heating"
+                "battery_power": "Charge / discharge power",
+                "battery_power_invert": "Power counts discharging as positive",
+                "efficiency": "Round-trip efficiency",
+                "max_charge_w": "Max. charge power",
+                "max_discharge_w": "Max. discharge power"
               },
               "data_description": {
-                "temp_coeff": "Pmax temperature coefficient from the module datasheet, e.g. -0.26. Recommended. Empty = typical value (-0.35); learned only with the satellite filter.",
-                "heating": "Own value instead of the mounting: how much the cells heat above the air at 1000 W/m². Empty = from the mounting."
+                "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
+                "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
+                "efficiency": "Empty = default: 95 % before the output of a device with PV, 90 % at the house grid. Inverter losses are already in the measured values.",
+                "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
               }
             }
-          },
-          "description": "{diagram}"
+          }
+        },
+        "remove": {
+          "title": "Remove a part of {name}",
+          "description": "Removes the chosen part with everything inside it: for a PV array also its entities and what Noxcast learned for it.",
+          "data": {
+            "part": "Part"
+          }
         }
       },
       "error": {
         "sensor_required": "Select at least one power sensor.",
-        "sensor_missing": "A selected sensor does not exist.",
+        "sensor_missing": "The selected sensor does not exist.",
         "sensor_unit": "Power sensors must report W or kW.",
         "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
         "date_in_future": "The date must not be in the future.",
         "orientation_incomplete": "A further orientation needs tilt, azimuth and peak power.",
         "orientation_duplicate": "Two orientations are the same. Enter their modules once with the summed peak power.",
-        "system_has_subsystems": "This system holds subsystems. PV arrays and batteries belong to a system without subsystems."
+        "system_has_subsystems": "This system holds subsystems. PV arrays and batteries belong to a system without subsystems.",
+        "limits_order": "Lower limit plus reserve must be below the upper limit.",
+        "soc_unit": "The state of charge must be in %.",
+        "system_taken": "This system already has a battery. A second one is a subsystem of its own.",
+        "parent_not_possible": "This system cannot be a part: it holds subsystems itself, or the chosen system holds PV arrays or a battery.",
+        "fixed_power_needed": "Fixed power needs a value."
       },
       "abort": {
-        "reconfigure_successful": "PV array saved."
+        "saved": "Saved."
       }
     },
     "consumer": {
@@ -386,119 +354,6 @@
       },
       "abort": {
         "reconfigure_successful": "Consumer saved."
-      }
-    },
-    "battery": {
-      "entry_type": "Battery",
-      "initiate_flow": {
-        "user": "Add battery"
-      },
-      "step": {
-        "user": {
-          "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
-          "data": {
-            "name": "Name",
-            "soc_sensor": "State of charge",
-            "capacity": "Capacity",
-            "system": "System"
-          },
-          "data_description": {
-            "system": "The system the battery belongs to; one battery per system. Empty: a system of its own at the house grid."
-          },
-          "sections": {
-            "limits": {
-              "name": "Limits",
-              "description": "Charge and discharge limits. Defaults: 0–100 %, no reserve.",
-              "data": {
-                "max_soc": "Upper limit",
-                "max_soc_entity": "Upper limit as entity",
-                "min_soc": "Lower limit",
-                "min_soc_entity": "Lower limit as entity",
-                "reserve": "Reserve above the lower limit"
-              },
-              "data_description": {
-                "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
-                "min_soc_entity": "Optional: the current discharge limit from the device.",
-                "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
-              }
-            },
-            "power": {
-              "name": "Power",
-              "description": "Power sensor, efficiency and power limits. All optional.",
-              "data": {
-                "battery_power": "Charge / discharge power",
-                "battery_power_invert": "Power counts discharging as positive",
-                "efficiency": "Round-trip efficiency",
-                "max_charge_w": "Max. charge power",
-                "max_discharge_w": "Max. discharge power"
-              },
-              "data_description": {
-                "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
-                "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
-                "efficiency": "Empty = default: 95 % before the output of a device with PV, 90 % at the house grid. Inverter losses are already in the measured values.",
-                "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
-          "data": {
-            "name": "Name",
-            "soc_sensor": "State of charge",
-            "capacity": "Capacity",
-            "system": "System"
-          },
-          "data_description": {
-            "system": "The system the battery belongs to; one battery per system. Empty: a system of its own at the house grid."
-          },
-          "sections": {
-            "limits": {
-              "name": "Limits",
-              "description": "Charge and discharge limits. Defaults: 0–100 %, no reserve.",
-              "data": {
-                "max_soc": "Upper limit",
-                "max_soc_entity": "Upper limit as entity",
-                "min_soc": "Lower limit",
-                "min_soc_entity": "Lower limit as entity",
-                "reserve": "Reserve above the lower limit"
-              },
-              "data_description": {
-                "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
-                "min_soc_entity": "Optional: the current discharge limit from the device.",
-                "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
-              }
-            },
-            "power": {
-              "name": "Power",
-              "description": "Power sensor, efficiency and power limits. All optional.",
-              "data": {
-                "battery_power": "Charge / discharge power",
-                "battery_power_invert": "Power counts discharging as positive",
-                "efficiency": "Round-trip efficiency",
-                "max_charge_w": "Max. charge power",
-                "max_discharge_w": "Max. discharge power"
-              },
-              "data_description": {
-                "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
-                "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
-                "efficiency": "Empty = default: 95 % before the output of a device with PV, 90 % at the house grid. Inverter losses are already in the measured values.",
-                "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
-              }
-            }
-          }
-        }
-      },
-      "error": {
-        "limits_order": "Lower limit plus reserve must be below the upper limit.",
-        "soc_unit": "The state of charge must be in %.",
-        "sensor_missing": "The selected sensor does not exist.",
-        "system_taken": "This system already has a battery. A second one is a subsystem of its own."
-      },
-      "abort": {
-        "reconfigure_successful": "Battery saved."
       }
     }
   },
@@ -729,7 +584,7 @@
   "issues": {
     "no_arrays": {
       "title": "Noxcast has no PV array yet",
-      "description": "Noxcast forecasts nothing until it knows at least one PV array. Add one under Settings → Devices & services → Noxcast → ⋮ → *Add PV array*: the modules measured together (usually one MPPT input) with their power sensor, tilt, azimuth and peak power. Noxcast then learns it from the history right away."
+      "description": "Noxcast forecasts nothing until it knows at least one PV array. Add one under Settings → Devices & services → Noxcast → ⋮ → *Add system* and in the system's menu *Add PV array*: the modules measured together (usually one MPPT input) with their power sensor, tilt, azimuth and peak power. Noxcast then learns it from the history right away."
     },
     "missing_sensors": {
       "title": "Noxcast is missing sensors",

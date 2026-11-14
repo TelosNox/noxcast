@@ -110,6 +110,22 @@ def test_behaviour_is_inherited_and_limits_both_hold():
     assert effects[("u", "full_learning")] == sy.SIMPLIFIED and effects[("p", "regulation")] == sy.SIMPLIFIED
 
 
+def test_a_system_stores_what_sits_inside_it():
+    """Stored nested (one entry per system of the top level), read flat: the round trip changes nothing."""
+    flat = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter"}),
+            "south": ("array", "South", {"system": "u"}), "roof": ("array", "Roof", {"system": "r"}),
+            "bu": ("battery", "Ultra battery", {"system": "u"}),
+            "lost": ("array", "Lost", {"system": "gone"}),                   # no system: stays on its own
+            "c": ("consumer", "Washer", {"name": "Washer"})}
+    nested = sy.nest(flat)
+    assert set(nested) == {"p", "r", "lost", "c"}
+    assert set(nested["p"][2]["parts"]) == {"u", "south", "bu"} and set(nested["r"][2]["parts"]) == {"roof"}
+    assert sy.flatten(nested) == flat
+    assert [sy.home(flat, x) for x in ("p", "u", "south", "bu", "roof", "lost", "c")] == ["p", "p", "p", "p", "r", None, None]
+
+
 def test_parts_move_only_where_the_forms_allow():
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled"}),
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"}),

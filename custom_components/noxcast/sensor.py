@@ -109,7 +109,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                LearnedSensor(coordinator, sub_id, device, "temp_coeff", lambda la: round(la.temp_coeff * 100, 3), "%/K"),
                LearnedSensor(coordinator, sub_id, device, "agreement", lambda la: la.agreement, None),
                ShadeTodaySensor(coordinator, sub_id, device)],
-            config_subentry_id=sub_id)
+            config_subentry_id=coordinator.homes.get(sub_id, sub_id))
 
 
 class NoxcastEntity(CoordinatorEntity[NoxcastCoordinator]):

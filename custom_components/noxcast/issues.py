@@ -11,7 +11,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from . import plateau as pt
 from . import systems as sy
-from . import views
+from . import store, views
 from .const import CONF_BATTERY_POWER, CONF_SOC_SENSORS, DOMAIN
 from .coordinator import NoxcastConfigEntry
 
@@ -27,7 +27,8 @@ CERTAIN_HINTS = {"peak", "high"}
 
 
 def _battery_names(entry: NoxcastConfigEntry) -> dict[str, str]:
-    return {sid: entry.subentries[sid].title for sid in entry.runtime_data.batteries if sid in entry.subentries}
+    parts = store.parts(entry)
+    return {sid: parts[sid].title for sid in entry.runtime_data.batteries if sid in parts}
 
 
 def limit_suggestions(entry: NoxcastConfigEntry) -> dict[str, dict]:
@@ -79,7 +80,7 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
             out[ARRAY_CHECK + sid] = (ir.IssueSeverity.WARNING, {"name": arr.name})
     # a battery before the output of a device with PV, but no array in its system: the migration could not know
     # which arrays sit behind it (until answered, it computes as before)
-    subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
+    subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in store.parts(entry).items()}
     for sid in sy.battery_without_pv(subs):
         system = c.systems.get(subs[sid][2].get("system") or "")
         out[BATTERY_WITHOUT_PV + sid] = (ir.IssueSeverity.WARNING, {"name": subs[sid][1],

@@ -129,9 +129,9 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 
 1. Settings → Devices & services → *Add integration* → **Noxcast**. Pick the battery's state of charge sensor if
    you have one and choose whether surplus may go to the grid; everything else can stay empty.
-2. On the integration page: ⋮ → *Add PV array*. Pick the power sensor(s), enter tilt, azimuth and peak power.
-   Add one array per group of modules that is measured together. Each array gets a system of its own (an inverter
-   without battery); with a battery or several devices, add a *System* first and choose it in the array.
+2. On the integration page: ⋮ → *Add system*. Choose what the system is (e.g. an inverter without battery), then
+   add its PV arrays in its menu: pick the power sensor(s), enter tilt, azimuth and peak power. Add one array per
+   group of modules that is measured together.
 3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
 
 Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Learned* what it
@@ -163,7 +163,8 @@ For the dashboard: *Add card* → *Noxcast*.
 ## Configuration
 
 Settings → Devices & services → Add integration → **Noxcast**. Then add subentries on the
-integration page (⋮ → *Add system* / *Add PV array* / *Add battery* / *Add consumer*).
+integration page (⋮ → *Add system* / *Add consumer*). A system's PV arrays, battery and subsystems sit inside its
+entry: opening it shows a menu with everything in it, and each item opens its form.
 
 ### 1. Main entry
 
@@ -183,8 +184,11 @@ A system is everything that delivers through one output to the house: an inverte
 battery with its own inverter at the house grid, or several devices that coordinate. Every PV array and every battery
 belongs to a system. A system holds either PV arrays and at most one battery, or subsystems (one level), never both.
 
-The form has two steps: what the system is (name, template, *Part of*), then its settings, filled in by the template.
-Every setting stays changeable.
+A system first asks what it is (name, template, and for an existing one *Belongs to*), then its settings, filled in
+by the template. Every setting stays changeable. Then its menu lists *Settings of …*, its subsystems, PV arrays and
+battery, and adds or removes them; a subsystem has a menu of its own. Each form saves when it is sent, *Done* only
+closes the dialog. Deleting a system deletes everything inside it. Subsystems have no entry of their own: they are in the entry of their system, so the list of
+entries shows what sits inside what.
 
 | Template | For |
 |---|---|
@@ -215,7 +219,7 @@ An array is what is measured together, usually one MPPT input or one inverter.
 
 | Field | Meaning |
 |---|---|
-| System | The system the array belongs to. Empty: a system of its own (an inverter without battery) |
+| Belongs to | The system the array sits in. Empty: the system whose menu it was opened from |
 | Power sensors | One or more; they are summed |
 | Tilt, azimuth, peak power | Of the modules (azimuth 180° = south) |
 | Further orientations 2–4 | Optional: modules on the same sensors that face another way (e.g. east + south + west on one input, vertical east + west). Each with tilt, azimuth and its own peak power; the array's peak is the sum |
@@ -242,7 +246,7 @@ sensor and the timing first, then only the fields of that timing.
 
 ### 5. Batteries (optional, needs the house load)
 
-Name, state of charge sensor, capacity and system are on top; limits and power are in sections that stay closed until
+Name, state of charge sensor, capacity and system (*Belongs to*) are on top; limits and power are in sections that stay closed until
 they hold a value. The system says where the battery sits (see *Battery charges from*) and gives its output limit.
 
 | Field | Meaning |
@@ -251,7 +255,7 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Battery power sensor | Optional: charge/discharge power for the card, positive = charging (*invert* otherwise) |
 | Max / min SOC | Number or entity (e.g. charge limit, backup reserve) |
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
-| System | One battery per system. Empty: a system of its own at the house grid |
+| Belongs to | The system the battery sits in, one battery per system. Empty: the system whose menu it was opened from |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the battery power sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
 

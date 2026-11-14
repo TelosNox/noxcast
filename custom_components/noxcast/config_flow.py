@@ -1,5 +1,5 @@
-"""Config flow: main entry (the household: house load, grid, feed-in) and subentries per system, PV array, battery
-and consumer."""
+"""Config flow: main entry (the household: house load, grid, feed-in) and subentries per system of the top level
+(its subsystems, PV arrays and battery inside, edited through a menu) and per consumer."""
 from __future__ import annotations
 
 import logging
@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
+from homeassistant.util.ulid import ulid_now
 
 from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
@@ -32,6 +33,7 @@ from .const import (
     TEMPLATE_OPTIONS, CONF_LIMIT_PER_PHASE, CONF_PHASE, PHASE_OPTIONS, CONF_REGULATION, REGULATION_OPTIONS,
     CONF_FIXED_POWER, CONF_WHEN_FULL, WHEN_FULL_OPTIONS, CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS, CONF_BALANCE,
 )
+from . import store
 from . import systems as sy
 from .sources import async_archive_irradiance, async_archive_temperature, async_open_meteo
 
@@ -241,8 +243,9 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 5              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
-                                   # 1.4: discontinued ICON models replaced, 1.5: systems (migration in __init__)
+    MINOR_VERSION = 6              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+                                   # 1.4: discontinued ICON models replaced, 1.5: systems, 1.6: one entry per
+                                   # system with its parts inside (migrations in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -273,8 +276,7 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_SYSTEM: SystemSubentryFlow, SUBENTRY_ARRAY: ArraySubentryFlow,
-                SUBENTRY_BATTERY: BatterySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow}
+        return {SUBENTRY_SYSTEM: SystemSubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow}
 
 
 class ConsumerSubentryFlow(ConfigSubentryFlow):
@@ -347,14 +349,6 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
                                     description_placeholders={"name": self._data[CONF_NAME]})
 
 
-def _systems(entry: ConfigEntry) -> dict[str, sy.System]:
-    return sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
-
-
-def _part_choices(entry: ConfigEntry, battery: str | None = None) -> dict[str, str]:
-    return sy.part_owners(_systems(entry), battery)
-
-
 class _DiagramMixin:
     """The installation's flow diagram on top of a subentry form, so the form shows where the part sits."""
 
@@ -366,34 +360,6 @@ class _DiagramMixin:
         except Exception:  # noqa: BLE001 – the form works without the picture
             _LOGGER.debug("Installation diagram for the form unavailable", exc_info=True)
             return {"diagram": ""}
-
-
-class ArraySubentryFlow(_DiagramMixin, ConfigSubentryFlow):
-    """Add or reconfigure one PV array."""
-
-    def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
-        errors = _validate_array(self.hass, user_input)
-        if not errors and user_input and user_input.get(CONF_SYSTEM) \
-                and user_input[CONF_SYSTEM] not in _part_choices(self._get_entry()):
-            errors = {CONF_SYSTEM: "system_has_subsystems"}
-        return errors
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        errors = self._errors(user_input)
-        if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_NAME], data=_array_data(user_input))
-        return self.async_show_form(step_id="user", errors=errors, description_placeholders=self._diagram(),
-                                    data_schema=_array_schema(user_input or {}, _part_choices(self._get_entry())))
-
-    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        subentry = self._get_reconfigure_subentry()
-        errors = self._errors(user_input)
-        if user_input is not None and not errors:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
-                                               data=_array_data(user_input))
-        return self.async_show_form(step_id="reconfigure", errors=errors, description_placeholders=self._diagram(),
-                                    data_schema=_array_schema(user_input or dict(subentry.data),
-                                                              _part_choices(self._get_entry())))
 
 
 def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -550,48 +516,6 @@ def _battery_data(user_input: dict[str, Any]) -> dict[str, Any]:
     return {**BATTERY_DEFAULTS, **_flatten(user_input, BATTERY_SECTIONS)}
 
 
-class BatterySubentryFlow(_DiagramMixin, ConfigSubentryFlow):
-    """Add or reconfigure a battery for the surplus simulation."""
-
-    def _choices(self, own: str | None) -> dict[str, str]:
-        return _part_choices(self._get_entry(), own or "")
-
-    def _errors(self, user_input: dict[str, Any] | None, own: str | None = None) -> dict[str, str]:
-        """Problems of fields inside a section are shown on top of the form."""
-        if user_input is None:
-            return {}
-        user_input = _battery_data(user_input)
-        state = self.hass.states.get(user_input.get(CONF_SOC_SENSOR) or "")
-        if state is None:
-            return {CONF_SOC_SENSOR: "sensor_missing"}
-        if state.attributes.get("unit_of_measurement") != "%":
-            return {CONF_SOC_SENSOR: "soc_unit"}
-        if float(user_input.get(CONF_MIN_SOC, 0)) + float(user_input.get(CONF_RESERVE, 0)) >= float(user_input.get(CONF_MAX_SOC, 100)):
-            return {"base": "limits_order"}
-        # one battery per system: a second one is a subsystem of its own
-        if user_input.get(CONF_SYSTEM) and user_input[CONF_SYSTEM] not in self._choices(own):
-            return {CONF_SYSTEM: "system_taken"}
-        return {}
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        errors = self._errors(user_input)
-        if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_NAME], data=_battery_data(user_input))
-        return self.async_show_form(step_id="user", errors=errors, description_placeholders=self._diagram(),
-                                    data_schema=_battery_schema(_battery_data(user_input or {}), self._choices(None)))
-
-    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        subentry = self._get_reconfigure_subentry()
-        errors = self._errors(user_input, subentry.subentry_id)
-        if user_input is not None and not errors:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
-                                               data=_battery_data(user_input))
-        return self.async_show_form(step_id="reconfigure", description_placeholders=self._diagram(),
-                                    data_schema=_battery_schema(_battery_data(user_input) if user_input else dict(subentry.data),
-                                                                self._choices(subentry.subentry_id)),
-                                    errors=errors)
-
-
 def _system_basics(d: dict[str, Any], parents: dict[str, str]) -> vol.Schema:
     fields = {
         vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")): selector.TextSelector(),
@@ -627,46 +551,182 @@ def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool
     return vol.Schema(fields)
 
 
+
+
+def _battery_errors(hass: HomeAssistant, user_input: dict[str, Any] | None, choices: dict[str, str]) -> dict[str, str]:
+    """Problems of fields inside a section are shown on top of the form."""
+    if user_input is None:
+        return {}
+    user_input = _battery_data(user_input)
+    state = hass.states.get(user_input.get(CONF_SOC_SENSOR) or "")
+    if state is None:
+        return {CONF_SOC_SENSOR: "sensor_missing"}
+    if state.attributes.get("unit_of_measurement") != "%":
+        return {CONF_SOC_SENSOR: "soc_unit"}
+    if float(user_input.get(CONF_MIN_SOC, 0)) + float(user_input.get(CONF_RESERVE, 0)) >= float(user_input.get(CONF_MAX_SOC, 100)):
+        return {"base": "limits_order"}
+    # one battery per system: a second one is a subsystem of its own
+    if user_input.get(CONF_SYSTEM) and user_input[CONF_SYSTEM] not in choices:
+        return {CONF_SYSTEM: "system_taken"}
+    return {}
+
+
+# the menu of a system; its items carry the names of the parts, so they are built here, not in the translations
+MENU_TEXT = {
+    "de": {"edit": "Einstellungen von {name}", "system": "Teilsystem {name}", "array": "PV-Gruppe {name}",
+           "battery": "Akku {name}", "add_sub": "Teilsystem hinzufügen", "add_array": "PV-Gruppe hinzufügen",
+           "add_battery": "Akku hinzufügen", "remove": "Teil entfernen", "back": "Zurück zu {name}",
+           "finish": "Fertig"},
+    "en": {"edit": "Settings of {name}", "system": "Subsystem {name}", "array": "PV array {name}",
+           "battery": "Battery {name}", "add_sub": "Add subsystem", "add_array": "Add PV array",
+           "add_battery": "Add battery", "remove": "Remove a part", "back": "Back to {name}", "finish": "Done"},
+}
+OPEN = "open_"               # menu item of a part: OPEN + its id (SystemSubentryFlow.__getattr__)
+
+
 class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
-    """Add or reconfigure a system: first what it is (template, parent), then its settings, filled in by the
-    template. Arrays and batteries choose their system in their own forms."""
+    """A system of the top level with everything inside it. A menu per system lists its settings, subsystems,
+    PV arrays and battery; behind each item is the form of that part. Each form saves when it is sent
+    (store.async_store), so closing the dialog loses nothing; "Done" only closes it."""
 
+    _flat: dict[str, tuple[str, str, Any]]
+    _node: str | None = None         # the system whose menu is shown
+    _edit: str | None = None         # the part a form edits; None for a new one
+    _parent: str | None = None       # where a new subsystem goes
     _basics: dict[str, Any]
-    _old: dict[str, Any]
 
-    def _own(self) -> str | None:
-        return self._get_reconfigure_subentry().subentry_id if self.source == "reconfigure" else None
+    def __getattr__(self, name: str) -> Any:
+        # the menu item of a part is a step of its own; its id is part of the step's name
+        if name.startswith("async_step_" + OPEN):
+            part = name.removeprefix("async_step_" + OPEN)
 
-    def _parents(self) -> dict[str, str]:
-        return sy.parent_owners(_systems(self._get_entry()), self._own())
+            async def step(user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+                return await self._open(part)
+            return step
+        raise AttributeError(name)
+
+    @property
+    def _text(self) -> dict[str, str]:
+        return MENU_TEXT.get((self.hass.config.language or "en")[:2], MENU_TEXT["en"])
+
+    def _systems(self) -> dict[str, sy.System]:
+        return sy.systems_of(self._flat)
+
+    def _save(self, changed: dict[str, tuple[str, str, Any] | None]) -> None:
+        """Store the parts this form changed (None: removed) on top of what is stored now, so that a change made
+        elsewhere meanwhile (the Installation tab, a repair, another dialog) is kept."""
+        entry = self._get_entry()
+        flat = dict(store.flat(entry))
+        for pid, part in changed.items():
+            if part is None:
+                flat.pop(pid, None)
+            else:
+                flat[pid] = part
+        store.async_store(self.hass, entry, flat)
+        self._flat = dict(store.flat(entry))
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        self._old = {}
-        return await self._first("user", user_input)
+        if user_input is None:
+            self._flat = dict(store.flat(self._get_entry()))
+        return await self._basics_form("user", user_input)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        self._old = dict(self._get_reconfigure_subentry().data)
-        return await self._first("reconfigure", user_input)
+        self._flat = dict(store.flat(self._get_entry()))
+        self._node = self._get_reconfigure_subentry().subentry_id
+        return await self.async_step_menu()
 
-    async def _first(self, step: str, user_input: dict[str, Any] | None) -> SubentryFlowResult:
-        parents = self._parents()
+    async def async_step_menu(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        systems = self._systems()
+        if self._node not in systems:
+            return self.async_abort(reason="saved")
+        s, t = systems[self._node], self._text
+        options = {"edit": t["edit"].format(name=s.name)}
+        options.update({OPEN + c: t["system"].format(name=systems[c].name) for c in s.children})
+        options.update({OPEN + a: t["array"].format(name=self._flat[a][1]) for a in s.arrays})
+        if s.battery:
+            options[OPEN + s.battery] = t["battery"].format(name=self._flat[s.battery][1])
+        # a system holds either subsystems, or PV arrays and a battery (two levels at most)
+        if s.parent is None and not s.arrays and not s.battery:
+            options["add_sub"] = t["add_sub"]
+        if not s.children:
+            options["add_array"] = t["add_array"]
+            if not s.battery:
+                options["add_battery"] = t["add_battery"]
+        if s.children or s.arrays or s.battery:
+            options["remove"] = t["remove"]
+        if s.parent is not None:
+            options["back"] = t["back"].format(name=systems[s.parent].name)
+        else:
+            options["finish"] = t["finish"]
+        return self.async_show_menu(step_id="menu", menu_options=options,
+                                    description_placeholders={"name": s.name, **self._diagram()})
+
+    async def _open(self, part: str) -> SubentryFlowResult:
+        kind = self._flat[part][0] if part in self._flat else None
+        if kind == SUBENTRY_SYSTEM:
+            self._node = part
+            return await self.async_step_menu()
+        self._edit = part
+        if kind == SUBENTRY_ARRAY:
+            return await self.async_step_array()
+        if kind == SUBENTRY_BATTERY:
+            return await self.async_step_battery()
+        return await self.async_step_menu()
+
+    async def async_step_edit(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._edit, self._parent = self._node, None
+        return await self._basics_form("basics", None)
+
+    async def async_step_add_sub(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._edit, self._parent = None, self._node
+        return await self._basics_form("basics", None)
+
+    async def async_step_add_array(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._edit = None
+        return await self.async_step_array()
+
+    async def async_step_add_battery(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._edit = None
+        return await self.async_step_battery()
+
+    async def async_step_back(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        systems = self._systems()
+        if self._node in systems:
+            self._node = systems[self._node].parent
+        return await self.async_step_menu()
+
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return self.async_abort(reason="saved")
+
+    async def async_step_basics(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return await self._basics_form("basics", user_input)
+
+    async def _basics_form(self, step: str, user_input: dict[str, Any] | None) -> SubentryFlowResult:
+        """What a system is: name, template, and for an existing one where it sits (its parent). A new subsystem
+        goes under self._parent; a new system of the top level has none."""
+        own = self._edit
+        old = dict(self._flat[own][2]) if own else {}
+        parents = sy.parent_owners(self._systems(), own) if own else {}
         errors = {}
         if user_input is not None:
             if user_input.get(CONF_PARENT) and user_input[CONF_PARENT] not in parents:
                 errors = {CONF_PARENT: "parent_not_possible"}
             else:
-                self._basics = dict(user_input)
+                self._basics = {k: v for k, v in user_input.items() if k != CONF_PARENT}
+                parent = self._parent if not own else user_input.get(CONF_PARENT)
+                if parent:
+                    self._basics[CONF_PARENT] = parent
                 return await self.async_step_settings()
-        return self.async_show_form(step_id=step, data_schema=_system_basics(user_input or self._old, parents),
+        return self.async_show_form(step_id=step, data_schema=_system_basics(user_input or old, parents),
                                     errors=errors, description_placeholders=self._diagram())
 
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         template = self._basics[CONF_TEMPLATE]
-        own = self._own()
-        systems = _systems(self._get_entry())
+        own = self._edit
+        old = dict(self._flat[own][2]) if own else {}
+        systems = self._systems()
         # a changed template fills in its settings anew; the same template keeps what was set
-        defaults = dict(self._old) if self._old.get(CONF_TEMPLATE) == template \
-            else {**self._old, **sy.template_data(template)}
+        defaults = old if old.get(CONF_TEMPLATE) == template else {**old, **sy.template_data(template)}
         group = template in ("coupled", "group") or bool(own in systems and systems[own].children)
         battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
         errors = {}
@@ -675,11 +735,61 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
                 errors = {CONF_FIXED_POWER: "fixed_power_needed"}
             else:
                 data = {k: v for k, v in {**self._basics, **user_input}.items() if v not in (None, "", False)}
-                if self.source == "reconfigure":
-                    return self.async_update_and_abort(self._get_entry(), self._get_reconfigure_subentry(),
-                                                       title=data[CONF_NAME], data=data)
-                return self.async_create_entry(title=data[CONF_NAME], data=data)
+                sid = own or ulid_now()
+                self._save({sid: (SUBENTRY_SYSTEM, data[CONF_NAME], data)})
+                self._node = sid
+                return await self.async_step_menu()
         return self.async_show_form(
             step_id="settings", errors=errors, description_placeholders={"name": self._basics[CONF_NAME]},
             data_schema=_system_settings(user_input or defaults, battery=battery, group=group,
                                          sub=bool(self._basics.get(CONF_PARENT))))
+
+    async def async_step_array(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        own = self._edit
+        old = dict(self._flat[own][2]) if own else {CONF_SYSTEM: self._node}
+        choices = sy.part_owners(self._systems())
+        errors = _validate_array(self.hass, user_input)
+        if not errors and user_input and user_input.get(CONF_SYSTEM) and user_input[CONF_SYSTEM] not in choices:
+            errors = {CONF_SYSTEM: "system_has_subsystems"}
+        if user_input is not None and not errors:
+            data = _array_data(user_input)
+            data.setdefault(CONF_SYSTEM, self._node)
+            self._save({own or ulid_now(): (SUBENTRY_ARRAY, data[CONF_NAME], data)})
+            return await self.async_step_menu()
+        return self.async_show_form(step_id="array", errors=errors, description_placeholders=self._diagram(),
+                                    data_schema=_array_schema(user_input or old, choices))
+
+    async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        own = self._edit
+        old = dict(self._flat[own][2]) if own else {CONF_SYSTEM: self._node}
+        choices = sy.part_owners(self._systems(), own or "")
+        errors = _battery_errors(self.hass, user_input, choices)
+        if user_input is not None and not errors:
+            data = _battery_data(user_input)
+            data.setdefault(CONF_SYSTEM, self._node)
+            self._save({own or ulid_now(): (SUBENTRY_BATTERY, data[CONF_NAME], data)})
+            return await self.async_step_menu()
+        return self.async_show_form(step_id="battery", errors=errors, description_placeholders=self._diagram(),
+                                    data_schema=_battery_schema(_battery_data(user_input) if user_input else old,
+                                                                choices))
+
+    async def async_step_remove(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """A subsystem, PV array or battery of this system, with everything inside it."""
+        systems = self._systems()
+        if self._node not in systems:
+            return await self.async_step_menu()
+        s = systems[self._node]
+        options = {**{c: systems[c].name for c in s.children}, **{a: self._flat[a][1] for a in s.arrays},
+                   **({s.battery: self._flat[s.battery][1]} if s.battery else {})}
+        if user_input is not None:
+            part = user_input.get("part")
+            if part in options:
+                inside = {p for p, (kind, _, d) in self._flat.items()
+                          if kind in (SUBENTRY_ARRAY, SUBENTRY_BATTERY) and d.get(CONF_SYSTEM) == part}
+                self._save(dict.fromkeys({part} | inside))
+            return await self.async_step_menu()
+        return self.async_show_form(
+            step_id="remove", description_placeholders={"name": s.name},
+            data_schema=vol.Schema({vol.Required("part"): selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=p, label=n) for p, n in options.items()],
+                mode=selector.SelectSelectorMode.LIST))}))

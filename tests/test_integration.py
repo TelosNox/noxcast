@@ -954,6 +954,23 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     await client.send_json_auto_id({"type": "noxcast/installation", "language": "de"})
     diagram = (await client.receive_json())["result"]["entries"][0]["diagram"]
     assert diagram.startswith("<svg") and 'data-node="house"' in diagram and "Netz" in diagram
+    # move the balcony array to the roof system; the answer is the installation as it is now
+    roof = next(s["id"] for s in tree["systems"] if s["name"] == "Roof")
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        await client.send_json_auto_id({"type": "noxcast/move_part", "entry_id": entry.entry_id, "part": "balcony",
+                                        "to": roof})
+        msg = await client.receive_json()
+        assert msg["success"] and entry.subentries["balcony"].data["system"] == roof
+        moved = msg["result"]["entries"][0]
+        assert [a["name"] for a in next(s for s in moved["systems"] if s["id"] == roof)["arrays"]] == ["Balcony", "Roof"]
+        await hass.async_block_till_done()
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+    # not into the parent of the batteries: it has subsystems
+    parent = next(s["id"] for s in tree["systems"] if s["name"] == "Batteries")
+    await client.send_json_auto_id({"type": "noxcast/move_part", "entry_id": entry.entry_id, "part": "balcony",
+                                    "to": parent})
+    msg = await client.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "not_possible"
 
 
 async def test_later_days_follow_the_forecast_horizon(hass: HomeAssistant) -> None:

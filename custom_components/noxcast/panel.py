@@ -44,6 +44,7 @@ WS_LEARNING = f"{DOMAIN}/learning"
 WS_RELEARN = f"{DOMAIN}/relearn"
 WS_REMOVE_EXCLUSION = f"{DOMAIN}/remove_exclusion"
 WS_INSTALLATION = f"{DOMAIN}/installation"
+WS_MOVE = f"{DOMAIN}/move_part"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -66,6 +67,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_relearn)
     websocket_api.async_register_command(hass, ws_remove_exclusion)
     websocket_api.async_register_command(hass, ws_installation)
+    websocket_api.async_register_command(hass, ws_move_part)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -312,10 +314,21 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
                                        "review_days": REVIEW_DAYS, "entries": entries})
 
 
+def _subs(entry: Any) -> systems.Subs:
+    return {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
+
+
 def installation_tree(entry: Any) -> dict[str, Any]:
     """A config entry's installation as systems.tree builds it from the subentries."""
-    return systems.tree(entry.data, {sid: (sub.subentry_type, sub.title, dict(sub.data))
-                                     for sid, sub in entry.subentries.items()})
+    return systems.tree(entry.data, _subs(entry))
+
+
+def _installation(entries: list, lang: str) -> dict[str, Any]:
+    out = []
+    for e in entries:
+        tree = installation_tree(e)
+        out.append({"entry_id": e.entry_id, "title": e.title, **tree, "diagram": flowchart.render(tree, lang)})
+    return {"entries": out}
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_INSTALLATION, vol.Optional("language"): str})
@@ -324,11 +337,28 @@ def ws_installation(hass: HomeAssistant, connection: websocket_api.ActiveConnect
     """The installation as entered (household, systems, arrays, batteries), how far each setting counts, and the
     flow diagram (flowchart.render)."""
     lang = (msg.get("language") or hass.config.language or "en")[:2]
-    entries = []
-    for e in hass.config_entries.async_loaded_entries(DOMAIN):
-        tree = installation_tree(e)
-        entries.append({"title": e.title, **tree, "diagram": flowchart.render(tree, lang)})
-    _send(connection, msg, {"entries": entries})
+    _send(connection, msg, _installation(hass.config_entries.async_loaded_entries(DOMAIN), lang))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_MOVE, vol.Required("entry_id"): str,
+                                  vol.Required("part"): str, vol.Required("to"): str, vol.Optional("language"): str})
+@callback
+def ws_move_part(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Move a PV array or battery to another system, or a system under another parent ("" for none), from the
+    Installation tab. The same rules as the forms (systems.owners); the entry reloads as after editing a part.
+    Answers with the installation as it is now, since the entry is not loaded while it reloads."""
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN or msg["part"] not in entry.subentries:
+        connection.send_error(msg["id"], "not_found", "No such part of a Noxcast installation")
+        return
+    data = systems.moved(_subs(entry), msg["part"], msg["to"])
+    if data is None:
+        connection.send_error(msg["id"], "not_possible", "The part cannot go there")
+        return
+    hass.config_entries.async_update_subentry(entry, entry.subentries[msg["part"]], data=data)
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    _send(connection, msg, _installation([entry], lang))
 
 
 # no ".svg" ending: the Markdown filter of the forms might drop SVG images by their name; the content type says it

@@ -205,8 +205,9 @@ Every setting stays changeable.
 
 Noxcast stores every setting, also those it does not compute yet. The panel tab *Installation* draws the installation
 as a flow diagram (PV arrays, systems with their batteries and limits, house, grid); tapping a part shows its settings
-and whether each counts exactly, simplified or not yet. The forms for systems, PV arrays and batteries show the same
-diagram on top. Later versions compute more of the settings without new input.
+and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
+another system, with the same rules as the forms. The forms for systems, PV arrays and batteries show the same diagram
+on top. Later versions compute more of the settings without new input.
 
 ### 3. PV arrays (one per group of power sensors)
 

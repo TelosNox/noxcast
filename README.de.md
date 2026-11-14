@@ -208,8 +208,9 @@ Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar.
 
 Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet. Der Panel-Reiter *Anlage* zeichnet die
 Anlage als Flussbild (PV-Gruppen, Systeme mit ihren Akkus und Grenzen, Haus, Netz); ein Tipp auf einen Teil zeigt seine
-Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Die Formulare für Systeme, PV-Gruppen und Akkus
-zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
+Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
+oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. Die Formulare für Systeme,
+PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 

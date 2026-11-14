@@ -167,6 +167,51 @@ def systems_of(subs: Subs) -> dict[str, System]:
     return out
 
 
+def part_owners(systems: Mapping[str, System], battery: str | None = None) -> dict[str, str]:
+    """Systems that can take a PV array or a battery: those without subsystems; for a battery, those without one
+    (battery: its own id, kept where it is)."""
+    return {sid: s.name for sid, s in sorted(systems.items(), key=lambda kv: kv[1].name)
+            if not s.children and (battery is None or s.battery in (None, battery))}
+
+
+def parent_owners(systems: Mapping[str, System], own: str | None) -> dict[str, str]:
+    """Systems that can take a system as their subsystem: top level, no arrays or battery of their own (either,
+    never both). None for a system that has subsystems itself (two levels at most)."""
+    if own in systems and systems[own].children:
+        return {}
+    return {sid: s.name for sid, s in sorted(systems.items(), key=lambda kv: kv[1].name)
+            if sid != own and s.parent is None and not s.arrays and not s.battery}
+
+
+def owners(subs: Subs, part: str) -> tuple[str, dict[str, str]] | None:
+    """Where a part can be moved, for the Installation tab: (where it is now, {system id: name}). A system can
+    also stand on its own, the key "". None for an unknown part."""
+    if part not in subs:
+        return None
+    kind, _, data = subs[part]
+    systems = systems_of(subs)
+    if kind == SUBENTRY_SYSTEM:
+        return (systems[part].parent or ""), {"": "", **parent_owners(systems, part)}
+    if kind == SUBENTRY_ARRAY:
+        return data.get(CONF_SYSTEM) or "", part_owners(systems)
+    if kind == SUBENTRY_BATTERY:
+        return data.get(CONF_SYSTEM) or "", part_owners(systems, part)
+    return None
+
+
+def moved(subs: Subs, part: str, to: str) -> dict[str, Any] | None:
+    """The data of a part moved to another system (a system: to another parent, "" for none), or None where the
+    move is not possible."""
+    options = owners(subs, part)
+    if options is None or to not in options[1]:
+        return None
+    kind, _, data = subs[part]
+    key = CONF_PARENT if kind == SUBENTRY_SYSTEM else CONF_SYSTEM
+    # the phase is a setting of a subsystem only; the form drops it the same way when the parent goes
+    drop = {key, CONF_PHASE} if kind == SUBENTRY_SYSTEM and not to else {key}
+    return {**{k: v for k, v in data.items() if k not in drop}, **({key: to} if to else {})}
+
+
 def behaviour(systems: Mapping[str, System], sid: str, key: str) -> Any:
     """A behaviour setting of a system, inherited from its parent when it leaves it empty."""
     s = systems[sid]
@@ -318,9 +363,15 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
         }
 
     top = sorted((sid for sid, s in systems.items() if s.parent is None), key=lambda sid: systems[sid].name)
+    moves = {}
+    for part in subs:
+        if (o := owners(subs, part)) is not None:
+            moves[part] = {"now": o[0], "to": [[sid, name] for sid, name in o[1].items()]}
     return {
         "feed_in": household.get(CONF_FEED_IN_MODE, "none"), "feed_in_limit_w": household.get(CONF_FEED_IN_LIMIT),
         "old_soc": len(household.get(CONF_SOC_SENSORS) or []),
         "systems": [node(sid) for sid in top],
         "effects": effects(household, systems, subs),
+        # per array, battery and system: where it sits and where it can go ("" = a system on its own)
+        "moves": moves,
     }

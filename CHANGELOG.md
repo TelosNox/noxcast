@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- In the *Installation* tab, *Belongs to* moves a PV array, a battery or a system to another system without opening
+  its form. The same rules apply as in the forms, and Noxcast reloads afterwards.
+
 ### Changed
 - The *Installation* tab draws the installation as a flow diagram: PV arrays, systems with their batteries and limits,
   house and grid, with a dot per part for how far Noxcast computes its settings. Tapping a part shows its settings.

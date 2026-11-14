@@ -7,6 +7,16 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The household's feed-in limit now counts in learning, in W as well as in % of the PV peak power (the peak power
+  of all PV arrays with their further orientations). With the *Grid power* sensor in the main entry, hours in which
+  the household's export reached the limit (within 5 %, at least 100 W) count as "at least this much", since the PV
+  may have been held back; the correction of today's forecast does not read them as clouds, and the backtest and
+  the detection of inverter limits leave them out. A system with its own deviation from the feed-in rule is not
+  affected. The *Installation* tab shows the limit in W, also for a share in %, or that the grid power sensor is
+  needed. Learning may change for such installations from the next nightly run on. The battery forecast does not
+  split the surplus at the limit yet.
+
 ### Fixed
 - A system with the regulation *Self-consumption* and no battery delivers only what the house draws, so on days
   with a low load it held PV back, and learning read that as weak sun: efficiency and shade came out too low. With

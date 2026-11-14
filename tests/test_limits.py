@@ -413,3 +413,20 @@ def test_a_system_following_the_load_without_battery_counts_held_back_hours_as_a
     assert set(btest.usable(arr, history, 95.0, [])) == {0.0}
     assert {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, systems, subs)}[("b", "regulation")] \
         == sy.NOT_YET
+
+
+def test_hours_with_the_export_at_the_feed_in_limit_count_as_at_least():
+    subs = {"r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"}),
+            "b": ("system", "Balcony", {"name": "Balcony", "template": "inverter", "regulation": "load"}),
+            "roof": ("array", "Roof", {"system": "r"}), "bal": ("array", "Balcony", {"system": "b"})}
+    systems = sy.systems_of(subs)
+    # 6000 W: an hour counts from 5700 W export on (5 %); 800 W: from 700 W (at least 100 W)
+    assert inst.limit_threshold(6000) == -5700 and inst.limit_threshold(800) == -700
+    built = inst.build({"roof": ["pv.r"], "bal": ["pv.b"]}, {}, [], 95, systems, {}, "limited",
+                       export_limit=(("roof", "bal"), 6000))
+    low = {0.0: 300.0, 3600.0: 50.0, 7200.0: -5600.0, 10800.0: -5800.0}
+    assert built.held_hours("roof", low) == {10800.0}
+    # the balcony also follows the load: the threshold that marks more hours wins
+    assert built.held_hours("bal", low) == {3600.0, 7200.0, 10800.0}
+    plain = inst.build({"roof": ["pv.r"]}, {}, [], 95, systems, {}, "limited")
+    assert plain.held_hours("roof", low) == set() and "roof" not in plain.held

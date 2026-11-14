@@ -31,6 +31,14 @@ CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of
 # it may have held PV back. Zero-export controllers keep an import of 10-100 W as margin; marking an hour too many
 # only turns an exact value into a lower bound, missing one teaches too little PV
 HELD_IMPORT_W = 100.0
+# an hour in which the household's export came this close to its feed-in limit may have held PV back: a share of
+# the limit, at least HELD_IMPORT_W (controllers keep a margin below the limit as below zero)
+LIMIT_MARGIN = 0.05
+
+
+def limit_threshold(limit_w: float) -> float:
+    """Grid power (W, export negative) below which an hour counts as at the feed-in limit."""
+    return -(limit_w - max(HELD_IMPORT_W, LIMIT_MARGIN * limit_w))
 
 
 @dataclass(frozen=True)
@@ -85,12 +93,17 @@ class Installation:
     inputs: Mapping[str, Input] = field(default_factory=dict)                # by sensor
     stores: Mapping[str, tuple[Store, ...]] = field(default_factory=dict)    # array -> batteries of its systems
     caps: tuple[Cap, ...] = ()
-    held: frozenset[str] = frozenset()     # arrays of systems that follow the load without a battery
+    # array -> grid power (W, export negative) below which its system may have held PV back: HELD_IMPORT_W for
+    # one that follows the load without a battery, limit_threshold under the household's feed-in limit
+    held: Mapping[str, float] = field(default_factory=dict)
 
     def held_hours(self, array: str, grid_low: Mapping[float, float]) -> set[float]:
-        """Period starts in which the array's system may have held PV back for a low load: the household's lowest
-        grid import (W, export negative) in the period fell below HELD_IMPORT_W."""
-        return {t for t, w in grid_low.items() if w < HELD_IMPORT_W} if array in self.held else set()
+        """Period starts in which the array's system may have held PV back: the household's lowest grid import
+        (W, export negative) in the period fell below the array's threshold (for a low load, or the export
+        reached the feed-in limit)."""
+        if array not in self.held:
+            return set()
+        return {t for t, w in grid_low.items() if w < self.held[array]}
 
     def inputs_of(self, array: str) -> list[Input]:
         return [i for i in self.inputs.values() if i.array == array]
@@ -206,9 +219,11 @@ def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap,
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
           soc_sensors: Iterable[str] = (), soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
-          feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None) -> Installation:
+          feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None,
+          export_limit: tuple[Iterable[str], float] | None = None) -> Installation:
     """The installation from the configuration: arrays (id -> sensors), limits (sensor -> W), the systems and the
-    battery subentries' data; max_soc: battery id -> current upper limit in % where an entity sets it."""
+    battery subentries' data; max_soc: battery id -> current upper limit in % where an entity sets it;
+    export_limit: the arrays under the household's feed-in limit and the limit in W."""
     limits = limits or {}
     inputs = {}
     for array, sensors in arrays.items():
@@ -218,4 +233,15 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
     systems = systems or {}
     return Installation(House(tuple(soc_sensors), float(soc_full_pct)), inputs,
                         _stores(systems, batteries or {}, feed_in_mode, float(soc_full_pct), max_soc or {}),
-                        _caps(systems, arrays), frozenset(sy.held_back_arrays(systems)))
+                        _caps(systems, arrays), _held(systems, export_limit))
+
+
+def _held(systems: Mapping[str, sy.System], export_limit: tuple[Iterable[str], float] | None
+          ) -> dict[str, float]:
+    """Array -> the grid threshold of Installation.held; where both apply the higher, which marks more hours."""
+    out = {a: HELD_IMPORT_W for a in sy.held_back_arrays(systems)}
+    if export_limit and export_limit[1] > 0:
+        below = limit_threshold(float(export_limit[1]))
+        for a in export_limit[0]:
+            out[a] = max(out.get(a, below), below)
+    return out

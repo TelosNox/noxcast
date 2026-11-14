@@ -30,7 +30,7 @@ from .const import (
     CONF_GRID, CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSORS, CONF_SYSTEM,
-    CONF_TEMPLATE, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
+    CONF_TEMPLATE, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
 )
 
 type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -> (type, title, data)
@@ -404,14 +404,44 @@ def exports(household: Mapping[str, Any], systems: Mapping[str, System]) -> bool
         not systems and household.get(CONF_FEED_IN_MODE, "none") != "none")
 
 
-def _rule_value(household: Mapping[str, Any]) -> Any:
-    """The household's feed-in rule for the Installation tab: free / none, the limit in W, or {"pct": n}."""
+def _rule_value(household: Mapping[str, Any], subs: Subs) -> Any:
+    """The household's feed-in rule for the Installation tab: free / none, the limit in W, or {"pct": n, "w": W}."""
     mode = household.get(CONF_FEED_IN_MODE, "none")
     if mode == "limited":
         return household.get(CONF_FEED_IN_LIMIT)
     if mode == "percent":
-        return {"pct": household.get(CONF_FEED_IN_PCT)}
+        w = feed_in_limit_w(household, subs)
+        return {"pct": household.get(CONF_FEED_IN_PCT), **({"w": round(w)} if w else {})}
     return mode
+
+
+def peak_w(subs: Subs) -> float:
+    """The household's installed PV peak power in W: every array with its further orientations."""
+    total = 0.0
+    for _, d in _of(subs, SUBENTRY_ARRAY).values():
+        total += float(d.get(CONF_PEAK_POWER) or 0.0)
+        total += sum(float(o[CONF_PEAK_POWER]) for o in (d.get(k) or {} for k in CONF_ORIENTATIONS)
+                     if o.get(CONF_PEAK_POWER) is not None)
+    return total
+
+
+def feed_in_limit_w(household: Mapping[str, Any], subs: Subs) -> float | None:
+    """The household's feed-in limit in W: the limit itself, or its share of the installed peak power (the grid
+    operator's 60 % rule counts the modules' peak power). None for free and zero export, or where it is not set."""
+    mode = household.get(CONF_FEED_IN_MODE, "none")
+    if mode == "limited" and household.get(CONF_FEED_IN_LIMIT):
+        return float(household[CONF_FEED_IN_LIMIT])
+    if mode == "percent" and household.get(CONF_FEED_IN_PCT):
+        w = float(household[CONF_FEED_IN_PCT]) / 100 * peak_w(subs)
+        return w if w > 0 else None
+    return None
+
+
+def export_limited_arrays(household: Mapping[str, Any], systems: Mapping[str, System]) -> tuple[str, ...]:
+    """The arrays of systems that follow the household's feed-in limit, without a deviation of their own: an hour
+    in which the household's export reached the limit may have held their PV back."""
+    return tuple(sorted(a for sid, s in systems.items()
+                        if feed_in(household, systems, sid)[0] in ("limited", "percent") for a in s.arrays))
 
 
 def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
@@ -486,8 +516,16 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
     mode = household.get(CONF_FEED_IN_MODE, "none")
     curtailed = curtailed_arrays(systems)
     batteries = {bid: d for bid, (_, d) in _of(subs, SUBENTRY_BATTERY).items()}
-    # free and none are what the battery forecast and the day card have always known; a limit counts later
-    add("house", "feed_in", NOT_YET if mode in ("limited", "percent") else EXACT, _rule_value(household))
+    # free and none are what the battery forecast and the day card have always known; a limit counts in learning,
+    # known from the grid sensor: hours with the export at it count as "at least"
+    limited = mode in ("limited", "percent")
+    grid = bool(household.get(CONF_GRID))
+    limit_w = feed_in_limit_w(household, subs) if limited else None
+    # it counts only where an array follows it; every system deviating, nothing does
+    counts = bool(grid and limit_w and export_limited_arrays(household, systems))
+    add("house", "feed_in", (SIMPLIFIED if counts else NOT_YET) if limited else EXACT, _rule_value(household, subs))
+    if limited and limit_w and export_limited_arrays(household, systems):
+        add("house", "limit_learning", SIMPLIFIED if grid else NOT_YET, round(limit_w) if grid else None)
     if household.get(CONF_SOC_SENSORS):
         add("house", "old_soc", EXACT, len(household[CONF_SOC_SENSORS]))
     # every battery is simulated in one storage: exact only where they all balance in one system
@@ -522,17 +560,20 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
             add(sid, "fixed_power", NOT_YET, behaviour(systems, sid, CONF_FIXED_POWER), sub)
         # the feed-in rule it follows: the household's, or its own deviation (a subsystem: its system's).
         # Feeding in what is left is what Noxcast has always assumed; holding it at zero counts through the
-        # battery whose full hours learning leaves out; a limit counts later
+        # battery whose full hours learning leaves out; a limit through the hours at it (house row limit_learning)
         effective, own = feed_in(household, systems, sid)
         if s.battery or s.children or own or mode != "free":
             batteries_below = any(x.battery for x in below) or (
                 sub and any(systems[c].battery for c in systems[s.parent].children))
-            status = EXACT if effective == "free" else SIMPLIFIED if effective == "none" and batteries_below \
-                else NOT_YET
+            status = EXACT if effective == "free" else SIMPLIFIED if (
+                effective == "none" and batteries_below
+                # the limit counts for its PV in learning; a battery alone: its forecast does not split at it yet
+                or effective in ("limited", "percent") and counts and any(x.arrays for x in below)
+            ) else NOT_YET
             if own:
                 add(sid, "feed_in_rule", status, behaviour(systems, sid, CONF_OWN_FEED_IN), sub)
             else:
-                out.append({"node": sid, "setting": "feed_in_rule", "status": status, "value": _rule_value(household),
+                out.append({"node": sid, "setting": "feed_in_rule", "status": status, "value": _rule_value(household, subs),
                             "inherited": "house"})
         if s.arrays and regulation == "load" and not coordinated(systems, sid):
             # what it held back for a low load: hours with the household importing little count as "at least"

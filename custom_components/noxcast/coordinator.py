@@ -123,11 +123,14 @@ def installation_of(entry: ConfigEntry, max_soc: dict[str, float] | None = None)
         if sub.subentry_type == SUBENTRY_ARRAY:
             arrays[sub_id] = list(sub.data[CONF_POWER_SENSORS])
             limits.update(sub.data.get(CONF_SENSOR_LIMITS) or {})
-    systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in store.parts(entry).items()})
+    subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in store.parts(entry).items()}
+    systems = sy.systems_of(subs)
+    limit_w = sy.feed_in_limit_w(entry.data, subs)
     batteries = {sid: dict(sub.data) for sid, sub in store.parts(entry).items() if sub.subentry_type == SUBENTRY_BATTERY}
     return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
                       float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
-                      entry.data.get(CONF_FEED_IN_MODE, "none"), max_soc)
+                      entry.data.get(CONF_FEED_IN_MODE, "none"), max_soc,
+                      (sy.export_limited_arrays(entry.data, systems), limit_w) if limit_w else None)
 
 
 def weather_days(forecast_days: int) -> int:
@@ -1136,7 +1139,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_grid_low(self, installation: inst.Installation, start: datetime, period: str = "hour"
                               ) -> dict[float, float]:
         """The household's lowest grid import per period (W, export negative), where a system follows the load
-        without a battery (installation.held_hours); empty without the grid sensor."""
+        without a battery or the household's feed-in limit (installation.held_hours); empty without the grid
+        sensor."""
         if not self.grid or not installation.held:
             return {}
         factor = (await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0) * self.grid_sign
@@ -1199,7 +1203,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_held_today(self, installation: inst.Installation, day_start: float, now: float
                                 ) -> dict[str, set[float]]:
-        """Per array today's hours in which its system may have held PV back for a low load: hourly minima,
+        """Per array today's hours in which its system may have held PV back for a low load or at the feed-in
+        limit: hourly minima,
         5-minute minima for the hours not yet compiled, and the current state for the running hour."""
         if not self.grid or not installation.held:
             return {}

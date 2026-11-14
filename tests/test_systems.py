@@ -283,3 +283,18 @@ def test_a_system_follows_the_household_rule_unless_it_deviates():
     pct = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "percent", "feed_in_limit_pct": 60},
                                                             systems, subs)}
     assert pct[("house", "feed_in")]["value"] == {"pct": 60} and pct[("s", "feed_in_rule")]["status"] == sy.NOT_YET
+    assert ("house", "limit_learning") not in pct          # no peak power yet: no limit in W
+    # with peak power and the grid sensor: the share in W, and the hours at it count as "at least"
+    peaks = {**subs, "south": ("array", "South", {"system": "u", "peak_power": 6000,
+                                                  "orientation_2": {"tilt": 30, "azimuth": 90, "peak_power": 4000}})}
+    house = {"feed_in_mode": "percent", "feed_in_limit_pct": 60, "grid_power": "sensor.grid"}
+    assert sy.peak_w(peaks) == 10000 and sy.feed_in_limit_w(house, peaks) == 6000
+    assert sy.feed_in_limit_w({"feed_in_mode": "limited", "feed_in_limit_w": 800}, peaks) == 800
+    assert sy.feed_in_limit_w({"feed_in_mode": "free", "feed_in_limit_w": 800}, peaks) is None
+    rows = {(e["node"], e["setting"]): e for e in sy.effects(house, sy.systems_of(peaks), peaks)}
+    assert rows[("house", "feed_in")]["value"] == {"pct": 60, "w": 6000}
+    assert rows[("house", "feed_in")]["status"] == rows[("house", "limit_learning")]["status"] == sy.SIMPLIFIED
+    assert rows[("house", "limit_learning")]["value"] == 6000 and rows[("u", "feed_in_rule")]["status"] == sy.SIMPLIFIED
+    # the roof feeds in anyway: its own deviation, not under the limit
+    assert sy.export_limited_arrays(house, sy.systems_of({**peaks, "roof": ("array", "Roof", {"system": "r"})})) \
+        == ("south",)

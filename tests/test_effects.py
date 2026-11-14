@@ -60,18 +60,40 @@ def test_reflection_gain_is_a_period():
     assert any(p["type"] == "reflection" for p in periods)
 
 
-def test_scaled_loss_stays_below_the_unshaded_clear_sky():
-    # a shaded hour measured above its (diffuse) forecast must not blow the loss up beyond what the sun delivers
+def test_one_factor_per_day_keeps_the_shape_of_the_shadow():
+    # a shaded hour measured above its forecast (diffuse light) or below it (the shadow edge passed later than
+    # learned) says little about the weather; only the day as a whole scales the loss
     learned = _morning_shade()
     weather = _weather()
     base = model.forecast(SITE, GEO, learned, weather)
-    free = model.forecast(SITE, GEO, model.LearnedArray(efficiency=0.9), weather)
-    hour = max(base, key=lambda t: free.get(t, 0.0) - base[t])
-    expected = dict(base)
-    expected[hour] = base[hour] * 1.6                    # as measured on a clear November morning
+    loss, _ = effects.hourly_effects(SITE, GEO, learned, weather)
+    shaded = sorted((t for t in loss if loss[t] > 20), key=lambda t: loss[t])
+    expected = {t: v * 0.9 for t, v in base.items()}
+    expected[shaded[-1]] = base[shaded[-1]] * 1.8
+    expected[shaded[0]] = base[shaded[0]] * 0.3
+    factor = sum(expected.values()) / sum(base.values())
+    scaled = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400)["loss"]
+    for t, v in loss.items():
+        assert abs(scaled[t] - v * factor) < 1e-6
+    # a curtailed hour shows the limit, not the weather, and stays out of the factor
+    noon = max(base, key=base.get)
+    capped = {**expected, noon: base[noon] * 0.2}
+    cut = effects.day_effects(SITE, GEO, learned, weather, base, capped, DAY, DAY + 86400, cut={noon})["loss"]
+    kept = sum(v for t, v in expected.items() if t != noon) / sum(v for t, v in base.items() if t != noon)
+    for t, v in loss.items():
+        assert abs(cut[t] - v * kept) < 1e-6
+
+
+def test_scaled_loss_stays_below_the_unshaded_clear_sky():
+    # a day measured well above its forecast must not lift the loss beyond what the sun delivers
+    learned = _morning_shade()
+    weather = _weather(0.6)
+    base = model.forecast(SITE, GEO, learned, weather)
+    expected = {t: v * 1.6 for t, v in base.items()}
     clear = [model.clearsky_weather(SITE, DAY + h * 3600, 12.0) for h in range(24)]
     unbounded = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400)
     bounded = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400, clear)
-    assert expected[hour] + unbounded["loss"][hour] > free[hour] * 1.05
     sun = model.forecast(SITE, GEO, model.LearnedArray(efficiency=0.9), clear)
-    assert 0 < bounded["loss"][hour] and expected[hour] + bounded["loss"][hour] <= sun[hour] + 1e-6
+    assert any(expected[t] + v > sun[t] * 1.05 for t, v in unbounded["loss"].items())
+    for t, v in bounded["loss"].items():
+        assert v >= 0 and (v == 0 or expected[t] + v <= sun[t] + 1e-6)

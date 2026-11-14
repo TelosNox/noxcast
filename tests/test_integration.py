@@ -280,7 +280,7 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 6
+    assert entry.minor_version == 7
     assert dict(entry.data) == {"soc_full_pct": 95, "feed_in_mode": "none"}
     assert dict(entry.options) == {"satellite": False}
 
@@ -296,7 +296,7 @@ async def test_migration_replaces_discontinued_icon_models(hass: HomeAssistant) 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})) as fetch:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 6 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
+    assert entry.minor_version == 7 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
     assert fetch.call_args.args[-1] == ["icon_seamless", "ecmwf_ifs"]
 
 
@@ -1001,7 +1001,7 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 6 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
+    assert entry.minor_version == 7 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
     kept = er.async_get(hass).async_get(legacy.entity_id)
     assert kept is not None and kept.id == legacy.id and kept.config_subentry_id in entry.subentries
     assert dr.async_get(hass).async_get(device.id).config_subentry_id == kept.config_subentry_id
@@ -1185,3 +1185,34 @@ async def test_energy_since_reads_the_counter_history(hass: HomeAssistant) -> No
     assert values == [51_600.0, 51_800.0, 52_100.0]
     assert lf.run_energy(52_100.0, values) == 500.0
     assert await NoxcastCoordinator._async_energy_since(SimpleNamespace(hass=hass), "sensor.none", start) == []
+
+
+async def test_rare_settings_sit_in_sections_and_are_stored_flat(hass: HomeAssistant) -> None:
+    """The household's feed-in limit and a system's fixed power, deviation and phases sit in sections that open
+    where they hold a value; what they hold is stored at the top level, and a missing value shows on top."""
+    import probatio
+    from homeassistant.helpers import config_validation as cv
+
+    weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        missing = await hass.config_entries.flow.async_configure(result["flow_id"], {"feed_in_mode": "percent"})
+        assert missing["errors"] == {"base": "feed_in_pct_needed"}
+        entry = (await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"feed_in_mode": "percent", "feed_in_limit": {"feed_in_limit_pct": 60}}))["result"]
+        assert entry.data["feed_in_limit_pct"] == 60 and "feed_in_limit" not in entry.data
+        await hass.async_block_till_done()
+
+        settings = await system_flow(hass, entry, {"name": "Stream", "template": "coupled"})
+        fields = probatio.to_field_list(settings["data_schema"], custom_serializer=cv.custom_serializer)
+        assert {f["name"]: f["expanded"] for f in fields if f.get("type") == "expandable"} == {
+            "fixed": False, "deviation": False, "phases": False}
+        assert {"regulation", "balance", "output_limit_w"} <= {f["name"] for f in fields}
+        wrong = await hass.config_entries.subentries.async_configure(settings["flow_id"], {"regulation": "fixed"})
+        assert wrong["errors"] == {"base": "fixed_power_needed"}
+        menu = await hass.config_entries.subentries.async_configure(settings["flow_id"], {
+            "regulation": "fixed", "fixed": {"fixed_power_w": 300}, "deviation": {"own_feed_in": "export"}})
+        assert menu["type"] is FlowResultType.MENU
+        await hass.async_block_till_done()
+    stream = next(d for d in parts_of(hass, entry, "system").values() if d["name"] == "Stream")
+    assert stream["fixed_power_w"] == 300 and stream["own_feed_in"] == "export" and "deviation" not in stream

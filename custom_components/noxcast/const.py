@@ -15,9 +15,10 @@ CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
 CONF_GRID_INVERT = "grid_invert"          # the grid sensor counts export as positive
 CONF_FEED_IN = "feed_in"                  # until 1.5: surplus can be fed into the grid (bool); now CONF_FEED_IN_MODE
-CONF_FEED_IN_MODE = "feed_in_mode"        # free / limited / none (zero export)
-FEED_IN_OPTIONS = ("free", "limited", "none")
+CONF_FEED_IN_MODE = "feed_in_mode"        # the household's feed-in rule: free / limited (W) / percent / none (zero export)
+FEED_IN_OPTIONS = ("free", "limited", "percent", "none")
 CONF_FEED_IN_LIMIT = "feed_in_limit_w"    # W, with feed_in_mode "limited"
+CONF_FEED_IN_PCT = "feed_in_limit_pct"    # % of the installed PV peak power, with feed_in_mode "percent"
 CONF_DAY_TYPE = "day_type_entity"         # optional: entity whose state at noon is the day type (workday sensor, input_select)
 
 # consumer subentry: a device with its own power sensor, removed from the base load
@@ -65,11 +66,12 @@ TEMPLATE_OPTIONS = ("inverter", "pv_battery", "ac_battery", "coupled")
 CONF_LIMIT_PER_PHASE = "limit_per_phase"  # the output limit holds per phase (subsystems name their phase)
 CONF_PHASE = "phase"
 PHASE_OPTIONS = ("l1", "l2", "l3", "three")
-CONF_REGULATION = "regulation"            # all: delivers everything; load: covers the house load; fixed: fixed power
+CONF_REGULATION = "regulation"            # all: full power; load: self-consumption (follows the meter); fixed: fixed power
 REGULATION_OPTIONS = ("all", "load", "fixed")
 CONF_FIXED_POWER = "fixed_power_w"
-CONF_WHEN_FULL = "when_full"              # battery full: deliver everything up to the limit, or keep covering the load
-WHEN_FULL_OPTIONS = ("all", "load")
+CONF_WHEN_FULL = "when_full"              # until 1.6: battery full, deliver everything or keep covering the load
+CONF_OWN_FEED_IN = "own_feed_in"          # a system's deviation from the household's feed-in rule; empty: follows it
+OWN_FEED_IN_OPTIONS = ("export", "never")  # feeds the rest in anyway / never feeds in
 CONF_CHARGES_FROM = "charges_from"        # own_pv: DC, before the output; house: AC, from the surplus of the house
 CHARGES_FROM_OPTIONS = ("own_pv", "house")
 CONF_BALANCE = "balance"                  # the batteries of the subsystems balance each other
@@ -142,7 +144,7 @@ MORNING_HOUR = 6                         # local hour at which today's forecast 
 ATTR_SCHEMA_VERSION = 1
 # schema of the websocket payloads ("v" in every answer, see views.py); the frontend checks it and asks
 # for a reload when a browser tab still runs the scripts of another version
-WS_SCHEMA_VERSION = 3
+WS_SCHEMA_VERSION = 4
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"
 SERVICE_RELEARN = "relearn"

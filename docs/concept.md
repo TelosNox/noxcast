@@ -397,10 +397,14 @@ with battery, battery at the house grid, coupled devices such as EcoFlow Stream)
 not types of their own. Independent devices are systems of their own, side by side.
 
 - Cascade: a subsystem's limit and its system's both hold, the tighter wins, and all subsystems together never
-  deliver more than their system. Behaviour (regulation with its fixed power, "when the battery is full") is set on
-  the system only: subsystems are devices one control coordinates and follow it. A device that does not follow
-  that control is a system of its own. Device properties stay on the subsystem (its output limit, phase, battery
-  and where that charges from).
+  deliver more than their system. Behaviour (regulation with its fixed power, the deviation from the feed-in rule)
+  is set on the system only: subsystems are devices one control coordinates and follow it. A device that does not
+  follow that control is a system of its own. Device properties stay on the subsystem (its output limit, phase,
+  battery and where that charges from).
+- An outer rule holds inside unless a deviation is set: the household's feed-in rule (free, at most W, at most a
+  share of the PV peak power, zero export) is a requirement, not a fact; each system follows it, or names its
+  own deviation ("feeds the rest in anyway", "never feeds in"). A deviation is optional and only set where it
+  exists.
 - Chain of ceilings, the rule all later computation steps follow: PV of a system <= its output + the charge power
   of its own battery (0 when full); the output <= the output limit, and with zero export or load following also <=
   the house load + what coordinated batteries take; the household's feed-in <= its feed-in limit. A battery at the

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Akku-Sensoren fürs Lernen, Hausverbrauch, Netz und Einspeisung. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Akku-Sensoren fürs Lernen, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
         "data": {
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
@@ -12,8 +12,7 @@
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
           "forecast_days": "Prognosetage",
-          "feed_in_mode": "Einspeisung",
-          "feed_in_limit_w": "Einspeisegrenze"
+          "feed_in_mode": "Einspeisevorgabe"
         },
         "data_description": {
           "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind.",
@@ -23,8 +22,21 @@
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
-          "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
-          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf."
+          "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung."
+        },
+        "sections": {
+          "feed_in_limit": {
+            "name": "Einspeisegrenze",
+            "description": "Nur bei einer begrenzten Einspeisevorgabe.",
+            "data": {
+              "feed_in_limit_w": "Höchstens (W)",
+              "feed_in_limit_pct": "Höchstens (% der PV-Leistung)"
+            },
+            "data_description": {
+              "feed_in_limit_w": "Was der Haushalt höchstens einspeisen darf, z. B. 800 W.",
+              "feed_in_limit_pct": "Anteil der installierten PV-Spitzenleistung, z. B. 60 %."
+            }
+          }
         }
       },
       "reconfigure": {
@@ -37,8 +49,7 @@
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
           "forecast_days": "Prognosetage",
-          "feed_in_mode": "Einspeisung",
-          "feed_in_limit_w": "Einspeisegrenze"
+          "feed_in_mode": "Einspeisevorgabe"
         },
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
@@ -46,9 +57,22 @@
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
-          "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
-          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf.",
+          "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung.",
           "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind."
+        },
+        "sections": {
+          "feed_in_limit": {
+            "name": "Einspeisegrenze",
+            "description": "Nur bei einer begrenzten Einspeisevorgabe.",
+            "data": {
+              "feed_in_limit_w": "Höchstens (W)",
+              "feed_in_limit_pct": "Höchstens (% der PV-Leistung)"
+            },
+            "data_description": {
+              "feed_in_limit_w": "Was der Haushalt höchstens einspeisen darf, z. B. 800 W.",
+              "feed_in_limit_pct": "Anteil der installierten PV-Spitzenleistung, z. B. 60 %."
+            }
+          }
         }
       }
     },
@@ -57,7 +81,8 @@
       "sensor_missing": "Der gewählte Sensor existiert nicht.",
       "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
       "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
-      "feed_in_limit_needed": "Begrenzte Einspeisung braucht die Einspeisegrenze."
+      "feed_in_limit_needed": "Eine Vorgabe mit begrenzter Leistung braucht die Grenze in W.",
+      "feed_in_pct_needed": "Eine Vorgabe mit begrenztem Anteil braucht die Grenze in %."
     },
     "abort": {
       "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
@@ -93,26 +118,52 @@
         },
         "settings": {
           "title": "Einstellungen von {name}",
-          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt. Ein Teilsystem folgt der Regelung seines Systems und dem, was es bei vollem Akku tut; ein Gerät, das dem nicht folgt, ist ein eigenes System.",
+          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt. Ein Teilsystem folgt der Regelung und der Einspeisung seines Systems; ein Gerät, das dem nicht folgt, ist ein eigenes System.",
           "data": {
             "output_limit_w": "Ausgangsgrenze",
-            "limit_per_phase": "Grenze gilt pro Phase",
-            "phase": "Phase",
             "regulation": "Regelung",
-            "fixed_power_w": "Feste Leistung",
-            "when_full": "Wenn der Akku voll ist",
             "charges_from": "Akku lädt aus",
             "balance": "Akkus gleichen sich aus"
           },
           "data_description": {
             "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter Reparaturen vor.",
-            "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
-            "phase": "Die Phase, in die dieses Teilsystem einspeist.",
-            "regulation": "Gibt alles ab (einfacher Wechselrichter), richtet sich nach einem Smart Meter und deckt den Hausverbrauch (Nulleinspeisung) oder gibt eine feste Leistung ab. Gilt für alle seine Teilsysteme.",
-            "fixed_power_w": "Nur bei fester Leistung: was das System abgibt.",
-            "when_full": "Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken (dann wird PV über dem Verbrauch abgeregelt).",
+            "regulation": "Volle Leistung: gibt alles ab, was die PV liefert (einfacher Wechselrichter). Eigenverbrauch: richtet sich nach einem Smart Meter und deckt den Hausverbrauch. Feste Leistung: gibt eine eingestellte Leistung ab. Gilt für alle seine Teilsysteme. Bei einer Leistung, die nach Zeitplan wechselt, Eigenverbrauch wählen, oder feste Leistung mit dem Durchschnitt.",
             "charges_from": "Eigener PV: Der Akku sitzt vor dem Ausgang (Kompaktgerät, Hybrid-Wechselrichter). Dem Haushalt: eigener Wechselrichter am Hausnetz, lädt aus dem Überschuss des Hauses.",
             "balance": "Einschalten, wenn die Akkus der Teilsysteme ihre Ladestände angleichen (z. B. EcoFlow Stream). Dann gibt es für sie eine gemeinsame Akku-Prognose."
+          },
+          "sections": {
+            "fixed": {
+              "name": "Feste Leistung",
+              "description": "Nur bei der Regelung Feste Leistung.",
+              "data": {
+                "fixed_power_w": "Feste Leistung"
+              },
+              "data_description": {
+                "fixed_power_w": "Was das System abgibt."
+              }
+            },
+            "deviation": {
+              "name": "Abweichung von der Einspeisevorgabe",
+              "description": "Leer: Das System folgt der Einspeisevorgabe des Haushalts. Nur eintragen, was abweicht: Ein Wechselrichter mit voller Leistung, der keine Nulleinspeisung einhalten kann, speist den Rest trotzdem ein; ein Gerät, das bei vollem Akku weiter nur den Verbrauch deckt, speist nie ein.",
+              "data": {
+                "own_feed_in": "Einspeisung"
+              },
+              "data_description": {
+                "own_feed_in": "Gilt für alle seine Teilsysteme."
+              }
+            },
+            "phases": {
+              "name": "Phasen",
+              "description": "Mehrere Geräte auf verschiedenen Phasen.",
+              "data": {
+                "limit_per_phase": "Grenze gilt pro Phase",
+                "phase": "Phase"
+              },
+              "data_description": {
+                "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
+                "phase": "Die Phase, in die dieses Teilsystem einspeist."
+              }
+            }
           }
         },
         "menu": {
@@ -268,7 +319,7 @@
         "soc_unit": "Der Ladestand muss in % angegeben sein.",
         "system_taken": "Dieses System hat schon einen Akku. Ein zweiter ist ein eigenes Teilsystem.",
         "parent_not_possible": "Dieses System kann kein Teil sein: Es enthält selbst Teilsysteme, oder das gewählte System enthält PV-Gruppen oder einen Akku.",
-        "fixed_power_needed": "Feste Leistung braucht einen Wert."
+        "fixed_power_needed": "Die Regelung Feste Leistung braucht einen Wert unter Feste Leistung."
       },
       "abort": {
         "saved": "Gespeichert."
@@ -382,8 +433,9 @@
     "feed_in_mode": {
       "options": {
         "free": "Frei",
-        "limited": "Begrenzt",
-        "none": "Keine (Nulleinspeisung)"
+        "limited": "Höchstens eine Leistung (W)",
+        "percent": "Höchstens ein Anteil der PV-Leistung (%)",
+        "none": "Nulleinspeisung"
       }
     },
     "template": {
@@ -404,21 +456,21 @@
     },
     "regulation": {
       "options": {
-        "all": "Gibt alles ab",
-        "load": "Deckt den Hausverbrauch",
+        "all": "Volle Leistung",
+        "load": "Eigenverbrauch",
         "fixed": "Feste Leistung"
-      }
-    },
-    "when_full": {
-      "options": {
-        "all": "Alles abgeben",
-        "load": "Weiter nur den Verbrauch decken"
       }
     },
     "charges_from": {
       "options": {
         "own_pv": "Eigener PV",
         "house": "Dem Haushalt"
+      }
+    },
+    "own_feed_in": {
+      "options": {
+        "export": "Speist den Rest trotzdem ein",
+        "never": "Speist nie ein"
       }
     }
   },

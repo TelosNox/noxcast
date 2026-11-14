@@ -75,10 +75,11 @@ def _apply(hass: HomeAssistant, entry: NoxcastConfigEntry, changes: systems.Chan
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    """1.1 -> 1.6: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
+    """1.1 -> 1.7: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
     the ICON models Open-Meteo discontinues become ICON (icon_seamless, 1.4), the installation becomes
     systems (1.5, see systems.migrate), and each system of the top level one entry with its parts inside
-    (1.6, store.async_store; the devices and entities of the arrays move along)."""
+    (1.6, store.async_store; the devices and entities of the arrays move along), and "when the battery is full"
+    a deviation from the household's feed-in rule (1.7, systems.feed_in_rules)."""
     if entry.version > 1:
         return False
     if entry.minor_version < 3:
@@ -96,8 +97,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) ->
         _apply(hass, entry, changes)
         hass.config_entries.async_update_entry(entry, data=data, minor_version=5)
     if entry.minor_version < 6:
+        # "when full" of subsystems and groups becomes a deviation first, so that normalize lifts and keeps it
+        _apply(hass, entry, systems.feed_in_rules(entry.data, store.flat(entry)))
         _apply(hass, entry, systems.normalize(store.flat(entry), ulid_now))
         hass.config_entries.async_update_entry(entry, minor_version=6)
+    if entry.minor_version < 7:
+        _apply(hass, entry, systems.feed_in_rules(entry.data, store.flat(entry)))
+        hass.config_entries.async_update_entry(entry, minor_version=7)
     return True
 
 

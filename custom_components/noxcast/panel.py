@@ -22,7 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import flowchart, store, systems, views
-from .const import ARCHIVE_DAYS, CONF_FEED_IN_MODE, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
+from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -413,7 +413,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     entry = entries[0]
     c = entry.runtime_data
     _send(connection, msg, views.card_config(
-        c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), entry.data.get(CONF_FEED_IN_MODE, "none") != "none", c.batteries,
+        c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), systems.exports(entry.data, systems.systems_of(store.flat(entry))), c.batteries,
         _battery_names(entry), er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather")))
 
 

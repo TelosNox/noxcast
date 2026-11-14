@@ -496,7 +496,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for arr in self.arrays.values():
             change = pt.clear_change(self.site, arr.geometry)
 
-            def keep(t: float, since=arr.valid_since, own=history.full.get(arr.subentry_id, frozenset())) -> bool:
+            # a system following the load at a flat base load would look like a limit too
+            def keep(t: float, since=arr.valid_since, own=history.full.get(arr.subentry_id, frozenset())
+                     | history.held.get(arr.subentry_id, frozenset())) -> bool:
                 return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
@@ -1203,6 +1205,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return {}
         hour_now = now - now % 3600
         try:
+            factor = (await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0) * self.grid_sign
             low = await self._async_grid_low(installation, dt_util.utc_from_timestamp(day_start))
             for t, w in (await self._async_grid_low(installation, dt_util.utc_from_timestamp(
                     max(hour_now - 3600, day_start)), "5minute")).items():
@@ -1210,10 +1213,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 low[hour] = min(low.get(hour, w), w)
         except Exception as err:  # noqa: BLE001 – without them the correction reads held-back hours as clouds
             _LOGGER.debug("Today's grid statistics unavailable: %s", err)
-            low = {}
+            return {}
         try:
-            live = float(self.hass.states.get(self.grid).state) * self.grid_sign * (
-                await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0)
+            live = float(self.hass.states.get(self.grid).state) * factor
             low[hour_now] = min(low.get(hour_now, live), live)
         except (AttributeError, TypeError, ValueError):
             pass

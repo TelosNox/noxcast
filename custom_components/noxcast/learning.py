@@ -173,7 +173,7 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
-                     air or None, satellite or None, history.full, history.charge)
+                     air or None, satellite or None, history.full, history.charge, history.held)
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:

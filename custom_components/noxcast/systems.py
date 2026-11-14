@@ -534,6 +534,10 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
             else:
                 out.append({"node": sid, "setting": "feed_in_rule", "status": status, "value": _rule_value(household),
                             "inherited": "house"})
+        if s.arrays and regulation == "load" and not coordinated(systems, sid):
+            # what it held back for a low load: hours with the household importing little count as "at least"
+            grid = bool(household.get(CONF_GRID))
+            add(sid, "held_learning", SIMPLIFIED if grid else NOT_YET, True if grid else None)
         if s.battery and s.get(CONF_CHARGES_FROM):
             add(sid, "charges_from", SIMPLIFIED, s.get(CONF_CHARGES_FROM))
         if curtailed.get(sid):

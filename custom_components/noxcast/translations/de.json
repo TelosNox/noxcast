@@ -19,7 +19,7 @@
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
-          "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise nichts bezog, zählen beim Lernen als „mindestens so viel“.",
+          "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
           "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung."
@@ -55,7 +55,7 @@
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
-          "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise nichts bezog, zählen beim Lernen als „mindestens so viel“.",
+          "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
           "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung.",

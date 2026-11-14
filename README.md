@@ -197,7 +197,7 @@ counts:
 | Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
-| Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household stopped importing count as "at least this much" in learning, since the device may have held PV back |
+| Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |
 | Feed-in rule, feed-in limit | What the household may feed in, as the grid operator requires it or you want it: free, at most a power in W, at most a share of the PV peak power in %, or zero export (nothing, ever; surplus with full batteries counts as unused). Every system follows this rule unless it names a deviation. The limit is stored and counts in a later version |
 | Forecast days | 2–7, today included (default 3) |
 

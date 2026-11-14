@@ -20,11 +20,12 @@ const INST_TEXT = {
       limit_per_phase: "Grenze gilt pro Phase", phase: "Phase", regulation: "Regelung", fixed_power: "Feste Leistung",
       feed_in_rule: "Einspeisung", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
       sensor_limit: "Jeder Sensor liefert höchstens", full_learning: "PV-Gruppen, deren Lernen Stunden mit vollem Akku auslässt",
-      charge_learning: "Stunden mit größter Ladeleistung zählen als „mindestens“" },
+      charge_learning: "Stunden mit größter Ladeleistung zählen als „mindestens“",
+      held_learning: "Stunden, in denen der Haushalt kaum Strom bezog, zählen als „mindestens“" },
     values: { free: "frei", none: "Nulleinspeisung", all: "volle Leistung", load: "Eigenverbrauch", fixed: "feste Leistung",
       export: "speist den Rest trotzdem ein", never: "speist nie ein",
       own_pv: "eigener PV", house: "dem Haushalt", l1: "L1", l2: "L2", l3: "L3", three: "dreiphasig", yes: "ja", no: "nein",
-      chargeMissing: "braucht Sensor Akkuleistung und max. Ladeleistung" },
+      chargeMissing: "braucht Sensor Akkuleistung und max. Ladeleistung", gridMissing: "braucht die Netzleistung im Haupteintrag" },
     battery: "Akku", array: "PV-Gruppe", sensors: "{n} Sensoren", sensor: "1 Sensor", sub: "Teilsystem",
     empty: "enthält noch nichts", pick: "Auf einen Knoten im Bild tippen, um seine Einstellungen zu sehen.",
     openEntry: "Einträge öffnen", noSettings: "Keine Einstellungen, die Noxcast verrechnet.",
@@ -46,11 +47,12 @@ const INST_TEXT = {
       limit_per_phase: "Limit holds per phase", phase: "Phase", regulation: "Regulation", fixed_power: "Fixed power",
       feed_in_rule: "Feed-in", charges_from: "Battery charges from", balance: "Batteries balance each other",
       sensor_limit: "Each sensor delivers at most", full_learning: "PV arrays whose learning leaves out hours with the battery full",
-      charge_learning: "Hours charging at the maximum count as \"at least\"" },
+      charge_learning: "Hours charging at the maximum count as \"at least\"",
+      held_learning: "Hours in which the household imported little count as \"at least\"" },
     values: { free: "free", none: "zero export", all: "full power", load: "self-consumption", fixed: "fixed power",
       export: "feeds the rest in anyway", never: "never feeds in",
       own_pv: "own PV", house: "the household", l1: "L1", l2: "L2", l3: "L3", three: "three-phase", yes: "yes", no: "no",
-      chargeMissing: "needs the battery power sensor and max charge power" },
+      chargeMissing: "needs the battery power sensor and max charge power", gridMissing: "needs the grid power in the main entry" },
     battery: "Battery", array: "PV array", sensors: "{n} sensors", sensor: "1 sensor", sub: "Subsystem",
     empty: "contains nothing yet", pick: "Tap a node in the picture to see its settings.",
     openEntry: "Open entries", noSettings: "No settings Noxcast computes.",
@@ -155,6 +157,7 @@ class NoxcastInstallation extends HTMLElement {
     if (Array.isArray(v)) return v.map((x) => this._w(x)).join(", ");
     if (["output_limit", "fixed_power"].includes(setting)) return this._w(v);
     if (setting === "charge_learning") return v == null ? t.chargeMissing : this._w(v);
+    if (setting === "held_learning" && v == null) return t.gridMissing;
     if (["feed_in", "feed_in_rule"].includes(setting) && typeof v === "number") return `≤ ${this._w(v)}`;
     if (v && typeof v === "object" && "pct" in v) return `≤ ${Number(v.pct).toLocaleString(this._lang)} %`;
     if (setting === "old_soc") return String(v);

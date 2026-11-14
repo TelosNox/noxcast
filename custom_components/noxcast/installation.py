@@ -28,8 +28,9 @@ from .const import (
 FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
 CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (hourly peak)
 # a device that follows the house load regulates the grid to about zero: below this import at some time in an hour
-# it may have held PV back (zero-export controllers keep a small import of 10-50 W as margin)
-HELD_IMPORT_W = 60.0
+# it may have held PV back. Zero-export controllers keep an import of 10-100 W as margin; marking an hour too many
+# only turns an exact value into a lower bound, missing one teaches too little PV
+HELD_IMPORT_W = 100.0
 
 
 @dataclass(frozen=True)

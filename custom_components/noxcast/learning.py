@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, tzinfo
 
 from . import archive as fc_archive
@@ -42,12 +42,18 @@ class ArrayConfig:
     valid_since: float | None
     temp_coeff: float | None = None          # per K, from the datasheet
     limits: tuple[tuple[str, float], ...] = ()   # (sensor, fixed limit in W): periods at a limit are lower bounds
+    # (sensors, fixed limit in W): output limits of the systems the array belongs to, with every sensor of the
+    # arrays that share them; periods with their sum at the limit are lower bounds (installation.Cap)
+    caps: tuple[tuple[tuple[str, ...], float], ...] = ()
 
     @property
     def limit_w(self) -> float | None:
-        """The array's fixed limit: the sum of its sensors' limits, if every sensor has one (installation.py)."""
+        """The array's fixed limit: the sum of its sensors' limits, if every sensor has one, or the output limit of
+        a system that holds only this array, whichever is lower (installation.array_limit)."""
         limited = dict(self.limits)
-        return sum(limited.values()) if self.sensors and all(s in limited for s in self.sensors) else None
+        found = [sum(limited.values())] if self.sensors and all(s in limited for s in self.sensors) else []
+        found += [w for sensors, w in self.caps if set(sensors) == set(self.sensors)]
+        return min(found) if found else None
 
 
 @dataclass(frozen=True)
@@ -77,9 +83,11 @@ class PvHistory:
     power_min: dict[str, dict[float, float | None]]      # hourly minimum and maximum: steady hours
     power_max: dict[str, dict[float, float | None]]
     factors: dict[str, float]                            # sensor unit -> W
-    soc: Series                                          # highest state of charge of all batteries per hour (%)
+    soc: Series                                          # highest state of charge of the household's batteries (%)
     air_temp: Series | None = None                       # temperature archive (°C, middle of the hour)
     satellite_ghi: Series | None = None                  # satellite archive (W/m²)
+    # per array the hour starts in which a battery of its systems was full (installation.full_hours)
+    full: dict[str, frozenset[float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -161,20 +169,27 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
-                     air or None, satellite or None)
+                     air or None, satellite or None, history.full)
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
     """Periods in which a sensor of the array reached its fixed limit (curtailment.at_limit on the period maximum,
-    the mean where there is none): the array's power then is only a lower bound."""
-    out: set[float] = set()
-    for sensor, limit in arr.limits:
+    the mean where there is none), or the arrays of a system without a battery reached its output limit together:
+    the array's power then is only a lower bound. The sum of period maxima is at least the maximum of the sum, so
+    a period a little below a shared limit may count as at it: it becomes a lower bound where it was exact."""
+    def peaks(sensor: str) -> dict[float, float]:
         factor = history.factors.get(sensor, 1.0)
         high = history.power_max.get(sensor, {})
-        for t, mean in history.power.get(sensor, {}).items():
-            peak = high.get(t) if high.get(t) is not None else mean
-            if peak is not None and ct.at_limit(peak * factor, limit):
-                out.add(t)
+        return {t: peak * factor for t, mean in history.power.get(sensor, {}).items()
+                if (peak := high.get(t) if high.get(t) is not None else mean) is not None}
+
+    out: set[float] = set()
+    for sensor, limit in arr.limits:
+        out |= {t for t, v in peaks(sensor).items() if ct.at_limit(v, limit)}
+    for sensors, limit in arr.caps:
+        series = [peaks(s) for s in sensors]
+        common = set(series[0]).intersection(*series[1:]) if series else set()
+        out |= {t for t in common if ct.at_limit(sum(p[t] for p in series), limit)}
     return out
 
 
@@ -185,7 +200,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
-                             valid_since=arr.valid_since)
+                             valid_since=arr.valid_since, full=history.full.get(arr.subentry_id, frozenset()))
     if keep is not None:
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
@@ -254,11 +269,11 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
     """
     full = {t for t, v in history.soc.items() if v >= soc_full}
     peaks = {s: {t: v * history.factors.get(s, 1.0) for t, v in values.items() if v is not None}
-             for s, values in history.power_max.items()} if inst and inst.limited_arrays() else {}
+             for s, values in history.power_max.items()} if inst and (inst.limited_arrays() or inst.caps) else {}
     for sid, arr in arrays.items():
         limited = ct.limited_hours(inst, sid, peaks) if peaks else set()
-        fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now, full,
-                               limited)
+        fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
+                               full | history.full.get(sid, frozenset()), limited)
         if history.satellite_ghi:
             limit = inst.array_limit(sid) if inst else None
 

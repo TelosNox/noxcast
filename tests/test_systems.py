@@ -105,4 +105,6 @@ def test_behaviour_is_inherited_and_limits_both_hold():
     effects = {(e["node"], e["setting"]): e["status"] for e in tree["effects"]}
     assert effects[("house", "feed_in")] == sy.NOT_YET
     assert effects[("u", "output_limit")] == sy.EXACT         # with its battery: the battery forecast caps it
-    assert effects[("p", "balance")] == sy.EXACT and effects[("p", "output_limit")] == sy.NOT_YET
+    # shared by subsystems with batteries: the battery forecast caps them together, PV and learning do not yet
+    assert effects[("p", "balance")] == sy.EXACT and effects[("p", "output_limit")] == sy.SIMPLIFIED
+    assert effects[("u", "full_learning")] == sy.SIMPLIFIED and effects[("p", "regulation")] == sy.SIMPLIFIED

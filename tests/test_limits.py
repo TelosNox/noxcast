@@ -41,14 +41,14 @@ def test_an_array_has_a_limit_only_when_every_sensor_has_one():
 
 def test_cuts_take_the_limit_closest_to_the_modules_first():
     house = inst.build({"a": ["pv1", "pv2"], "b": ["pv3"]}, {"pv1": 200, "pv2": 200}, ["soc"], 95)
-    obs = ct.Observed({"pv1": ct.Stat(150, 192), "pv2": ct.Stat(100, 120), "pv3": ct.Stat(300)}, house_soc=97)
+    obs = ct.Observed({"pv1": ct.Stat(150, 192), "pv2": ct.Stat(100, 120), "pv3": ct.Stat(300)}, soc={"soc": 97})
     cuts = ct.cuts(house, obs)
     assert cuts["a"].reason is ct.Reason.INPUT_LIMIT and cuts["a"].fixed and cuts["a"].node == "pv1"
     assert cuts["b"].reason is ct.Reason.BATTERY_FULL and not cuts["b"].fixed and not cuts["b"].certain
-    below = ct.Observed({"pv1": ct.Stat(150, 189)}, house_soc=50)       # under 95 % of the limit: free
+    below = ct.Observed({"pv1": ct.Stat(150, 189)}, soc={"soc": 50})       # under 95 % of the limit: free
     assert ct.cuts(house, below) == {}
     # without a configured battery a state of charge says nothing
-    assert ct.cuts(LIMITED, ct.Observed({}, house_soc=100)) == {}
+    assert ct.cuts(LIMITED, ct.Observed({}, soc={"soc": 100})) == {}
 
 
 def test_limited_hours_from_the_period_maxima():
@@ -157,3 +157,75 @@ def test_the_archived_model_on_measured_weather_is_capped_like_the_forecast():
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
     ln.record_archive(plain, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, 95.0)
     assert plain["2026-06-01"]["hours"][str(t)]["measured"]["a"] > 600.0
+
+
+sy = load("systems")
+bt = load("battery")
+STREAM = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load", "output_limit_w": 800}),
+          "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "charges_from": "own_pv"}),
+          "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "charges_from": "house"}),
+          "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"}),
+          "south": ("array", "South", {"system": "u"}), "roof": ("array", "Roof", {"system": "r"}),
+          "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u", "max_soc": 100}),
+          "ba": ("battery", "AC Pro battery", {"system": "a", "soc_sensor": "soc.a", "max_soc": 90})}
+BATTERIES = {k: v[2] for k, v in STREAM.items() if v[0] == "battery"}
+
+
+def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
+    systems = sy.systems_of(STREAM)
+    arrays = {"south": ["pv.s"], "roof": ["pv.r"]}
+    free = inst.build(arrays, {}, [], 95, systems, BATTERIES, "free")
+    # the Ultra follows the load together with the AC Pro: both batteries; the roof delivers everything
+    assert free.stores_of("south") == (inst.Store("soc.u", 95.0), inst.Store("soc.a", 88.0))
+    assert free.stores_of("roof") == ()
+    # zero export: the roof's surplus can only go into the battery at the house grid
+    zero = inst.build(arrays, {}, [], 95, systems, BATTERIES, "none")
+    assert zero.stores_of("roof") == (inst.Store("soc.a", 88.0),)
+    # the old household setting still counts for every array
+    old = inst.build(arrays, {}, ["soc.x"], 95, systems, BATTERIES, "free")
+    assert inst.Store("soc.x", 95.0) in old.stores_of("roof") and old.soc_sensors() == ["soc.a", "soc.u", "soc.x"]
+    soc = {"soc.u": {0.0: 96.0, 3600.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 80.0}}
+    assert free.full_hours("south", soc) == {0.0, 3600.0} and free.full_hours("roof", soc) == set()
+    cut = ct.cuts(free, ct.Observed({"pv.s": ct.Stat(300), "pv.r": ct.Stat(300)}, soc={"soc.a": 90.0}))
+    assert cut["south"].reason is ct.Reason.BATTERY_FULL and cut["south"].node == "soc.a" and "roof" not in cut
+
+
+def test_output_limit_without_battery_is_a_fixed_limit():
+    one = {"s": ("system", "Inverter", {"name": "Inverter", "template": "inverter", "output_limit_w": 600}),
+           "x": ("array", "X", {"system": "s"})}
+    single = inst.build({"x": ["pv1", "pv2"]}, {"pv1": 400, "pv2": 400}, systems=sy.systems_of(one))
+    assert single.array_limit("x") == 600 and single.limited_arrays() == {"x": 600}     # the tighter one wins
+    two = {**one, "y": ("array", "Y", {"system": "s"})}
+    shared = inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(two))
+    # shared by two arrays: lower bounds when they reach it together, but no cap of a single forecast
+    assert shared.array_limit("x") is None and [c.arrays for c in shared.shared_caps("x")] == [("x", "y")]
+    peaks = {"pv1": {0.0: 400.0, 3600.0: 100.0}, "pv2": {0.0: 200.0, 3600.0: 100.0}}
+    assert ct.limited_hours(shared, "x", peaks) == {0.0} == ct.limited_hours(shared, "y", peaks)
+    cut = ct.cuts(shared, ct.Observed({"pv1": ct.Stat(380), "pv2": ct.Stat(200)}))
+    assert cut["y"].reason is ct.Reason.OUTPUT_LIMIT and cut["y"].fixed and cut["y"].node == "s"
+    # a battery below it, or a limit per phase, makes it no fixed limit
+    battery = {**one, "b": ("battery", "B", {"system": "s", "soc_sensor": "soc"})}
+    assert inst.build({"x": ["pv1"]}, systems=sy.systems_of(battery)).caps == ()
+    phase = {**one, "s": ("system", "Inverter", {"name": "Inverter", "output_limit_w": 600, "limit_per_phase": True})}
+    assert inst.build({"x": ["pv1"]}, systems=sy.systems_of(phase)).caps == ()
+
+
+def test_learning_leaves_out_full_hours_and_bounds_hours_at_a_shared_limit():
+    arr = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None,
+                         caps=((("pv1", "pv2"), 600.0),))
+    assert arr.limit_w is None                                          # shared: no limit of its own
+    history = ln.PvHistory({"pv1": {0.0: 300.0, 3600.0: 350.0, 7200.0: 100.0}, "pv2": {0.0: 300.0, 3600.0: 100.0}},
+                           {}, {}, {}, {}, full={"x": frozenset({3600.0})})
+    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    assert [t for t, _ in samples] == [0.0, 7200.0] and floors == {0.0}
+    alone = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None, caps=((("pv1",), 600.0),))
+    assert alone.limit_w == 600.0
+
+
+def test_subsystems_share_the_output_limit_in_the_battery_forecast():
+    shared = ("p", 800.0, ())
+    ultra = bt.Battery(2000, 0.5, arrays=("south",), shared=shared)
+    pro = bt.Battery(2000, 0.5, max_discharge_w=1200, shared=shared)
+    caps = bt.limits([ultra, pro], {"south": {0.0: 1000.0, 3600.0: 300.0}}, [0.0, 3600.0])
+    # 1000 W of PV behind 800 W together: 200 W only for the batteries, and they deliver nothing more
+    assert caps.capped == {0.0: 200.0} and caps.discharge == {0.0: 0.0, 3600.0: 500.0}

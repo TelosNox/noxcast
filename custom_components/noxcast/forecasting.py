@@ -132,14 +132,16 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
        models: dict[str, list[WeatherHour]], before: Today, actual: dict[str, Series],
        running: dict[str, tuple[float, float, float]], now: datetime, local_now: datetime, day_start: float,
        day_end: float, curtailed: set[float] | frozenset[float] = frozenset(), inst: Installation | None = None,
-       limited: dict[str, set[float]] | None = None) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
+       limited: dict[str, set[float]] | None = None, full: dict[str, set[float]] | None = None
+       ) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
     """PV forecast per array and in total: weather forecast, morning fix, clear sky, today's expected hours.
 
     weather: hours from local midnight to the horizon; models: each weather model on its own (for the
     archive); now: UTC, local_now: the same in the local time zone; curtailed: today's hour starts with possibly
     curtailed PV (curtailed_hours), which the intraday correction does not read as clouds; inst: the
     installation, whose fixed limits cap the forecast last; limited: per array today's hour starts at its fixed
-    limit, which the intraday correction treats like curtailed hours. Returns (data, the new Today, the
+    limit, which the intraday correction treats like curtailed hours; full: per array today's hour starts with a
+    battery full that may curtail it, treated the same. Returns (data, the new Today, the
     forecast per model and array).
 
     Everything up to the published values works on the uncapped forecast, so the intraday correction and the
@@ -200,7 +202,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
             measured = profile[:round(share * len(profile))]
             if measured and sum(profile) > 0:
                 partial = Partial(start, power, share, (sum(measured) / len(measured)) / (sum(profile) / len(profile)))
-        cut = curtailed | (limited or {}).get(sub_id, set())
+        cut = curtailed | (limited or {}).get(sub_id, set()) | (full or {}).get(sub_id, set())
         shift = clearness_shift(day, actual.get(sub_id, {}), clear, ts_now, arr.geometry.peak_w, partial, cut)
         result.correction[sub_id] = None if shift is None else round(shift, 3)
         result.expected[sub_id] = expected_hours(day, actual.get(sub_id, {}), clear, ts_now, shift)

@@ -31,7 +31,7 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
+    CONF_FEED_IN_MODE, CONF_LIMIT_PER_PHASE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
@@ -86,7 +86,11 @@ def _models_from_dict(d: dict) -> dict:
 type NoxcastConfigEntry = ConfigEntry[NoxcastCoordinator]
 
 
-def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
+def array_configs(entry: ConfigEntry, installation: inst.Installation | None = None) -> dict[str, ArrayConfig]:
+    """The arrays as learning sees them; installation adds the output limits of their systems."""
+    caps = installation.caps if installation else ()
+    sensors_of = {sid: tuple(sub.data[CONF_POWER_SENSORS]) for sid, sub in entry.subentries.items()
+                  if sub.subentry_type == SUBENTRY_ARRAY}
     configs = {}
     for sub_id, sub in entry.subentries.items():
         if sub.subentry_type != SUBENTRY_ARRAY:
@@ -105,19 +109,24 @@ def array_configs(entry: ConfigEntry) -> dict[str, ArrayConfig]:
             valid_since=dt_util.start_of_local_day(valid).timestamp() if valid else None,
             temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None,
             limits=tuple((s, float(w)) for s, w in sorted((d.get(CONF_SENSOR_LIMITS) or {}).items())
-                         if s in d[CONF_POWER_SENSORS] and w is not None and float(w) > 0))
+                         if s in d[CONF_POWER_SENSORS] and w is not None and float(w) > 0),
+            caps=tuple((tuple(s for a in c.arrays for s in sensors_of.get(a, ())), c.limit_w)
+                       for c in caps if sub_id in c.arrays))
     return configs
 
 
 def installation_of(entry: ConfigEntry) -> inst.Installation:
-    """The installation as configured: the arrays' sensors with their limits, the house's batteries."""
+    """The installation as configured: the arrays' sensors with their limits, the systems and their batteries."""
     arrays, limits = {}, {}
     for sub_id, sub in entry.subentries.items():
         if sub.subentry_type == SUBENTRY_ARRAY:
             arrays[sub_id] = list(sub.data[CONF_POWER_SENSORS])
             limits.update(sub.data.get(CONF_SENSOR_LIMITS) or {})
+    systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
+    batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
     return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
-                      float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)))
+                      float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
+                      entry.data.get(CONF_FEED_IN_MODE, "none"))
 
 
 def weather_days(forecast_days: int) -> int:
@@ -135,8 +144,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def __init__(self, hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=None)
         self.site = Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
-        self.arrays = array_configs(entry)
         self.installation = installation_of(entry)
+        self.arrays = array_configs(entry, self.installation)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
         self.grid: str | None = entry.data.get(CONF_GRID) or None
         self.grid_sign = -1.0 if entry.data.get(CONF_GRID_INVERT) else 1.0
@@ -339,6 +348,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # power limits change what is learned (hours at the limit are lower bounds); only when there are any
         if a.limits:
             key.append([list(x) for x in a.limits])
+        if a.caps:
+            key.append([[list(sensors), w] for sensors, w in a.caps])
         return key
 
     def _load_key(self) -> list:
@@ -444,9 +455,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.pv_backtest = result
         self._store.async_delay_save(self._store_data, 5)
 
+    def _limited_arrays(self) -> set[str]:
+        """Arrays with a fixed limit of their own or one shared with the other arrays of their system."""
+        return set(self.installation.limited_arrays()) | {a for c in self.installation.caps for a in c.arrays}
+
     def _near_limit(self, history: ln.PvHistory) -> pv_backtest.NearLimit | None:
         """(array id, hour start) -> the hour was at the array's fixed limit; None without limits."""
-        limited = self.installation.limited_arrays()
+        limited = self._limited_arrays()
         if not limited:
             return None
         peaks = {s: {t: v * history.factors.get(s, 1.0) for t, v in values.items() if v is not None}
@@ -468,8 +483,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for arr in self.arrays.values():
             change = pt.clear_change(self.site, arr.geometry)
 
-            def keep(t: float, since=arr.valid_since) -> bool:
-                return ((since is None or t >= since) and t - t % 3600 not in full
+            def keep(t: float, since=arr.valid_since, own=history.full.get(arr.subentry_id, frozenset())) -> bool:
+                return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
             for s in arr.sensors:
@@ -551,9 +566,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # hourly minimum and maximum tell steady hours from hours with passing clouds or dropouts
         power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
         power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
-        soc = await async_hourly_statistics(self.hass, list(options.get(CONF_SOC_SENSORS) or []), start, "max")
+        household = list(options.get(CONF_SOC_SENSORS) or [])
+        soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(self.installation.soc_sensors())),
+                                            start, "max")
         air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
-        history = ln.PvHistory(power, power_min, power_max, factors, ln.highest(soc), air_temp, satellite_ghi)
+        full = {sid: frozenset(self.installation.full_hours(sid, soc)) for sid in self.arrays}
+        history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
+                               air_temp, satellite_ghi, full)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 
@@ -755,8 +774,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 max_charge_w=float(d[CONF_MAX_CHARGE]) if d.get(CONF_MAX_CHARGE) else None,
                 max_discharge_w=float(d[CONF_MAX_DISCHARGE]) if d.get(CONF_MAX_DISCHARGE) else None,
                 output_w=float(system.get(CONF_OUTPUT_LIMIT)) if system and system.get(CONF_OUTPUT_LIMIT) else None,
-                arrays=system.arrays if system and not house else ()))
+                arrays=system.arrays if system and not house else (),
+                shared=self._shared_cap(system)))
         return units
+
+    def _shared_cap(self, system: sy.System | None) -> tuple[str, float, tuple[str, ...]] | None:
+        """The output limit a battery's system shares with the other subsystems of its system (battery.Battery)."""
+        parent = self.systems.get(system.parent or "") if system else None
+        if parent is None or not parent.get(CONF_OUTPUT_LIMIT) or parent.get(CONF_LIMIT_PER_PHASE):
+            return None
+        others = tuple(a for c in parent.children if self.systems[c].battery is None for a in self.systems[c].arrays)
+        return parent.id, float(parent.get(CONF_OUTPUT_LIMIT)), others
 
     def _log_battery(self, battery: dict | None, local_now: datetime, now: float) -> None:
         """Keep the first battery prediction after the morning fix, to compare it with what happens."""
@@ -1036,16 +1064,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return {}, {}
         return fc.today_actual(self.arrays, power, recent, self._factors, day_start, now)
 
-    async def _async_curtailed(self, day_start: float, now: float) -> set[float]:
-        """Today's hours with possibly curtailed PV (see forecasting.curtailed_hours)."""
-        options = self.config_entry.data
-        soc_ids = list(options.get(CONF_SOC_SENSORS) or [])
+    async def _async_curtailed(self, day_start: float, now: float) -> dict[str, set[float]]:
+        """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full (see
+        forecasting.curtailed_hours and installation.stores_of)."""
+        soc_ids = self.installation.soc_sensors()
         if not soc_ids:
-            return set()
-        live = []
+            return {}
+        live: dict[str, float] = {}
         for sid in soc_ids:
             try:
-                live.append(float(self.hass.states.get(sid).state))
+                live[sid] = float(self.hass.states.get(sid).state)
             except (AttributeError, TypeError, ValueError):
                 pass
         hour_now = now - now % 3600
@@ -1057,7 +1085,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – the live state still covers the running hour
             _LOGGER.debug("Today's state of charge statistics unavailable: %s", err)
             hourly, recent = {}, {}
-        return fc.curtailed_hours(hourly, recent, live, float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), now)
+        hours: dict[tuple[str, float], set[float]] = {}
+        out: dict[str, set[float]] = {}
+        for sid in self.arrays:
+            out[sid] = set()
+            for s in self.installation.stores_of(sid):
+                if (s.sensor, s.full_pct) not in hours:
+                    hours[(s.sensor, s.full_pct)] = fc.curtailed_hours(
+                        {s.sensor: hourly.get(s.sensor) or {}}, {s.sensor: recent.get(s.sensor) or {}},
+                        [live[s.sensor]] if s.sensor in live else [], s.full_pct, now)
+                out[sid] |= hours[(s.sensor, s.full_pct)]
+        return out
 
     async def _async_limited(self, day_start: float, now: float) -> dict[str, set[float]]:
         """Per array today's hours in which a sensor was at its fixed limit (see curtailment.limited_hours).
@@ -1065,8 +1103,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         Like _async_curtailed: hourly maxima, 5-minute maxima for the hours not yet compiled, and the current
         state for the running hour.
         """
-        limited = self.installation.limited_arrays()
-        sensors = sorted({i.sensor for a in limited for i in self.installation.inputs_of(a)})
+        limited = self._limited_arrays()
+        cap_arrays = {a for c in self.installation.caps for a in c.arrays}
+        sensors = sorted({i.sensor for a in limited | cap_arrays for i in self.installation.inputs_of(a)})
         if not sensors:
             return {}
         factors = self._factors or {}
@@ -1122,7 +1161,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         learned = dict(self.learned)        # the same model for the forecast and its archived steps
         result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
             fc.pv, self.site, self.arrays, learned, weather, models, self._today, actual, running, utc_now,
-            local_now, day_start, day_end, curtailed, self.installation, limited)
+            local_now, day_start, day_end, frozenset(), self.installation, limited, curtailed)
         result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
         result.outlook = outlook
 

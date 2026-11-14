@@ -90,7 +90,8 @@ class PvHistory:
     full: dict[str, frozenset[float]] = field(default_factory=dict)
     # per array the hour starts in which a battery of its systems charged at its maximum (installation.charge_hours)
     charge: dict[str, frozenset[float]] = field(default_factory=dict)
-    # per array the hour starts in which its system may have held PV back for a low load (installation.held_hours)
+    # per array the hour starts in which its system may have held PV back for a low load or at the household's
+    # feed-in limit (installation.held_hours)
     held: dict[str, frozenset[float]] = field(default_factory=dict)
 
 

@@ -521,11 +521,11 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
     limited = mode in ("limited", "percent")
     grid = bool(household.get(CONF_GRID))
     limit_w = feed_in_limit_w(household, subs) if limited else None
-    add("house", "feed_in", (SIMPLIFIED if grid and limit_w else NOT_YET) if limited else EXACT,
-        _rule_value(household, subs))
-    if limited:
-        add("house", "limit_learning", SIMPLIFIED if grid and limit_w else NOT_YET,
-            round(limit_w) if grid and limit_w else None)
+    # it counts only where an array follows it; every system deviating, nothing does
+    counts = bool(grid and limit_w and export_limited_arrays(household, systems))
+    add("house", "feed_in", (SIMPLIFIED if counts else NOT_YET) if limited else EXACT, _rule_value(household, subs))
+    if limited and limit_w and export_limited_arrays(household, systems):
+        add("house", "limit_learning", SIMPLIFIED if grid else NOT_YET, round(limit_w) if grid else None)
     if household.get(CONF_SOC_SENSORS):
         add("house", "old_soc", EXACT, len(household[CONF_SOC_SENSORS]))
     # every battery is simulated in one storage: exact only where they all balance in one system
@@ -566,7 +566,9 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
             batteries_below = any(x.battery for x in below) or (
                 sub and any(systems[c].battery for c in systems[s.parent].children))
             status = EXACT if effective == "free" else SIMPLIFIED if (
-                effective == "none" and batteries_below or effective in ("limited", "percent") and grid and limit_w
+                effective == "none" and batteries_below
+                # the limit counts for its PV in learning; a battery alone: its forecast does not split at it yet
+                or effective in ("limited", "percent") and counts and any(x.arrays for x in below)
             ) else NOT_YET
             if own:
                 add(sid, "feed_in_rule", status, behaviour(systems, sid, CONF_OWN_FEED_IN), sub)

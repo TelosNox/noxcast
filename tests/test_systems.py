@@ -283,7 +283,7 @@ def test_a_system_follows_the_household_rule_unless_it_deviates():
     pct = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "percent", "feed_in_limit_pct": 60},
                                                             systems, subs)}
     assert pct[("house", "feed_in")]["value"] == {"pct": 60} and pct[("s", "feed_in_rule")]["status"] == sy.NOT_YET
-    assert pct[("house", "limit_learning")]["status"] == sy.NOT_YET and pct[("house", "limit_learning")]["value"] is None
+    assert ("house", "limit_learning") not in pct          # no peak power yet: no limit in W
     # with peak power and the grid sensor: the share in W, and the hours at it count as "at least"
     peaks = {**subs, "south": ("array", "South", {"system": "u", "peak_power": 6000,
                                                   "orientation_2": {"tilt": 30, "azimuth": 90, "peak_power": 4000}})}

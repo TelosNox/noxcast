@@ -1203,7 +1203,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_held_today(self, installation: inst.Installation, day_start: float, now: float
                                 ) -> dict[str, set[float]]:
-        """Per array today's hours in which its system may have held PV back for a low load: hourly minima,
+        """Per array today's hours in which its system may have held PV back for a low load or at the feed-in
+        limit: hourly minima,
         5-minute minima for the hours not yet compiled, and the current state for the running hour."""
         if not self.grid or not installation.held:
             return {}

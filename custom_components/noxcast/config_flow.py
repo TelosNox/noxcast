@@ -284,7 +284,7 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
                 # the update listener reloads; reloading here as well is an error from Home Assistant 2026.12
                 return self.async_update_and_abort(entry, data=user_input)
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
-                                    errors=errors)
+                                    errors=errors, description_placeholders={"concept": _concepts(self.hass, "blocks")})
 
     @staticmethod
     @callback
@@ -370,14 +370,27 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
 class _DiagramMixin:
     """The installation's flow diagram on top of a subentry form, so the form shows where the part sits."""
 
-    def _diagram(self) -> dict[str, str]:
-        from .panel import diagram_markdown
+    def _diagram(self, *concepts: str) -> dict[str, str]:
+        """{diagram}: the installation; {concept}: the explanatory drawings named (concepts.py)."""
+        return {"diagram": _image(lambda: _panel().diagram_markdown(self.hass, self._get_entry())),  # type: ignore[attr-defined]
+                "concept": _concepts(self.hass, *concepts)}  # type: ignore[attr-defined]
 
-        try:
-            return {"diagram": diagram_markdown(self.hass, self._get_entry())}  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001 – the form works without the picture
-            _LOGGER.debug("Installation diagram for the form unavailable", exc_info=True)
-            return {"diagram": ""}
+
+def _panel():
+    from . import panel
+    return panel
+
+
+def _image(make) -> str:
+    try:
+        return make()
+    except Exception:  # noqa: BLE001 – the form works without the picture
+        _LOGGER.debug("Picture for the form unavailable", exc_info=True)
+        return ""
+
+
+def _concepts(hass: HomeAssistant, *names: str) -> str:
+    return _image(lambda: _panel().concept_markdown(hass, *names)) if names else ""
 
 
 def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -747,8 +760,10 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
                 if parent:
                     self._basics[CONF_PARENT] = parent
                 return await self.async_step_settings()
+        # a new system of the top level: how the parts nest, then the templates; otherwise the templates
+        drawings = ("blocks", "templates") if step == "user" else ("templates",)
         return self.async_show_form(step_id=step, data_schema=_system_basics(user_input or old, parents),
-                                    errors=errors, description_placeholders=self._diagram())
+                                    errors=errors, description_placeholders=self._diagram(*drawings))
 
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         template = self._basics[CONF_TEMPLATE]
@@ -778,8 +793,11 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
                 self._save({sid: (SUBENTRY_SYSTEM, data[CONF_NAME], data)})
                 self._node = sid
                 return await self.async_step_menu()
+        # two drawings at most: what the form's own settings are about
+        drawings = ("subsystems", "limits") if sub else ("subsystems", "regulation") if group else ("regulation", "limits")
         return self.async_show_form(
-            step_id="settings", errors=errors, description_placeholders={"name": self._basics[CONF_NAME]},
+            step_id="settings", errors=errors,
+            description_placeholders={"name": self._basics[CONF_NAME], "concept": _concepts(self.hass, *drawings)},
             data_schema=_system_settings(user_input or defaults, battery=battery, group=group, sub=sub))
 
     async def async_step_array(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -794,7 +812,7 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
             data.setdefault(CONF_SYSTEM, self._node)
             self._save({own or ulid_now(): (SUBENTRY_ARRAY, data[CONF_NAME], data)})
             return await self.async_step_menu()
-        return self.async_show_form(step_id="array", errors=errors, description_placeholders=self._diagram(),
+        return self.async_show_form(step_id="array", errors=errors, description_placeholders=self._diagram("array"),
                                     data_schema=_array_schema(user_input or old, choices))
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:

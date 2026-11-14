@@ -18,7 +18,9 @@ def _headings(text: str) -> list[int]:
 
 
 def _images(text: str) -> list[str]:
-    return re.findall(r"!\[[^\]]*\]\(([^)]+)\)|<img src=\"([^\"]+)\"", text)
+    """Image addresses; a drawing in two languages (name.de.svg / name.en.svg) counts as the same image."""
+    found = re.findall(r"!\[[^\]]*\]\(([^)]+)\)|<img src=\"([^\"]+)\"", text)
+    return [tuple(re.sub(r"\.(de|en)\.svg$", ".svg", x) for x in m) for m in found]
 
 
 def _code(text: str) -> Counter:
@@ -33,6 +35,7 @@ def test_german_readme_matches_english() -> None:
     en, de = _read("README.md"), _read("README.de.md")
     assert _headings(de) == _headings(en), "headings differ in number or level"
     assert _images(de) == _images(en), "images differ"
+    assert ".de.svg" not in en and ".en.svg" not in de, "a drawing in the other language"
     assert _code(de) == _code(en), f"code spans differ: {(_code(en) - _code(de)) + (_code(de) - _code(en))}"
     assert _table_rows(de) == _table_rows(en), "table rows differ"
     assert "(README.de.md)" in en and "(README.md)" in de, "language switch missing"

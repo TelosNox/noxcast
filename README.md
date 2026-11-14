@@ -127,8 +127,8 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 
 ### Set up
 
-1. Settings → Devices & services → *Add integration* → **Noxcast**. Pick the battery's state of charge sensor if
-   you have one and choose whether surplus may go to the grid; everything else can stay empty.
+1. Settings → Devices & services → *Add integration* → **Noxcast**. Choose the feed-in rule (what may go to the
+   grid: free, limited or zero export); everything else can stay empty.
 2. On the integration page: ⋮ → *Add system*. Choose what the system is (e.g. an inverter without battery), then
    add its PV arrays in its menu: pick the power sensor(s), enter tilt, azimuth and peak power. Add one array per
    group of modules that is measured together.
@@ -166,6 +166,29 @@ Settings → Devices & services → Add integration → **Noxcast**. Then add su
 integration page (⋮ → *Add system* / *Add consumer*). A system's PV arrays, battery and subsystems sit inside its
 entry: opening it shows a menu with everything in it, and each item opens its form.
 
+### How it fits together
+
+![Household with three systems: an inverter with two PV arrays, a device with PV and battery, and coupled systems with two subsystems; their outputs reach the house, which feeds the grid within the feed-in rule](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-blocks.en.svg)
+
+The household holds the house load, the grid and the *feed-in rule*. Inside it sit the systems: a system is what
+delivers through one output to the house. It holds PV arrays and at most one battery, or subsystems: devices that
+one control coordinates, such as the units of an EcoFlow Stream.
+
+Rules go from the outside in: a subsystem follows the regulation and feed-in of its system, a system follows the
+household's feed-in rule. Only what differs is entered, as a deviation. Limits hold at every level, the tighter one
+counts:
+
+![Chain of limits: power limit per sensor between PV array and system, output limit between system and house, feed-in rule between house and grid](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.en.svg)
+
+| Your installation | In Noxcast |
+|---|---|
+| Roof inverter without battery | One system *Inverter without battery* with its PV arrays, regulation *Full power* |
+| Hybrid inverter with battery | One system *PV with battery in one device*: one PV array per MPPT input, its battery, regulation *Self-consumption* |
+| Balcony device with battery | The same template with the output limit, e.g. 800 W |
+| Plug-in battery that charges from surplus | One system *Battery at the house grid*, without PV arrays |
+| EcoFlow Stream with Ultra and AC Pro | One system *Coupled systems* with the shared limit and *Batteries balance each other*; its subsystems are the Ultra with its PV arrays and battery and the AC Pro with its battery |
+| Old roof inverter and a Stream, grid operator requires zero export | Two systems and the feed-in rule *Zero export*. The roof cannot hold it: its system gets the deviation *Feeds the rest in anyway*. The Stream follows the rule |
+
 ### 1. Main entry
 
 | Field | Meaning |
@@ -190,12 +213,18 @@ battery, and adds or removes them; a subsystem has a menu of its own. Each form 
 closes the dialog. Deleting a system deletes everything inside it. Subsystems have no entry of their own: they are in the entry of their system, so the list of
 entries shows what sits inside what.
 
+![The four templates: inverter without battery, PV with battery in one device, battery at the house grid, coupled systems](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-templates.en.svg)
+
 | Template | For |
 |---|---|
 | Inverter without battery | Micro-inverter, string inverter, an older roof installation |
 | PV with battery in one device | Balcony device with battery, hybrid inverter, a DC battery between modules and micro-inverter |
 | Battery at the house grid | Plug-in battery or battery inverter with its own inverter, without PV |
 | Coupled systems | Devices that coordinate and share a limit, e.g. EcoFlow Stream with several units; they become its subsystems |
+
+![The three regulations over a sunny day: full power delivers the PV, self-consumption follows the house load, fixed power delivers a set power; the rest goes into the battery](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-regulation.en.svg)
+
+![Coupled systems: two subsystems with their own limits under a shared limit, batteries that balance each other](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-subsystems.en.svg)
 
 | Setting | Meaning |
 |---|---|
@@ -215,6 +244,8 @@ on top. Later versions compute more of the settings without new input.
 ### 3. PV arrays (one per group of power sensors)
 
 An array is what is measured together, usually one MPPT input or one inverter.
+
+![A PV array: modules east and west on two sensors, each with its limit, summed](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-array.en.svg)
 
 | Field | Meaning |
 |---|---|

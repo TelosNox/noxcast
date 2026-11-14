@@ -129,8 +129,8 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 
 ### Einrichten
 
-1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Den Sensor für den Akku-Ladezustand
-   wählen, falls vorhanden, und ob Überschuss ins Netz darf; alles andere kann leer bleiben.
+1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Die Einspeisevorgabe wählen (was ins
+   Netz darf: frei, begrenzt oder Nulleinspeisung); alles andere kann leer bleiben.
 2. Auf der Seite der Integration: ⋮ → *System hinzufügen*. Wählen, was das System ist (z. B. Wechselrichter ohne
    Akku), dann in seinem Menü die PV-Gruppen hinzufügen: den oder die Leistungssensoren wählen, Neigung, Azimut und
    Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird.
@@ -168,6 +168,29 @@ Untereinträge anlegen (⋮ → *System hinzufügen* / *Verbraucher hinzufügen*
 Systems stecken in seinem Eintrag: Öffnen zeigt ein Menü mit allem, was darin ist, und jeder Punkt öffnet sein
 Formular.
 
+### So hängt alles zusammen
+
+![Haushalt mit drei Systemen: ein Wechselrichter mit zwei PV-Gruppen, ein Gerät mit PV und Akku und gekoppelte Systeme mit zwei Teilsystemen; ihre Ausgänge gehen ins Haus, das im Rahmen der Einspeisevorgabe ins Netz einspeist](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-blocks.de.svg)
+
+Der Haushalt hat den Hausverbrauch, das Netz und die *Einspeisevorgabe*. Darin stecken die Systeme: Ein System ist,
+was über einen Ausgang Strom ans Haus abgibt. Es enthält PV-Gruppen und höchstens einen Akku, oder Teilsysteme: Geräte,
+die eine Steuerung gemeinsam regelt, etwa die Geräte eines EcoFlow Stream.
+
+Vorgaben gelten von außen nach innen: Ein Teilsystem folgt der Regelung und Einspeisung seines Systems, ein System
+der Einspeisevorgabe des Haushalts. Eingetragen wird nur, was abweicht, als Abweichung. Grenzen gelten auf jeder
+Ebene, die engere zählt:
+
+![Kette der Grenzen: Leistungsgrenze je Sensor zwischen PV-Gruppe und System, Ausgangsgrenze zwischen System und Haus, Einspeisevorgabe zwischen Haus und Netz](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.de.svg)
+
+| Deine Anlage | In Noxcast |
+|---|---|
+| Dach-Wechselrichter ohne Akku | Ein System *Wechselrichter ohne Akku* mit seinen PV-Gruppen, Regelung *Volle Leistung* |
+| Hybrid-Wechselrichter mit Akku | Ein System *PV mit Akku in einem Gerät*: eine PV-Gruppe je MPPT-Eingang, sein Akku, Regelung *Eigenverbrauch* |
+| Balkongerät mit Akku | Dieselbe Vorlage mit der Ausgangsgrenze, z. B. 800 W |
+| Steckerspeicher, der aus dem Überschuss lädt | Ein System *Akku am Hausnetz*, ohne PV-Gruppen |
+| EcoFlow Stream mit Ultra und AC Pro | Ein System *Gekoppelte Systeme* mit der gemeinsamen Grenze und *Akkus gleichen sich aus*; seine Teilsysteme sind der Ultra mit seinen PV-Gruppen und seinem Akku und der AC Pro mit seinem Akku |
+| Alter Dach-Wechselrichter und ein Stream, Netzbetreiber verlangt Nulleinspeisung | Zwei Systeme und die Einspeisevorgabe *Nulleinspeisung*. Das Dach kann sie nicht einhalten: Sein System bekommt die Abweichung *Speist den Rest trotzdem ein*. Der Stream folgt der Vorgabe |
+
 ### 1. Haupteintrag
 
 | Feld | Bedeutung |
@@ -193,12 +216,18 @@ von …*, seine Teilsysteme, PV-Gruppen und seinen Akku und fügt sie hinzu oder
 eigenes Menü. Jedes Formular speichert beim Absenden, *Fertig* schließt nur den Dialog. Ein System zu löschen löscht alles, was darin
 steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres Systems, so zeigt die Liste der Einträge, was worin steckt.
 
+![Die vier Vorlagen: Wechselrichter ohne Akku, PV mit Akku in einem Gerät, Akku am Hausnetz, gekoppelte Systeme](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-templates.de.svg)
+
 | Vorlage | Für |
 |---|---|
 | Wechselrichter ohne Akku | Mikro-Wechselrichter, String-Wechselrichter, eine ältere Dachanlage |
 | PV mit Akku in einem Gerät | Balkongerät mit Akku, Hybrid-Wechselrichter, ein DC-Speicher zwischen Modulen und Mikro-Wechselrichter |
 | Akku am Hausnetz | Steckerspeicher oder Speicher-Wechselrichter mit eigenem Wechselrichter, ohne PV |
 | Gekoppelte Systeme | Geräte, die sich absprechen und eine Grenze teilen, z. B. EcoFlow Stream mit mehreren Geräten; sie werden seine Teilsysteme |
+
+![Die drei Regelungen über einen sonnigen Tag: Volle Leistung gibt die PV ab, Eigenverbrauch folgt dem Hausverbrauch, Feste Leistung gibt eine eingestellte Leistung ab; der Rest geht in den Akku](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-regulation.de.svg)
+
+![Gekoppelte Systeme: zwei Teilsysteme mit eigenen Grenzen unter einer gemeinsamen Grenze, Akkus, die sich ausgleichen](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-subsystems.de.svg)
 
 | Einstellung | Bedeutung |
 |---|---|
@@ -218,6 +247,8 @@ PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen me
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 
 Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein Wechselrichter.
+
+![Eine PV-Gruppe: Module Ost und West an zwei Sensoren, jeder mit seiner Grenze, addiert](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-array.de.svg)
 
 | Feld | Bedeutung |
 |---|---|

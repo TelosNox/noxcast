@@ -358,13 +358,14 @@ def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
     return sid in systems and systems[sid].get(CONF_CHARGES_FROM) == "house"
 
 
-def charge_curtails(systems: Mapping[str, System], sid: str, feed_in_mode: str) -> bool:
+def charge_curtails(systems: Mapping[str, System], sid: str) -> bool:
     """A battery charging at its maximum power curtails PV only where the rest cannot go out: its system follows
-    the house load, an output limit holds above it (its own or its system's), or nothing may be exported."""
+    the house load or an output limit holds above it (its own or its system's). The household's zero export does
+    not count on its own: what holds the export at zero is the system's regulation, and one that delivers
+    everything lets the rest go out."""
     s = systems[sid]
     above = [s, *([systems[s.parent]] if s.parent is not None else [])]
-    return (behaviour(systems, sid, CONF_REGULATION) == "load" or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
-            or feed_in_mode == "none")
+    return behaviour(systems, sid, CONF_REGULATION) == "load" or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
 
 
 def curtailed_arrays(systems: Mapping[str, System]) -> dict[str, tuple[str, ...]]:
@@ -455,7 +456,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         if curtailed.get(sid):
             # every hour with the battery full is left out, also one in which the output stayed below its ceiling
             add(sid, "full_learning", SIMPLIFIED, len(curtailed[sid]))
-            if charge_curtails(systems, sid, mode):
+            if charge_curtails(systems, sid):
                 # charging at its maximum it takes no more either: a lower bound, known from its power sensor and
                 # maximum
                 d = batteries.get(s.battery or "", {})

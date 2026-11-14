@@ -265,13 +265,14 @@ forecast per system that does not balance with others follows in a later version
 
 Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
 *covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
-under a shared output limit, the batteries of the other subsystems. A battery that is no part of the system, also one
-at the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so
-it curtails the same with it or without. A battery counts as full from *Battery considered full at*, or 2 points below its upper limit if that is lower
-(with a limit from an entity, its current value). A battery that charges at its maximum power (hourly peak from
-95 % of *Max charge power*) takes no more either: where the rest cannot go out (the system covers the house load, an
-output limit holds, or zero export), learning counts these hours as "at least this much", like a fixed limit. Leaving
-them out would drop just the bright hours. This needs the battery power sensor and the maximum charge power.
+under a shared output limit, the batteries of the other subsystems. A battery outside the array's system, also one at
+the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so it
+curtails the same with it or without. A battery counts as full from *Battery considered full at*, or 2 points below
+its upper limit if that is lower (with a limit from an entity, its current value). A battery that charges at its
+maximum power (hourly peak from 95 % of *Max charge power*) takes no more either: where the rest cannot go out (the
+system covers the house load or an output limit holds), learning counts these hours as "at least this
+much", like a fixed limit. Leaving them out would drop just the bright hours. This needs the battery power sensor and
+the maximum charge power.
 
 ### 6. Options (⋮ → Configure)
 

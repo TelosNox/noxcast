@@ -276,6 +276,8 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
     free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "all"})}
     assert inst.build({"south": ["pv.s"]}, {}, [], 95, sy.systems_of(free), batteries, "free").chargers() == []
+    # the household's zero export alone changes nothing: a system that delivers everything lets the rest go out
+    assert inst.build({"south": ["pv.s"]}, {}, [], 95, sy.systems_of(free), batteries, "none").chargers() == []
     effects = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, power)}
     assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000
     unknown = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, STREAM)}

@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b3] - 2026-11-14
+
 ### Added
 - The configuration forms explain the building blocks with small drawings: how household, systems, subsystems,
   PV arrays and batteries nest, the four templates, the three regulations, the chain of limits and what a PV array

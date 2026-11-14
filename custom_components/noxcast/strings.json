@@ -633,7 +633,7 @@
         "step": {
           "init": {
             "title": "Output limit for {name}?",
-            "description": "Together, the PV arrays of **{name}** ({arrays}) delivered no more than {peak} W in the last {window_days} days, and on {flat_days} days their sum stayed flat at or near that level while the sun would have changed it, although none of them stayed flat on its own. This looks like the output limit of the inverter.\n\nSet an output limit of {limit} W for **{name}**? The forecast of its PV arrays together is then capped at it. The value is what the power sensors measure at the limit: sensors of DC power show a few percent more than the inverter's AC rating. Until you answer, nothing changes.",
+            "description": "Together, the PV arrays of **{name}** ({arrays}) delivered no more than {peak} W in the last {window_days} days, and on {flat_days} days their sum stayed flat at or near that level while the clear sky would have changed it and offered more. This looks like the output limit of the inverter.\n\nSet an output limit of {limit} W for **{name}**? The forecast of its PV arrays together is then capped at it. The value is what the power sensors measure at the limit: sensors of DC power show a few percent more than the inverter's AC rating. Until you answer, nothing changes.",
             "menu_options": {
               "set_limit": "Set output limit of {limit} W",
               "other_value": "Other value",

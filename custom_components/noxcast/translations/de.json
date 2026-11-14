@@ -105,7 +105,7 @@
             "balance": "Akkus gleichen sich aus"
           },
           "data_description": {
-            "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben. Ohne Akku so, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter Reparaturen vor.",
+            "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter Reparaturen vor.",
             "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
             "phase": "Die Phase, in die dieses Teilsystem einspeist.",
             "regulation": "Gibt alles ab (einfacher Wechselrichter), deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Leer in einem Teilsystem: wie sein System.",
@@ -633,7 +633,7 @@
         "step": {
           "init": {
             "title": "Ausgangsgrenze für {name}?",
-            "description": "Die PV-Gruppen von **{name}** ({arrays}) haben in den letzten {window_days} Tagen zusammen nie mehr als {peak} W geliefert, und an {flat_days} Tagen blieb ihre Summe flach auf oder nahe diesem Wert, während die Sonne ihn verändert hätte, obwohl keine von ihnen allein flach blieb. Das sieht nach der Ausgangsgrenze des Wechselrichters aus.\n\nEine Ausgangsgrenze von {limit} W für **{name}** setzen? Die Prognose seiner PV-Gruppen wird dann zusammen darauf begrenzt. Der Wert ist das, was die Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung des Wechselrichters. Bis du antwortest, ändert sich nichts.",
+            "description": "Die PV-Gruppen von **{name}** ({arrays}) haben in den letzten {window_days} Tagen zusammen nie mehr als {peak} W geliefert, und an {flat_days} Tagen blieb ihre Summe flach auf oder nahe diesem Wert, während der klare Himmel sie verändert und mehr geboten hätte. Das sieht nach der Ausgangsgrenze des Wechselrichters aus.\n\nEine Ausgangsgrenze von {limit} W für **{name}** setzen? Die Prognose seiner PV-Gruppen wird dann zusammen darauf begrenzt. Der Wert ist das, was die Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung des Wechselrichters. Bis du antwortest, ändert sich nichts.",
             "menu_options": {
               "set_limit": "Ausgangsgrenze von {limit} W setzen",
               "other_value": "Anderer Wert",

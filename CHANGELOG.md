@@ -12,11 +12,11 @@ breaking changes.
   as east and west on one inverter: their sum stays below the limit in every 10-minute step, and each array gives
   up its share of what lies above. Forecast sensors, band, battery forecast and day view follow. The
   *Installation* tab shows this limit as computed exactly.
-- When the PV arrays of a system without battery together stay flat at a maximum on sunny days, although none of
-  them does alone, Noxcast suggests that value as the system's output limit under Repairs: *Set limit*, *Other
-  value* or *There is no limit*. The value is what the power sensors measure at the limit, so it also fits
-  sensors of DC power, which show a few percent more than the inverter's AC rating. It needs the 5-minute
-  values Noxcast keeps since its installation.
+- When the PV arrays of a system without battery together stay flat at a maximum on sunny days while the learned
+  clear sky would have given more, Noxcast suggests that value as the system's output limit under Repairs: *Set
+  output limit*, *Other value* or *There is no limit*. The value is what the power sensors measure at the limit,
+  so it also fits sensors of DC power, which show a few percent more than the inverter's AC rating. It needs the
+  5-minute values Noxcast has kept since its installation and PV arrays that have been learned.
 
 ### Changed
 - Each system is one entry with its PV arrays, battery and subsystems inside. Opening it shows a menu with

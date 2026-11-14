@@ -31,7 +31,7 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_FEED_IN_MODE, CONF_LIMIT_PER_PHASE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
+    CONF_FEED_IN_MODE, CONF_LIMIT_PER_PHASE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_REGULATION, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
@@ -197,7 +197,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._fine_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.fine")
         self.fine: dict = {}
         self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
-        # power limits seen in the measurements (plateau.py): {"detected": {sensor: Plateau.as_dict()},
+        # power limits seen in the measurements (plateau.py): {"detected": {sensor: Plateau.as_dict()}, "systems":
+        # {system: Plateau.as_dict()} (output limits on the sum), "dismissed_systems": {system: W},
         # "dismissed": {sensor: W the user said is no limit}}; only suggested, see issues.py
         self.limits: dict = {"detected": {}, "dismissed": {}, "systems": {}, "dismissed_systems": {}}
 
@@ -513,17 +514,25 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                               exclusions: list[tuple[float, float]], fine_days: dict) -> dict[str, dict]:
         """Executor. System id -> output limit seen in the summed 5-minute means of its PV sensors (plateau.detect_sum),
         for systems without a battery below them and without an output limit, with two sensors or more (one alone is
-        _detect_limits). The same hours are left out as there."""
+        _detect_limits), whose arrays have been learned (the sum is read against their learned clear sky). Not for a
+        system that follows the house load or delivers a fixed power: that cut is no limit. Not for a parent whose
+        PV all sits in one subsystem: the subsystem gets the suggestion. The same hours are left out as in
+        _detect_limits."""
         day_of = pv_backtest.local_day(dt_util.get_default_time_zone())
         full = {t for t, v in history.soc.items() if v is not None and v >= soc_full}
         out = {}
+        def members(x: sy.System) -> set[str]:
+            return {a for y in (x, *(self.systems[c] for c in x.children)) for a in y.arrays if a in self.arrays}
+
         for s in self.systems.values():
             tree = [s, *(self.systems[c] for c in s.children)]
-            if s.get(CONF_OUTPUT_LIMIT) or any(x.battery for x in tree):
+            if s.get(CONF_OUTPUT_LIMIT) or any(x.battery for x in tree) or any(
+                    sy.behaviour(self.systems, x.id, CONF_REGULATION) in ("load", "fixed") for x in tree):
                 continue
             arrays = [self.arrays[a] for x in tree for a in x.arrays if a in self.arrays]
             sensors = [x for arr in arrays for x in arr.sensors]
-            if len(sensors) < 2:
+            if len(sensors) < 2 or any(arr.subentry_id not in self.learned for arr in arrays) or any(
+                    members(self.systems[c]) == members(s) for c in s.children):
                 continue
             since = max((arr.valid_since for arr in arrays if arr.valid_since is not None), default=None)
             own = frozenset().union(*(history.full.get(arr.subentry_id, frozenset()) for arr in arrays))
@@ -533,7 +542,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                         and not any(a <= t < b for a, b in exclusions))
 
             steps = pt.summed_steps({x: {t: v for t, v in fn.series(fine_days, x).items() if keep(t)} for x in sensors})
-            found = pt.detect_sum(steps, now, day_of, pt.clear_change_sum(self.site, [arr.geometry for arr in arrays]))
+            clear = pt.learned_clear(self.site, [(arr.geometry, self.learned[arr.subentry_id]) for arr in arrays])
+            found = pt.detect_sum(steps, now, day_of, clear)
             if found is not None:
                 out[s.id] = found.as_dict()
         return out

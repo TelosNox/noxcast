@@ -21,9 +21,13 @@ room for a limit that moves with the temperature, as a current limit does).
 
 The output limit of an inverter with several inputs (a system without battery) cuts the sum of its sensors, while
 each sensor alone stays free: east rises while west falls. Hourly maxima cannot show a flat sum (the sum of the
-maxima is not the maximum of the sum), so detect_sum reads the 5-minute means of the sum, against the clear-sky
-change of the summed output (clear_change_sum). Its suggestion is the output limit as the sensors measure it:
-sensors of DC power show a few percent more than the inverter's AC rating.
+maxima is not the maximum of the sum), so detect_sum reads the 5-minute means of the sum. That is less certain:
+the sum of two orientations has a smooth maximum of its own, and where one side delivers less than its nominal
+share (shade, soiling, a wrong peak power) that maximum is flat within FLAT while the nominal sum still moves. So
+the sum is read against the learned clear-sky output of each array (learned_clear: efficiency and shade map), and
+a flat run counts only where that output lies clearly above it (MIN_CHANGE): the sky offered more than came out.
+Its suggestion is the output limit as the sensors measure it: sensors of DC power show a few percent more than
+the inverter's AC rating.
 """
 from __future__ import annotations
 
@@ -32,7 +36,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from .const import Series
-from .model import ArrayGeometry, array_irradiance
+from .model import ArrayGeometry, LearnedArray, array_irradiance, clearsky_profile
 from .solar import Site, clearsky_simplified_solis, extra_radiation, sun_position
 
 HOUR = 3600
@@ -80,12 +84,6 @@ def suggested_limit(peak_w: float) -> float:
 
 def clear_change(site: Site, geo: ArrayGeometry, step: float = STEP) -> Change:
     """Change of the array's clear-sky irradiance within a period, from the sun's path alone (no shade, no weather)."""
-    return clear_change_sum(site, [geo], step)
-
-
-def clear_change_sum(site: Site, geos: list[ArrayGeometry], step: float = STEP) -> Change:
-    """The same for the summed output of several arrays: each one's clear-sky irradiance weighted by its peak
-    power. East and west together change less around noon than either alone."""
     cache: dict[float, float] = {}
 
     def irradiance(t: float) -> float:
@@ -96,15 +94,30 @@ def clear_change_sum(site: Site, geos: list[ArrayGeometry], step: float = STEP) 
             else:
                 dni_extra = extra_radiation(t)
                 ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-                total = 0.0
-                for geo in geos:
-                    beam, diffuse, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
-                    total += (beam + diffuse) * (geo.peak_w if len(geos) > 1 else 1.0)
-                cache[t] = total
+                beam, diffuse, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
+                cache[t] = beam + diffuse
         return cache[t]
+    return _change_of(irradiance, step)
 
+
+def learned_clear(site: Site, arrays: list[tuple[ArrayGeometry, LearnedArray]]) -> Callable[[float], float]:
+    """The summed clear-sky power (W) of several arrays at a time, with what was learned for each (efficiency,
+    shade map), at the middle of its 5-minute step."""
+    cache: dict[float, list[float]] = {}
+
+    def power(t: float) -> float:
+        hour = t - t % HOUR
+        if hour not in cache:
+            per = [clearsky_profile(site, geo, la, hour, None, HOUR // STEP) for geo, la in arrays]
+            cache[hour] = [sum(x) for x in zip(*per)] if per else [0.0] * (HOUR // STEP)
+        return cache[hour][int((t - hour) // STEP)]
+    return power
+
+
+def _change_of(value: Callable[[float], float], step: float = STEP) -> Change:
+    """Change (1 - min / max) of a power or irradiance within a period, at the middle of its steps."""
     def change(start: float, end: float) -> float | None:
-        values = [irradiance(start + step / 2 + i * step) for i in range(max(1, round((end - start) / step)))]
+        values = [value(start + step / 2 + i * step) for i in range(max(1, round((end - start) / step)))]
         top = max(values)
         return 1 - min(values) / top if top > 0 else None
 
@@ -167,10 +180,13 @@ def day_level_hours(hours: list[tuple[float, float | None, float | None, float |
     return best
 
 
-def day_level_steps(steps: list[tuple[float, float]], top: float, change: Change) -> float | None:
+def day_level_steps(steps: list[tuple[float, float]], top: float, change: Change,
+                    clear: Callable[[float], float] | None = None) -> float | None:
     """The level of a flat run of 5-minute means (start, W) at the top of the day; None without one.
 
     top: the most the sensor delivered that day (hourly maximum); a run below it by more than FLAT is no plateau.
+    clear: the clear-sky power (W) at a step's start; given, the run counts only where it lay at least MIN_CHANGE
+    above the level within the run.
     """
     best = None
     i = 0
@@ -186,8 +202,9 @@ def day_level_steps(steps: list[tuple[float, float]], top: float, change: Change
         if j - i >= MIN_RUN_STEPS and hi >= MIN_W and hi >= (1 - FLAT) * top:
             before = steps[i - 1][1] if i > 0 and steps[i][0] - steps[i - 1][0] == STEP else None
             after = steps[j][1] if j < len(steps) and steps[j][0] - steps[j - 1][0] == STEP else None
+            above = clear is None or max(clear(t) for t, _ in steps[i:j]) >= (1 + MIN_CHANGE) * hi
             if (before is not None and after is not None and max(before, after) < (1 - FLAT) * hi
-                    and _moves(change, steps[i][0], steps[j - 1][0] + STEP)):
+                    and _moves(change, steps[i][0], steps[j - 1][0] + STEP) and above):
                 best = max(best or 0.0, hi)
             i = j
         else:
@@ -232,11 +249,13 @@ def detect(mean: Series, low: Series, high: Series, now: float, day_of: Callable
     return Plateau(peak, flat, len(days), window_days)
 
 
-def detect_sum(steps: Series, now: float, day_of: Callable[[float], date], change: Change,
+def detect_sum(steps: Series, now: float, day_of: Callable[[float], date], clear: Callable[[float], float],
                window_days: int = WINDOW_DAYS) -> Plateau | None:
     """The limit of several sensors together (a system's output limit) from the 5-minute means of their sum (W),
-    or None; change: the clear-sky change of their summed output (clear_change_sum). The same rules as detect on
-    the 5-minute archive: flat runs at the top of a day, framed, while the sun would have moved the sum."""
+    or None; clear: their learned clear-sky power (learned_clear). The rules of detect on the 5-minute archive:
+    flat runs at the top of a day, framed, while the learned clear sky would have moved the sum, and with that
+    clear sky clearly above the run."""
+    change = _change_of(clear)
     start = now - window_days * 86400
     days: dict[date, list[tuple[float, float]]] = {}
     for t, v in steps.items():
@@ -253,7 +272,7 @@ def detect_sum(steps: Series, now: float, day_of: Callable[[float], date], chang
         top = max(v for _, v in d)
         if top < (1 - DRIFT) * peak:
             continue
-        level = day_level_steps(d, top, change)
+        level = day_level_steps(d, top, change, clear)
         if level is not None and level >= (1 - DRIFT) * peak:
             flat += 1
     if flat < MIN_FLAT_DAYS:

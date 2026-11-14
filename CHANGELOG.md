@@ -23,10 +23,10 @@ breaking changes.
   caps the PV forecast of a system with one PV array (with several, the forecast is not capped yet).
 - Subsystems with batteries that share their system's output limit (e.g. EcoFlow Stream Ultra and AC Pro behind
   800 W) deliver together at most that limit in the battery forecast.
-- A battery charging at its maximum power counts like a full one where the rest of the PV cannot go out (the system
-  covers the house load, an output limit holds, or zero export): those hours are left out of learning and the
+- A battery charging at its maximum power may hold PV back where the rest cannot go out (the system covers the house
+  load, an output limit holds, or zero export): learning counts those hours as "at least this much", and the
   correction of today's forecast does not read them as clouds. It needs the battery power sensor and the maximum
-  charge power; run `noxcast.relearn` to apply it to the history.
+  charge power, and applies from the next learning run (`noxcast.relearn` applies it at once).
 
 ### Changed
 - A full battery leaves hours out of learning only for the PV arrays it can curtail: those of its own system, of

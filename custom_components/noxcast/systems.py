@@ -272,7 +272,8 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
             # every hour with the battery full is left out, also one in which the output stayed below its ceiling
             add(sid, "full_learning", SIMPLIFIED, len(curtailed[sid]))
             if charge_curtails(systems, sid, mode):
-                # charging at its maximum it takes no more either: known from its power sensor and maximum
+                # charging at its maximum it takes no more either: a lower bound, known from its power sensor and
+                # maximum
                 d = batteries.get(s.battery or "", {})
                 known = bool(d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE))
                 add(sid, "charge_learning", SIMPLIFIED if known else NOT_YET, d.get(CONF_MAX_CHARGE) if known else None)

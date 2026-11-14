@@ -263,9 +263,14 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     peaks = inst.charge_peaks(built.chargers(), {"p.u": {0.0: 0.98, 3600.0: 0.5}}, {"p.a": {7200.0: -0.49}},
                               {"p.u": 1000.0, "p.a": 1000.0})
     assert peaks == {"p.u": {0.0: 980.0, 3600.0: 500.0}, "p.a": {7200.0: 490.0}}
-    assert built.full_hours("south", {}, peaks) == {0.0, 7200.0} and built.full_hours("roof", {}, peaks) == set()
+    assert built.charge_hours("south", peaks) == {0.0, 7200.0} and built.charge_hours("roof", peaks) == set()
     cut = ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0}))
-    assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and not cut["south"].fixed
+    assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and cut["south"].fixed
+    # learning keeps the hour as a lower bound instead of leaving it out
+    arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
+    history = ln.PvHistory({"pv.s": {0.0: 900.0, 3600.0: 400.0}}, {}, {}, {}, {}, charge={"south": frozenset({0.0})})
+    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
     # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
     free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "group", "regulation": "all"})}
     assert inst.build({"south": ["pv.s"]}, {}, [], 95, sy.systems_of(free), batteries, "free").chargers() == []

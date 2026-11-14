@@ -80,10 +80,12 @@ def _not_enough(reason: str, days: int = 0, needed: int = 0) -> dict:
 
 
 def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> Series:
-    """The array's hours learning would use, with the mean power (W = Wh per hour)."""
+    """The array's hours learning would use, with the mean power (W = Wh per hour). An hour at a battery's charge
+    ceiling is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
+    full = history.full.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
-                               valid_since=arr.valid_since, full=history.full.get(arr.subentry_id, frozenset())))
+                               valid_since=arr.valid_since, full=full))
 
 
 def _lit(*values: float) -> bool:

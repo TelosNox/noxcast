@@ -250,7 +250,7 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | System | One battery per system. Empty: a system of its own at the house grid |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
-| Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the battery power sensor, hours charging at the maximum are left out of learning where PV may be held back (see below) |
+| Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the battery power sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
 
 With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
 above it can only charge the battery. Subsystems with batteries under a shared limit deliver together at most that
@@ -263,8 +263,8 @@ under a shared output limit, the batteries of the other subsystems; with zero ex
 grid. A battery counts as full from *Battery considered full at*, or 2 points below its upper limit if that is lower
 (with a limit from an entity, its current value). A battery that charges at its maximum power (hourly peak from
 95 % of *Max charge power*) takes no more either: where the rest cannot go out (the system covers the house load, an
-output limit holds, or zero export), these hours are left out the same way. This needs the battery power sensor and
-the maximum charge power.
+output limit holds, or zero export), learning counts these hours as "at least this much", like a fixed limit. Leaving
+them out would drop just the bright hours. This needs the battery power sensor and the maximum charge power.
 
 ### 6. Options (⋮ → Configure)
 

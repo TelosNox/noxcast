@@ -7,8 +7,11 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
   hours at it are lower bounds in learning. That holds for an input (MPPT, micro-inverter) and for the output limit
   of a system without a battery, alone or shared by its subsystems.
 - A battery's full state is a state, no cap: the hours it may have cut are left out of learning instead. Which
-  batteries count for an array follows from where they sit (stores_of). A battery charging at its maximum power
-  takes no more either, where the rest cannot go out (systems.charge_curtails): the same state.
+  batteries count for an array follows from where they sit (stores_of).
+- A battery charging at its maximum power takes no more either, where the rest cannot go out
+  (systems.charge_curtails): a ceiling of output plus charge power. The hour delivered at least what was measured,
+  so it is a lower bound in learning like a fixed limit (charge_hours). Leaving it out instead would select on the
+  measured PV itself, dropping the bright hours and bending the learned efficiency down (#248, E1).
 """
 from __future__ import annotations
 
@@ -96,17 +99,18 @@ class Installation:
         return sorted({st.charger for group in self.stores.values() for st in group if st.charger},
                       key=lambda c: c.sensor)
 
-    def full_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]],
-                   charging: Mapping[str, Mapping[float, float]] | None = None) -> set[float]:
-        """Period starts in which a battery that may curtail the array was full or charged at its maximum;
-        soc: sensor -> highest % per period; charging: power sensor -> highest charge power per period, W
+    def full_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]]) -> set[float]:
+        """Period starts in which a battery that may curtail the array was full; soc: sensor -> highest % per
+        period."""
+        return {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
+                if v is not None and v >= s.full_pct}
+
+    def charge_hours(self, array: str, charging: Mapping[str, Mapping[float, float]]) -> set[float]:
+        """Period starts in which a battery that may curtail the array charged at its maximum power: the array
+        delivered at least what was measured. charging: power sensor -> highest charge power per period, W
         (charge_peaks)."""
-        out = {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
-               if v is not None and v >= s.full_pct}
-        for s in self.stores_of(array):
-            if s.charger:
-                out |= {t for t, w in (charging or {}).get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
-        return out
+        return {t for s in self.stores_of(array) if s.charger
+                for t, w in charging.get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
 
     def array_limit(self, array: str) -> float | None:
         """The fixed limit of an array's measured sum: the sum of its sensors' limits, if every sensor has one,

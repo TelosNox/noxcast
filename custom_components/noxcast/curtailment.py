@@ -4,8 +4,9 @@ cuts() decides per array and period, from the modules outwards; the first reason
 
 1. input: a sensor of the array reached its fixed limit (period maximum at least 95 % of it) -> fixed limit.
 2. system: the arrays of a system without a battery reached its output limit together -> fixed limit.
-3. battery: a battery that may curtail the array (installation.stores_of) reached "full", or charged at its
-   maximum power where the rest could not go out -> possibly curtailed (a state).
+3. battery: a battery that may curtail the array (installation.stores_of) reached "full" -> possibly curtailed
+   (a state); or it charged at its maximum power where the rest could not go out -> possibly at a ceiling, the
+   hour delivered at least what was measured.
 
 A fixed limit says the hour delivered at least so much; a state says the hour shows nothing about the sun.
 Both are flagged in the archive. Learning still uses hours at a fixed limit: leaving them out selects the
@@ -94,7 +95,7 @@ def cuts(inst: Installation, obs: Observed) -> dict[str, Cut]:
         elif full is not None:
             out[array] = Cut(Reason.BATTERY_FULL, Level.HOUSE, full.sensor, False, False)
         elif charging is not None and charging.charger is not None:
-            out[array] = Cut(Reason.CHARGE_LIMIT, Level.SYSTEM, charging.charger.sensor, False, False)
+            out[array] = Cut(Reason.CHARGE_LIMIT, Level.HOUSE, charging.charger.sensor, True, False)
     return out
 
 

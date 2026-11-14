@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- A system with the regulation *Self-consumption* and no battery delivers only what the house draws, so on days
+  with a low load it held PV back, and learning read that as weak sun: efficiency and shade came out too low. With
+  the *Grid power* sensor in the main entry, hours in which the household imported little or nothing at times
+  (below 100 W) now count as "at least this much" in learning, the correction of today's forecast does not read
+  them as clouds, and the backtest leaves them out. The *Installation* tab shows this per system, or that the grid
+  power sensor is needed. Learning may change for such systems from the next nightly run on.
+
 ## [0.5.0b3] - 2026-11-14
 
 ### Added

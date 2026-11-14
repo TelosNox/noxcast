@@ -352,10 +352,7 @@ def _systems(entry: ConfigEntry) -> dict[str, sy.System]:
 
 
 def _part_choices(entry: ConfigEntry, battery: str | None = None) -> dict[str, str]:
-    """Systems that can take a PV array or a battery: those without subsystems; for a battery, those without one
-    (its own system excepted)."""
-    return {sid: s.name for sid, s in sorted(_systems(entry).items(), key=lambda kv: kv[1].name)
-            if not s.children and (battery is None or s.battery in (None, battery))}
+    return sy.part_owners(_systems(entry), battery)
 
 
 class _DiagramMixin:
@@ -641,13 +638,7 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
         return self._get_reconfigure_subentry().subentry_id if self.source == "reconfigure" else None
 
     def _parents(self) -> dict[str, str]:
-        """Systems that can take subsystems: top level, no arrays or battery of their own (either, never both).
-        None for a system that has subsystems itself (two levels at most)."""
-        systems, own = _systems(self._get_entry()), self._own()
-        if own in systems and systems[own].children:
-            return {}
-        return {sid: s.name for sid, s in sorted(systems.items(), key=lambda kv: kv[1].name)
-                if sid != own and s.parent is None and not s.arrays and not s.battery}
+        return sy.parent_owners(_systems(self._get_entry()), self._own())
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         self._old = {}

@@ -1,6 +1,7 @@
 // Noxcast panel section "Installation": the installation as a flow diagram (PV arrays -> systems -> house -> grid,
 // drawn by the backend, flowchart.py) and, for the node clicked, its settings and how far Noxcast already computes
-// each: exact, simplified or not yet.
+// each: exact, simplified or not yet. There a PV array, a battery or a system can be moved to another system
+// ("noxcast/move_part", the same rules as the forms).
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/installation".
 const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
@@ -26,6 +27,9 @@ const INST_TEXT = {
     battery: "Akku", array: "PV-Gruppe", sensors: "{n} Sensoren", sensor: "1 Sensor", sub: "Teilsystem",
     empty: "enthält noch nichts", pick: "Auf einen Knoten im Bild tippen, um seine Einstellungen zu sehen.",
     openEntry: "Einträge öffnen", noSettings: "Keine Einstellungen, die Noxcast verrechnet.",
+    belongs: "Gehört zu", batteryBelongs: "Akku gehört zu", alone: "– eigenständig am Haushalt –",
+    save: "Zuordnung speichern", saving: "Speichert …", notPossible: "Dorthin kann der Teil nicht.",
+    moveHelp: "Noxcast lädt danach neu, wie nach dem Bearbeiten eines Eintrags.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -48,6 +52,9 @@ const INST_TEXT = {
     battery: "Battery", array: "PV array", sensors: "{n} sensors", sensor: "1 sensor", sub: "Subsystem",
     empty: "contains nothing yet", pick: "Tap a node in the picture to see its settings.",
     openEntry: "Open entries", noSettings: "No settings Noxcast computes.",
+    belongs: "Belongs to", batteryBelongs: "Battery belongs to", alone: "– on its own at the household –",
+    save: "Save assignment", saving: "Saving …", notPossible: "The part cannot go there.",
+    moveHelp: "Noxcast reloads afterwards, as after editing an entry.",
   },
 };
 
@@ -58,6 +65,8 @@ class NoxcastInstallation extends HTMLElement {
     this.shadowRoot.addEventListener("click", (ev) => {
       const path = ev.composedPath();
       if (path.some((n) => n.dataset && n.dataset.refresh)) { this._load(); return; }
+      const save = path.find((n) => n.dataset && n.dataset.save);
+      if (save) { this._move(save.dataset.save); return; }
       if (path.some((n) => n.dataset && n.dataset.entries)) {
         history.pushState(null, "", "/config/integrations/integration/noxcast");
         window.dispatchEvent(new CustomEvent("location-changed"));
@@ -91,6 +100,48 @@ class NoxcastInstallation extends HTMLElement {
       this._retry = setTimeout(() => { if (this.isConnected) this._load(); }, 10000);
     }
     this._render();
+  }
+
+  // the moves changed in the selects of the detail panel, one after the other; the answer is the new installation
+  async _move(entryId) {
+    const changed = [...this.shadowRoot.querySelectorAll("select[data-move]")].filter((s) => s.value !== s.dataset.now);
+    if (!changed.length || this._saving) return;
+    // the choices stay in the selects while saving and after an error
+    this._pending = Object.fromEntries(changed.map((s) => [s.dataset.move, s.value]));
+    this._saving = true;
+    this._moveError = null;
+    this._render();
+    let data = null;
+    try {
+      for (const s of changed) {
+        data = await ask(this._hass, { type: "noxcast/move_part", entry_id: entryId, part: s.dataset.move,
+          to: s.value, language: this._lang });
+        delete this._pending[s.dataset.move];
+      }
+    } catch (err) {
+      this._moveError = err && err.code === "not_possible" ? this._t.notPossible : errorText(err, this._hass.language);
+    }
+    // the answer holds this entry only: keep the others, and what an earlier move already saved
+    if (data && data.v === WS_SCHEMA && this._data) {
+      const fresh = Object.fromEntries(data.entries.map((x) => [x.entry_id, x]));
+      this._data = { ...this._data, entries: this._data.entries.map((x) => fresh[x.entry_id] || x) };
+    }
+    this._saving = false;
+    this._render();
+  }
+
+  // a select for where a part belongs, only where it has somewhere else to go and the user may change it
+  _belongs(e, part, label) {
+    const m = (e.moves || {})[part];
+    const user = this._hass.user;
+    if (!m || (user && !user.is_admin)) return "";
+    if (!m.to.some(([id]) => id !== m.now)) return "";
+    const t = this._t;
+    const chosen = (this._pending || {})[part] ?? m.now;
+    const opts = m.to.map(([id, name]) => `<option value="${esc(id)}" ${id === chosen ? "selected" : ""}>${
+      id ? esc(name) : t.alone}</option>`).join("");
+    return `<label class="move"><span class="name">${label}</span>
+      <select data-move="${esc(part)}" data-now="${esc(m.now)}">${opts}</select></label>`;
   }
 
   _w(v) { return `${Number(v).toLocaleString(this._lang, { maximumFractionDigits: 0 })} W`; }
@@ -127,10 +178,10 @@ class NoxcastInstallation extends HTMLElement {
         if (s.id === id) {
           const sub = [parent ? `${t.sub} · ${parent.name}` : "", t.templates[s.template] || "",
             s.battery ? `${t.battery}: ${s.battery.name}` : ""].filter(Boolean).join(" · ");
-          return { title: s.name, sub, ids: [s.id] };
+          return { title: s.name, sub, ids: [s.id], moves: [[s.id, t.belongs], ...(s.battery ? [[s.battery.id, t.batteryBelongs]] : [])] };
         }
         const a = s.arrays.find((x) => x.id === id);
-        if (a) return { title: a.name, sub: `${t.array} · ${s.name} · ${a.sensors === 1 ? t.sensor : t.sensors.replace("{n}", a.sensors)}`, ids: [a.id] };
+        if (a) return { title: a.name, sub: `${t.array} · ${s.name} · ${a.sensors === 1 ? t.sensor : t.sensors.replace("{n}", a.sensors)}`, ids: [a.id], moves: [[a.id, t.belongs]] };
         const found = walk(s.children, s);
         if (found) return found;
       }
@@ -144,9 +195,14 @@ class NoxcastInstallation extends HTMLElement {
     const node = sel && this._find(e, sel);
     if (!node) return `<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
+    const moves = (node.moves || []).map(([id, label]) => this._belongs(e, id, label)).join("");
     return `<div class="head"><span class="title">${esc(node.title)}</span></div>
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
-      ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}`;
+      ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}
+      ${moves ? `<div class="moves">${moves}
+        <div class="row"><button class="chip" data-save="${esc(e.entry_id)}" ${this._saving ? "disabled" : ""}>${
+          this._saving ? t.saving : t.save}</button><span class="muted small">${t.moveHelp}</span></div>
+        ${this._moveError ? `<div class="error small">${esc(this._moveError)}</div>` : ""}</div>` : ""}`;
   }
 
   _render() {
@@ -195,6 +251,14 @@ class NoxcastInstallation extends HTMLElement {
       .st { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--secondary-text-color); }
       .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--nx-off); }
       .st.exact .dot { background: var(--nx-good); } .st.simplified .dot { background: var(--nx-warn); }
+      .moves { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; font-size: 13px; }
+      .move { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+      .move .name { color: var(--secondary-text-color); }
+      .move select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color);
+        background: var(--card-background-color); color: var(--primary-text-color); max-width: 100%; }
+      .moves .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .error { color: var(--error-color, #db4437); }
+      .chip:disabled { opacity: .6; cursor: default; }
       .help { color: var(--secondary-text-color); font-size: 12px; margin: 12px 0 0; line-height: 1.45; }
       .chip { border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); border-radius: 16px;
         padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }

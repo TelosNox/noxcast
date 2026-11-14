@@ -110,6 +110,29 @@ def test_behaviour_is_inherited_and_limits_both_hold():
     assert effects[("u", "full_learning")] == sy.SIMPLIFIED and effects[("p", "regulation")] == sy.SIMPLIFIED
 
 
+def test_parts_move_only_where_the_forms_allow():
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter"}),
+            "e": ("system", "Empty", {"name": "Empty", "template": "inverter"}),
+            "south": ("array", "South", {"name": "South", "system": "u"}),
+            "bu": ("battery", "Ultra battery", {"system": "u"}), "br": ("battery", "Roof battery", {"system": "r"})}
+    now, to = sy.owners(subs, "south")
+    assert now == "u" and set(to) == {"u", "r", "e"}                     # not the parent: it has subsystems
+    assert sy.moved(subs, "south", "r") == {"name": "South", "system": "r"}
+    assert sy.moved(subs, "south", "p") is None
+    assert set(sy.owners(subs, "bu")[1]) == {"u", "e"}                   # one battery per system
+    # a system: under a parent without parts of its own, or on its own ("")
+    now, to = sy.owners(subs, "r")
+    assert now == "" and set(to) == {"", "p", "e"}
+    subs["u"][2]["phase"] = "l1"                                         # a setting of subsystems only
+    assert sy.moved(subs, "u", "") == {"name": "Ultra", "template": "pv_battery"}
+    assert sy.moved(subs, "r", "p")["parent"] == "p"
+    assert set(sy.owners(subs, "p")[1]) == {""}                          # has subsystems: stays on top
+    assert sy.owners(subs, "nothing") is None and sy.moved(subs, "u", "r") is None
+    assert sy.tree({}, subs)["moves"]["south"] == {"now": "u", "to": [["e", "Empty"], ["r", "Roof"], ["u", "Ultra"]]}
+
+
 def test_the_flow_diagram_shows_every_part_and_the_limits():
     fl = load("flowchart")
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800, "balance": True}),

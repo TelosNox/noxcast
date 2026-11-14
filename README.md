@@ -208,8 +208,9 @@ battery with its own inverter at the house grid, or several devices that coordin
 belongs to a system. A system holds either PV arrays and at most one battery, or subsystems (one level), never both.
 
 A system first asks what it is (name, template, and for an existing one *Belongs to*), then its settings, filled in
-by the template. Every setting stays changeable. Then its menu lists *Settings of …*, its subsystems, PV arrays and
-battery, and adds or removes them; a subsystem has a menu of its own. Each form saves when it is sent, *Done* only
+by the template. Every setting stays changeable. Then its menu lists what it can do, each item marked: ✎ changes the
+system itself or one of its subsystems, PV arrays or battery, + adds one, − removes one after asking (it names what
+goes with it); a subsystem has a menu of its own. Each form saves when it is sent, *Done* only
 closes the dialog. Deleting a system deletes everything inside it. Subsystems have no entry of their own: they are in the entry of their system, so the list of
 entries shows what sits inside what.
 

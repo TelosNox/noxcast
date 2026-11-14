@@ -614,15 +614,18 @@ def _battery_errors(hass: HomeAssistant, user_input: dict[str, Any] | None, choi
     return {}
 
 
-# the menu of a system; its items carry the names of the parts, so they are built here, not in the translations
+# the menu of a system; its items carry the names of the parts, so they are built here, not in the translations.
+# Each starts with what it does (a menu has no icons): ✎ changes something that exists, + adds, − removes
 MENU_TEXT = {
-    "de": {"edit": "Einstellungen von {name}", "system": "Teilsystem {name}", "array": "PV-Gruppe {name}",
-           "battery": "Akku {name}", "add_sub": "Teilsystem hinzufügen", "add_array": "PV-Gruppe hinzufügen",
-           "add_battery": "Akku hinzufügen", "remove": "Teil entfernen", "back": "Zurück zu {name}",
-           "finish": "Fertig"},
-    "en": {"edit": "Settings of {name}", "system": "Subsystem {name}", "array": "PV array {name}",
-           "battery": "Battery {name}", "add_sub": "Add subsystem", "add_array": "Add PV array",
-           "add_battery": "Add battery", "remove": "Remove a part", "back": "Back to {name}", "finish": "Done"},
+    "de": {"edit": "✎ {name} ändern", "system": "✎ Teilsystem {name} ändern", "array": "✎ PV-Gruppe {name} ändern",
+           "battery": "✎ Akku {name} ändern", "add_sub": "+ Teilsystem hinzufügen",
+           "add_array": "+ PV-Gruppe hinzufügen", "add_battery": "+ Akku hinzufügen", "remove": "− Teil entfernen …",
+           "back": "← Zurück zu {name}", "finish": "✓ Fertig", "remove_yes": "− {name} entfernen",
+           "cancel": "← Abbrechen, nichts entfernen"},
+    "en": {"edit": "✎ Change {name}", "system": "✎ Change subsystem {name}", "array": "✎ Change PV array {name}",
+           "battery": "✎ Change battery {name}", "add_sub": "+ Add subsystem", "add_array": "+ Add PV array",
+           "add_battery": "+ Add battery", "remove": "− Remove a part …", "back": "← Back to {name}",
+           "finish": "✓ Done", "remove_yes": "− Remove {name}", "cancel": "← Cancel, remove nothing"},
 }
 OPEN = "open_"               # menu item of a part: OPEN + its id (SystemSubentryFlow.__getattr__)
 
@@ -637,6 +640,7 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
     _edit: str | None = None         # the part a form edits; None for a new one
     _parent: str | None = None       # where a new subsystem goes
     _basics: dict[str, Any]
+    _remove: str | None = None       # the part chosen for removal, until confirmed
 
     def __getattr__(self, name: str) -> Any:
         # the menu item of a part is a step of its own; its id is part of the step's name
@@ -829,6 +833,32 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
                                     data_schema=_battery_schema(_battery_data(user_input) if user_input else old,
                                                                 choices))
 
+    def _inside(self, part: str) -> set[str]:
+        return {p for p, (kind, _, d) in self._flat.items()
+                if kind in (SUBENTRY_ARRAY, SUBENTRY_BATTERY) and d.get(CONF_SYSTEM) == part}
+
+    async def async_step_remove_confirm(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """What goes with the chosen part, before anything is removed: it cannot be undone."""
+        # what is stored now: another dialog or the Installation tab may have changed the system meanwhile
+        self._flat = dict(store.flat(self._get_entry()))
+        part = self._remove
+        if part not in self._flat:
+            return await self.async_step_menu()
+        systems = self._systems()
+        name = systems[part].name if part in systems else self._flat[part][1]
+        inside = sorted(self._flat[p][1] for p in self._inside(part))
+        return self.async_show_menu(
+            step_id="remove_confirm",
+            menu_options={"remove_yes": self._text["remove_yes"].format(name=name), "menu": self._text["cancel"]},
+            description_placeholders={"name": name, "inside": ", ".join(inside) if inside else "–"})
+
+    async def async_step_remove_yes(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        part, self._remove = self._remove, None
+        self._flat = dict(store.flat(self._get_entry()))
+        if part in self._flat:
+            self._save(dict.fromkeys({part} | self._inside(part)))
+        return await self.async_step_menu()
+
     async def async_step_remove(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """A subsystem, PV array or battery of this system, with everything inside it."""
         systems = self._systems()
@@ -840,9 +870,8 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
         if user_input is not None:
             part = user_input.get("part")
             if part in options:
-                inside = {p for p, (kind, _, d) in self._flat.items()
-                          if kind in (SUBENTRY_ARRAY, SUBENTRY_BATTERY) and d.get(CONF_SYSTEM) == part}
-                self._save(dict.fromkeys({part} | inside))
+                self._remove = part
+                return await self.async_step_remove_confirm()
             return await self.async_step_menu()
         return self.async_show_form(
             step_id="remove", description_placeholders={"name": s.name},

@@ -393,12 +393,14 @@ The installation is entered as household -> system -> subsystem (`systems.py`, d
 everything that delivers through one output to the house or to its parent: its PV arrays, at most one battery, its
 regulation. A system holds either arrays and a battery, or subsystems, never both; two levels at most. Every array
 belongs to a system. The common installations (micro-inverter, string inverter, compact device or hybrid inverter
-with battery, battery at the house grid, coupled devices such as EcoFlow Stream, a retrofit battery next to an old
-installation) are templates of the one block, not types of their own.
+with battery, battery at the house grid, coupled devices such as EcoFlow Stream) are templates of the one block,
+not types of their own. Independent devices are systems of their own, side by side.
 
 - Cascade: a subsystem's limit and its system's both hold, the tighter wins, and all subsystems together never
-  deliver more than their system. Behaviour (regulation, "when the battery is full") is set on the system and
-  inherited unless a subsystem sets its own.
+  deliver more than their system. Behaviour (regulation with its fixed power, "when the battery is full") is set on
+  the system only: subsystems are devices one control coordinates and follow it. A device that does not follow
+  that control is a system of its own. Device properties stay on the subsystem (its output limit, phase, battery
+  and where that charges from).
 - Chain of ceilings, the rule all later computation steps follow: PV of a system <= its output + the charge power
   of its own battery (0 when full); the output <= the output limit, and with zero export or load following also <=
   the house load + what coordinated batteries take; the household's feed-in <= its feed-in limit. A battery at the

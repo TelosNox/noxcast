@@ -133,6 +133,14 @@ def _without(data: Mapping[str, Any], *keys: str) -> dict[str, Any]:
     return {k: v for k, v in data.items() if k not in keys}
 
 
+def _template_of(subs: Subs, sid: str) -> str:
+    """The template that fits what a system holds: with a battery, PV and battery in one device when it has PV
+    arrays as well, else a battery at the house; else an inverter."""
+    arrays = any(d.get(CONF_SYSTEM) == sid for _, d in _of(subs, SUBENTRY_ARRAY).values())
+    battery = any(d.get(CONF_SYSTEM) == sid for _, d in _of(subs, SUBENTRY_BATTERY).values())
+    return ("pv_battery" if arrays else "ac_battery") if battery else "inverter"
+
+
 def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
     """Every array and battery belongs to an existing system; a parent that is gone, or is itself a subsystem,
     is dropped. A new array without a system (or whose system was deleted) gets a system of its own.
@@ -163,8 +171,8 @@ def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
             if d.get(CONF_PARENT) == gid:
                 put(c, {**{k: group[k] for k in BEHAVIOUR if group.get(k) is not None},
                         **_without(d, CONF_PARENT, CONF_PHASE, CONF_LIMIT_PER_PHASE)})
-        if gid in owned:
-            put(gid, {**group, CONF_TEMPLATE: "inverter"})
+        if gid in owned or group.get(CONF_PARENT):
+            put(gid, {**group, CONF_TEMPLATE: _template_of(subs, gid)})
         else:
             changes.remove.append(gid)
             changes.update.pop(gid, None)
@@ -174,10 +182,16 @@ def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
         if not kids:
             continue
         lifted = dict(pdata)
-        for key in BEHAVIOUR:
-            values = {repr(data_of[c].get(key)): data_of[c].get(key) for c in kids if data_of[c].get(key) is not None}
-            if lifted.get(key) is None and len(values) == 1:
-                lifted[key] = next(iter(values.values()))
+        # the regulation goes up with its fixed power, as one setting; "when full" on its own
+        for keys in ((CONF_REGULATION, CONF_FIXED_POWER), (CONF_WHEN_FULL,)):
+            values = []
+            for c in kids:
+                v = tuple(data_of[c].get(k) for k in keys)
+                if v[0] is not None and v not in values:
+                    values.append(v)
+            if lifted.get(keys[0]) is None and len(values) == 1:
+                lifted.update({k: x for k, x in zip(keys, values[0])
+                               if x is not None and (k != CONF_FIXED_POWER or values[0][0] == "fixed")})
         if lifted != pdata:
             put(pid, lifted)
         for c in kids:
@@ -387,8 +401,9 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
     arrays = _of(subs, SUBENTRY_ARRAY)
     out: list[dict[str, Any]] = []
 
-    def add(node: str, setting: str, status: str, value: Any = None) -> None:
-        out.append({"node": node, "setting": setting, "status": status, "value": value})
+    def add(node: str, setting: str, status: str, value: Any = None, inherited: bool = False) -> None:
+        out.append({"node": node, "setting": setting, "status": status, "value": value,
+                    **({"inherited": True} if inherited else {})})
 
     mode = household.get(CONF_FEED_IN_MODE, "none")
     curtailed = curtailed_arrays(systems, mode)
@@ -417,19 +432,24 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         if s.get(CONF_PHASE):
             add(sid, "phase", NOT_YET, s.get(CONF_PHASE))
         # "delivers everything" and "deliver everything when full" are what Noxcast has always assumed
-        regulation = s.get(CONF_REGULATION)
+        # a subsystem shows its system's behaviour, marked as that (it has none of its own)
+        sub = s.parent is not None
+        regulation = behaviour(systems, sid, CONF_REGULATION)
         if regulation:
             # following the load: learning leaves out the hours with a full battery it coordinates with; without
             # one, the hours it held back for a low load are not known yet
             coordinated = any(x.battery for x in below) or (
-                s.parent is not None and any(systems[c].battery for c in systems[s.parent].children))
+                sub and any(systems[c].battery for c in systems[s.parent].children))
             add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if regulation == "load" and coordinated
-                else NOT_YET, regulation)
-        if s.get(CONF_FIXED_POWER):
-            add(sid, "fixed_power", NOT_YET, s.get(CONF_FIXED_POWER))
-        if s.get(CONF_WHEN_FULL):
-            add(sid, "when_full", EXACT if s.get(CONF_WHEN_FULL) == "all" else SIMPLIFIED if any(x.battery for x in below)
-                else NOT_YET, s.get(CONF_WHEN_FULL))
+                else NOT_YET, regulation, sub)
+        if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER):
+            add(sid, "fixed_power", NOT_YET, behaviour(systems, sid, CONF_FIXED_POWER), sub)
+        when_full = behaviour(systems, sid, CONF_WHEN_FULL)
+        if when_full:
+            batteries_below = any(x.battery for x in below) or (
+                sub and any(systems[c].battery for c in systems[s.parent].children))
+            add(sid, "when_full", EXACT if when_full == "all" else SIMPLIFIED if batteries_below else NOT_YET,
+                when_full, sub)
         if s.battery and s.get(CONF_CHARGES_FROM):
             add(sid, "charges_from", SIMPLIFIED, s.get(CONF_CHARGES_FROM))
         if curtailed.get(sid):
@@ -471,7 +491,7 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
             "id": sid, "name": s.name, "template": s.get(CONF_TEMPLATE),
             "output_limit_w": s.get(CONF_OUTPUT_LIMIT), "limit_per_phase": bool(s.get(CONF_LIMIT_PER_PHASE)),
             "phase": s.get(CONF_PHASE),
-            "regulation": behaviour(systems, sid, CONF_REGULATION), "fixed_power_w": s.get(CONF_FIXED_POWER),
+            "regulation": behaviour(systems, sid, CONF_REGULATION), "fixed_power_w": behaviour(systems, sid, CONF_FIXED_POWER),
             "when_full": behaviour(systems, sid, CONF_WHEN_FULL), "charges_from": s.get(CONF_CHARGES_FROM),
             "balance": bool(s.get(CONF_BALANCE)) if s.children else None,
             "arrays": [{"id": a, "name": arrays[a][0], "sensors": len(arrays[a][1].get(CONF_POWER_SENSORS) or []),

@@ -272,7 +272,7 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     samples, _, floors = ln.array_samples(arr, history, 95.0, [])
     assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
     # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
-    free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "group", "regulation": "all"})}
+    free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "all"})}
     assert inst.build({"south": ["pv.s"]}, {}, [], 95, sy.systems_of(free), batteries, "free").chargers() == []
     effects = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, power)}
     assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000

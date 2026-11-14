@@ -204,3 +204,32 @@ def test_a_subsystem_moved_out_keeps_behaving_as_its_system_made_it():
             "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"})}
     assert sy.moved(subs, "u", "") == {"name": "Ultra", "template": "pv_battery", "regulation": "load", "when_full": "load"}
     assert sy.moved(subs, "r", "p") == {"name": "Roof", "template": "inverter", "parent": "p"}
+
+
+def test_a_fixed_power_goes_up_with_its_regulation():
+    ids = iter(f"m{i}" for i in range(9))
+
+    def lifted(*kids):
+        subs = {"p": ("system", "P", {"name": "P", "template": "coupled"}),
+                **{f"k{i}": ("system", f"K{i}", {"name": f"K{i}", "template": "inverter", "parent": "p", **k})
+                   for i, k in enumerate(kids)}}
+        return sy.apply(subs, sy.normalize(subs, lambda: next(ids)))["p"][2]
+    assert lifted({"regulation": "fixed", "fixed_power_w": 300}, {"regulation": "fixed", "fixed_power_w": 300.0}) == {
+        "name": "P", "template": "coupled", "regulation": "fixed", "fixed_power_w": 300}
+    # different powers: no regulation of the system is made up
+    assert "regulation" not in lifted({"regulation": "fixed", "fixed_power_w": 300}, {"regulation": "fixed", "fixed_power_w": 500})
+    # a stray power without "fixed" is not taken along
+    assert lifted({"regulation": "load", "fixed_power_w": 300}) == {"name": "P", "template": "coupled", "regulation": "load"}
+
+
+def test_a_group_holding_parts_keeps_a_template_that_fits():
+    subs = {"g": ("system", "G", {"name": "G", "template": "group"}),
+            "a": ("array", "A", {"system": "g"}), "b": ("battery", "B", {"system": "g"})}
+    after = sy.apply(subs, sy.normalize(subs, lambda: "x"))
+    assert after["g"][2]["template"] == "pv_battery"
+    tree = sy.tree({}, {**after, "s": ("system", "S", {"name": "S", "template": "pv_battery", "parent": "c"}),
+                        "c": ("system", "C", {"name": "C", "template": "coupled", "regulation": "fixed",
+                                              "fixed_power_w": 400})})
+    rows = {(e["node"], e["setting"]): e for e in tree["effects"]}
+    assert rows[("s", "regulation")]["inherited"] and rows[("s", "regulation")]["value"] == "fixed"
+    assert rows[("s", "fixed_power")]["value"] == 400 and "inherited" not in rows[("c", "regulation")]

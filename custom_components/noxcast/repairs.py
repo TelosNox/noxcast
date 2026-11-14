@@ -13,7 +13,7 @@ from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
-from . import issues
+from . import issues, store
 from .const import CONF_POWER_SENSORS, CONF_SENSOR_LIMITS
 
 LIMIT = "limit_w"
@@ -31,7 +31,7 @@ class LimitSuggestionFlow(RepairsFlow):
         entry = self.hass.config_entries.async_get_entry(self._entry_id)
         if entry is None or getattr(entry, "runtime_data", None) is None:
             return None
-        sub = entry.subentries.get(self._subentry_id)
+        sub = store.parts(entry).get(self._subentry_id)
         suggested = issues.limit_suggestions(entry).get(self._subentry_id)
         return (entry, sub, suggested) if sub is not None and suggested else None
 
@@ -78,7 +78,8 @@ class LimitSuggestionFlow(RepairsFlow):
         entry, sub, _ = current
         data = dict(sub.data)
         data[CONF_SENSOR_LIMITS] = {s: float(limit_w) for s in sub.data[CONF_POWER_SENSORS]}
-        self.hass.config_entries.async_update_subentry(entry, sub, data=data)
+        flat = store.flat(entry)
+        store.async_store(self.hass, entry, {**flat, self._subentry_id: (sub.subentry_type, sub.title, data)})
         return self.async_create_entry(data={})
 
 

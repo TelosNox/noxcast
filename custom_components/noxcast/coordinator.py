@@ -35,6 +35,7 @@ from .const import (
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
+from . import store
 from . import backtest as pv_backtest
 from . import band as bd
 from . import fine as fn
@@ -73,7 +74,7 @@ def consumer_configs(entry: ConfigEntry) -> dict[str, ConsumerConfig]:
                                    float(sub.data[CONF_RUN_MINUTES]) if sub.data.get(CONF_RUN_MINUTES) else None,
                                    sub.data.get(CONF_KIND, lf.KIND_PROFILE),
                                    float(sub.data[CONF_START_SHARE]) if sub.data.get(CONF_START_SHARE) is not None else None)
-            for sub_id, sub in entry.subentries.items()
+            for sub_id, sub in store.parts(entry).items()
             if sub.subentry_type == SUBENTRY_CONSUMER and (sub.data.get(CONF_POWER_SENSOR) or sub.data.get(CONF_ENERGY_SENSOR))}
 
 
@@ -89,10 +90,10 @@ type NoxcastConfigEntry = ConfigEntry[NoxcastCoordinator]
 def array_configs(entry: ConfigEntry, installation: inst.Installation | None = None) -> dict[str, ArrayConfig]:
     """The arrays as learning sees them; installation adds the output limits of their systems."""
     caps = installation.caps if installation else ()
-    sensors_of = {sid: tuple(sub.data[CONF_POWER_SENSORS]) for sid, sub in entry.subentries.items()
+    sensors_of = {sid: tuple(sub.data[CONF_POWER_SENSORS]) for sid, sub in store.parts(entry).items()
                   if sub.subentry_type == SUBENTRY_ARRAY}
     configs = {}
-    for sub_id, sub in entry.subentries.items():
+    for sub_id, sub in store.parts(entry).items():
         if sub.subentry_type != SUBENTRY_ARRAY:
             continue
         d = sub.data
@@ -118,12 +119,12 @@ def array_configs(entry: ConfigEntry, installation: inst.Installation | None = N
 def installation_of(entry: ConfigEntry, max_soc: dict[str, float] | None = None) -> inst.Installation:
     """The installation as configured: the arrays' sensors with their limits, the systems and their batteries."""
     arrays, limits = {}, {}
-    for sub_id, sub in entry.subentries.items():
+    for sub_id, sub in store.parts(entry).items():
         if sub.subentry_type == SUBENTRY_ARRAY:
             arrays[sub_id] = list(sub.data[CONF_POWER_SENSORS])
             limits.update(sub.data.get(CONF_SENSOR_LIMITS) or {})
-    systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
-    batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
+    systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in store.parts(entry).items()})
+    batteries = {sid: dict(sub.data) for sid, sub in store.parts(entry).items() if sub.subentry_type == SUBENTRY_BATTERY}
     return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
                       float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
                       entry.data.get(CONF_FEED_IN_MODE, "none"), max_soc)
@@ -153,9 +154,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.day_type_entity: str | None = entry.data.get(CONF_DAY_TYPE) or None
         self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
-        self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
+        self.batteries = {sid: dict(sub.data) for sid, sub in store.parts(entry).items() if sub.subentry_type == SUBENTRY_BATTERY}
         self.systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data))
-                                      for sid, sub in entry.subentries.items()})
+                                      for sid, sub in store.parts(entry).items()})
+        # array id -> the subentry that stores it (its system of the top level): its device and entities belong there
+        self.homes = {sid: sub.home for sid, sub in store.parts(entry).items()}
         self.load_profile: lf.Profile | None = None
         self.floor_profile: lf.Profile | None = None    # base load from the hourly minimum, for sustained loads
         self.consumer_profiles: dict[str, lf.Profile] = {}

@@ -131,10 +131,9 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 
 1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Den Sensor für den Akku-Ladezustand
    wählen, falls vorhanden, und ob Überschuss ins Netz darf; alles andere kann leer bleiben.
-2. Auf der Seite der Integration: ⋮ → *PV-Gruppe hinzufügen*. Den oder die Leistungssensoren wählen, Neigung, Azimut
-   und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird. Jede PV-Gruppe
-   bekommt ein eigenes System (Wechselrichter ohne Akku); mit Akku oder mehreren Geräten zuerst ein *System* anlegen
-   und es in der PV-Gruppe wählen.
+2. Auf der Seite der Integration: ⋮ → *System hinzufügen*. Wählen, was das System ist (z. B. Wechselrichter ohne
+   Akku), dann in seinem Menü die PV-Gruppen hinzufügen: den oder die Leistungssensoren wählen, Neigung, Azimut und
+   Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird.
 3. Fertig. Noxcast lernt sofort aus dem vorhandenen Verlauf und danach jede Nacht um 01:30.
 
 Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und in den nächsten Tagen ansteht,
@@ -165,7 +164,9 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 ## Konfiguration
 
 Einstellungen → Geräte & Dienste → Integration hinzufügen → **Noxcast**. Danach auf der Seite der Integration
-Untereinträge anlegen (⋮ → *System hinzufügen* / *PV-Gruppe hinzufügen* / *Akku hinzufügen* / *Verbraucher hinzufügen*).
+Untereinträge anlegen (⋮ → *System hinzufügen* / *Verbraucher hinzufügen*). PV-Gruppen, Akku und Teilsysteme eines
+Systems stecken in seinem Eintrag: Öffnen zeigt ein Menü mit allem, was darin ist, und jeder Punkt öffnet sein
+Formular.
 
 ### 1. Haupteintrag
 
@@ -186,8 +187,11 @@ Akku mit eigenem Wechselrichter am Hausnetz oder mehrere Geräte, die sich abspr
 gehört zu einem System. Ein System enthält entweder PV-Gruppen und höchstens einen Akku oder Teilsysteme (eine Ebene),
 nie beides.
 
-Das Formular hat zwei Schritte: was das System ist (Name, Vorlage, *Teil von*), dann seine Einstellungen, von der
-Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar.
+Ein System fragt zuerst, was es ist (Name, Vorlage, bei einem bestehenden auch *Gehört zu*), dann seine
+Einstellungen, von der Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar. Danach listet sein Menü *Einstellungen
+von …*, seine Teilsysteme, PV-Gruppen und seinen Akku und fügt sie hinzu oder entfernt sie; ein Teilsystem hat ein
+eigenes Menü. Jedes Formular speichert beim Absenden, *Fertig* schließt nur den Dialog. Ein System zu löschen löscht alles, was darin
+steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres Systems, so zeigt die Liste der Einträge, was worin steckt.
 
 | Vorlage | Für |
 |---|---|
@@ -218,7 +222,7 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 
 | Feld | Bedeutung |
 |---|---|
-| System | Das System, zu dem die PV-Gruppe gehört. Leer: ein eigenes System (Wechselrichter ohne Akku) |
+| Gehört zu | Das System, in dem die PV-Gruppe steckt. Leer: das System, aus dessen Menü sie geöffnet wurde |
 | Leistungssensoren | Einer oder mehrere; sie werden addiert |
 | Neigung, Azimut, Spitzenleistung | Der Module (Azimut 180° = Süd) |
 | Weitere Ausrichtung 2–4 | Optional: Module an denselben Sensoren, die in eine andere Richtung zeigen (z. B. Ost + Süd + West an einem Eingang, senkrecht Ost + West). Jede mit Neigung, Azimut und eigener Spitzenleistung; die Spitzenleistung der PV-Gruppe ist die Summe |
@@ -245,7 +249,7 @@ hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitb
 
 ### 5. Akkus (optional, braucht den Hausverbrauch)
 
-Name, Ladestand-Sensor, Kapazität und System stehen oben; Grenzen und Leistung stehen in Abschnitten, die zu bleiben,
+Name, Ladestand-Sensor, Kapazität und System (*Gehört zu*) stehen oben; Grenzen und Leistung stehen in Abschnitten, die zu bleiben,
 bis sie einen Wert enthalten. Das System sagt, wo der Akku sitzt (siehe *Akku lädt aus*), und gibt seine
 Ausgangsgrenze.
 
@@ -255,7 +259,7 @@ Ausgangsgrenze.
 | Lade-/Entladeleistung | Optional: Lade- und Entladeleistung für die Karte, positiv = Laden (sonst *umkehren*) |
 | Ladegrenze oben / Entladegrenze unten | Zahl oder Entität (z. B. Ladegrenze, Notstromreserve) |
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
-| System | Ein Akku je System. Leer: ein eigenes System am Hausnetz |
+| Gehört zu | Das System, in dem der Akku steckt, ein Akku je System. Leer: das System, aus dessen Menü er geöffnet wurde |
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor für die Akkuleistung zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 

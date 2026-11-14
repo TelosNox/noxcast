@@ -23,7 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         device = DeviceInfo(identifiers={(DOMAIN, sub_id)}, name=f"Noxcast {arr.name}", manufacturer="Noxcast",
                             entry_type=DeviceEntryType.SERVICE)
         async_add_entities([ShadingMapImage(hass, coordinator, sub_id, device),
-                            ShadeTodayImage(hass, coordinator, sub_id, device)], config_subentry_id=sub_id)
+                            ShadeTodayImage(hass, coordinator, sub_id, device)],
+                           config_subentry_id=coordinator.homes.get(sub_id, sub_id))
 
 
 class ShadingMapImage(CoordinatorEntity[NoxcastCoordinator], ImageEntity):

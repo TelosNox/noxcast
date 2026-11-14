@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import flowchart, systems, views
+from . import flowchart, store, systems, views
 from .const import ARCHIVE_DAYS, CONF_FEED_IN_MODE, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -133,7 +133,8 @@ def _coordinators(hass: HomeAssistant) -> list:
 
 def _battery_names(entry) -> dict[str, str]:
     """Battery subentry id -> its title."""
-    return {sid: entry.subentries[sid].title for sid in entry.runtime_data.batteries if sid in entry.subentries}
+    parts = store.parts(entry)
+    return {sid: parts[sid].title for sid in entry.runtime_data.batteries if sid in parts}
 
 
 def _day_start(day: date) -> float:
@@ -315,7 +316,7 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 
 
 def _subs(entry: Any) -> systems.Subs:
-    return {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
+    return store.flat(entry)
 
 
 def installation_tree(entry: Any) -> dict[str, Any]:
@@ -349,14 +350,16 @@ def ws_move_part(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     Installation tab. The same rules as the forms (systems.owners); the entry reloads as after editing a part.
     Answers with the installation as it is now, since the entry is not loaded while it reloads."""
     entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is None or entry.domain != DOMAIN or msg["part"] not in entry.subentries:
+    subs = _subs(entry) if entry is not None and entry.domain == DOMAIN else {}
+    if msg["part"] not in subs:
         connection.send_error(msg["id"], "not_found", "No such part of a Noxcast installation")
         return
-    data = systems.moved(_subs(entry), msg["part"], msg["to"])
+    data = systems.moved(subs, msg["part"], msg["to"])
     if data is None:
         connection.send_error(msg["id"], "not_possible", "The part cannot go there")
         return
-    hass.config_entries.async_update_subentry(entry, entry.subentries[msg["part"]], data=data)
+    kind, title, _ = subs[msg["part"]]
+    store.async_store(hass, entry, {**subs, msg["part"]: (kind, title, data)})
     lang = (msg.get("language") or hass.config.language or "en")[:2]
     _send(connection, msg, _installation([entry], lang))
 

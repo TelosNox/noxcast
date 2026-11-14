@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Each system is one entry with its PV arrays, battery and subsystems inside. Opening it shows a menu with
+  everything in it, and each item opens the form you know. The list of entries shows only the systems, so it is
+  clear what belongs together. The update moves existing PV arrays, batteries and subsystems into their systems;
+  their devices, entities, history and what was learned stay. Deleting a system now deletes what is inside it
+  as well, with what was learned for its PV arrays.
+
 ## [0.5.0b2] - 2026-11-14
 
 The second pre-release of 0.5.0: the *Installation* tab shows the installation as a flow diagram, and parts

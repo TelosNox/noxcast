@@ -73,26 +73,22 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.\n\n{diagram}",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. Danach fügst du im Menü des Systems seine PV-Gruppen, seinen Akku oder seine Teilsysteme hinzu.\n\n{diagram}",
           "data": {
             "name": "Name",
-            "template": "Vorlage",
-            "parent": "Teil von"
-          },
-          "data_description": {
-            "parent": "Optional: das System, dessen Teilsystem dieses ist, z. B. ein Gerät eines EcoFlow-Stream-Systems. Dessen gemeinsame Grenze und Verhalten gelten dann auch hier."
+            "template": "Vorlage"
           }
         },
-        "reconfigure": {
+        "basics": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.\n\n{diagram}",
+          "description": "Was das System ist und wozu es gehört. Ein System mit „Gehört zu“ ist Teilsystem eines anderen: dessen gemeinsame Grenze und Verhalten gelten dann auch hier.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage",
-            "parent": "Teil von"
+            "parent": "Gehört zu"
           },
           "data_description": {
-            "parent": "Optional: das System, dessen Teilsystem dieses ist, z. B. ein Gerät eines EcoFlow-Stream-Systems. Dessen gemeinsame Grenze und Verhalten gelten dann auch hier."
+            "parent": "Leer: ein eigenes System am Haushalt. Sonst das System, dessen Teilsystem dieses ist, z. B. ein Gerät eines EcoFlow-Stream-Systems."
           }
         },
         "settings": {
@@ -118,23 +114,12 @@
             "charges_from": "Eigener PV: Der Akku sitzt vor dem Ausgang (Kompaktgerät, Hybrid-Wechselrichter). Dem Haushalt: eigener Wechselrichter am Hausnetz, lädt aus dem Überschuss des Hauses.",
             "balance": "Einschalten, wenn die Akkus der Teilsysteme ihre Ladestände angleichen (z. B. EcoFlow Stream). Dann gibt es für sie eine gemeinsame Akku-Prognose."
           }
-        }
-      },
-      "error": {
-        "parent_not_possible": "Dieses System kann kein Teil sein: Es enthält selbst Teilsysteme, oder das gewählte System enthält PV-Gruppen oder einen Akku.",
-        "fixed_power_needed": "Feste Leistung braucht einen Wert."
-      },
-      "abort": {
-        "reconfigure_successful": "System gespeichert."
-      }
-    },
-    "array": {
-      "entry_type": "PV-Gruppe",
-      "initiate_flow": {
-        "user": "PV-Gruppe hinzufügen"
-      },
-      "step": {
-        "user": {
+        },
+        "menu": {
+          "title": "{name}",
+          "description": "Alles, was in {name} steckt. Jedes Formular speichert beim Absenden.\n\n{diagram}"
+        },
+        "array": {
           "title": "PV-Gruppe",
           "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.\n\n{diagram}",
           "data": {
@@ -144,14 +129,14 @@
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
             "mounting": "Montage",
-            "system": "System"
+            "system": "Gehört zu"
           },
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
             "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K.",
-            "system": "Was zwischen diesen Modulen und dem Haus liegt: der Wechselrichter oder das Gerät, an dem sie hängen. Leer: Die PV-Gruppe bekommt ein eigenes System (Wechselrichter ohne Akku), das du unter „System“ ändern kannst."
+            "system": "Das System, in dem diese PV-Gruppe steckt. Leer: das System, aus dessen Menü du sie geöffnet hast."
           },
           "sections": {
             "orientation_2": {
@@ -214,96 +199,79 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "PV-Gruppe",
+        "battery": {
+          "title": "Akku",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
           "data": {
             "name": "Name",
-            "power_sensors": "Leistungssensoren",
-            "tilt": "Neigung",
-            "azimuth": "Azimut",
-            "peak_power": "Spitzenleistung",
-            "mounting": "Montage",
-            "system": "System"
+            "soc_sensor": "Ladestand",
+            "capacity": "Kapazität",
+            "system": "Gehört zu"
           },
           "data_description": {
-            "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
-            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K.",
-            "system": "Was zwischen diesen Modulen und dem Haus liegt: der Wechselrichter oder das Gerät, an dem sie hängen. Leer: Die PV-Gruppe bekommt ein eigenes System (Wechselrichter ohne Akku), das du unter „System“ ändern kannst."
+            "system": "Das System, in dem der Akku steckt; ein Akku pro System. Leer: das System, aus dessen Menü du ihn geöffnet hast."
           },
           "sections": {
-            "orientation_2": {
-              "name": "Weitere Ausrichtung 2",
-              "description": "Nur für Module an denselben Leistungssensoren, die in eine andere Richtung zeigen (z. B. Ost und West an einem Eingang). Neigung, Azimut und Spitzenleistung dieser Module; leer lassen, wenn nicht gebraucht.",
-              "data": {
-                "tilt": "Neigung",
-                "azimuth": "Azimut",
-                "peak_power": "Spitzenleistung"
-              },
-              "data_description": {
-                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
-              }
-            },
-            "orientation_3": {
-              "name": "Weitere Ausrichtung 3",
-              "data": {
-                "tilt": "Neigung",
-                "azimuth": "Azimut",
-                "peak_power": "Spitzenleistung"
-              },
-              "data_description": {
-                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
-              }
-            },
-            "orientation_4": {
-              "name": "Weitere Ausrichtung 4",
-              "data": {
-                "tilt": "Neigung",
-                "azimuth": "Azimut",
-                "peak_power": "Spitzenleistung"
-              },
-              "data_description": {
-                "peak_power": "Summe der Modul-Nennleistung dieser Ausrichtung."
-              }
-            },
             "limits": {
-              "name": "Leistungsgrenze",
-              "description": "Nur wenn die Module mehr liefern, als ein MPPT-Eingang oder ein Mikrowechselrichter durchlässt, sodass die Leistung an sonnigen Tagen flach auf einem Höchstwert bleibt.",
+              "name": "Grenzen",
+              "description": "Lade- und Entladegrenzen. Standard: 0–100 %, keine Reserve.",
               "data": {
-                "sensor_limit_w": "Jeder Sensor liefert höchstens"
+                "max_soc": "Ladegrenze oben",
+                "max_soc_entity": "Ladegrenze als Entität",
+                "min_soc": "Entladegrenze unten",
+                "min_soc_entity": "Entladegrenze als Entität",
+                "reserve": "Reserve über der Entladegrenze"
               },
               "data_description": {
-                "sensor_limit_w": "Die Grenze eines Eingangs oder Mikrowechselrichters in W, so wie einer der Leistungssensoren oben sie misst (z. B. 800 bei einem 800-W-Mikrowechselrichter). Gilt für jeden Sensor dieser PV-Gruppe. Die Prognose wird darauf begrenzt; leer = keine Grenze."
+                "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+                "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
+                "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
               }
             },
-            "advanced": {
-              "name": "Erweitert",
-              "description": "Meist nicht nötig.",
+            "power": {
+              "name": "Leistung",
+              "description": "Leistungssensor, Wirkungsgrad und Leistungsgrenzen. Alles optional.",
               "data": {
-                "valid_since": "Konfiguration gültig seit",
-                "temp_coeff": "Temperaturkoeffizient (Datenblatt)",
-                "heating": "Erwärmung der Module"
+                "battery_power": "Lade-/Entladeleistung",
+                "battery_power_invert": "Leistung zählt Entladen positiv",
+                "efficiency": "Wirkungsgrad (Zyklus)",
+                "max_charge_w": "Max. Ladeleistung",
+                "max_discharge_w": "Max. Entladeleistung"
               },
               "data_description": {
-                "temp_coeff": "Temperaturkoeffizient Pmax aus dem Moduldatenblatt, z. B. -0,26. Empfohlen. Leer = typischer Wert (-0,35); gelernt wird nur mit Satellitenfilter.",
-                "heating": "Eigener Wert statt der Montage: wie stark sich die Zellen bei 1000 W/m² über die Luft erwärmen. Leer = aus der Montage."
+                "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
+                "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
+                "efficiency": "Leer = Standard: 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz. Wechselrichterverluste stecken schon in den Messwerten.",
+                "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
               }
             }
-          },
-          "description": "{diagram}"
+          }
+        },
+        "remove": {
+          "title": "Teil von {name} entfernen",
+          "description": "Entfernt den gewählten Teil mit allem, was darin steckt: bei einer PV-Gruppe auch ihre Entitäten und was Noxcast für sie gelernt hat.",
+          "data": {
+            "part": "Teil"
+          }
         }
       },
       "error": {
         "sensor_required": "Bitte mindestens einen Leistungssensor wählen.",
-        "sensor_missing": "Ein gewählter Sensor existiert nicht.",
+        "sensor_missing": "Der gewählte Sensor existiert nicht.",
         "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
         "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
         "date_in_future": "Das Datum darf nicht in der Zukunft liegen.",
         "orientation_incomplete": "Eine weitere Ausrichtung braucht Neigung, Azimut und Spitzenleistung.",
         "orientation_duplicate": "Zwei Ausrichtungen sind gleich. Ihre Module bitte einmal mit der summierten Spitzenleistung eintragen.",
-        "system_has_subsystems": "Dieses System enthält Teilsysteme. PV-Gruppen und Akkus gehören zu einem System ohne Teilsysteme."
+        "system_has_subsystems": "Dieses System enthält Teilsysteme. PV-Gruppen und Akkus gehören zu einem System ohne Teilsysteme.",
+        "limits_order": "Entladegrenze plus Reserve muss unter der Ladegrenze liegen.",
+        "soc_unit": "Der Ladestand muss in % angegeben sein.",
+        "system_taken": "Dieses System hat schon einen Akku. Ein zweiter ist ein eigenes Teilsystem.",
+        "parent_not_possible": "Dieses System kann kein Teil sein: Es enthält selbst Teilsysteme, oder das gewählte System enthält PV-Gruppen oder einen Akku.",
+        "fixed_power_needed": "Feste Leistung braucht einen Wert."
       },
       "abort": {
-        "reconfigure_successful": "PV-Gruppe gespeichert."
+        "saved": "Gespeichert."
       }
     },
     "consumer": {
@@ -386,119 +354,6 @@
       },
       "abort": {
         "reconfigure_successful": "Verbraucher gespeichert."
-      }
-    },
-    "battery": {
-      "entry_type": "Akku",
-      "initiate_flow": {
-        "user": "Akku hinzufügen"
-      },
-      "step": {
-        "user": {
-          "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
-          "data": {
-            "name": "Name",
-            "soc_sensor": "Ladestand",
-            "capacity": "Kapazität",
-            "system": "System"
-          },
-          "data_description": {
-            "system": "Das System, zu dem der Akku gehört; ein Akku pro System. Leer: ein eigenes System am Hausnetz."
-          },
-          "sections": {
-            "limits": {
-              "name": "Grenzen",
-              "description": "Lade- und Entladegrenzen. Standard: 0–100 %, keine Reserve.",
-              "data": {
-                "max_soc": "Ladegrenze oben",
-                "max_soc_entity": "Ladegrenze als Entität",
-                "min_soc": "Entladegrenze unten",
-                "min_soc_entity": "Entladegrenze als Entität",
-                "reserve": "Reserve über der Entladegrenze"
-              },
-              "data_description": {
-                "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
-                "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
-                "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
-              }
-            },
-            "power": {
-              "name": "Leistung",
-              "description": "Leistungssensor, Wirkungsgrad und Leistungsgrenzen. Alles optional.",
-              "data": {
-                "battery_power": "Lade-/Entladeleistung",
-                "battery_power_invert": "Leistung zählt Entladen positiv",
-                "efficiency": "Wirkungsgrad (Zyklus)",
-                "max_charge_w": "Max. Ladeleistung",
-                "max_discharge_w": "Max. Entladeleistung"
-              },
-              "data_description": {
-                "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
-                "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
-                "efficiency": "Leer = Standard: 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz. Wechselrichterverluste stecken schon in den Messwerten.",
-                "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
-          "data": {
-            "name": "Name",
-            "soc_sensor": "Ladestand",
-            "capacity": "Kapazität",
-            "system": "System"
-          },
-          "data_description": {
-            "system": "Das System, zu dem der Akku gehört; ein Akku pro System. Leer: ein eigenes System am Hausnetz."
-          },
-          "sections": {
-            "limits": {
-              "name": "Grenzen",
-              "description": "Lade- und Entladegrenzen. Standard: 0–100 %, keine Reserve.",
-              "data": {
-                "max_soc": "Ladegrenze oben",
-                "max_soc_entity": "Ladegrenze als Entität",
-                "min_soc": "Entladegrenze unten",
-                "min_soc_entity": "Entladegrenze als Entität",
-                "reserve": "Reserve über der Entladegrenze"
-              },
-              "data_description": {
-                "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
-                "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
-                "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
-              }
-            },
-            "power": {
-              "name": "Leistung",
-              "description": "Leistungssensor, Wirkungsgrad und Leistungsgrenzen. Alles optional.",
-              "data": {
-                "battery_power": "Lade-/Entladeleistung",
-                "battery_power_invert": "Leistung zählt Entladen positiv",
-                "efficiency": "Wirkungsgrad (Zyklus)",
-                "max_charge_w": "Max. Ladeleistung",
-                "max_discharge_w": "Max. Entladeleistung"
-              },
-              "data_description": {
-                "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
-                "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
-                "efficiency": "Leer = Standard: 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz. Wechselrichterverluste stecken schon in den Messwerten.",
-                "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
-              }
-            }
-          }
-        }
-      },
-      "error": {
-        "limits_order": "Entladegrenze plus Reserve muss unter der Ladegrenze liegen.",
-        "soc_unit": "Der Ladestand muss in % angegeben sein.",
-        "sensor_missing": "Der gewählte Sensor existiert nicht.",
-        "system_taken": "Dieses System hat schon einen Akku. Ein zweiter ist ein eigenes Teilsystem."
-      },
-      "abort": {
-        "reconfigure_successful": "Akku gespeichert."
       }
     }
   },
@@ -729,7 +584,7 @@
   "issues": {
     "no_arrays": {
       "title": "Noxcast hat noch keine PV-Gruppe",
-      "description": "Noxcast sagt nichts voraus, solange es keine PV-Gruppe kennt. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → *PV-Gruppe hinzufügen*: die Module, die gemeinsam gemessen werden (meist ein MPPT-Eingang), mit Leistungssensor, Neigung, Azimut und Spitzenleistung. Noxcast lernt sie dann sofort aus der Historie."
+      "description": "Noxcast sagt nichts voraus, solange es keine PV-Gruppe kennt. Füge eine hinzu unter Einstellungen → Geräte & Dienste → Noxcast → ⋮ → *System hinzufügen* und im Menü des Systems *PV-Gruppe hinzufügen*: die Module, die gemeinsam gemessen werden (meist ein MPPT-Eingang), mit Leistungssensor, Neigung, Azimut und Spitzenleistung. Noxcast lernt sie dann sofort aus der Historie."
     },
     "missing_sensors": {
       "title": "Noxcast fehlen Sensoren",

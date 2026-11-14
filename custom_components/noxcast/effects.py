@@ -65,19 +65,22 @@ def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, we
                 held: Series | None = None) -> dict:
     """Shade loss and reflection gain of the day, scaled like the expected output, with significant periods.
 
-    The scaled loss is bounded so that expected output plus loss, and the held forecast plus loss that the
-    day card draws, never exceed the unshaded output under clear sky. In a shaded past hour the forecast is mostly diffuse light, so the ratio of measured to
-    forecast says little about the direct light the shade takes; unbounded, a little more diffuse light
-    than forecast inflated the loss beyond what the sun can deliver.
+    One factor per day scales both: the expected output of the day over its forecast. The effects are computed
+    under the forecast weather; the factor carries how much brighter or darker the day turned out. A factor per
+    hour would read the deviation of a shaded hour as weather, although there it mostly says how well the
+    shadow edge was learned: a shadow that lasted longer than learned shrank the loss, a little more diffuse
+    light than forecast in deep shade inflated it, and the day card drew a hump instead of the shadow.
+
+    The scaled loss is also bounded so that expected output plus loss, and the held forecast plus loss that the
+    day card draws, never exceed the unshaded output under clear sky.
     """
     if learned is None:
         return {"loss": {}, "gain": {}, "periods": []}
     loss, gain = hourly_effects(site, geo, learned, [w for w in weather if day_start <= w.start < day_end])
-
-    def scaled(series: Series) -> Series:
-        return {t: v * (expected.get(t, 0.0) / forecast_wh[t] if forecast_wh.get(t) else 1.0) for t, v in series.items()}
-
-    loss, gain = scaled(loss), scaled(gain)
+    planned = sum(v for t, v in forecast_wh.items() if day_start <= t < day_end)
+    factor = sum(v for t, v in expected.items() if day_start <= t < day_end) / planned if planned > 0 else 1.0
+    loss = {t: v * factor for t, v in loss.items()}
+    gain = {t: v * factor for t, v in gain.items()}
     if clear_weather:
         free = forecast(site, geo, replace(learned, cells={}, facade=None),
                         [w for w in clear_weather if day_start <= w.start < day_end])

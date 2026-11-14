@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- The shade area in the day card keeps the shape of the shadow once the hours have passed. It could swell into a
+  hump or shrink where a shaded hour produced more or less than forecast, although that mostly showed how well the
+  shadow edge was learned, not the weather. The loss to shade now follows how bright the day was as a whole.
+
 ## [0.4.0] - 2026-11-13
 
 All changes since 0.3.1: the pre-release 0.4.0b1 (its single steps are listed in

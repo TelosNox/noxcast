@@ -367,15 +367,17 @@ def charge_curtails(systems: Mapping[str, System], sid: str, feed_in_mode: str) 
             or feed_in_mode == "none")
 
 
-def curtailed_arrays(systems: Mapping[str, System], feed_in_mode: str) -> dict[str, tuple[str, ...]]:
+def curtailed_arrays(systems: Mapping[str, System]) -> dict[str, tuple[str, ...]]:
     """System id (with a battery) -> the arrays its battery may curtail when full (chain of ceilings).
 
     Its own arrays: full, it takes nothing more. Under a parent: the arrays of every subsystem that follows the house
     load together with it, and with a shared output limit those of subsystems without a battery, which the limit may
-    hold back. A battery at the house grid with zero export: every array, its surplus can go nowhere else.
+    hold back. Nothing outside its system: a battery raises another device's ceiling only through a control that
+    knows both. A battery at the house grid that is no part of the PV's system, even with zero export, takes only
+    what is fed in anyway; the inverter that holds the export at zero does not know it is there, so it curtails the
+    same with the battery or without.
     """
     out: dict[str, tuple[str, ...]] = {}
-    every = tuple(a for s in sorted(systems.values(), key=lambda s: s.id) for a in s.arrays)
     for s in sorted(systems.values(), key=lambda s: s.id):
         if s.battery is None:
             continue
@@ -386,8 +388,6 @@ def curtailed_arrays(systems: Mapping[str, System], feed_in_mode: str) -> dict[s
                 if behaviour(systems, c.id, CONF_REGULATION) == "load" and behaviour(systems, s.id, CONF_REGULATION) == "load" \
                         or (c.battery is None and parent.get(CONF_OUTPUT_LIMIT)):
                     found += c.arrays
-        if feed_in_mode == "none" and charges_from_house(systems, s.id):
-            found += every
         out[s.id] = tuple(dict.fromkeys(found))
     return out
 
@@ -406,7 +406,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
                     **({"inherited": True} if inherited else {})})
 
     mode = household.get(CONF_FEED_IN_MODE, "none")
-    curtailed = curtailed_arrays(systems, mode)
+    curtailed = curtailed_arrays(systems)
     batteries = {bid: d for bid, (_, d) in _of(subs, SUBENTRY_BATTERY).items()}
     # free and none are what the battery forecast and the day card have always known; a limit counts later
     add("house", "feed_in", NOT_YET if mode == "limited" else EXACT,

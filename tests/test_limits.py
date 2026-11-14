@@ -178,9 +178,10 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     # the Ultra follows the load together with the AC Pro: both batteries; the roof delivers everything
     assert set(free.stores_of("south")) == {inst.Store("soc.u", 95.0), inst.Store("soc.a", 88.0)}
     assert free.stores_of("roof") == ()
-    # zero export: the roof's surplus can only go into the battery at the house grid
+    # zero export: the roof's inverter holds the export at zero without knowing the battery at the house grid,
+    # so that battery being full changes nothing for the roof
     zero = inst.build(arrays, {}, [], 95, systems, BATTERIES, "none")
-    assert zero.stores_of("roof") == (inst.Store("soc.a", 88.0),)
+    assert zero.stores_of("roof") == () and set(zero.stores_of("south")) == set(free.stores_of("south"))
     # the old household setting still counts for every array
     old = inst.build(arrays, {}, ["soc.x"], 95, systems, BATTERIES, "free")
     assert inst.Store("soc.x", 95.0) in old.stores_of("roof") and old.soc_sensors() == ["soc.a", "soc.u", "soc.x"]
@@ -241,7 +242,8 @@ def test_a_pv_only_subsystem_under_a_shared_limit_depends_on_the_other_batteries
     # the shared 800 W may hold back the micro-inverter once the batteries are full; a limit from an entity counts
     assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 88.0), inst.Store("soc.u", 78.0)}
     effects = {(e["node"], e["setting"]): e for e in sy.effects({}, systems, micro)}
-    assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 3   # zero export (the default): also the roof
+    # zero export (the default) adds nothing: the roof is no part of Stream
+    assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 2
 
 
 def test_a_limit_per_phase_waits_for_the_phases():

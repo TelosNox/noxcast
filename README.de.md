@@ -269,8 +269,9 @@ Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späte
 
 Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;
 mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
-Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme; bei Nulleinspeisung auch jeder Akku am
-Hausnetz. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze, wenn das
+Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme. Ein Akku, der nicht zum System gehört,
+auch einer am Hausnetz bei Nulleinspeisung, zählt nicht: Der Wechselrichter, der die Einspeisung auf null hält, kennt
+ihn nicht und regelt mit ihm genauso ab wie ohne ihn. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze, wenn das
 niedriger ist (bei einer Grenze aus einer Entität ihr aktueller Wert). Ein Akku, der mit seiner größten Leistung lädt
 (Stundenspitze ab 95 % der *Max. Ladeleistung*), nimmt ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann
 (das System deckt den Hausverbrauch, eine Ausgangsgrenze gilt oder Nulleinspeisung), zählt das Lernen diese Stunden

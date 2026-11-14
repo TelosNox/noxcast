@@ -97,6 +97,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) ->
         _apply(hass, entry, changes)
         hass.config_entries.async_update_entry(entry, data=data, minor_version=5)
     if entry.minor_version < 6:
+        # "when full" of subsystems and groups becomes a deviation first, so that normalize lifts and keeps it
+        _apply(hass, entry, systems.feed_in_rules(entry.data, store.flat(entry)))
         _apply(hass, entry, systems.normalize(store.flat(entry), ulid_now))
         hass.config_entries.async_update_entry(entry, minor_version=6)
     if entry.minor_version < 7:

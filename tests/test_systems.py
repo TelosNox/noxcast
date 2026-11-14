@@ -172,7 +172,8 @@ def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800}),
             "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "regulation": "load",
                                       "own_feed_in": "never"}),
-            "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "regulation": "load"}),
+            "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "regulation": "load",
+                                       "own_feed_in": "never"}),
             "g": ("system", "Group", {"name": "Group", "template": "group", "regulation": "all"}),
             "old": ("system", "Old roof", {"name": "Old roof", "template": "inverter", "parent": "g", "phase": "l1"}),
             "plug": ("system", "Plug battery", {"name": "Plug battery", "template": "ac_battery", "parent": "g",
@@ -190,7 +191,7 @@ def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     assert not sy.normalize(after, lambda: next(ids))                     # nothing left to do
     # subsystems that disagreed: the system keeps its own value or none, they keep none
     split = {**subs, "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p",
-                                                "regulation": "all"})}
+                                                "regulation": "all", "own_feed_in": "never"})}
     after = sy.apply(split, sy.normalize(split, lambda: next(ids)))
     assert "regulation" not in after["p"][2] and after["p"][2]["own_feed_in"] == "never"
     # a group sharing a limit coordinated its devices
@@ -250,6 +251,19 @@ def test_when_full_becomes_a_deviation_where_it_disagreed_with_the_household():
     free = sy.apply(subs, sy.feed_in_rules({"feed_in_mode": "free"}, subs))
     assert "own_feed_in" not in free["s"][2] and free["b"][2]["own_feed_in"] == "never" and "own_feed_in" not in free["r"][2]
     assert not sy.feed_in_rules({"feed_in_mode": "none"}, zero)                   # nothing left to do
+    # stored before 1.6 on subsystems: becomes theirs, and normalize lifts what they agree on
+    ids = iter(f"w{i}" for i in range(9))
+    old = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load"}),
+           "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "when_full": "load"}),
+           "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "when_full": "load"})}
+    moved = sy.apply(old, sy.feed_in_rules({"feed_in_mode": "free"}, old))
+    after = sy.apply(moved, sy.normalize(moved, lambda: next(ids)))
+    assert after["p"][2]["own_feed_in"] == "never" and "own_feed_in" not in after["u"][2]
+    # one following the household and one deviating: the system takes neither
+    mixed = {**old, "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p",
+                                               "when_full": "all"})}
+    moved = sy.apply(mixed, sy.feed_in_rules({"feed_in_mode": "free"}, mixed))
+    assert "own_feed_in" not in sy.apply(moved, sy.normalize(moved, lambda: next(ids)))["p"][2]
 
 
 def test_a_system_follows_the_household_rule_unless_it_deviates():

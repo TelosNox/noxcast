@@ -183,13 +183,16 @@ def normalize(subs: Subs, new_id: Callable[[], str]) -> Changes:
         if not kids:
             continue
         lifted = dict(pdata)
-        # the regulation goes up with its fixed power, as one setting; the feed-in deviation on its own
+        # the regulation goes up with its fixed power, as one setting; the feed-in deviation on its own, and only
+        # where every subsystem has it: an empty one follows the household, which is a choice as well
         for keys in ((CONF_REGULATION, CONF_FIXED_POWER), (CONF_OWN_FEED_IN,)):
             values = []
             for c in kids:
                 v = tuple(data_of[c].get(k) for k in keys)
-                if v[0] is not None and v not in values:
+                if (v[0] is not None or keys[0] == CONF_OWN_FEED_IN) and v not in values:
                     values.append(v)
+            if values == [(None,)]:
+                continue
             if lifted.get(keys[0]) is None and len(values) == 1:
                 lifted.update({k: x for k, x in zip(keys, values[0])
                                if x is not None and (k != CONF_FIXED_POWER or values[0][0] == "fixed")})
@@ -218,16 +221,20 @@ def feed_in_rules(household: Mapping[str, Any], subs: Subs) -> Changes:
     - Covering only the load when full while the household may feed in: the system never feeds in.
     - Full power without that setting under zero export: such an inverter cannot hold the export at zero, it fed
       in what was left before too.
-    A subsystem follows its system (normalize), so its old setting is only dropped.
+    A subsystem's old setting (stored before 1.6) becomes its deviation the same way, with its system's regulation;
+    normalize then lifts what all subsystems agree on to their system, as before. Runs before that normalize.
     """
     mode = household.get(CONF_FEED_IN_MODE, "none")
     changes = Changes()
-    for sid, (title, d) in sorted(_of(subs, SUBENTRY_SYSTEM).items()):
-        if CONF_WHEN_FULL not in d and not (d.get(CONF_REGULATION) == "all" and mode == "none"):
+    systems = _of(subs, SUBENTRY_SYSTEM)
+    for sid, (title, d) in sorted(systems.items()):
+        parent = systems.get(d.get(CONF_PARENT) or "", ("", {}))[1]
+        regulation = d.get(CONF_REGULATION) or parent.get(CONF_REGULATION)
+        if CONF_WHEN_FULL not in d and (d.get(CONF_PARENT) or not (regulation == "all" and mode == "none")):
             continue
         new = _without(d, CONF_WHEN_FULL)
-        if not d.get(CONF_PARENT) and not d.get(CONF_OWN_FEED_IN):
-            full = d.get(CONF_WHEN_FULL) or ("all" if d.get(CONF_REGULATION) == "all" else None)
+        if not d.get(CONF_OWN_FEED_IN):
+            full = d.get(CONF_WHEN_FULL) or ("all" if regulation == "all" else None)
             if full == "all" and mode == "none":
                 new[CONF_OWN_FEED_IN] = "export"
             elif full == "load" and mode != "none":

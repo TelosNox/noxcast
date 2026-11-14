@@ -164,3 +164,50 @@ def test_there_is_no_limit_holds_until_the_level_moves():
     assert not pt.dismissed(["s1"], {"peak_w": 540.0}, {"s1": 495.0})
     assert not pt.dismissed(["s1", "s2"], suggested, {"s1": 501.0})
     assert not pt.dismissed([], suggested, {})
+
+
+EAST, WEST = ArrayGeometry(15, 90, 800), ArrayGeometry(15, 270, 800)
+
+
+def east_west(first: date, days: int, cap=None):
+    """5-minute means of an east and a west sensor on clear days; cap: the inverter's output limit on their sum,
+    taken off each in proportion to its power."""
+    fine = {"e": {}, "w": {}}
+    hourly = {"e": ({}, {}, {}), "w": ({}, {}, {})}
+    for d in range(days):
+        start = datetime(first.year, first.month, first.day, tzinfo=UTC).timestamp() + d * 86400
+        e, w = clear_minutes(SITE, EAST, start, 1440), clear_minutes(SITE, WEST, start, 1440)
+        if cap is not None:
+            k = [min(1.0, cap / (x + y)) if x + y > 0 else 1.0 for x, y in zip(e, w)]
+            e, w = [x * f for x, f in zip(e, k)], [y * f for y, f in zip(w, k)]
+        for key, minutes in (("e", e), ("w", w)):
+            for i in range(288):
+                fine[key][start + 300 * i] = sum(minutes[5 * i:5 * i + 5]) / 5
+            for h in range(24):
+                values = minutes[60 * h:60 * h + 60]
+                if max(values) > 0:
+                    t = start + 3600 * h
+                    for series, v in zip(hourly[key], (sum(values) / 60, min(values), max(values))):
+                        series[t] = v
+    return fine, hourly
+
+
+def test_an_output_limit_on_the_sum_of_east_and_west_is_found_where_no_sensor_is_flat():
+    first = date(2026, 5, 1)
+    now = datetime(2026, 5, 6, tzinfo=UTC).timestamp()
+    free, _ = east_west(first, 5)
+    peak = max(a + b for a, b in zip(free["e"].values(), free["w"].values()))
+    fine, hourly = east_west(first, 5, 0.8 * peak)
+    change = pt.clear_change_sum(SITE, [EAST, WEST])
+    for key, geo in (("e", EAST), ("w", WEST)):          # each sensor alone keeps moving: no limit of its own
+        assert pt.detect(*hourly[key], now, day_of, pt.clear_change(SITE, geo), fine[key]) is None
+    found = pt.detect_sum(pt.summed_steps(fine), now, day_of, change)
+    assert found is not None and found.flat_days == 5 and found.peak_w == pytest.approx(0.8 * peak, rel=0.001)
+    # without a limit the sum of east and west is flat around noon by nature, while the sun hardly moves it
+    assert pt.detect_sum(pt.summed_steps(free), now, day_of, change) is None
+    assert pt.detect_sum(pt.summed_steps(fine), datetime(2026, 5, 3, tzinfo=UTC).timestamp(), day_of, change) is None
+
+
+def test_the_sum_counts_only_where_every_sensor_has_a_value():
+    assert pt.summed_steps({"a": {0.0: 1.0, 300.0: 2.0}, "b": {300.0: 3.0, 600.0: 4.0}}) == {300.0: 5.0}
+    assert pt.summed_steps({}) == {}

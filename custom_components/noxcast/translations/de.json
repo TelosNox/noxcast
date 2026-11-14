@@ -105,7 +105,7 @@
             "balance": "Akkus gleichen sich aus"
           },
           "data_description": {
-            "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben.",
+            "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben. Ohne Akku so, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter Reparaturen vor.",
             "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
             "phase": "Die Phase, in die dieses Teilsystem einspeist.",
             "regulation": "Gibt alles ab (einfacher Wechselrichter), deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Leer in einem Teilsystem: wie sein System.",
@@ -180,7 +180,7 @@
                 "sensor_limit_w": "Jeder Sensor liefert höchstens"
               },
               "data_description": {
-                "sensor_limit_w": "Die Grenze eines Eingangs oder Mikrowechselrichters in W, so wie einer der Leistungssensoren oben sie misst (z. B. 800 bei einem 800-W-Mikrowechselrichter). Gilt für jeden Sensor dieser PV-Gruppe. Die Prognose wird darauf begrenzt; leer = keine Grenze."
+                "sensor_limit_w": "Die Grenze eines Eingangs oder Mikrowechselrichters in W, so wie einer der Leistungssensoren oben sie misst (z. B. 800 bei einem 800-W-Mikrowechselrichter; Sensoren der DC-Leistung zeigen an der Grenze einige Prozent mehr). Gilt für jeden Sensor dieser PV-Gruppe. Die Prognose wird darauf begrenzt; leer = keine Grenze."
               }
             },
             "advanced": {
@@ -624,6 +624,35 @@
         },
         "abort": {
           "limit_gone": "Der Vorschlag gilt nicht mehr: Die PV-Gruppe hat schon eine Grenze, oder ihre Messwerte zeigen keine mehr."
+        }
+      }
+    },
+    "system_limit_suggestion": {
+      "title": "System {name}: Leistung scheint bei {peak} W begrenzt",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Ausgangsgrenze für {name}?",
+            "description": "Die PV-Gruppen von **{name}** ({arrays}) haben in den letzten {window_days} Tagen zusammen nie mehr als {peak} W geliefert, und an {flat_days} Tagen blieb ihre Summe flach auf oder nahe diesem Wert, während die Sonne ihn verändert hätte, obwohl keine von ihnen allein flach blieb. Das sieht nach der Ausgangsgrenze des Wechselrichters aus.\n\nEine Ausgangsgrenze von {limit} W für **{name}** setzen? Die Prognose seiner PV-Gruppen wird dann zusammen darauf begrenzt. Der Wert ist das, was die Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung des Wechselrichters. Bis du antwortest, ändert sich nichts.",
+            "menu_options": {
+              "set_limit": "Ausgangsgrenze von {limit} W setzen",
+              "other_value": "Anderer Wert",
+              "no_limit": "Es gibt keine Grenze"
+            }
+          },
+          "other_value": {
+            "title": "Ausgangsgrenze für {name}",
+            "description": "Das Höchste, was die PV-Gruppen von **{name}** ({arrays}) zusammen liefern, in W, wie ihre Leistungssensoren messen. Die Messwerte blieben bei {peak} W.",
+            "data": {
+              "limit_w": "Ausgangsgrenze"
+            },
+            "data_description": {
+              "limit_w": "Was das System höchstens abgibt. Ändern oder entfernen kannst du sie später in den Einstellungen des Systems unter *Ausgangsgrenze*."
+            }
+          }
+        },
+        "abort": {
+          "limit_gone": "Der Vorschlag gilt nicht mehr: Das System hat schon eine Ausgangsgrenze, oder seine Messwerte zeigen keine mehr."
         }
       }
     },

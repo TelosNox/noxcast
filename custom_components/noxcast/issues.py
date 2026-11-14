@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from . import plateau as pt
 from . import systems as sy
 from . import store, views
-from .const import CONF_BATTERY_POWER, CONF_SOC_SENSORS, DOMAIN
+from .const import CONF_BATTERY_POWER, CONF_OUTPUT_LIMIT, CONF_SOC_SENSORS, DOMAIN
 from .coordinator import NoxcastConfigEntry
 
 NO_ARRAYS = "no_arrays"
@@ -20,6 +20,7 @@ MISSING_SENSORS = "missing_sensors"
 WEATHER_UNAVAILABLE = "weather_unavailable"
 ARRAY_CHECK = "array_check_"          # + subentry id
 LIMIT_SUGGESTION = "limit_suggestion_"  # + subentry id; fixable (repairs.py)
+SYSTEM_LIMIT_SUGGESTION = "system_limit_suggestion_"  # + system id; fixable (repairs.py)
 BATTERY_WITHOUT_PV = "battery_without_pv_"  # + battery subentry id
 # only the hints that are configuration errors for sure, as the panel's "Check" badge: direction and season
 # can come from shade as well, so they stay in the panel and the diagnostics
@@ -46,6 +47,42 @@ def limit_suggestions(entry: NoxcastConfigEntry) -> dict[str, dict]:
         if suggested and not pt.dismissed(sensors, suggested, limits.get("dismissed") or {}):
             out[sid] = suggested
     return out
+
+
+def system_limit_suggestions(entry: NoxcastConfigEntry) -> dict[str, dict]:
+    """System id -> suggested output limit (plateau.detect_sum) for systems without a battery and without a limit
+    that explains it, which the user has not rejected. An array's own suggestion comes first: answering it may
+    explain the flat sum as well."""
+    c = entry.runtime_data
+    pending = limit_suggestions(entry)
+    rejected = c.limits.get("dismissed_systems") or {}
+    out = {}
+    for sid, found in (c.limits.get("systems") or {}).items():
+        s = c.systems.get(sid)
+        if s is None or s.get(CONF_OUTPUT_LIMIT):
+            continue
+        tree = [s, *(c.systems[x] for x in s.children if x in c.systems)]
+        arrays = [a for x in tree for a in x.arrays if a in c.arrays]
+        if not arrays or any(x.battery for x in tree) or any(a in pending for a in arrays):
+            continue
+        # known already: every array has a limit of its own, or a system above holds them all under one
+        if all(c.installation.array_limit(a) is not None for a in arrays) or any(
+                set(arrays) <= set(cap.arrays) for cap in c.installation.caps):
+            continue
+        if sid in rejected and abs(float(found["peak_w"]) - rejected[sid]) <= 0.05 * rejected[sid]:
+            continue
+        out[sid] = dict(found)
+    return out
+
+
+def _system_limit_placeholders(entry: NoxcastConfigEntry, sid: str, suggested: dict) -> dict[str, str]:
+    c = entry.runtime_data
+    s = c.systems[sid]
+    tree = [s, *(c.systems[x] for x in s.children if x in c.systems)]
+    names = [c.arrays[a].name for x in tree for a in x.arrays if a in c.arrays]
+    return {"name": s.name, "arrays": ", ".join(names), "peak": f"{suggested['peak_w']:.0f}",
+            "limit": f"{suggested['limit_w']:.0f}", "flat_days": str(suggested["flat_days"]),
+            "window_days": str(suggested["window_days"])}
 
 
 def _limit_placeholders(name: str, sensors: list[str], suggested: dict) -> dict[str, str]:
@@ -89,11 +126,13 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
         arr = c.arrays[sid]
         out[LIMIT_SUGGESTION + sid] = (ir.IssueSeverity.WARNING,
                                        _limit_placeholders(arr.name, list(arr.sensors), suggested))
+    for sid, suggested in system_limit_suggestions(entry).items():
+        out[SYSTEM_LIMIT_SUGGESTION + sid] = (ir.IssueSeverity.WARNING, _system_limit_placeholders(entry, sid, suggested))
     return out
 
 
 def _translation_key(issue_id: str) -> str:
-    for prefix in (ARRAY_CHECK, LIMIT_SUGGESTION, BATTERY_WITHOUT_PV):
+    for prefix in (ARRAY_CHECK, LIMIT_SUGGESTION, SYSTEM_LIMIT_SUGGESTION, BATTERY_WITHOUT_PV):
         if issue_id.startswith(prefix):
             return prefix.rstrip("_")
     return issue_id
@@ -108,8 +147,9 @@ def async_update_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> None:
         keep.add(MISSING_SENSORS)
     for issue_id, (severity, placeholders) in wanted.items():
         # the fix flow (repairs.py) finds the array and the values again from the issue's data
-        limit = issue_id.startswith(LIMIT_SUGGESTION)
-        data = {"entry_id": entry.entry_id, "subentry_id": issue_id.removeprefix(LIMIT_SUGGESTION)} if limit else None
+        prefix = next((p for p in (LIMIT_SUGGESTION, SYSTEM_LIMIT_SUGGESTION) if issue_id.startswith(p)), None)
+        limit = prefix is not None
+        data = {"entry_id": entry.entry_id, "subentry_id": issue_id.removeprefix(prefix)} if prefix else None
         ir.async_create_issue(hass, DOMAIN, issue_id, is_fixable=limit, is_persistent=False, severity=severity,
                               translation_key=_translation_key(issue_id), translation_placeholders=placeholders,
                               data=data)

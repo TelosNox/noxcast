@@ -9,14 +9,18 @@ from homeassistant.helpers import issue_registry as ir
 
 import custom_components.noxcast as noxcast
 from custom_components.noxcast import installation, issues, repairs
+from custom_components.noxcast import systems as sy
 from custom_components.noxcast.const import DOMAIN
 
 
-def _entry(arrays=None, learned=None, ok=True, soc=None, grid=None, batteries=None, limits=None, sensor_limits=None):
+def _entry(arrays=None, learned=None, ok=True, soc=None, grid=None, batteries=None, limits=None, sensor_limits=None,
+           systems=None):
     arrays = arrays or {}
+    systems = systems or {}
     c = SimpleNamespace(arrays=arrays, learned=learned or {}, last_update_success=ok, house_load=None,
-                        consumers={}, batteries=batteries or {}, grid=grid,
-                        installation=installation.build({sid: a.sensors for sid, a in arrays.items()}, sensor_limits),
+                        consumers={}, batteries=batteries or {}, grid=grid, systems=systems,
+                        installation=installation.build({sid: a.sensors for sid, a in arrays.items()}, sensor_limits,
+                                                        systems=systems),
                         limits=limits or {"detected": {}, "dismissed": {}})
     return SimpleNamespace(runtime_data=c, data={"soc_sensors": soc or []}, subentries={}, entry_id="e1")
 
@@ -155,3 +159,75 @@ async def test_the_fix_flow_writes_the_limit_or_remembers_the_answer(hass: HomeA
     entry.runtime_data.installation = installation.build({"r": ["sensor.a", "sensor.b"]}, {"sensor.a": 500, "sensor.b": 500})
     f = await flow()
     assert (await f.async_step_init())["type"] == "abort"
+
+
+EW = {"inv": ("system", "Inverter", {"name": "Inverter", "template": "inverter"}),
+      "e": ("array", "East", {"system": "inv"}), "w": ("array", "West", {"system": "inv"})}
+EW_ARRAYS = {"e": SimpleNamespace(name="East", sensors=["sensor.pv_e"]), "w": SimpleNamespace(name="West", sensors=["sensor.pv_w"])}
+SUM = {"peak_w": 10240.0, "limit_w": 10250.0, "flat_days": 9, "days": 60, "window_days": 60}
+
+
+async def test_an_output_limit_seen_in_the_sum_is_suggested_for_the_system(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.pv_e", "100")
+    hass.states.async_set("sensor.pv_w", "100")
+    found = {"detected": {}, "dismissed": {}, "systems": {"inv": SUM}, "dismissed_systems": {}}
+    issues.async_update_issues(hass, _entry(arrays=EW_ARRAYS, limits=found, systems=sy.systems_of(EW)))
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, "system_limit_suggestion_inv")
+    assert issue.is_fixable and issue.translation_key == "system_limit_suggestion"
+    assert issue.data == {"entry_id": "e1", "subentry_id": "inv"}
+    assert issue.translation_placeholders == {"name": "Inverter", "arrays": "East, West", "peak": "10240",
+                                              "limit": "10250", "flat_days": "9", "window_days": "60"}
+    # an output limit set, a battery below it, or "There is no limit" at about this level: no notice
+    limited = {**EW, "inv": ("system", "Inverter", {"name": "Inverter", "template": "inverter", "output_limit_w": 10000})}
+    issues.async_update_issues(hass, _entry(arrays=EW_ARRAYS, limits=found, systems=sy.systems_of(limited)))
+    assert _ids(hass) == set()
+    battery = {**EW, "b": ("battery", "B", {"system": "inv", "soc_sensor": "sensor.soc"})}
+    issues.async_update_issues(hass, _entry(arrays=EW_ARRAYS, limits=found, systems=sy.systems_of(battery)))
+    assert _ids(hass) == set()
+    rejected = {**found, "dismissed_systems": {"inv": 10000.0}}
+    issues.async_update_issues(hass, _entry(arrays=EW_ARRAYS, limits=rejected, systems=sy.systems_of(EW)))
+    assert _ids(hass) == set()
+    # an array's own suggestion comes first
+    both = {**found, "detected": {"sensor.pv_e": PLATEAU}}
+    issues.async_update_issues(hass, _entry(arrays=EW_ARRAYS, limits=both, systems=sy.systems_of(EW)))
+    assert _ids(hass) == {"limit_suggestion_e"}
+
+
+async def test_the_system_fix_flow_writes_the_output_limit_or_remembers_the_answer(hass: HomeAssistant) -> None:
+    from homeassistant import config_entries
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    data = {"name": "Inverter", "template": "inverter"}
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=6, unique_id=DOMAIN, title="Noxcast", data={},
+                            subentries_data=[config_entries.ConfigSubentryData(
+                                data=data, subentry_type="system", title="Inverter", unique_id=None, subentry_id="inv")])
+    entry.add_to_hass(hass)
+    rejected: list = []
+
+    async def dismiss(system, peak):
+        rejected.append((system, peak))
+    systems = sy.systems_of(EW)
+    entry.runtime_data = SimpleNamespace(
+        arrays=EW_ARRAYS, systems=systems, installation=installation.build({"e": ["sensor.pv_e"], "w": ["sensor.pv_w"]},
+                                                                            systems=systems),
+        limits={"detected": {}, "dismissed": {}, "systems": {"inv": SUM}, "dismissed_systems": {}},
+        async_dismiss_system_limit=dismiss)
+
+    async def flow():
+        f = await repairs.async_create_fix_flow(hass, "system_limit_suggestion_inv", {"entry_id": entry.entry_id,
+                                                                                   "subentry_id": "inv"})
+        f.hass = hass
+        return f
+
+    f = await flow()
+    menu = await f.async_step_init()
+    assert menu["type"] == "menu" and menu["description_placeholders"]["arrays"] == "East, West"
+    assert (await f.async_step_set_limit())["type"] == "create_entry"
+    assert entry.subentries["inv"].data["output_limit_w"] == 10250.0 and entry.subentries["inv"].data["template"] == "inverter"
+
+    f = await flow()
+    await f.async_step_other_value({"limit_w": 10000})
+    assert entry.subentries["inv"].data["output_limit_w"] == 10000.0
+
+    f = await flow()
+    assert (await f.async_step_no_limit())["type"] == "create_entry" and rejected == [("inv", 10240.0)]

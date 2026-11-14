@@ -18,6 +18,12 @@ the 5-minute archive, an hour of consecutive 5-minute means within FLAT counts t
 does not fill a whole clock hour can count too. A sensor is limited when, within the last WINDOW_DAYS days, it
 never delivered more than its peak and at least MIN_FLAT_DAYS days were flat close to that peak (DRIFT leaves
 room for a limit that moves with the temperature, as a current limit does).
+
+The output limit of an inverter with several inputs (a system without battery) cuts the sum of its sensors, while
+each sensor alone stays free: east rises while west falls. Hourly maxima cannot show a flat sum (the sum of the
+maxima is not the maximum of the sum), so detect_sum reads the 5-minute means of the sum, against the clear-sky
+change of the summed output (clear_change_sum). Its suggestion is the output limit as the sensors measure it:
+sensors of DC power show a few percent more than the inverter's AC rating.
 """
 from __future__ import annotations
 
@@ -74,6 +80,12 @@ def suggested_limit(peak_w: float) -> float:
 
 def clear_change(site: Site, geo: ArrayGeometry, step: float = STEP) -> Change:
     """Change of the array's clear-sky irradiance within a period, from the sun's path alone (no shade, no weather)."""
+    return clear_change_sum(site, [geo], step)
+
+
+def clear_change_sum(site: Site, geos: list[ArrayGeometry], step: float = STEP) -> Change:
+    """The same for the summed output of several arrays: each one's clear-sky irradiance weighted by its peak
+    power. East and west together change less around noon than either alone."""
     cache: dict[float, float] = {}
 
     def irradiance(t: float) -> float:
@@ -84,8 +96,11 @@ def clear_change(site: Site, geo: ArrayGeometry, step: float = STEP) -> Change:
             else:
                 dni_extra = extra_radiation(t)
                 ghi, dni, dhi = clearsky_simplified_solis(sun.elevation, site.pressure, dni_extra)
-                beam, diffuse, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
-                cache[t] = beam + diffuse
+                total = 0.0
+                for geo in geos:
+                    beam, diffuse, _ = array_irradiance(geo, sun, dni, dhi, ghi, dni_extra)
+                    total += (beam + diffuse) * (geo.peak_w if len(geos) > 1 else 1.0)
+                cache[t] = total
         return cache[t]
 
     def change(start: float, end: float) -> float | None:
@@ -215,6 +230,44 @@ def detect(mean: Series, low: Series, high: Series, now: float, day_of: Callable
     if flat < MIN_FLAT_DAYS:
         return None
     return Plateau(peak, flat, len(days), window_days)
+
+
+def detect_sum(steps: Series, now: float, day_of: Callable[[float], date], change: Change,
+               window_days: int = WINDOW_DAYS) -> Plateau | None:
+    """The limit of several sensors together (a system's output limit) from the 5-minute means of their sum (W),
+    or None; change: the clear-sky change of their summed output (clear_change_sum). The same rules as detect on
+    the 5-minute archive: flat runs at the top of a day, framed, while the sun would have moved the sum."""
+    start = now - window_days * 86400
+    days: dict[date, list[tuple[float, float]]] = {}
+    for t, v in steps.items():
+        if start <= t < now and v is not None:
+            days.setdefault(day_of(t), []).append((t, v))
+    if not days:
+        return None
+    peak = max(v for d in days.values() for _, v in d)
+    if peak < MIN_W:
+        return None
+    flat = 0
+    for d in days.values():
+        d.sort()
+        top = max(v for _, v in d)
+        if top < (1 - DRIFT) * peak:
+            continue
+        level = day_level_steps(d, top, change)
+        if level is not None and level >= (1 - DRIFT) * peak:
+            flat += 1
+    if flat < MIN_FLAT_DAYS:
+        return None
+    return Plateau(peak, flat, len(days), window_days)
+
+
+def summed_steps(per_sensor: Mapping[str, Series]) -> Series:
+    """The 5-minute sum of several sensors, only where every one of them has a value: a missing sensor would
+    look like a drop of the sum."""
+    if not per_sensor:
+        return {}
+    common = set.intersection(*(set(s) for s in per_sensor.values()))
+    return {t: sum(s[t] for s in per_sensor.values()) for t in sorted(common)}
 
 
 def suggestion(sensors: list[str], found: Mapping[str, Plateau | dict]) -> dict | None:

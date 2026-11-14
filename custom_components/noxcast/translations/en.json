@@ -105,7 +105,7 @@
             "balance": "Batteries balance each other"
           },
           "data_description": {
-            "output_limit_w": "What the system delivers at most, e.g. 800 W or the AC power of the inverter. With subsystems: what they deliver together.",
+            "output_limit_w": "What the system delivers at most, e.g. 800 W or the AC power of the inverter. With subsystems: what they deliver together. Without a battery, enter it as the PV power sensors measure it at the limit: sensors of DC power show a few percent more than the AC power. When the measurements show a limit, Noxcast suggests it under Repairs.",
             "limit_per_phase": "Switch on if the limit holds for each phase on its own (several balcony devices on different phases).",
             "phase": "The phase this subsystem feeds into.",
             "regulation": "Delivers everything (plain inverter), covers the house load (zero export with a meter) or delivers a fixed power. Empty in a subsystem: as its system.",
@@ -180,7 +180,7 @@
                 "sensor_limit_w": "Each sensor delivers at most"
               },
               "data_description": {
-                "sensor_limit_w": "The limit of one input or micro-inverter in W, as one of the power sensors above measures it (e.g. 800 for an 800 W micro-inverter). Applies to every sensor of this array. The forecast is capped at it; empty = no limit."
+                "sensor_limit_w": "The limit of one input or micro-inverter in W, as one of the power sensors above measures it (e.g. 800 for an 800 W micro-inverter; sensors of DC power show a few percent more at the limit). Applies to every sensor of this array. The forecast is capped at it; empty = no limit."
               }
             },
             "advanced": {
@@ -624,6 +624,35 @@
         },
         "abort": {
           "limit_gone": "The suggestion no longer holds: the array has a limit already, or its measurements no longer show one."
+        }
+      }
+    },
+    "system_limit_suggestion": {
+      "title": "System {name}: output seems to be limited at {peak} W",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Output limit for {name}?",
+            "description": "Together, the PV arrays of **{name}** ({arrays}) delivered no more than {peak} W in the last {window_days} days, and on {flat_days} days their sum stayed flat at or near that level while the sun would have changed it, although none of them stayed flat on its own. This looks like the output limit of the inverter.\n\nSet an output limit of {limit} W for **{name}**? The forecast of its PV arrays together is then capped at it. The value is what the power sensors measure at the limit: sensors of DC power show a few percent more than the inverter's AC rating. Until you answer, nothing changes.",
+            "menu_options": {
+              "set_limit": "Set output limit of {limit} W",
+              "other_value": "Other value",
+              "no_limit": "There is no limit"
+            }
+          },
+          "other_value": {
+            "title": "Output limit for {name}",
+            "description": "The most the PV arrays of **{name}** ({arrays}) deliver together, in W as their power sensors measure it. The measurements stayed at {peak} W.",
+            "data": {
+              "limit_w": "Output limit"
+            },
+            "data_description": {
+              "limit_w": "What the system delivers at most. You can change or remove it later in the system's settings under *Output limit*."
+            }
+          }
+        },
+        "abort": {
+          "limit_gone": "The suggestion no longer holds: the system has an output limit already, or its measurements no longer show one."
         }
       }
     },

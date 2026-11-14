@@ -15,7 +15,7 @@
     "band": null,
     "model_compare": null,
     "battery_log": {},
-    "limits": {"detected": {}, "dismissed": {}},
+    "limits": {"detected": {}, "dismissed": {}, "systems": {}, "dismissed_systems": {}},
     "exclusions": [{"start": 1778655600.0, "end": 1778742000.0, "note": "x"}],
     "last_learning": null,
     "arrays": {},

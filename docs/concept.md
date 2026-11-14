@@ -327,6 +327,10 @@ east + west and vertical east + west at 50° N, with a time-of-day pattern the e
 **Geometry check.** The panel's tilt / azimuth search fits one best plane. For an array with
 several orientations it is skipped: one plane does not describe it, and shifting one of its planes
 would mostly fit learned shade or direction factor. The panel lists the configured planes instead.
+For one plane the fit minimises the spread (interquartile range over median) of measured to modelled power on a
+coarse and a fine grid; the confidence comes from how much the spread drops and from the number of hours, so a
+flat array, where the azimuth barely matters, gets no hint. It is never applied automatically, since the shading
+map depends on the geometry.
 
 **Compatibility.** An array without further orientations is computed exactly as before (bit for
 bit), and its learned state and geometry key stay valid. Adding, changing or removing an
@@ -423,9 +427,14 @@ not types of their own. Independent devices are systems of their own, side by si
 
 ## Data filters
 
-- Curtailment by a state (`curtailment.py`): an hour in which the highest state of charge of the configured
-  batteries reaches "full" is left out of learning and flagged `curtailed` in the archive. Export limits and an
-  output limit behind a battery are not used for learning yet (installation model above).
+- Curtailment by a state (`curtailment.py`, `installation.py`): an hour in which the highest state of charge of a
+  battery that can curtail the array reaches "full" is left out of learning and flagged `curtailed` in the
+  archive. The maximum is robust against saw-tooth charging when MPPTs throttle in steps; a constant state of
+  charge alone is not used, since it can also mean PV exactly covers the load. Hours in which such a battery
+  charges at its maximum power, in which a system following the load without a battery may have held PV back
+  (the household imported less than 100 W), and in which the household's export reached its feed-in limit count
+  as lower bounds instead. An output limit behind a battery is not used for learning yet (installation model
+  above).
 - Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,
   micro-inverter). An hour whose maximum reaches 95 % of it is at the limit (`limited` in the archive; the band
   skips it, the forecast error does not, since forecast and measurement are both capped). In learning it is a
@@ -463,8 +472,9 @@ not types of their own. Independent devices are systems of their own, side by si
     strong limit, the direction factor in bins that are mostly at the limit (they keep 1), and shade that never
     pushes the power below the limit (it costs only on hazy days).
 - Snow: zero output under clear sky and frost. Not built yet (#282): such hours enter learning today.
-- Outages: `unavailable` and incomplete hours are left out; all-zero days are not yet (#282), only through a
-  manual exclusion.
+- Outages: hours without statistics (a sensor unavailable the whole hour, or one of the array's sensors missing)
+  are left out. A sensor unavailable for part of an hour still enters with the recorder's mean; all-zero days are
+  not left out yet (#282), only through a manual exclusion.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
   its mean (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are
   left out of efficiency, direction factor, reflection and the clear-hour median of the shading

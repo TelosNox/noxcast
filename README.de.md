@@ -255,7 +255,7 @@ Ausgangsgrenze.
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
 | System | Ein Akku je System. Leer: ein eigenes System am Hausnetz |
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
-| Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert |
+| Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor für die Akkuleistung zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 
 Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
 nur den Akku laden. Teilsysteme mit Akkus unter einer gemeinsamen Grenze geben zusammen höchstens diese Grenze ab.
@@ -266,8 +266,11 @@ Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den System
 mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
 Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme; bei Nulleinspeisung auch jeder Akku am
 Hausnetz. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze, wenn das
-niedriger ist (bei einer Grenze aus einer Entität ihr aktueller Wert). PV, die zurückgehalten wird, weil ein nicht
-voller Akku mit seiner größten Leistung lädt, erkennt Noxcast noch nicht.
+niedriger ist (bei einer Grenze aus einer Entität ihr aktueller Wert). Ein Akku, der mit seiner größten Leistung lädt
+(Stundenspitze ab 95 % der *Max. Ladeleistung*), nimmt ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann
+(das System deckt den Hausverbrauch, eine Ausgangsgrenze gilt oder Nulleinspeisung), zählt das Lernen diese Stunden
+als „mindestens so viel“, wie bei einer festen Grenze. Sie auszulassen würde gerade die hellen Stunden entfernen.
+Dafür braucht es den Sensor für die Akkuleistung und die größte Ladeleistung.
 
 ### 6. Optionen (⋮ → Konfigurieren)
 

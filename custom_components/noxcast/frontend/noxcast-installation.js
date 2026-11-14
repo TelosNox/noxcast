@@ -16,10 +16,12 @@ const INST_TEXT = {
       one_storage: "Akkus werden als ein Speicher simuliert", output_limit: "Ausgangsgrenze",
       limit_per_phase: "Grenze gilt pro Phase", phase: "Phase", regulation: "Regelung", fixed_power: "Feste Leistung",
       when_full: "Wenn der Akku voll ist", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
-      sensor_limit: "Jeder Sensor liefert höchstens", full_learning: "PV-Gruppen, deren Lernen Stunden mit vollem Akku auslässt" },
+      sensor_limit: "Jeder Sensor liefert höchstens", full_learning: "PV-Gruppen, deren Lernen Stunden mit vollem Akku auslässt",
+      charge_learning: "Stunden mit größter Ladeleistung zählen als „mindestens“" },
     values: { free: "frei", none: "keine (Nulleinspeisung)", all: "gibt alles ab", load: "deckt den Hausverbrauch", fixed: "feste Leistung",
       own_pv: "eigener PV", house: "dem Haushalt", l1: "L1", l2: "L2", l3: "L3", three: "dreiphasig", yes: "ja", no: "nein",
-      whenFull: { all: "alles abgeben", load: "weiter nur den Verbrauch decken" } },
+      whenFull: { all: "alles abgeben", load: "weiter nur den Verbrauch decken" },
+      chargeMissing: "braucht Sensor Akkuleistung und max. Ladeleistung" },
     battery: "Akku", array: "PV-Gruppe", sensors: "{n} Sensoren", sensor: "1 Sensor", sub: "Teilsystem",
     empty: "enthält noch nichts",
   },
@@ -35,10 +37,12 @@ const INST_TEXT = {
       one_storage: "Batteries are simulated as one storage", output_limit: "Output limit",
       limit_per_phase: "Limit holds per phase", phase: "Phase", regulation: "Regulation", fixed_power: "Fixed power",
       when_full: "When the battery is full", charges_from: "Battery charges from", balance: "Batteries balance each other",
-      sensor_limit: "Each sensor delivers at most", full_learning: "PV arrays whose learning leaves out hours with the battery full" },
+      sensor_limit: "Each sensor delivers at most", full_learning: "PV arrays whose learning leaves out hours with the battery full",
+      charge_learning: "Hours charging at the maximum count as \"at least\"" },
     values: { free: "free", none: "none (zero export)", all: "delivers everything", load: "covers the house load", fixed: "fixed power",
       own_pv: "own PV", house: "the household", l1: "L1", l2: "L2", l3: "L3", three: "three-phase", yes: "yes", no: "no",
-      whenFull: { all: "deliver everything", load: "keep covering the load only" } },
+      whenFull: { all: "deliver everything", load: "keep covering the load only" },
+      chargeMissing: "needs the battery power sensor and max charge power" },
     battery: "Battery", array: "PV array", sensors: "{n} sensors", sensor: "1 sensor", sub: "Subsystem",
     empty: "contains nothing yet",
   },
@@ -86,6 +90,7 @@ class NoxcastInstallation extends HTMLElement {
     if (v === false) return t.no;
     if (Array.isArray(v)) return v.map((x) => this._w(x)).join(", ");
     if (["output_limit", "fixed_power"].includes(setting)) return this._w(v);
+    if (setting === "charge_learning") return v == null ? t.chargeMissing : this._w(v);
     if (setting === "feed_in" && typeof v === "number") return `≤ ${this._w(v)}`;
     if (setting === "when_full") return t.whenFull[v] || esc(v);
     if (setting === "old_soc") return String(v);

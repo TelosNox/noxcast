@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
-    CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
-    CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
+    CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
+    CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSORS, CONF_SYSTEM,
     CONF_TEMPLATE, CONF_WHEN_FULL, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
 )
@@ -180,6 +180,15 @@ def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
     return sid in systems and systems[sid].get(CONF_CHARGES_FROM) == "house"
 
 
+def charge_curtails(systems: Mapping[str, System], sid: str, feed_in_mode: str) -> bool:
+    """A battery charging at its maximum power curtails PV only where the rest cannot go out: its system follows
+    the house load, an output limit holds above it (its own or its system's), or nothing may be exported."""
+    s = systems[sid]
+    above = [s, *([systems[s.parent]] if s.parent is not None else [])]
+    return (behaviour(systems, sid, CONF_REGULATION) == "load" or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
+            or feed_in_mode == "none")
+
+
 def curtailed_arrays(systems: Mapping[str, System], feed_in_mode: str) -> dict[str, tuple[str, ...]]:
     """System id (with a battery) -> the arrays its battery may curtail when full (chain of ceilings).
 
@@ -219,6 +228,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
 
     mode = household.get(CONF_FEED_IN_MODE, "none")
     curtailed = curtailed_arrays(systems, mode)
+    batteries = {bid: d for bid, (_, d) in _of(subs, SUBENTRY_BATTERY).items()}
     # free and none are what the battery forecast and the day card have always known; a limit counts later
     add("house", "feed_in", NOT_YET if mode == "limited" else EXACT,
         household.get(CONF_FEED_IN_LIMIT) if mode == "limited" else mode)
@@ -259,9 +269,14 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         if s.battery and s.get(CONF_CHARGES_FROM):
             add(sid, "charges_from", SIMPLIFIED, s.get(CONF_CHARGES_FROM))
         if curtailed.get(sid):
-            # every hour with the battery full is left out, also one in which the output stayed below its ceiling;
-            # PV held back by the charge power of a battery that is not full is not known yet
+            # every hour with the battery full is left out, also one in which the output stayed below its ceiling
             add(sid, "full_learning", SIMPLIFIED, len(curtailed[sid]))
+            if charge_curtails(systems, sid, mode):
+                # charging at its maximum it takes no more either: a lower bound, known from its power sensor and
+                # maximum
+                d = batteries.get(s.battery or "", {})
+                known = bool(d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE))
+                add(sid, "charge_learning", SIMPLIFIED if known else NOT_YET, d.get(CONF_MAX_CHARGE) if known else None)
         if s.children:
             # today every battery is simulated in one storage: exact when they balance
             add(sid, "balance", EXACT if s.get(CONF_BALANCE) else NOT_YET, bool(s.get(CONF_BALANCE)))

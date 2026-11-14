@@ -203,8 +203,10 @@ Every setting stays changeable.
 | Battery charges from | Own PV (before the output) or the household (own inverter at the house grid) |
 | Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |
 
-Noxcast stores every setting, also those it does not compute yet; the panel tab *Installation* shows per setting
-whether it counts exactly, simplified or not yet. Later versions compute more of them without new input.
+Noxcast stores every setting, also those it does not compute yet. The panel tab *Installation* draws the installation
+as a flow diagram (PV arrays, systems with their batteries and limits, house, grid); tapping a part shows its settings
+and whether each counts exactly, simplified or not yet. The forms for systems, PV arrays and batteries show the same
+diagram on top. Later versions compute more of the settings without new input.
 
 ### 3. PV arrays (one per group of power sensors)
 

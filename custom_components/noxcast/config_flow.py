@@ -355,7 +355,19 @@ def _part_choices(entry: ConfigEntry, battery: str | None = None) -> dict[str, s
             if not s.children and (battery is None or s.battery in (None, battery))}
 
 
-class ArraySubentryFlow(ConfigSubentryFlow):
+class _DiagramMixin:
+    """The installation's flow diagram on top of a subentry form, so the form shows where the part sits."""
+
+    def _diagram(self) -> dict[str, str]:
+        from .panel import diagram_markdown
+
+        try:
+            return {"diagram": diagram_markdown(self.hass, self._get_entry())}  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 – the form works without the picture
+            return {"diagram": ""}
+
+
+class ArraySubentryFlow(_DiagramMixin, ConfigSubentryFlow):
     """Add or reconfigure one PV array."""
 
     def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
@@ -369,7 +381,7 @@ class ArraySubentryFlow(ConfigSubentryFlow):
         errors = self._errors(user_input)
         if user_input is not None and not errors:
             return self.async_create_entry(title=user_input[CONF_NAME], data=_array_data(user_input))
-        return self.async_show_form(step_id="user", errors=errors,
+        return self.async_show_form(step_id="user", errors=errors, description_placeholders=self._diagram(),
                                     data_schema=_array_schema(user_input or {}, _part_choices(self._get_entry())))
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -378,7 +390,7 @@ class ArraySubentryFlow(ConfigSubentryFlow):
         if user_input is not None and not errors:
             return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
                                                data=_array_data(user_input))
-        return self.async_show_form(step_id="reconfigure", errors=errors,
+        return self.async_show_form(step_id="reconfigure", errors=errors, description_placeholders=self._diagram(),
                                     data_schema=_array_schema(user_input or dict(subentry.data),
                                                               _part_choices(self._get_entry())))
 
@@ -537,7 +549,7 @@ def _battery_data(user_input: dict[str, Any]) -> dict[str, Any]:
     return {**BATTERY_DEFAULTS, **_flatten(user_input, BATTERY_SECTIONS)}
 
 
-class BatterySubentryFlow(ConfigSubentryFlow):
+class BatterySubentryFlow(_DiagramMixin, ConfigSubentryFlow):
     """Add or reconfigure a battery for the surplus simulation."""
 
     def _choices(self, own: str | None) -> dict[str, str]:
@@ -564,7 +576,7 @@ class BatterySubentryFlow(ConfigSubentryFlow):
         errors = self._errors(user_input)
         if user_input is not None and not errors:
             return self.async_create_entry(title=user_input[CONF_NAME], data=_battery_data(user_input))
-        return self.async_show_form(step_id="user", errors=errors,
+        return self.async_show_form(step_id="user", errors=errors, description_placeholders=self._diagram(),
                                     data_schema=_battery_schema(_battery_data(user_input or {}), self._choices(None)))
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -573,7 +585,7 @@ class BatterySubentryFlow(ConfigSubentryFlow):
         if user_input is not None and not errors:
             return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
                                                data=_battery_data(user_input))
-        return self.async_show_form(step_id="reconfigure",
+        return self.async_show_form(step_id="reconfigure", description_placeholders=self._diagram(),
                                     data_schema=_battery_schema(_battery_data(user_input) if user_input else dict(subentry.data),
                                                                 self._choices(subentry.subentry_id)),
                                     errors=errors)
@@ -614,7 +626,7 @@ def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool
     return vol.Schema(fields)
 
 
-class SystemSubentryFlow(ConfigSubentryFlow):
+class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
     """Add or reconfigure a system: first what it is (template, parent), then its settings, filled in by the
     template. Arrays and batteries choose their system in their own forms."""
 
@@ -651,7 +663,7 @@ class SystemSubentryFlow(ConfigSubentryFlow):
                 self._basics = dict(user_input)
                 return await self.async_step_settings()
         return self.async_show_form(step_id=step, data_schema=_system_basics(user_input or self._old, parents),
-                                    errors=errors)
+                                    errors=errors, description_placeholders=self._diagram())
 
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         template = self._basics[CONF_TEMPLATE]

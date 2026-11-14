@@ -73,7 +73,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.",
+          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template",
@@ -85,7 +85,7 @@
         },
         "reconfigure": {
           "title": "System",
-          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.",
+          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template",
@@ -136,7 +136,7 @@
       "step": {
         "user": {
           "title": "PV array",
-          "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.",
+          "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.\n\n{diagram}",
           "data": {
             "name": "Name",
             "power_sensors": "Power sensors",
@@ -288,7 +288,8 @@
                 "heating": "Own value instead of the mounting: how much the cells heat above the air at 1000 W/m². Empty = from the mounting."
               }
             }
-          }
+          },
+          "description": "{diagram}"
         }
       },
       "error": {
@@ -395,7 +396,7 @@
       "step": {
         "user": {
           "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.",
+          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "State of charge",
@@ -443,7 +444,7 @@
         },
         "reconfigure": {
           "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.",
+          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "State of charge",

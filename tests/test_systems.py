@@ -108,3 +108,20 @@ def test_behaviour_is_inherited_and_limits_both_hold():
     # shared by subsystems with batteries: the battery forecast caps them together, PV and learning do not yet
     assert effects[("p", "balance")] == sy.EXACT and effects[("p", "output_limit")] == sy.SIMPLIFIED
     assert effects[("u", "full_learning")] == sy.SIMPLIFIED and effects[("p", "regulation")] == sy.SIMPLIFIED
+
+
+def test_the_flow_diagram_shows_every_part_and_the_limits():
+    fl = load("flowchart")
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800, "balance": True}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"}),
+            "a": ("system", "Pro <&>", {"name": "Pro <&>", "template": "pv_battery", "parent": "p"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "output_limit_w": 600}),
+            "south": ("array", "South", {"system": "u"}), "roof": ("array", "Roof", {"system": "r"}),
+            "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u"})}
+    svg = fl.render(sy.tree({"feed_in_mode": "none"}, subs), "de")
+    for node in ("p", "u", "a", "r", "south", "roof", "house"):
+        assert f'data-node="{node}"' in svg
+    assert "zusammen ≤ 800 W" in svg and "≤ 600 W" in svg and "Nulleinspeisung" in svg
+    assert "Pro &lt;&amp;&gt;" in svg and "<&>" not in svg                  # names are escaped
+    assert svg.startswith("<svg") and svg.endswith("</svg>")
+    assert "Noch keine Systeme" in fl.render(sy.tree({}, {}), "de")

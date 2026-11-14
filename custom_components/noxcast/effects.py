@@ -62,7 +62,7 @@ def significant_periods(site: Site, geo: ArrayGeometry, learned: LearnedArray, d
 def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, weather: list[WeatherHour],
                 forecast_wh: Series, expected: Series, day_start: float,
                 day_end: float, clear_weather: list[WeatherHour] | None = None,
-                held: Series | None = None) -> dict:
+                held: Series | None = None, cut: set[float] | frozenset[float] = frozenset()) -> dict:
     """Shade loss and reflection gain of the day, scaled like the expected output, with significant periods.
 
     One factor per day scales both: the expected output of the day over its forecast. The effects are computed
@@ -70,6 +70,8 @@ def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, we
     hour would read the deviation of a shaded hour as weather, although there it mostly says how well the
     shadow edge was learned: a shadow that lasted longer than learned shrank the loss, a little more diffuse
     light than forecast in deep shade inflated it, and the day card drew a hump instead of the shadow.
+    Hours in cut (curtailed or at a power limit) stay out of the factor: there the measurement shows the
+    limit, not the weather.
 
     The scaled loss is also bounded so that expected output plus loss, and the held forecast plus loss that the
     day card draws, never exceed the unshaded output under clear sky.
@@ -77,8 +79,9 @@ def day_effects(site: Site, geo: ArrayGeometry, learned: LearnedArray | None, we
     if learned is None:
         return {"loss": {}, "gain": {}, "periods": []}
     loss, gain = hourly_effects(site, geo, learned, [w for w in weather if day_start <= w.start < day_end])
-    planned = sum(v for t, v in forecast_wh.items() if day_start <= t < day_end)
-    factor = sum(v for t, v in expected.items() if day_start <= t < day_end) / planned if planned > 0 else 1.0
+    hours = [t for t in forecast_wh if day_start <= t < day_end and t not in cut]
+    planned = sum(forecast_wh[t] for t in hours)
+    factor = sum(expected.get(t, 0.0) for t in hours) / planned if planned > 0 else 1.0
     loss = {t: v * factor for t, v in loss.items()}
     gain = {t: v * factor for t, v in gain.items()}
     if clear_weather:

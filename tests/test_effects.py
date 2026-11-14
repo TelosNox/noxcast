@@ -75,6 +75,13 @@ def test_one_factor_per_day_keeps_the_shape_of_the_shadow():
     scaled = effects.day_effects(SITE, GEO, learned, weather, base, expected, DAY, DAY + 86400)["loss"]
     for t, v in loss.items():
         assert abs(scaled[t] - v * factor) < 1e-6
+    # a curtailed hour shows the limit, not the weather, and stays out of the factor
+    noon = max(base, key=base.get)
+    capped = {**expected, noon: base[noon] * 0.2}
+    cut = effects.day_effects(SITE, GEO, learned, weather, base, capped, DAY, DAY + 86400, cut={noon})["loss"]
+    kept = sum(v for t, v in expected.items() if t != noon) / sum(v for t, v in base.items() if t != noon)
+    for t, v in loss.items():
+        assert abs(cut[t] - v * kept) < 1e-6
 
 
 def test_scaled_loss_stays_below_the_unshaded_clear_sky():

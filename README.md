@@ -258,9 +258,11 @@ limit. All batteries are still simulated as one storage (capacities add up, limi
 forecast per system that does not balance with others follows in a later version.
 
 Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
-*covers the house load*, also the batteries of the subsystems it coordinates with; with zero export, also every
-battery at the house grid. A battery counts as full from *Battery considered full at*, or 2 points below its upper
-limit if that is lower.
+*covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
+under a shared output limit, the batteries of the other subsystems; with zero export, also every battery at the house
+grid. A battery counts as full from *Battery considered full at*, or 2 points below its upper limit if that is lower
+(with a limit from an entity, its current value). PV held back because a battery that is not full charges at its
+maximum power is not recognised yet.
 
 ### 6. Options (⋮ → Configure)
 

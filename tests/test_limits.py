@@ -176,7 +176,7 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     arrays = {"south": ["pv.s"], "roof": ["pv.r"]}
     free = inst.build(arrays, {}, [], 95, systems, BATTERIES, "free")
     # the Ultra follows the load together with the AC Pro: both batteries; the roof delivers everything
-    assert free.stores_of("south") == (inst.Store("soc.u", 95.0), inst.Store("soc.a", 88.0))
+    assert set(free.stores_of("south")) == {inst.Store("soc.u", 95.0), inst.Store("soc.a", 88.0)}
     assert free.stores_of("roof") == ()
     # zero export: the roof's surplus can only go into the battery at the house grid
     zero = inst.build(arrays, {}, [], 95, systems, BATTERIES, "none")
@@ -229,3 +229,22 @@ def test_subsystems_share_the_output_limit_in_the_battery_forecast():
     caps = bt.limits([ultra, pro], {"south": {0.0: 1000.0, 3600.0: 300.0}}, [0.0, 3600.0])
     # 1000 W of PV behind 800 W together: 200 W only for the batteries, and they deliver nothing more
     assert caps.capped == {0.0: 200.0} and caps.discharge == {0.0: 0.0, 3600.0: 500.0}
+
+
+def test_a_pv_only_subsystem_under_a_shared_limit_depends_on_the_other_batteries():
+    micro = {**STREAM, "m": ("system", "Micro", {"name": "Micro", "template": "inverter", "parent": "p",
+                                                 "regulation": "all"}),
+             "balcony": ("array", "Balcony", {"system": "m"})}
+    systems = sy.systems_of(micro)
+    built = inst.build({"south": ["pv.s"], "balcony": ["pv.b"]}, {}, [], 95, systems, BATTERIES, "free",
+                       max_soc={"bu": 80})
+    # the shared 800 W may hold back the micro-inverter once the batteries are full; a limit from an entity counts
+    assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 88.0), inst.Store("soc.u", 78.0)}
+    effects = {(e["node"], e["setting"]): e for e in sy.effects({}, systems, micro)}
+    assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 3   # zero export (the default): also the roof
+
+
+def test_a_limit_per_phase_waits_for_the_phases():
+    subs = {**STREAM, "p": ("system", "Stream", {"name": "Stream", "output_limit_w": 800, "limit_per_phase": True})}
+    effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(subs), subs)}
+    assert effects[("p", "output_limit")] == sy.NOT_YET

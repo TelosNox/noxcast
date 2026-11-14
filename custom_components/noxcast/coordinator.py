@@ -115,7 +115,7 @@ def array_configs(entry: ConfigEntry, installation: inst.Installation | None = N
     return configs
 
 
-def installation_of(entry: ConfigEntry) -> inst.Installation:
+def installation_of(entry: ConfigEntry, max_soc: dict[str, float] | None = None) -> inst.Installation:
     """The installation as configured: the arrays' sensors with their limits, the systems and their batteries."""
     arrays, limits = {}, {}
     for sub_id, sub in entry.subentries.items():
@@ -126,7 +126,7 @@ def installation_of(entry: ConfigEntry) -> inst.Installation:
     batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
     return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
                       float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
-                      entry.data.get(CONF_FEED_IN_MODE, "none"))
+                      entry.data.get(CONF_FEED_IN_MODE, "none"), max_soc)
 
 
 def weather_days(forecast_days: int) -> int:
@@ -455,6 +455,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.pv_backtest = result
         self._store.async_delay_save(self._store_data, 5)
 
+    def _installation_now(self) -> inst.Installation:
+        """The installation with the batteries' current upper limits where an entity sets them: a battery held at
+        80 % is full there, not at the household's level."""
+        limits = {bid: self._limit(d.get(CONF_MAX_SOC), d.get(CONF_MAX_SOC_ENTITY), 100)
+                  for bid, d in self.batteries.items() if d.get(CONF_MAX_SOC_ENTITY)}
+        return installation_of(self.config_entry, limits) if limits else self.installation
+
     def _limited_arrays(self) -> set[str]:
         """Arrays with a fixed limit of their own or one shared with the other arrays of their system."""
         return set(self.installation.limited_arrays()) | {a for c in self.installation.caps for a in c.arrays}
@@ -567,10 +574,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
         power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
         household = list(options.get(CONF_SOC_SENSORS) or [])
-        soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(self.installation.soc_sensors())),
+        installation = self._installation_now()
+        soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(installation.soc_sensors())),
                                             start, "max")
         air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
-        full = {sid: frozenset(self.installation.full_hours(sid, soc)) for sid in self.arrays}
+        full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
                                air_temp, satellite_ghi, full)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
@@ -1067,7 +1075,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_curtailed(self, day_start: float, now: float) -> dict[str, set[float]]:
         """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full (see
         forecasting.curtailed_hours and installation.stores_of)."""
-        soc_ids = self.installation.soc_sensors()
+        installation = self._installation_now()
+        soc_ids = installation.soc_sensors()
         if not soc_ids:
             return {}
         live: dict[str, float] = {}
@@ -1089,7 +1098,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         out: dict[str, set[float]] = {}
         for sid in self.arrays:
             out[sid] = set()
-            for s in self.installation.stores_of(sid):
+            for s in installation.stores_of(sid):
                 if (s.sensor, s.full_pct) not in hours:
                     hours[(s.sensor, s.full_pct)] = fc.curtailed_hours(
                         {s.sensor: hourly.get(s.sensor) or {}}, {s.sensor: recent.get(s.sensor) or {}},

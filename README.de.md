@@ -263,9 +263,11 @@ Alle Akkus werden weiter als ein Speicher simuliert (Kapazitäten addiert, Grenz
 Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späteren Version.
 
 Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;
-mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; bei Nulleinspeisung auch
-jeder Akku am Hausnetz. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze,
-wenn das niedriger ist.
+mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
+Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme; bei Nulleinspeisung auch jeder Akku am
+Hausnetz. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze, wenn das
+niedriger ist (bei einer Grenze aus einer Entität ihr aktueller Wert). PV, die zurückgehalten wird, weil ein nicht
+voller Akku mit seiner größten Leistung lädt, erkennt Noxcast noch nicht.
 
 ### 6. Optionen (⋮ → Konfigurieren)
 

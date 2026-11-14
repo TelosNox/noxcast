@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import systems as sy
-from .const import CONF_LIMIT_PER_PHASE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT, CONF_REGULATION, CONF_SOC_SENSOR
+from .const import CONF_LIMIT_PER_PHASE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT, CONF_SOC_SENSOR
 
 FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
 
@@ -100,30 +100,21 @@ class Installation:
 
 
 def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], feed_in_mode: str,
-            soc_full: float) -> dict[str, tuple[Store, ...]]:
-    """Array -> the batteries that may curtail it (chain of ceilings).
+            soc_full: float, max_soc: Mapping[str, float]) -> dict[str, tuple[Store, ...]]:
+    """Array -> the batteries that may curtail it (systems.curtailed_arrays).
 
-    Its own system's battery: full, it takes nothing more. A system that follows the house load also stops when
-    the batteries it coordinates with (the subsystems of its system) are full. With zero export every array also
-    depends on the batteries at the house grid, the only place its surplus could still go. A battery counts as
-    full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is lower.
+    A battery counts as full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is
+    lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
     """
-    store = {bid: Store(d[CONF_SOC_SENSOR], min(soc_full, float(d.get(CONF_MAX_SOC) or 100) - FULL_TOLERANCE))
+    store = {bid: Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(bid, d.get(CONF_MAX_SOC) or 100))
+                                                - FULL_TOLERANCE))
              for bid, d in batteries.items() if d.get(CONF_SOC_SENSOR)}
-    own = {s.id: store[s.battery] for s in systems.values() if s.battery in store}
-    house = [own[sid] for sid in sorted(own) if sy.charges_from_house(systems, sid)]
-    out: dict[str, tuple[Store, ...]] = {}
-    for s in systems.values():
-        if not s.arrays:
-            continue
-        found = [own[s.id]] if s.id in own else []
-        if s.parent is not None and sy.behaviour(systems, s.id, CONF_REGULATION) == "load":
-            found += [own[c] for c in systems[s.parent].children if c in own]
-        if feed_in_mode == "none":
-            found += house
-        for a in s.arrays:
-            out[a] = tuple(dict.fromkeys(found))
-    return out
+    out: dict[str, list[Store]] = {}
+    for sid, arrays in sy.curtailed_arrays(systems, feed_in_mode).items():
+        if systems[sid].battery in store:
+            for a in arrays:
+                out.setdefault(a, []).append(store[systems[sid].battery])
+    return {a: tuple(dict.fromkeys(s)) for a, s in out.items()}
 
 
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
@@ -147,9 +138,9 @@ def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap,
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
           soc_sensors: Iterable[str] = (), soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
-          feed_in_mode: str = "free") -> Installation:
+          feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None) -> Installation:
     """The installation from the configuration: arrays (id -> sensors), limits (sensor -> W), the systems and the
-    battery subentries' data."""
+    battery subentries' data; max_soc: battery id -> current upper limit in % where an entity sets it."""
     limits = limits or {}
     inputs = {}
     for array, sensors in arrays.items():
@@ -158,5 +149,5 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
             inputs[s] = Input(s, array, float(w) if w is not None and w > 0 else None)
     systems = systems or {}
     return Installation(House(tuple(soc_sensors), float(soc_full_pct)), inputs,
-                        _stores(systems, batteries or {}, feed_in_mode, float(soc_full_pct)),
+                        _stores(systems, batteries or {}, feed_in_mode, float(soc_full_pct), max_soc or {}),
                         _caps(systems, arrays))

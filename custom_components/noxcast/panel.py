@@ -331,7 +331,8 @@ def ws_installation(hass: HomeAssistant, connection: websocket_api.ActiveConnect
     _send(connection, msg, {"entries": entries})
 
 
-DIAGRAM_URL = "/api/noxcast/installation.svg"
+# no ".svg" ending: the Markdown filter of the forms might drop SVG images by their name; the content type says it
+DIAGRAM_URL = "/api/noxcast/installation_diagram"
 
 
 def diagram_markdown(hass: HomeAssistant, entry: Any) -> str:

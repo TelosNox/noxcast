@@ -950,6 +950,10 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     assert set(names) == {"Roof", "Batteries"}
     assert [c["name"] for c in names["Batteries"]["children"]] == ["Balcony battery", "Cellar battery"]
     assert names["Batteries"]["children"][0]["arrays"][0]["name"] == "Balcony"
+    # the flow diagram, in the language asked for
+    await client.send_json_auto_id({"type": "noxcast/installation", "language": "de"})
+    diagram = (await client.receive_json())["result"]["entries"][0]["diagram"]
+    assert diagram.startswith("<svg") and 'data-node="house"' in diagram and "Netz" in diagram
 
 
 async def test_later_days_follow_the_forecast_horizon(hass: HomeAssistant) -> None:

@@ -109,15 +109,16 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
         """A system box with its arrays to the left; returns the y below it."""
         lines = _lines(s, t)
         arrays = s.get("arrays") or []
-        height = max(30 + 16 * len(lines) + 8, len(arrays) * (ROW + GAP) - GAP)
+        empty = not arrays and not s.get("battery")
+        height = max(30 + 16 * (len(lines) + empty) + 8, len(arrays) * (ROW + GAP) - GAP)
         sid = escape(s["id"])
         body.append(f'<g data-node="{sid}"><rect class="sys" x="{SYS_X}" y="{y0:.0f}" width="{SYS_W}" '
                     f'height="{height:.0f}" rx="8"/>' + _text(SYS_X + 12, y0 + 18, "t", _short(s["name"], 18), "start")
                     + "".join(_text(SYS_X + 12, y0 + 38 + 16 * i, "s", _short(x, 28), "start")
                               for i, x in enumerate(lines))
                     + _dot(SYS_X + SYS_W - 12, y0 + 12, _status(effects, s["id"])) + "</g>")
-        if not arrays and not s.get("battery"):
-            body.append(_text(SYS_X + SYS_W / 2, y0 + height - 12, "s", t["empty"]))
+        if empty:
+            body.append(_text(SYS_X + 12, y0 + 38 + 16 * len(lines), "s", t["empty"], "start"))
         top = y0 + (height - (len(arrays) * (ROW + GAP) - GAP)) / 2
         for i, a in enumerate(arrays):
             ay = top + i * (ROW + GAP)
@@ -143,7 +144,8 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
                 mids.append((start + y) / 2)
                 y += GAP
             frame_bottom = y - GAP + FRAME_PAD
-            label = f'{_short(s["name"], 16)} · {t["balance"]}' if s.get("balance") else _short(s["name"], 24)
+            # the frame is about 26 characters wide at 13 px, the dot included
+            label = f'{_short(s["name"], 11)} · {t["balance"]}' if s.get("balance") else _short(s["name"], 23)
             body.append(f'<g data-node="{escape(s["id"])}"><rect class="frame" x="{SYS_X - FRAME_PAD}" '
                         f'y="{frame_top:.0f}" width="{SYS_W + 2 * FRAME_PAD}" height="{frame_bottom - frame_top:.0f}" '
                         f'rx="12"/>' + _text(SYS_X, frame_top + 16, "t", label, "start")

@@ -139,9 +139,9 @@ class NoxcastInstallation extends HTMLElement {
     return walk(e.systems, null);
   }
 
-  _detail(e) {
+  _detail(e, sel) {
     const t = this._t;
-    const node = this._sel && this._find(e, this._sel);
+    const node = sel && this._find(e, sel);
     if (!node) return `<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
     return `<div class="head"><span class="title">${esc(node.title)}</span></div>
@@ -159,7 +159,7 @@ class NoxcastInstallation extends HTMLElement {
       const sel = this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke-width: 2.4; }</style>` : "";
       return `<section class="card pad">${sel}
         ${e.systems.length ? `<div class="flow">${e.diagram || ""}</div>` : `<div class="muted">${t.noSystems}</div>`}
-        <div class="detail">${this._detail(e)}</div>
+        <div class="detail">${this._detail(e, e.systems.length ? this._sel : "house")}</div>
         <p class="help">${t.help} ${t.edit}</p>
         <button class="chip" data-entries="1">${t.openEntry}</button></section>`;
     }).join("");

@@ -2,6 +2,7 @@
 and consumer."""
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -33,6 +34,8 @@ from .const import (
 )
 from . import systems as sy
 from .sources import async_archive_irradiance, async_archive_temperature, async_open_meteo
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _select(options, key: str) -> selector.SelectSelector:
@@ -364,6 +367,7 @@ class _DiagramMixin:
         try:
             return {"diagram": diagram_markdown(self.hass, self._get_entry())}  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001 – the form works without the picture
+            _LOGGER.debug("Installation diagram for the form unavailable", exc_info=True)
             return {"diagram": ""}
 
 

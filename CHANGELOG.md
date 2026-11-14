@@ -16,7 +16,8 @@ breaking changes.
 - A new panel tab *Installation* shows the installation as entered (household, systems, subsystems, PV arrays,
   batteries) and per setting whether Noxcast computes it exactly, simplified or not yet. Settings that do not count
   yet are stored and count in later versions without new input.
-- The household's feed-in can be limited to a value in W, besides free and none.
+- The household's feed-in can be limited to a value in W, besides free and none. The limit is stored now and counts
+  in a later version.
 - A Repairs notice asks which PV arrays charge a battery when the update could not tell (see below).
 
 ### Changed
@@ -28,9 +29,10 @@ breaking changes.
   and entities stay as they were. A DC battery without a PV array gets a Repairs notice: choose its system in the
   PV arrays behind it, or change it to *Battery at the house grid*.
 - The battery form no longer has *Coupling* and *Shared inverter*: where the battery sits and the output limit are
-  set on its system.
-- The battery state of charge sensors in the main entry are the old setting: they stay where set, new installations
-  no longer show them.
+  set on its system. A battery added without a system gets one of its own at the house grid (default efficiency
+  90 %, as AC before); choose *PV with battery in one device* for a battery before the output (95 %).
+- A system's template can be changed; the output limit and the other values the new template does not set are
+  kept.
 
 ## [0.4.0] - 2026-11-13
 

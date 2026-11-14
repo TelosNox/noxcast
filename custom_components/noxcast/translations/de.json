@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Hausverbrauch, Netz und Einspeisung. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Akku-Sensoren fürs Lernen, Hausverbrauch, Netz und Einspeisung. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
         "data": {
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
@@ -16,7 +16,7 @@
           "feed_in_limit_w": "Einspeisegrenze"
         },
         "data_description": {
-          "soc_sensors": "Alte Einstellung für alle PV-Gruppen: Stunden mit vollem Akku werden beim Lernen ausgelassen. Besser jeden Akku seinem System zuordnen; dann kann dieses Feld leer bleiben.",
+          "soc_sensors": "Stunden, in denen ein Akku voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme.",
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
@@ -47,7 +47,8 @@
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
           "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
-          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf."
+          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf.",
+          "soc_sensors": "Stunden, in denen ein Akku voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme."
         }
       }
     },
@@ -772,7 +773,7 @@
     },
     "battery_without_pv": {
       "title": "Welche PV-Gruppen laden den Akku {name}?",
-      "description": "Der Akku **{name}** sitzt vor dem Ausgang eines Geräts mit PV (System **{system}**), aber zu diesem System gehört keine PV-Gruppe. Aus den bisherigen Einstellungen kann Noxcast nicht wissen, welche PV-Gruppen dahinter hängen.\n\nÖffne unter Einstellungen → Geräte & Dienste → Noxcast die PV-Gruppen hinter diesem Gerät und wähle das System **{system}**. Hat der Akku stattdessen einen eigenen Wechselrichter am Hausnetz, stelle das System auf die Vorlage *Akku am Hausnetz* um. Bis dahin rechnet Noxcast wie bisher."
+      "description": "Der Akku **{name}** sitzt vor dem Ausgang eines Geräts mit PV (System **{system}**), aber zu diesem System gehört keine PV-Gruppe, daher weiß Noxcast nicht, welche PV-Gruppen ihn laden. Nach dem Update betrifft das einen Akku, dessen bisherige Einstellungen keine PV-Gruppe nannten.\n\nÖffne unter Einstellungen → Geräte & Dienste → Noxcast die PV-Gruppen hinter diesem Gerät und wähle das System **{system}**. Hat der Akku stattdessen einen eigenen Wechselrichter am Hausnetz, stelle das System auf die Vorlage *Akku am Hausnetz* um. Bis dahin rechnet Noxcast wie bisher."
     }
   }
 }

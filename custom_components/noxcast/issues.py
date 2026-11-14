@@ -79,7 +79,7 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
     # which arrays sit behind it (until answered, it computes as before)
     subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
     for sid in sy.battery_without_pv(subs):
-        system = c.systems.get(c.batteries[sid].get("system") or "")
+        system = c.systems.get(subs[sid][2].get("system") or "")
         out[BATTERY_WITHOUT_PV + sid] = (ir.IssueSeverity.WARNING, {"name": subs[sid][1],
                                                                     "system": system.name if system else ""})
     for sid, suggested in limit_suggestions(entry).items():

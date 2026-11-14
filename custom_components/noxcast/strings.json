@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: house load, grid and feed-in. Add your systems, PV arrays and batteries afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: battery sensors for learning, house load, grid and feed-in. Add your systems, PV arrays and batteries afterwards.",
         "data": {
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
@@ -16,7 +16,7 @@
           "feed_in_limit_w": "Feed-in limit"
         },
         "data_description": {
-          "soc_sensors": "Old setting for all PV arrays: hours with a full battery are excluded from learning. Give every battery its system instead; then this field can be emptied.",
+          "soc_sensors": "Hours in which a battery is full are left out of learning for every PV array, because output may be curtailed. Later versions take this over from the batteries of each system.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
@@ -47,7 +47,8 @@
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
           "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
-          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most."
+          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most.",
+          "soc_sensors": "Hours in which a battery is full are left out of learning for every PV array, because output may be curtailed. Later versions take this over from the batteries of each system."
         }
       }
     },
@@ -772,7 +773,7 @@
     },
     "battery_without_pv": {
       "title": "Which PV arrays charge the battery {name}?",
-      "description": "The battery **{name}** sits before the output of a device with PV (system **{system}**), but no PV array belongs to that system. Noxcast cannot tell from the former settings which arrays are behind it.\n\nOpen the PV arrays behind this device under Settings → Devices & services → Noxcast and choose the system **{system}**. If the battery has its own inverter at the house grid instead, change the system to the template *Battery at the house grid*. Until then Noxcast computes as before."
+      "description": "The battery **{name}** sits before the output of a device with PV (system **{system}**), but no PV array belongs to that system, so Noxcast cannot tell which arrays charge it. After the update this happens to a battery whose former settings did not name its PV array.\n\nOpen the PV arrays behind this device under Settings → Devices & services → Noxcast and choose the system **{system}**. If the battery has its own inverter at the house grid instead, change the system to the template *Battery at the house grid*. Until then Noxcast computes as before."
     }
   }
 }

@@ -40,16 +40,13 @@ def _select(options, key: str) -> selector.SelectSelector:
 
 
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
-    """The household. The battery sensors for all arrays at once are the old setting: shown only where they are
-    set, new installations give every battery its system."""
-    old = {
+    """The household. The battery sensors here leave full-battery hours out of learning for every array; they stay
+    until the systems' own batteries take that over (a later computation step)."""
+    return vol.Schema({
         vol.Optional(CONF_SOC_SENSORS, default=defaults.get(CONF_SOC_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
         vol.Required(CONF_SOC_FULL, default=defaults.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)):
             selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")),
-    } if defaults.get(CONF_SOC_SENSORS) else {}
-    return vol.Schema({
-        **old,
         vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Optional(CONF_GRID, description={"suggested_value": defaults.get(CONF_GRID)}):
@@ -597,7 +594,8 @@ def _system_basics(d: dict[str, Any], parents: dict[str, str]) -> vol.Schema:
 
 def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool) -> vol.Schema:
     """Only the settings that can apply: battery settings for templates with a battery, the shared settings for
-    systems with subsystems, the phase for subsystems. Selects left empty are inherited from the parent."""
+    systems with subsystems, the phase for subsystems. Regulation and "when full" left empty are inherited from
+    the parent."""
     def choice(key: str, options) -> tuple:
         return vol.Optional(key, description={"suggested_value": d.get(key)}), _select(options, key)
 
@@ -660,7 +658,8 @@ class SystemSubentryFlow(ConfigSubentryFlow):
         own = self._own()
         systems = _systems(self._get_entry())
         # a changed template fills in its settings anew; the same template keeps what was set
-        defaults = dict(self._old) if self._old.get(CONF_TEMPLATE) == template else sy.template_data(template)
+        defaults = dict(self._old) if self._old.get(CONF_TEMPLATE) == template \
+            else {**self._old, **sy.template_data(template)}
         group = template in ("coupled", "group") or bool(own in systems and systems[own].children)
         battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
         errors = {}

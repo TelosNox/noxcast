@@ -127,8 +127,8 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 
 ### Set up
 
-1. Settings → Devices & services → *Add integration* → **Noxcast**. Choose whether surplus may go to the grid;
-   everything else can stay empty.
+1. Settings → Devices & services → *Add integration* → **Noxcast**. Pick the battery's state of charge sensor if
+   you have one and choose whether surplus may go to the grid; everything else can stay empty.
 2. On the integration page: ⋮ → *Add PV array*. Pick the power sensor(s), enter tilt, azimuth and peak power.
    Add one array per group of modules that is measured together. Each array gets a system of its own (an inverter
    without battery); with a battery or several devices, add a *System* first and choose it in the array.
@@ -169,12 +169,12 @@ integration page (⋮ → *Add system* / *Add PV array* / *Add battery* / *Add c
 
 | Field | Meaning |
 |---|---|
-| Battery state of charge sensors | Old setting, shown only where it is set: hours in which a battery is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds |
-| Battery considered full at | SOC from which that applies (default 95 %) |
+| Battery state of charge sensors | Hours in which a battery is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds (output may be curtailed). Later versions take this over from the batteries of each system |
+| Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive) |
-| Feed-in, feed-in limit | Free, limited to a value in W, or none (zero export: surplus with full batteries counts as unused) |
+| Feed-in, feed-in limit | Free, limited to a value in W, or none (zero export: surplus with full batteries counts as unused). The limit is stored and counts in a later version |
 | Forecast days | 2–7, today included (default 3) |
 
 ### 2. Systems (how the modules reach the house)
@@ -380,7 +380,7 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | Sensors missing | A configured entity does not exist (renamed or removed) |
 | No weather forecast | Open-Meteo could not be reached for more than a day |
 | Configuration does not fit | A PV array delivers more than its configured modules can: peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
-| Which PV arrays charge the battery? | After the update a battery charges before the output of a device with PV, but no array belongs to its system: the former settings did not say which arrays are behind it. Choose its system in those arrays, or change the system to *Battery at the house grid*. Until then it computes as before |
+| Which PV arrays charge the battery? | A battery charges before the output of a device with PV, but no array belongs to its system (after the update: its former settings did not name its array). Choose its system in those arrays, or change the system to *Battery at the house grid*. Until then it computes as before |
 | Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at or near its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
 
 ## Services

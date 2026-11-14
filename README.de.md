@@ -129,8 +129,8 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 
 ### Einrichten
 
-1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Wählen, ob Überschuss ins Netz darf;
-   alles andere kann leer bleiben.
+1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Den Sensor für den Akku-Ladezustand
+   wählen, falls vorhanden, und ob Überschuss ins Netz darf; alles andere kann leer bleiben.
 2. Auf der Seite der Integration: ⋮ → *PV-Gruppe hinzufügen*. Den oder die Leistungssensoren wählen, Neigung, Azimut
    und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird. Jede PV-Gruppe
    bekommt ein eigenes System (Wechselrichter ohne Akku); mit Akku oder mehreren Geräten zuerst ein *System* anlegen
@@ -171,12 +171,12 @@ Untereinträge anlegen (⋮ → *System hinzufügen* / *PV-Gruppe hinzufügen* /
 
 | Feld | Bedeutung |
 |---|---|
-| Akku-Ladezustand | Alte Einstellung, nur sichtbar, wo sie gesetzt ist: Stunden, in denen ein Akku voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken |
-| Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %) |
+| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein). Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme |
+| Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist) |
-| Einspeisung, Einspeisegrenze | Frei, begrenzt auf einen Wert in W, oder keine (Nulleinspeisung: Überschuss bei vollen Akkus zählt als ungenutzt) |
+| Einspeisung, Einspeisegrenze | Frei, begrenzt auf einen Wert in W, oder keine (Nulleinspeisung: Überschuss bei vollen Akkus zählt als ungenutzt). Die Grenze wird gespeichert und zählt in einer späteren Version |
 | Prognosetage | 2–7, heute eingeschlossen (Standard 3) |
 
 ### 2. Systeme (wie die Module zum Haus kommen)
@@ -387,7 +387,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
 | Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
-| Welche PV-Gruppen laden den Akku? | Nach dem Update lädt ein Akku vor dem Ausgang eines Geräts mit PV, aber zu seinem System gehört keine PV-Gruppe: Die bisherigen Einstellungen sagten nicht, welche PV-Gruppen dahinter hängen. In diesen PV-Gruppen sein System wählen, oder das System auf *Akku am Hausnetz* umstellen. Bis dahin rechnet es wie bisher |
+| Welche PV-Gruppen laden den Akku? | Ein Akku lädt vor dem Ausgang eines Geräts mit PV, aber zu seinem System gehört keine PV-Gruppe (nach dem Update: seine bisherigen Einstellungen nannten keine PV-Gruppe). In diesen PV-Gruppen sein System wählen, oder das System auf *Akku am Hausnetz* umstellen. Bis dahin rechnet es wie bisher |
 | Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 
 ## Dienste

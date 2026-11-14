@@ -193,10 +193,17 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         out.append({"node": node, "setting": setting, "status": status, "value": value})
 
     mode = household.get(CONF_FEED_IN_MODE, "none")
-    add("house", "feed_in", EXACT if mode == "free" else NOT_YET,
+    # free and none are what the battery forecast and the day card have always known; a limit counts later
+    add("house", "feed_in", NOT_YET if mode == "limited" else EXACT,
         household.get(CONF_FEED_IN_LIMIT) if mode == "limited" else mode)
     if household.get(CONF_SOC_SENSORS):
         add("house", "old_soc", EXACT, len(household[CONF_SOC_SENSORS]))
+    # every battery is simulated in one storage: exact only where they all balance in one system
+    with_battery = [s for s in systems.values() if s.battery]
+    if len(with_battery) > 1:
+        parents = {s.parent for s in with_battery}
+        one = len(parents) == 1 and None not in parents and systems[next(iter(parents))].get(CONF_BALANCE)
+        add("house", "one_storage", EXACT if one else SIMPLIFIED, len(with_battery))
     for aid, (_, d) in sorted(arrays.items()):
         if d.get(CONF_SENSOR_LIMITS):
             add(aid, "sensor_limit", EXACT, sorted(set(d[CONF_SENSOR_LIMITS].values())))

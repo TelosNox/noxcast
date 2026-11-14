@@ -248,3 +248,28 @@ def test_a_limit_per_phase_waits_for_the_phases():
     subs = {**STREAM, "p": ("system", "Stream", {"name": "Stream", "output_limit_w": 800, "limit_per_phase": True})}
     effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(subs), subs)}
     assert effects[("p", "output_limit")] == sy.NOT_YET
+
+
+def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest_cannot_go_out():
+    power = {**STREAM, "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u", "max_soc": 100,
+                                                          "battery_power": "p.u", "max_charge_w": 1000}),
+             "ba": ("battery", "AC Pro battery", {"system": "a", "soc_sensor": "soc.a", "battery_power": "p.a",
+                                                  "battery_power_invert": True, "max_charge_w": 500})}
+    systems = sy.systems_of(power)
+    batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
+    built = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {}, [], 95, systems, batteries, "free")
+    assert [c.sensor for c in built.chargers()] == ["p.a", "p.u"]
+    # an inverted sensor reads charging as negative: its minimum is the highest charge power; kW to W
+    peaks = inst.charge_peaks(built.chargers(), {"p.u": {0.0: 0.98, 3600.0: 0.5}}, {"p.a": {7200.0: -0.49}},
+                              {"p.u": 1000.0, "p.a": 1000.0})
+    assert peaks == {"p.u": {0.0: 980.0, 3600.0: 500.0}, "p.a": {7200.0: 490.0}}
+    assert built.full_hours("south", {}, peaks) == {0.0, 7200.0} and built.full_hours("roof", {}, peaks) == set()
+    cut = ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0}))
+    assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and not cut["south"].fixed
+    # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
+    free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "group", "regulation": "all"})}
+    assert inst.build({"south": ["pv.s"]}, {}, [], 95, sy.systems_of(free), batteries, "free").chargers() == []
+    effects = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, power)}
+    assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000
+    unknown = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, STREAM)}
+    assert unknown[("u", "charge_learning")]["status"] == sy.NOT_YET

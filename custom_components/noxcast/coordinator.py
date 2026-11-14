@@ -577,8 +577,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         installation = self._installation_now()
         soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(installation.soc_sensors())),
                                             start, "max")
+        charging = await self._async_charge_peaks(installation, start)
         air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
-        full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
+        full = {sid: frozenset(installation.full_hours(sid, soc, charging)) for sid in self.arrays}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
                                air_temp, satellite_ghi, full)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
@@ -1072,13 +1073,28 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return {}, {}
         return fc.today_actual(self.arrays, power, recent, self._factors, day_start, now)
 
+    async def _async_charge_peaks(self, installation: inst.Installation, start: datetime,
+                                  period: str = "hour") -> dict[str, dict[float, float]]:
+        """Battery power sensor -> highest charge power per period (W), for the batteries whose maximum charge
+        power may curtail PV (installation.charge_peaks)."""
+        chargers = installation.chargers()
+        if not chargers:
+            return {}
+        ids = [c.sensor for c in chargers]
+        factors = await async_power_factors(self.hass, ids)
+        high = await async_hourly_statistics(self.hass, [c.sensor for c in chargers if not c.invert], start, "max",
+                                             period)
+        low = await async_hourly_statistics(self.hass, [c.sensor for c in chargers if c.invert], start, "min", period)
+        return inst.charge_peaks(chargers, high, low, factors)
+
     async def _async_curtailed(self, day_start: float, now: float) -> dict[str, set[float]]:
-        """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full (see
-        forecasting.curtailed_hours and installation.stores_of)."""
+        """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full or charged at
+        its maximum power (see forecasting.curtailed_hours and installation.stores_of)."""
         installation = self._installation_now()
         soc_ids = installation.soc_sensors()
         if not soc_ids:
             return {}
+        charging = await self._async_charging_today(installation, day_start, now)
         live: dict[str, float] = {}
         for sid in soc_ids:
             try:
@@ -1104,6 +1120,38 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                         {s.sensor: hourly.get(s.sensor) or {}}, {s.sensor: recent.get(s.sensor) or {}},
                         [live[s.sensor]] if s.sensor in live else [], s.full_pct, now)
                 out[sid] |= hours[(s.sensor, s.full_pct)]
+                if s.charger:
+                    out[sid] |= {t for t, w in charging.get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
+        return out
+
+    async def _async_charging_today(self, installation: inst.Installation, day_start: float, now: float
+                                    ) -> dict[str, dict[float, float]]:
+        """Battery power sensor -> today's highest charge power per hour start (W): hourly peaks, 5-minute peaks
+        for the hours not yet compiled, and the current state for the running hour."""
+        chargers = installation.chargers()
+        if not chargers:
+            return {}
+        hour_now = now - now % 3600
+        try:
+            hourly = await self._async_charge_peaks(installation, dt_util.utc_from_timestamp(day_start))
+            recent = await self._async_charge_peaks(
+                installation, dt_util.utc_from_timestamp(max(hour_now - 3600, day_start)), "5minute")
+            factors = await async_power_factors(self.hass, [c.sensor for c in chargers])
+        except Exception as err:  # noqa: BLE001 – the full state still counts
+            _LOGGER.debug("Today's battery power statistics unavailable: %s", err)
+            return {}
+        out: dict[str, dict[float, float]] = {}
+        for c in chargers:
+            values = dict(hourly.get(c.sensor, {}))
+            for t, w in recent.get(c.sensor, {}).items():
+                hour = t - t % 3600
+                values[hour] = max(values.get(hour, w), w)
+            try:
+                live = float(self.hass.states.get(c.sensor).state) * factors.get(c.sensor, 1.0) * (-1 if c.invert else 1)
+                values[hour_now] = max(values.get(hour_now, live), live)
+            except (AttributeError, TypeError, ValueError):
+                pass
+            out[c.sensor] = values
         return out
 
     async def _async_limited(self, day_start: float, now: float) -> dict[str, set[float]]:

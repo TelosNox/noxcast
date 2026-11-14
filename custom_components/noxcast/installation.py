@@ -7,7 +7,8 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
   hours at it are lower bounds in learning. That holds for an input (MPPT, micro-inverter) and for the output limit
   of a system without a battery, alone or shared by its subsystems.
 - A battery's full state is a state, no cap: the hours it may have cut are left out of learning instead. Which
-  batteries count for an array follows from where they sit (stores_of).
+  batteries count for an array follows from where they sit (stores_of). A battery charging at its maximum power
+  takes no more either, where the rest cannot go out (systems.charge_curtails): the same state.
 """
 from __future__ import annotations
 
@@ -16,9 +17,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import systems as sy
-from .const import CONF_LIMIT_PER_PHASE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT, CONF_SOC_SENSOR
+from .const import (
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
+    CONF_SOC_SENSOR,
+)
 
 FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
+CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (hourly peak)
 
 
 @dataclass(frozen=True)
@@ -31,11 +36,25 @@ class Input:
 
 
 @dataclass(frozen=True)
+class Charger:
+    """A battery's power sensor (> 0 = charging, unless inverted) and its maximum charge power in W."""
+
+    sensor: str
+    invert: bool
+    max_w: float
+
+    def at_max(self, charging_w: float | None) -> bool:
+        return charging_w is not None and charging_w >= (1 - CHARGE_MARGIN) * self.max_w
+
+
+@dataclass(frozen=True)
 class Store:
-    """A battery whose full state may curtail PV: its state-of-charge sensor and from what % it counts as full."""
+    """A battery whose full state may curtail PV: its state-of-charge sensor and from what % it counts as full;
+    charger: set where charging at its maximum power curtails PV too and the sensor and maximum are known."""
 
     sensor: str
     full_pct: float
+    charger: Charger | None = None
 
 
 @dataclass(frozen=True)
@@ -72,11 +91,22 @@ class Installation:
         """Every state-of-charge sensor that may curtail some array."""
         return sorted({s.sensor for a in {i.array for i in self.inputs.values()} for s in self.stores_of(a)})
 
-    def full_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]]) -> set[float]:
-        """Period starts in which a battery that may curtail the array was full; soc: sensor -> highest % per
-        period."""
-        return {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
-                if v is not None and v >= s.full_pct}
+    def chargers(self) -> list[Charger]:
+        """Every battery power sensor whose maximum may curtail some array."""
+        return sorted({st.charger for group in self.stores.values() for st in group if st.charger},
+                      key=lambda c: c.sensor)
+
+    def full_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]],
+                   charging: Mapping[str, Mapping[float, float]] | None = None) -> set[float]:
+        """Period starts in which a battery that may curtail the array was full or charged at its maximum;
+        soc: sensor -> highest % per period; charging: power sensor -> highest charge power per period, W
+        (charge_peaks)."""
+        out = {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
+               if v is not None and v >= s.full_pct}
+        for s in self.stores_of(array):
+            if s.charger:
+                out |= {t for t, w in (charging or {}).get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
+        return out
 
     def array_limit(self, array: str) -> float | None:
         """The fixed limit of an array's measured sum: the sum of its sensors' limits, if every sensor has one,
@@ -99,6 +129,19 @@ class Installation:
         return {a: w for a in {i.array for i in self.inputs.values()} if (w := self.array_limit(a)) is not None}
 
 
+def charge_peaks(chargers: Iterable[Charger], high: Mapping[str, Mapping[float, float | None]],
+                 low: Mapping[str, Mapping[float, float | None]], factors: Mapping[str, float]
+                 ) -> dict[str, dict[float, float]]:
+    """Power sensor -> highest charge power per period in W, from the period maxima (or minima of an inverted
+    sensor, which reads charging as negative); factors: the sensor's unit to W."""
+    out: dict[str, dict[float, float]] = {}
+    for c in chargers:
+        f = factors.get(c.sensor, 1.0) * (-1.0 if c.invert else 1.0)
+        values = (low if c.invert else high).get(c.sensor, {})
+        out[c.sensor] = {t: v * f for t, v in values.items() if v is not None}
+    return out
+
+
 def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], feed_in_mode: str,
             soc_full: float, max_soc: Mapping[str, float]) -> dict[str, tuple[Store, ...]]:
     """Array -> the batteries that may curtail it (systems.curtailed_arrays).
@@ -106,14 +149,19 @@ def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[st
     A battery counts as full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is
     lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
     """
-    store = {bid: Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(bid, d.get(CONF_MAX_SOC) or 100))
-                                                - FULL_TOLERANCE))
-             for bid, d in batteries.items() if d.get(CONF_SOC_SENSOR)}
     out: dict[str, list[Store]] = {}
     for sid, arrays in sy.curtailed_arrays(systems, feed_in_mode).items():
-        if systems[sid].battery in store:
-            for a in arrays:
-                out.setdefault(a, []).append(store[systems[sid].battery])
+        d = batteries.get(systems[sid].battery or "")
+        if not d or not d.get(CONF_SOC_SENSOR):
+            continue
+        charger = (Charger(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT)), float(d[CONF_MAX_CHARGE]))
+                   if d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE)
+                   and sy.charge_curtails(systems, sid, feed_in_mode) else None)
+        store = Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(systems[sid].battery or "",
+                                                                            d.get(CONF_MAX_SOC) or 100))
+                                              - FULL_TOLERANCE), charger)
+        for a in arrays:
+            out.setdefault(a, []).append(store)
     return {a: tuple(dict.fromkeys(s)) for a, s in out.items()}
 
 

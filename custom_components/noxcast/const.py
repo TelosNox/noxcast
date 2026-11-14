@@ -14,7 +14,10 @@ DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
 CONF_GRID_INVERT = "grid_invert"          # the grid sensor counts export as positive
-CONF_FEED_IN = "feed_in"                  # surplus can be fed into the grid (else it is lost once batteries are full)
+CONF_FEED_IN = "feed_in"                  # until 1.5: surplus can be fed into the grid (bool); now CONF_FEED_IN_MODE
+CONF_FEED_IN_MODE = "feed_in_mode"        # free / limited / none (zero export)
+FEED_IN_OPTIONS = ("free", "limited", "none")
+CONF_FEED_IN_LIMIT = "feed_in_limit_w"    # W, with feed_in_mode "limited"
 CONF_DAY_TYPE = "day_type_entity"         # optional: entity whose state at noon is the day type (workday sensor, input_select)
 
 # consumer subentry: a device with its own power sensor, removed from the base load
@@ -48,8 +51,28 @@ COUPLING_OPTIONS = ("dc", "ac")
 CONF_EFFICIENCY = "efficiency"            # round trip %, empty = default of the coupling
 CONF_MAX_CHARGE = "max_charge_w"
 CONF_MAX_DISCHARGE = "max_discharge_w"
-CONF_OUTPUT_LIMIT = "output_limit_w"    # W, cap of the inverter output for the battery and its PV array together
-CONF_BATTERY_ARRAY = "array"             # subentry id of the PV array behind the same inverter
+CONF_OUTPUT_LIMIT = "output_limit_w"    # until 1.5 on the battery; now on the system (see below)
+CONF_BATTERY_ARRAY = "array"             # until 1.5: subentry id of the PV array behind the same inverter
+
+# system subentry: what delivers through one output to the house or to its parent system (docs/concept.md,
+# installation model). Arrays and batteries name their system, a subsystem its parent.
+SUBENTRY_SYSTEM = "system"
+CONF_SYSTEM = "system"                    # on arrays and batteries: subentry id of their system
+CONF_PARENT = "parent"                    # on systems: subentry id of the parent system (one level only)
+CONF_TEMPLATE = "template"
+TEMPLATE_OPTIONS = ("inverter", "pv_battery", "ac_battery", "coupled", "group")
+# CONF_OUTPUT_LIMIT: what the system delivers at most (W)
+CONF_LIMIT_PER_PHASE = "limit_per_phase"  # the output limit holds per phase (subsystems name their phase)
+CONF_PHASE = "phase"
+PHASE_OPTIONS = ("l1", "l2", "l3", "three")
+CONF_REGULATION = "regulation"            # all: delivers everything; load: covers the house load; fixed: fixed power
+REGULATION_OPTIONS = ("all", "load", "fixed")
+CONF_FIXED_POWER = "fixed_power_w"
+CONF_WHEN_FULL = "when_full"              # battery full: deliver everything up to the limit, or keep covering the load
+WHEN_FULL_OPTIONS = ("all", "load")
+CONF_CHARGES_FROM = "charges_from"        # own_pv: DC, before the output; house: AC, from the surplus of the house
+CHARGES_FROM_OPTIONS = ("own_pv", "house")
+CONF_BALANCE = "balance"                  # the batteries of the subsystems balance each other
 
 # array subentry
 SUBENTRY_ARRAY = "array"
@@ -119,7 +142,7 @@ MORNING_HOUR = 6                         # local hour at which today's forecast 
 ATTR_SCHEMA_VERSION = 1
 # schema of the websocket payloads ("v" in every answer, see views.py); the frontend checks it and asks
 # for a reload when a browser tab still runs the scripts of another version
-WS_SCHEMA_VERSION = 2
+WS_SCHEMA_VERSION = 3
 
 SERVICE_EXCLUDE_PERIOD = "exclude_period"
 SERVICE_RELEARN = "relearn"

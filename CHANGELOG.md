@@ -7,6 +7,31 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- Systems: a new entry *System* describes how modules and batteries reach the house: an inverter, a device with PV
+  and battery, a battery at the house grid, devices that coordinate (e.g. EcoFlow Stream), or several systems summed
+  up for the overview. Templates fill in the settings (output limit, per phase, regulation, when the battery is full,
+  where the battery charges from, batteries balancing each other); a system can hold subsystems that share its
+  limit. Every PV array and every battery belongs to a system, chosen in its own form.
+- A new panel tab *Installation* shows the installation as entered (household, systems, subsystems, PV arrays,
+  batteries) and per setting whether Noxcast computes it exactly, simplified or not yet. Settings that do not count
+  yet are stored and count in later versions without new input.
+- The household's feed-in can be limited to a value in W, besides free and none.
+- A Repairs notice asks which PV arrays charge a battery when the update could not tell (see below).
+
+### Changed
+- Migrated automatically, nothing to do in most cases: the configuration becomes systems on the
+  first start. Every PV array gets a system of its own; a battery with a PV array behind its inverter becomes a
+  system *PV with battery in one device* with that array and its output limit; an AC battery a system *Battery at
+  the house grid*; two or more batteries become subsystems of a system *Batteries* that balance each other, as they
+  were simulated before. *Surplus is fed into the grid* becomes the feed-in *free* or *none*. Forecasts, learning
+  and entities stay as they were. A DC battery without a PV array gets a Repairs notice: choose its system in the
+  PV arrays behind it, or change it to *Battery at the house grid*.
+- The battery form no longer has *Coupling* and *Shared inverter*: where the battery sits and the output limit are
+  set on its system.
+- The battery state of charge sensors in the main entry are the old setting: they stay where set, new installations
+  no longer show them.
+
 ## [0.4.0] - 2026-11-13
 
 All changes since 0.3.1: the pre-release 0.4.0b1 (its single steps are listed in

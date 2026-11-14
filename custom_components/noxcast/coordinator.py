@@ -30,8 +30,8 @@ from .const import (
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
-    CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_BATTERY_ARRAY, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
+    CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
@@ -44,6 +44,7 @@ from . import flows as fl
 from . import battery as bt
 from . import curtailment as ct
 from . import installation as inst
+from . import systems as sy
 from . import forecasting as fc
 from . import hindcast as hc
 from . import learning as ln
@@ -144,6 +145,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
         self.batteries = {sid: dict(sub.data) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_BATTERY}
+        self.systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data))
+                                      for sid, sub in entry.subentries.items()})
         self.load_profile: lf.Profile | None = None
         self.floor_profile: lf.Profile | None = None    # base load from the hourly minimum, for sustained loads
         self.consumer_profiles: dict[str, lf.Profile] = {}
@@ -738,7 +741,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 soc = float(state.state) / 100
             except (AttributeError, TypeError, ValueError):
                 soc = None
-            coupling = d.get(CONF_COUPLING, bt.COUPLING_DC)
+            # the system says where the battery sits: before its output (DC, its arrays and the output limit
+            # count) or at the house (AC, own inverter)
+            system = self.systems.get(d.get(CONF_SYSTEM) or "")
+            house = sy.charges_from_house(self.systems, d.get(CONF_SYSTEM))
+            coupling = bt.COUPLING_AC if house else bt.COUPLING_DC
             eff = d.get(CONF_EFFICIENCY)
             units.append(bt.Battery(
                 capacity_wh=float(d.get(CONF_CAPACITY, 0)) * 1000, soc=soc,
@@ -747,8 +754,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 efficiency=float(eff) / 100 if eff else bt.DEFAULT_EFFICIENCY.get(coupling, 0.95),
                 max_charge_w=float(d[CONF_MAX_CHARGE]) if d.get(CONF_MAX_CHARGE) else None,
                 max_discharge_w=float(d[CONF_MAX_DISCHARGE]) if d.get(CONF_MAX_DISCHARGE) else None,
-                output_w=float(d[CONF_OUTPUT_LIMIT]) if d.get(CONF_OUTPUT_LIMIT) else None,
-                array=d.get(CONF_BATTERY_ARRAY) or None))
+                output_w=float(system.get(CONF_OUTPUT_LIMIT)) if system and system.get(CONF_OUTPUT_LIMIT) else None,
+                arrays=system.arrays if system and not house else ()))
         return units
 
     def _log_battery(self, battery: dict | None, local_now: datetime, now: float) -> None:

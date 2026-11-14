@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import MappingProxyType
 
 import probatio as vol
 
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -13,10 +15,11 @@ from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
+from homeassistant.util.ulid import ulid_now
 
-from .const import CONF_WEATHER_MODELS, DISCONTINUED_MODELS, DOMAIN, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
+from .const import CONF_WEATHER_MODELS, DISCONTINUED_MODELS, DOMAIN, SUBENTRY_SYSTEM, SERVICE_EXCLUDE_PERIOD, SERVICE_RELEARN
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
-from . import issues
+from . import issues, systems
 from .panel import async_setup_panel
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.IMAGE, Platform.SENSOR, Platform.WEATHER]
@@ -68,9 +71,23 @@ def replace_discontinued(models: list[str]) -> list[str]:
     return list(dict.fromkeys(DISCONTINUED_MODELS.get(m, m) for m in models))
 
 
+def subentries_of(entry: NoxcastConfigEntry) -> systems.Subs:
+    return {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
+
+
+def _apply(hass: HomeAssistant, entry: NoxcastConfigEntry, changes: systems.Changes) -> None:
+    """New systems first, so that the updated arrays and batteries never name a missing one."""
+    for sid, title, data in changes.add:
+        hass.config_entries.async_add_subentry(entry, ConfigSubentry(
+            data=MappingProxyType(data), subentry_id=sid, subentry_type=SUBENTRY_SYSTEM, title=title, unique_id=None))
+    for sid, data in changes.update.items():
+        hass.config_entries.async_update_subentry(entry, entry.subentries[sid], data=data)
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    """1.1 -> 1.4: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
-    and the ICON models Open-Meteo discontinues become ICON (icon_seamless, 1.4)."""
+    """1.1 -> 1.5: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
+    the ICON models Open-Meteo discontinues become ICON (icon_seamless, 1.4), and the installation becomes
+    systems (1.5, see systems.migrate)."""
     if entry.version > 1:
         return False
     if entry.minor_version < 3:
@@ -82,10 +99,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) ->
         if options.get(CONF_WEATHER_MODELS):
             options[CONF_WEATHER_MODELS] = replace_discontinued(list(options[CONF_WEATHER_MODELS]))
         hass.config_entries.async_update_entry(entry, options=options, minor_version=4)
+    if entry.minor_version < 5:
+        title = "Akkus" if (hass.config.language or "").startswith("de") else "Batteries"
+        data, changes = systems.migrate(entry.data, subentries_of(entry), ulid_now, title)
+        _apply(hass, entry, changes)
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=5)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
+    # every array and battery belongs to a system: a new array without one gets its own (before the listener,
+    # so this causes no reload)
+    _apply(hass, entry, systems.normalize(subentries_of(entry), ulid_now))
     built_from = _config_state(entry)
     coordinator = NoxcastCoordinator(hass, entry)
     await coordinator.async_load()

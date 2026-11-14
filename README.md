@@ -127,10 +127,11 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 
 ### Set up
 
-1. Settings → Devices & services → *Add integration* → **Noxcast**. Pick the battery's state of charge sensor if
-   you have one; everything else can stay empty.
+1. Settings → Devices & services → *Add integration* → **Noxcast**. Choose whether surplus may go to the grid;
+   everything else can stay empty.
 2. On the integration page: ⋮ → *Add PV array*. Pick the power sensor(s), enter tilt, azimuth and peak power.
-   Add one array per group of modules that is measured together.
+   Add one array per group of modules that is measured together. Each array gets a system of its own (an inverter
+   without battery); with a battery or several devices, add a *System* first and choose it in the array.
 3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
 
 Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Learned* what it
@@ -162,26 +163,56 @@ For the dashboard: *Add card* → *Noxcast*.
 ## Configuration
 
 Settings → Devices & services → Add integration → **Noxcast**. Then add subentries on the
-integration page (⋮ → *Add PV array* / *Add consumer* / *Add battery*).
+integration page (⋮ → *Add system* / *Add PV array* / *Add battery* / *Add consumer*).
 
 ### 1. Main entry
 
 | Field | Meaning |
 |---|---|
-| Battery state of charge sensors | Hours in which a battery is full are left out of learning, and the correction of today's forecast does not read them as clouds (output may be curtailed) |
-| Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
+| Battery state of charge sensors | Old setting, shown only where it is set: hours in which a battery is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds |
+| Battery considered full at | SOC from which that applies (default 95 %) |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive) |
-| Surplus is fed into the grid | Off = zero export: surplus with full batteries counts as unused |
+| Feed-in, feed-in limit | Free, limited to a value in W, or none (zero export: surplus with full batteries counts as unused) |
 | Forecast days | 2–7, today included (default 3) |
 
-### 2. PV arrays (one per group of power sensors)
+### 2. Systems (how the modules reach the house)
+
+A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a
+battery with its own inverter at the house grid, or several devices that coordinate. Every PV array and every battery
+belongs to a system. A system holds either PV arrays and at most one battery, or subsystems (one level), never both.
+
+The form has two steps: what the system is (name, template, *Part of*), then its settings, filled in by the template.
+Every setting stays changeable.
+
+| Template | For |
+|---|---|
+| Inverter without battery | Micro-inverter, string inverter, an older roof installation |
+| PV with battery in one device | Balcony device with battery, hybrid inverter, a DC battery between modules and micro-inverter |
+| Battery at the house grid | Plug-in battery or battery inverter with its own inverter, without PV |
+| Coupled systems | Devices that coordinate and share a limit, e.g. EcoFlow Stream with several units; they become its subsystems |
+| Summarize only | Groups systems for the overview without changing any number, e.g. an old installation and a retrofitted battery |
+
+| Setting | Meaning |
+|---|---|
+| Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins |
+| Limit holds per phase, phase | Several devices on different phases; each subsystem names its phase |
+| Regulation | Delivers everything, covers the house load (zero export with a meter) or delivers a fixed power. A subsystem left empty behaves like its system |
+| When the battery is full | Deliver everything up to the output limit, or keep covering the load only |
+| Battery charges from | Own PV (before the output) or the household (own inverter at the house grid) |
+| Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |
+
+Noxcast stores every setting, also those it does not compute yet; the panel tab *Installation* shows per setting
+whether it counts exactly, simplified or not yet. Later versions compute more of them without new input.
+
+### 3. PV arrays (one per group of power sensors)
 
 An array is what is measured together, usually one MPPT input or one inverter.
 
 | Field | Meaning |
 |---|---|
+| System | The system the array belongs to. Empty: a system of its own (an inverter without battery) |
 | Power sensors | One or more; they are summed |
 | Tilt, azimuth, peak power | Of the modules (azimuth 180° = south) |
 | Further orientations 2–4 | Optional: modules on the same sensors that face another way (e.g. east + south + west on one input, vertical east + west). Each with tilt, azimuth and its own peak power; the array's peak is the sum |
@@ -192,7 +223,7 @@ An array is what is measured together, usually one MPPT input or one inverter.
 
 Learning starts right away from the existing history and then runs every night (01:30).
 
-### 3. Consumers (optional, for the load forecast)
+### 4. Consumers (optional, for the load forecast)
 
 A consumer with its own sensor is taken out of the house load and forecast on its own. The form has two steps: the
 sensor and the timing first, then only the fields of that timing.
@@ -206,10 +237,10 @@ sensor and the timing first, then only the fields of that timing.
 | Run power, run minutes | Flexible only, optional: otherwise learned from history |
 | Start now from PV share | Flexible only, optional (default 70 %): threshold of the *start now* sensor |
 
-### 4. Batteries (optional, needs the house load)
+### 5. Batteries (optional, needs the house load)
 
-Name, state of charge sensor, capacity and coupling are on top; limits, power and a shared inverter are in sections
-that stay closed until they hold a value.
+Name, state of charge sensor, capacity and system are on top; limits and power are in sections that stay closed until
+they hold a value. The system says where the battery sits (see *Battery charges from*) and gives its output limit.
 
 | Field | Meaning |
 |---|---|
@@ -217,13 +248,15 @@ that stay closed until they hold a value.
 | Battery power sensor | Optional: charge/discharge power for the card, positive = charging (*invert* otherwise) |
 | Max / min SOC | Number or entity (e.g. charge limit, backup reserve) |
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
-| Coupling, efficiency | DC (default round trip 95 %) or AC (90 %), or own value |
+| System | One battery per system. Empty: a system of its own at the house grid |
+| Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies |
-| Output limit, PV array | Optional, for balcony systems: what the inverter may feed in (e.g. 800 W) and the PV array on the same inverter. PV and battery together deliver at most the limit; PV above it can only charge the battery. One battery per array |
 
-All batteries are simulated as one storage (capacities add up, limits weighted by capacity).
+With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
+above it can only charge the battery. All batteries are still simulated as one storage (capacities add up, limits
+weighted by capacity); one forecast per system that does not balance with others follows in a later version.
 
-### 5. Options (⋮ → Configure)
+### 6. Options (⋮ → Configure)
 
 | Option | Default |
 |---|---|
@@ -253,6 +286,7 @@ Appears in the sidebar after setup; nothing to configure. Tabs:
 | Forecast accuracy | Day-ahead forecasts against actual over 14 / 30 / 90 days: error, bias, calendar, by weather class, each weather model against the mean; with the satellite filter the split into weather part and model part; a nightly backtest: today's model on past days, and on days it did not learn from; on request a comparison of every weather model and pair over the past year, with a recommendation |
 | Load | Rest of today and tomorrow by part (base load, each consumer), learned profiles, backtest, suggested recurring devices |
 | Battery & surplus | Simulation until tomorrow's charge start, what-if with more capacity or an extra consumer, the morning prediction against what happened, last 30 days |
+| Installation | The installation as entered: household, systems, subsystems, PV arrays and batteries, and per setting whether Noxcast computes it exactly, simplified or not yet |
 | Diagnostics | Installed version, weather, last learning run, archive; every sensor Noxcast reads with state, statistics and coverage; missing data and errors |
 
 ### Day card `custom:noxcast-card`
@@ -346,6 +380,7 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | Sensors missing | A configured entity does not exist (renamed or removed) |
 | No weather forecast | Open-Meteo could not be reached for more than a day |
 | Configuration does not fit | A PV array delivers more than its configured modules can: peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
+| Which PV arrays charge the battery? | After the update a battery charges before the output of a device with PV, but no array belongs to its system: the former settings did not say which arrays are behind it. Choose its system in those arrays, or change the system to *Battery at the house grid*. Until then it computes as before |
 | Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at or near its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
 
 ## Services
@@ -481,9 +516,9 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 
 - Hour by hour from now until tomorrow's charge start (first hour with PV above load): surplus
   charges up to the upper limit and the charge power, the rest is lost (or fed in); a deficit
-  discharges down to min SOC + reserve, the rest comes from the grid. Losses by coupling.
-- With an output limit, a battery delivers at most the limit minus what its PV array delivers in that
-  hour, and PV of the array above the limit goes into the battery or is curtailed.
+  discharges down to min SOC + reserve, the rest comes from the grid. Losses by where the battery sits.
+- With an output limit on its system, a battery delivers at most the limit minus what the system's arrays
+  deliver in that hour, and their PV above the limit goes into the battery or is curtailed.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

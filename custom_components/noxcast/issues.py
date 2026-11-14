@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
 from . import plateau as pt
+from . import systems as sy
 from . import views
 from .const import CONF_BATTERY_POWER, CONF_SOC_SENSORS, DOMAIN
 from .coordinator import NoxcastConfigEntry
@@ -19,6 +20,7 @@ MISSING_SENSORS = "missing_sensors"
 WEATHER_UNAVAILABLE = "weather_unavailable"
 ARRAY_CHECK = "array_check_"          # + subentry id
 LIMIT_SUGGESTION = "limit_suggestion_"  # + subentry id; fixable (repairs.py)
+BATTERY_WITHOUT_PV = "battery_without_pv_"  # + battery subentry id
 # only the hints that are configuration errors for sure, as the panel's "Check" badge: direction and season
 # can come from shade as well, so they stay in the panel and the diagnostics
 CERTAIN_HINTS = {"peak", "high"}
@@ -73,6 +75,13 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
         la = c.learned.get(sid)
         if la is not None and CERTAIN_HINTS & set(la.hints):
             out[ARRAY_CHECK + sid] = (ir.IssueSeverity.WARNING, {"name": arr.name})
+    # a battery before the output of a device with PV, but no array in its system: the migration could not know
+    # which arrays sit behind it (until answered, it computes as before)
+    subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()}
+    for sid in sy.battery_without_pv(subs):
+        system = c.systems.get(c.batteries[sid].get("system") or "")
+        out[BATTERY_WITHOUT_PV + sid] = (ir.IssueSeverity.WARNING, {"name": subs[sid][1],
+                                                                    "system": system.name if system else ""})
     for sid, suggested in limit_suggestions(entry).items():
         arr = c.arrays[sid]
         out[LIMIT_SUGGESTION + sid] = (ir.IssueSeverity.WARNING,
@@ -81,7 +90,7 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
 
 
 def _translation_key(issue_id: str) -> str:
-    for prefix in (ARRAY_CHECK, LIMIT_SUGGESTION):
+    for prefix in (ARRAY_CHECK, LIMIT_SUGGESTION, BATTERY_WITHOUT_PV):
         if issue_id.startswith(prefix):
             return prefix.rstrip("_")
     return issue_id

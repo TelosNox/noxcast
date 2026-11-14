@@ -21,8 +21,8 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import views
-from .const import ARCHIVE_DAYS, CONF_FEED_IN, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
+from . import systems, views
+from .const import ARCHIVE_DAYS, CONF_FEED_IN_MODE, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ WS_CARD = f"{DOMAIN}/card_config"
 WS_LEARNING = f"{DOMAIN}/learning"
 WS_RELEARN = f"{DOMAIN}/relearn"
 WS_REMOVE_EXCLUSION = f"{DOMAIN}/remove_exclusion"
+WS_INSTALLATION = f"{DOMAIN}/installation"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -64,6 +65,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_learning)
     websocket_api.async_register_command(hass, ws_relearn)
     websocket_api.async_register_command(hass, ws_remove_exclusion)
+    websocket_api.async_register_command(hass, ws_installation)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -72,7 +74,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
-                                         "noxcast-diagnostics.js", "noxcast-battery.js",
+                                         "noxcast-diagnostics.js", "noxcast-battery.js", "noxcast-installation.js",
                                          "noxcast-theme.js", "noxcast-day.js", "noxcast-overview.js")
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js", "noxcast-common.js")
     weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js", "noxcast-common.js")
@@ -308,6 +310,16 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
                                        "review_days": REVIEW_DAYS, "entries": entries})
 
 
+@websocket_api.websocket_command({vol.Required("type"): WS_INSTALLATION})
+@callback
+def ws_installation(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The installation as entered (household, systems, arrays, batteries) and how far each setting counts."""
+    _send(connection, msg, {"entries": [
+        {"title": e.title, **systems.tree(e.data, {sid: (sub.subentry_type, sub.title, dict(sub.data))
+                                                    for sid, sub in e.subentries.items()})}
+        for e in hass.config_entries.async_loaded_entries(DOMAIN)]})
+
+
 @websocket_api.websocket_command({vol.Required("type"): WS_CARD})
 @callback
 def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -319,7 +331,7 @@ def ws_card_config(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     entry = entries[0]
     c = entry.runtime_data
     _send(connection, msg, views.card_config(
-        c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), entry.data.get(CONF_FEED_IN), c.batteries,
+        c.arrays, c.house_load, c.grid, entry.data.get(CONF_GRID_INVERT), entry.data.get(CONF_FEED_IN_MODE, "none") != "none", c.batteries,
         _battery_names(entry), er.async_get(hass).async_get_entity_id("weather", DOMAIN, f"{entry.entry_id}_weather")))
 
 

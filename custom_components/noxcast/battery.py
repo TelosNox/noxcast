@@ -9,8 +9,8 @@ Energy flow per hour (Wh, for the part of the hour from now on):
   discharges down to the lower limit plus reserve and the discharge power; the rest comes from
   the grid. Losses: the round-trip efficiency is split evenly into charging and discharging.
 
-Output cap (balcony systems): a battery can sit with one PV array behind an inverter whose output is
-capped (800 W, 1600 W). PV and battery together deliver at most that much. PV above the cap cannot
+Output cap (balcony systems): a battery can sit with PV arrays behind an inverter whose output is
+capped (800 W, 1600 W), the arrays of its system. PV and battery together deliver at most that much. PV above the cap cannot
 reach the house: it can only charge the battery, the rest is curtailed. And the battery delivers at
 most the cap minus what its PV delivers in that hour. Without an array the cap limits the battery alone.
 """
@@ -37,8 +37,8 @@ class Battery:
     efficiency: float = 0.95          # round trip
     max_charge_w: float | None = None
     max_discharge_w: float | None = None
-    output_w: float | None = None     # cap of the inverter's output, for PV of `array` and battery together
-    array: str | None = None          # the PV array (subentry id) behind the same inverter
+    output_w: float | None = None     # cap of the system's output, for PV of `arrays` and battery together
+    arrays: tuple[str, ...] = ()      # the PV arrays (subentry ids) of the same system
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ def limits(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[f
         for b in known:
             own = b.max_discharge_w if b.max_discharge_w else math.inf
             if b.output_w:
-                pv = pv_arrays.get(b.array, {}).get(t, 0.0) if b.array else 0.0
+                pv = sum(pv_arrays.get(a, {}).get(t, 0.0) for a in b.arrays)
                 over += max(pv - b.output_w, 0.0)
                 own = min(own, max(b.output_w - pv, 0.0))
             give += own

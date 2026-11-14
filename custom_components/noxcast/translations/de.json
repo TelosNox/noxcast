@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Optional Akku-Sensoren, um Abregelung zu erkennen. PV-Gruppen danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Hausverbrauch, Netz und Einspeisung. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
         "data": {
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
@@ -11,18 +11,20 @@
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
-          "feed_in": "Überschuss wird eingespeist",
-          "forecast_days": "Prognosetage"
+          "forecast_days": "Prognosetage",
+          "feed_in_mode": "Einspeisung",
+          "feed_in_limit_w": "Einspeisegrenze"
         },
         "data_description": {
-          "soc_sensors": "Stunden mit vollem Akku werden beim Lernen ignoriert, weil dann abgeregelt sein kann.",
+          "soc_sensors": "Alte Einstellung für alle PV-Gruppen: Stunden mit vollem Akku werden beim Lernen ausgelassen. Besser jeden Akku seinem System zuordnen; dann kann dieses Feld leer bleiben.",
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
-          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung).",
-          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag."
+          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
+          "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
+          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf."
         }
       },
       "reconfigure": {
@@ -34,16 +36,18 @@
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
-          "feed_in": "Überschuss wird eingespeist",
-          "forecast_days": "Prognosetage"
+          "forecast_days": "Prognosetage",
+          "feed_in_mode": "Einspeisung",
+          "feed_in_limit_w": "Einspeisegrenze"
         },
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
-          "feed_in": "Einschalten, wenn überschüssige Leistung ins Netz gehen darf. Sonst zählt die Tageskarte Überschuss bei vollem Akku als ungenutzt (Nulleinspeisung).",
-          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag."
+          "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
+          "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
+          "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf."
         }
       }
     },
@@ -51,7 +55,8 @@
       "soc_unit": "Akku-Sensoren müssen den Ladezustand in % liefern.",
       "sensor_missing": "Der gewählte Sensor existiert nicht.",
       "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
-      "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt."
+      "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
+      "feed_in_limit_needed": "Begrenzte Einspeisung braucht die Einspeisegrenze."
     },
     "abort": {
       "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
@@ -59,6 +64,69 @@
     }
   },
   "config_subentries": {
+    "system": {
+      "entry_type": "System",
+      "initiate_flow": {
+        "user": "System hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "System",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.",
+          "data": {
+            "name": "Name",
+            "template": "Vorlage",
+            "parent": "Teil von"
+          },
+          "data_description": {
+            "parent": "Optional: das System, dessen Teilsystem dieses ist, z. B. ein Gerät eines EcoFlow-Stream-Systems. Dessen gemeinsame Grenze und Verhalten gelten dann auch hier."
+          }
+        },
+        "reconfigure": {
+          "title": "System",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. PV-Gruppen und Akkus wählen danach in ihrem eigenen Formular dieses System.",
+          "data": {
+            "name": "Name",
+            "template": "Vorlage",
+            "parent": "Teil von"
+          },
+          "data_description": {
+            "parent": "Optional: das System, dessen Teilsystem dieses ist, z. B. ein Gerät eines EcoFlow-Stream-Systems. Dessen gemeinsame Grenze und Verhalten gelten dann auch hier."
+          }
+        },
+        "settings": {
+          "title": "Einstellungen von {name}",
+          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt.",
+          "data": {
+            "output_limit_w": "Ausgangsgrenze",
+            "limit_per_phase": "Grenze gilt pro Phase",
+            "phase": "Phase",
+            "regulation": "Regelung",
+            "fixed_power_w": "Feste Leistung",
+            "when_full": "Wenn der Akku voll ist",
+            "charges_from": "Akku lädt aus",
+            "balance": "Akkus gleichen sich aus"
+          },
+          "data_description": {
+            "output_limit_w": "Was das System höchstens abgibt, z. B. 800 W oder die AC-Leistung des Wechselrichters. Mit Teilsystemen: was sie zusammen abgeben.",
+            "limit_per_phase": "Einschalten, wenn die Grenze für jede Phase einzeln gilt (mehrere Balkongeräte auf verschiedenen Phasen).",
+            "phase": "Die Phase, in die dieses Teilsystem einspeist.",
+            "regulation": "Gibt alles ab (einfacher Wechselrichter), deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Leer in einem Teilsystem: wie sein System.",
+            "fixed_power_w": "Nur bei fester Leistung: was das System abgibt.",
+            "when_full": "Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken (dann wird PV über dem Verbrauch abgeregelt).",
+            "charges_from": "Eigener PV: Der Akku sitzt vor dem Ausgang (Kompaktgerät, Hybrid-Wechselrichter). Dem Haushalt: eigener Wechselrichter am Hausnetz, lädt aus dem Überschuss des Hauses.",
+            "balance": "Einschalten, wenn die Akkus der Teilsysteme ihre Ladestände angleichen (z. B. EcoFlow Stream). Dann gibt es für sie eine gemeinsame Akku-Prognose."
+          }
+        }
+      },
+      "error": {
+        "parent_not_possible": "Dieses System kann kein Teil sein: Es enthält selbst Teilsysteme, oder das gewählte System enthält PV-Gruppen oder einen Akku.",
+        "fixed_power_needed": "Feste Leistung braucht einen Wert."
+      },
+      "abort": {
+        "reconfigure_successful": "System gespeichert."
+      }
+    },
     "array": {
       "entry_type": "PV-Gruppe",
       "initiate_flow": {
@@ -74,13 +142,15 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "mounting": "Montage"
+            "mounting": "Montage",
+            "system": "System"
           },
           "data_description": {
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
-            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K."
+            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K.",
+            "system": "Was zwischen diesen Modulen und dem Haus liegt: der Wechselrichter oder das Gerät, an dem sie hängen. Leer: Die PV-Gruppe bekommt ein eigenes System (Wechselrichter ohne Akku), das du unter „System“ ändern kannst."
           },
           "sections": {
             "orientation_2": {
@@ -151,11 +221,13 @@
             "tilt": "Neigung",
             "azimuth": "Azimut",
             "peak_power": "Spitzenleistung",
-            "mounting": "Montage"
+            "mounting": "Montage",
+            "system": "System"
           },
           "data_description": {
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",
-            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K."
+            "mounting": "Die Montage bestimmt, wie stark sich die Module in der Sonne erwärmen: frei hinterlüftet (Balkon, Aufständerung) etwa 30 K, dachparallel auf Ziegeln etwa 50 K, ins Dach integriert etwa 60 K.",
+            "system": "Was zwischen diesen Modulen und dem Haus liegt: der Wechselrichter oder das Gerät, an dem sie hängen. Leer: Die PV-Gruppe bekommt ein eigenes System (Wechselrichter ohne Akku), das du unter „System“ ändern kannst."
           },
           "sections": {
             "orientation_2": {
@@ -225,7 +297,8 @@
         "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
         "date_in_future": "Das Datum darf nicht in der Zukunft liegen.",
         "orientation_incomplete": "Eine weitere Ausrichtung braucht Neigung, Azimut und Spitzenleistung.",
-        "orientation_duplicate": "Zwei Ausrichtungen sind gleich. Ihre Module bitte einmal mit der summierten Spitzenleistung eintragen."
+        "orientation_duplicate": "Zwei Ausrichtungen sind gleich. Ihre Module bitte einmal mit der summierten Spitzenleistung eintragen.",
+        "system_has_subsystems": "Dieses System enthält Teilsysteme. PV-Gruppen und Akkus gehören zu einem System ohne Teilsysteme."
       },
       "abort": {
         "reconfigure_successful": "PV-Gruppe gespeichert."
@@ -321,15 +394,15 @@
       "step": {
         "user": {
           "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Mehrere Akkus werden als ein Speicher simuliert.",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.",
           "data": {
             "name": "Name",
             "soc_sensor": "Ladestand",
             "capacity": "Kapazität",
-            "coupling": "Kopplung"
+            "system": "System"
           },
           "data_description": {
-            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %)."
+            "system": "Das System, zu dem der Akku gehört; ein Akku pro System. Leer: ein eigenes System am Hausnetz."
           },
           "sections": {
             "limits": {
@@ -361,35 +434,23 @@
               "data_description": {
                 "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
                 "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
-                "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+                "efficiency": "Leer = Standard: 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz. Wechselrichterverluste stecken schon in den Messwerten.",
                 "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
-              }
-            },
-            "inverter": {
-              "name": "Gemeinsamer Wechselrichter",
-              "description": "Nur für einen Akku am selben Wechselrichter wie eine PV-Gruppe (Balkonkraftwerk).",
-              "data": {
-                "array": "PV-Gruppe am selben Wechselrichter",
-                "output_limit_w": "Ausgangsgrenze des Wechselrichters"
-              },
-              "data_description": {
-                "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
-                "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden."
               }
             }
           }
         },
         "reconfigure": {
           "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Mehrere Akkus werden als ein Speicher simuliert.",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.",
           "data": {
             "name": "Name",
             "soc_sensor": "Ladestand",
             "capacity": "Kapazität",
-            "coupling": "Kopplung"
+            "system": "System"
           },
           "data_description": {
-            "coupling": "DC: Akku hängt an der DC-Seite des PV-Wechselrichters (Verluste etwa 5 %). AC: eigener Wechselrichter (etwa 10 %)."
+            "system": "Das System, zu dem der Akku gehört; ein Akku pro System. Leer: ein eigenes System am Hausnetz."
           },
           "sections": {
             "limits": {
@@ -421,20 +482,8 @@
               "data_description": {
                 "battery_power": "Optional. Leistung des Akkus (W oder kW), positiv = Laden. Die Noxcast-Karte zeigt sie im Energiefluss.",
                 "battery_power_invert": "Einschalten, wenn der Leistungssensor beim Entladen positiv ist.",
-                "efficiency": "Leer = Standardwert der Kopplung. Wechselrichterverluste stecken schon in den Messwerten.",
+                "efficiency": "Leer = Standard: 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz. Wechselrichterverluste stecken schon in den Messwerten.",
                 "max_charge_w": "Leer = keine Grenze. Darüber wird Überschuss eingespeist, obwohl der Akku noch Platz hat."
-              }
-            },
-            "inverter": {
-              "name": "Gemeinsamer Wechselrichter",
-              "description": "Nur für einen Akku am selben Wechselrichter wie eine PV-Gruppe (Balkonkraftwerk).",
-              "data": {
-                "array": "PV-Gruppe am selben Wechselrichter",
-                "output_limit_w": "Ausgangsgrenze des Wechselrichters"
-              },
-              "data_description": {
-                "array": "Optional: die PV-Gruppe am selben Wechselrichter wie dieser Akku. Ihre PV zählt auf die Ausgangsgrenze.",
-                "output_limit_w": "Optional, für Balkonkraftwerke: was der Wechselrichter höchstens einspeisen darf (z. B. 800 W), für Akku und seine PV-Gruppe zusammen. PV darüber kann nur den Akku laden."
               }
             }
           }
@@ -444,8 +493,7 @@
         "limits_order": "Entladegrenze plus Reserve muss unter der Ladegrenze liegen.",
         "soc_unit": "Der Ladestand muss in % angegeben sein.",
         "sensor_missing": "Der gewählte Sensor existiert nicht.",
-        "output_needed": "Eine PV-Gruppe am selben Wechselrichter braucht die Ausgangsgrenze.",
-        "array_taken": "Hinter dieser PV-Gruppe hängt schon ein anderer Akku."
+        "system_taken": "Dieses System hat schon einen Akku. Ein zweiter ist ein eigenes Teilsystem."
       },
       "abort": {
         "reconfigure_successful": "Akku gespeichert."
@@ -457,12 +505,6 @@
       "options": {
         "fixed": "Fest",
         "flexible": "Flexibel"
-      }
-    },
-    "coupling": {
-      "options": {
-        "dc": "DC (am PV-Wechselrichter)",
-        "ac": "AC (eigener Wechselrichter)"
       }
     },
     "kind": {
@@ -478,6 +520,49 @@
         "free": "Frei hinterlüftet (Balkon, Aufständerung)",
         "roof": "Dachparallel",
         "integrated": "Ins Dach integriert"
+      }
+    },
+    "feed_in_mode": {
+      "options": {
+        "free": "Frei",
+        "limited": "Begrenzt",
+        "none": "Keine (Nulleinspeisung)"
+      }
+    },
+    "template": {
+      "options": {
+        "inverter": "Wechselrichter ohne Akku",
+        "pv_battery": "PV mit Akku in einem Gerät",
+        "ac_battery": "Akku am Hausnetz",
+        "coupled": "Gekoppelte Systeme",
+        "group": "Nur zusammenfassen"
+      }
+    },
+    "phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3",
+        "three": "Dreiphasig"
+      }
+    },
+    "regulation": {
+      "options": {
+        "all": "Gibt alles ab",
+        "load": "Deckt den Hausverbrauch",
+        "fixed": "Feste Leistung"
+      }
+    },
+    "when_full": {
+      "options": {
+        "all": "Alles abgeben",
+        "load": "Weiter nur den Verbrauch decken"
+      }
+    },
+    "charges_from": {
+      "options": {
+        "own_pv": "Eigener PV",
+        "house": "Dem Haushalt"
       }
     }
   },
@@ -684,6 +769,10 @@
           "limit_gone": "Der Vorschlag gilt nicht mehr: Die PV-Gruppe hat schon eine Grenze, oder ihre Messwerte zeigen keine mehr."
         }
       }
+    },
+    "battery_without_pv": {
+      "title": "Welche PV-Gruppen laden den Akku {name}?",
+      "description": "Der Akku **{name}** sitzt vor dem Ausgang eines Geräts mit PV (System **{system}**), aber zu diesem System gehört keine PV-Gruppe. Aus den bisherigen Einstellungen kann Noxcast nicht wissen, welche PV-Gruppen dahinter hängen.\n\nÖffne unter Einstellungen → Geräte & Dienste → Noxcast die PV-Gruppen hinter diesem Gerät und wähle das System **{system}**. Hat der Akku stattdessen einen eigenen Wechselrichter am Hausnetz, stelle das System auf die Vorlage *Akku am Hausnetz* um. Bis dahin rechnet Noxcast wie bisher."
     }
   }
 }

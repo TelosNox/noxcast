@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). Optionally add battery sensors used to detect curtailment. Add your PV arrays afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: house load, grid and feed-in. Add your systems, PV arrays and batteries afterwards.",
         "data": {
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
@@ -11,18 +11,20 @@
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
-          "feed_in": "Surplus is fed into the grid",
-          "forecast_days": "Forecast days"
+          "forecast_days": "Forecast days",
+          "feed_in_mode": "Feed-in",
+          "feed_in_limit_w": "Feed-in limit"
         },
         "data_description": {
-          "soc_sensors": "Hours with a full battery are excluded from learning, because output may be curtailed.",
+          "soc_sensors": "Old setting for all PV arrays: hours with a full battery are excluded from learning. Give every battery its system instead; then this field can be emptied.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
-          "feed_in": "Turn on if surplus power may go to the grid. Otherwise the day card counts surplus with full batteries as unused (zero export).",
-          "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield."
+          "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
+          "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
+          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most."
         }
       },
       "reconfigure": {
@@ -34,16 +36,18 @@
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
-          "feed_in": "Surplus is fed into the grid",
-          "forecast_days": "Forecast days"
+          "forecast_days": "Forecast days",
+          "feed_in_mode": "Feed-in",
+          "feed_in_limit_w": "Feed-in limit"
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
-          "feed_in": "Turn on if surplus power may go to the grid. Otherwise the day card counts surplus with full batteries as unused (zero export).",
-          "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield."
+          "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
+          "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
+          "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most."
         }
       }
     },
@@ -51,7 +55,8 @@
       "soc_unit": "Battery sensors must report their state of charge in %.",
       "sensor_missing": "The selected sensor does not exist.",
       "sensor_unit": "Power sensors must report W or kW.",
-      "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics."
+      "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
+      "feed_in_limit_needed": "Limited feed-in needs the feed-in limit."
     },
     "abort": {
       "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
@@ -59,6 +64,69 @@
     }
   },
   "config_subentries": {
+    "system": {
+      "entry_type": "System",
+      "initiate_flow": {
+        "user": "Add system"
+      },
+      "step": {
+        "user": {
+          "title": "System",
+          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.",
+          "data": {
+            "name": "Name",
+            "template": "Template",
+            "parent": "Part of"
+          },
+          "data_description": {
+            "parent": "Optional: the system this one is a subsystem of, e.g. one device of an EcoFlow Stream system. Its shared limit and behaviour then hold for this one too."
+          }
+        },
+        "reconfigure": {
+          "title": "System",
+          "description": "A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Pick what fits; the template fills in the settings, every setting stays changeable. PV arrays and batteries then choose this system in their own forms.",
+          "data": {
+            "name": "Name",
+            "template": "Template",
+            "parent": "Part of"
+          },
+          "data_description": {
+            "parent": "Optional: the system this one is a subsystem of, e.g. one device of an EcoFlow Stream system. Its shared limit and behaviour then hold for this one too."
+          }
+        },
+        "settings": {
+          "title": "Settings of {name}",
+          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts.",
+          "data": {
+            "output_limit_w": "Output limit",
+            "limit_per_phase": "Limit holds per phase",
+            "phase": "Phase",
+            "regulation": "Regulation",
+            "fixed_power_w": "Fixed power",
+            "when_full": "When the battery is full",
+            "charges_from": "Battery charges from",
+            "balance": "Batteries balance each other"
+          },
+          "data_description": {
+            "output_limit_w": "What the system delivers at most, e.g. 800 W or the AC power of the inverter. With subsystems: what they deliver together.",
+            "limit_per_phase": "Switch on if the limit holds for each phase on its own (several balcony devices on different phases).",
+            "phase": "The phase this subsystem feeds into.",
+            "regulation": "Delivers everything (plain inverter), covers the house load (zero export with a meter) or delivers a fixed power. Empty in a subsystem: as its system.",
+            "fixed_power_w": "Only with fixed power: what the system delivers.",
+            "when_full": "Deliver everything up to the output limit, or keep covering the load only (then PV above the load is curtailed).",
+            "charges_from": "Own PV: the battery sits before the output (compact device, hybrid inverter). The household: own inverter at the house grid, it charges from surplus of the house.",
+            "balance": "Switch on if the batteries of the subsystems even out their state of charge (e.g. EcoFlow Stream). Then they get one battery forecast."
+          }
+        }
+      },
+      "error": {
+        "parent_not_possible": "This system cannot be a part: it holds subsystems itself, or the chosen system holds PV arrays or a battery.",
+        "fixed_power_needed": "Fixed power needs a value."
+      },
+      "abort": {
+        "reconfigure_successful": "System saved."
+      }
+    },
     "array": {
       "entry_type": "PV array",
       "initiate_flow": {
@@ -74,13 +142,15 @@
             "tilt": "Tilt",
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
-            "mounting": "Mounting"
+            "mounting": "Mounting",
+            "system": "System"
           },
           "data_description": {
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
-            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K."
+            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K.",
+            "system": "What lies between these modules and the house: the inverter or device they belong to. Empty: the array gets a system of its own (an inverter without battery), which you can change under Systems."
           },
           "sections": {
             "orientation_2": {
@@ -151,11 +221,13 @@
             "tilt": "Tilt",
             "azimuth": "Azimuth",
             "peak_power": "Peak power",
-            "mounting": "Mounting"
+            "mounting": "Mounting",
+            "system": "System"
           },
           "data_description": {
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",
-            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K."
+            "mounting": "How the modules are mounted sets how much they heat up in the sun: free behind (balcony, rack) about 30 K, parallel on a tiled roof about 50 K, integrated into the roof about 60 K.",
+            "system": "What lies between these modules and the house: the inverter or device they belong to. Empty: the array gets a system of its own (an inverter without battery), which you can change under Systems."
           },
           "sections": {
             "orientation_2": {
@@ -225,7 +297,8 @@
         "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
         "date_in_future": "The date must not be in the future.",
         "orientation_incomplete": "A further orientation needs tilt, azimuth and peak power.",
-        "orientation_duplicate": "Two orientations are the same. Enter their modules once with the summed peak power."
+        "orientation_duplicate": "Two orientations are the same. Enter their modules once with the summed peak power.",
+        "system_has_subsystems": "This system holds subsystems. PV arrays and batteries belong to a system without subsystems."
       },
       "abort": {
         "reconfigure_successful": "PV array saved."
@@ -321,15 +394,15 @@
       "step": {
         "user": {
           "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Several batteries are simulated as one storage.",
+          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.",
           "data": {
             "name": "Name",
             "soc_sensor": "State of charge",
             "capacity": "Capacity",
-            "coupling": "Coupling"
+            "system": "System"
           },
           "data_description": {
-            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %)."
+            "system": "The system the battery belongs to; one battery per system. Empty: a system of its own at the house grid."
           },
           "sections": {
             "limits": {
@@ -361,35 +434,23 @@
               "data_description": {
                 "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
                 "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
-                "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+                "efficiency": "Empty = default: 95 % before the output of a device with PV, 90 % at the house grid. Inverter losses are already in the measured values.",
                 "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
-              }
-            },
-            "inverter": {
-              "name": "Shared inverter",
-              "description": "Only for a battery on the same inverter as a PV array (balcony systems).",
-              "data": {
-                "array": "PV array behind the same inverter",
-                "output_limit_w": "Output limit of the inverter"
-              },
-              "data_description": {
-                "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
-                "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery."
               }
             }
           }
         },
         "reconfigure": {
           "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Several batteries are simulated as one storage.",
+          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.",
           "data": {
             "name": "Name",
             "soc_sensor": "State of charge",
             "capacity": "Capacity",
-            "coupling": "Coupling"
+            "system": "System"
           },
           "data_description": {
-            "coupling": "DC: the battery sits behind the PV inverter's DC side (losses about 5 %). AC: own inverter (about 10 %)."
+            "system": "The system the battery belongs to; one battery per system. Empty: a system of its own at the house grid."
           },
           "sections": {
             "limits": {
@@ -421,20 +482,8 @@
               "data_description": {
                 "battery_power": "Optional. Power of the battery (W or kW), positive = charging. The Noxcast card shows it in the power flow.",
                 "battery_power_invert": "Switch on if the power sensor is positive while discharging.",
-                "efficiency": "Empty = default of the coupling. Inverter losses are already in the measured values.",
+                "efficiency": "Empty = default: 95 % before the output of a device with PV, 90 % at the house grid. Inverter losses are already in the measured values.",
                 "max_charge_w": "Empty = no limit. Above it, surplus is fed in although the battery still has room."
-              }
-            },
-            "inverter": {
-              "name": "Shared inverter",
-              "description": "Only for a battery on the same inverter as a PV array (balcony systems).",
-              "data": {
-                "array": "PV array behind the same inverter",
-                "output_limit_w": "Output limit of the inverter"
-              },
-              "data_description": {
-                "array": "Optional: the PV array on the same inverter as this battery. Its PV counts against the output limit.",
-                "output_limit_w": "Optional, for balcony systems: what the inverter may feed in at most (e.g. 800 W), for the battery and its PV array together. PV above it can only charge the battery."
               }
             }
           }
@@ -444,8 +493,7 @@
         "limits_order": "Lower limit plus reserve must be below the upper limit.",
         "soc_unit": "The state of charge must be in %.",
         "sensor_missing": "The selected sensor does not exist.",
-        "output_needed": "A PV array behind the same inverter needs the output limit.",
-        "array_taken": "Another battery is already behind this PV array."
+        "system_taken": "This system already has a battery. A second one is a subsystem of its own."
       },
       "abort": {
         "reconfigure_successful": "Battery saved."
@@ -457,12 +505,6 @@
       "options": {
         "fixed": "Fixed",
         "flexible": "Flexible"
-      }
-    },
-    "coupling": {
-      "options": {
-        "dc": "DC (behind the PV inverter)",
-        "ac": "AC (own inverter)"
       }
     },
     "kind": {
@@ -478,6 +520,49 @@
         "free": "Free behind (balcony, rack)",
         "roof": "Parallel on the roof",
         "integrated": "Integrated into the roof"
+      }
+    },
+    "feed_in_mode": {
+      "options": {
+        "free": "Free",
+        "limited": "Limited",
+        "none": "None (zero export)"
+      }
+    },
+    "template": {
+      "options": {
+        "inverter": "Inverter without battery",
+        "pv_battery": "PV with battery in one device",
+        "ac_battery": "Battery at the house grid",
+        "coupled": "Coupled systems",
+        "group": "Summarize only"
+      }
+    },
+    "phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3",
+        "three": "Three-phase"
+      }
+    },
+    "regulation": {
+      "options": {
+        "all": "Delivers everything",
+        "load": "Covers the house load",
+        "fixed": "Fixed power"
+      }
+    },
+    "when_full": {
+      "options": {
+        "all": "Deliver everything",
+        "load": "Keep covering the load only"
+      }
+    },
+    "charges_from": {
+      "options": {
+        "own_pv": "Own PV",
+        "house": "The household"
       }
     }
   },
@@ -684,6 +769,10 @@
           "limit_gone": "The suggestion no longer holds: the array has a limit already, or its measurements no longer show one."
         }
       }
+    },
+    "battery_without_pv": {
+      "title": "Which PV arrays charge the battery {name}?",
+      "description": "The battery **{name}** sits before the output of a device with PV (system **{system}**), but no PV array belongs to that system. Noxcast cannot tell from the former settings which arrays are behind it.\n\nOpen the PV arrays behind this device under Settings → Devices & services → Noxcast and choose the system **{system}**. If the battery has its own inverter at the house grid instead, change the system to the template *Battery at the house grid*. Until then Noxcast computes as before."
     }
   }
 }

@@ -141,7 +141,7 @@ def test_a_charge_starting_before_the_predicted_charge_start_is_not_a_night_the_
 
 def test_output_cap_limits_battery_and_pv_together():
     # 1600 W cap: with 500 W of its PV the battery delivers at most 1100 W, the rest of the load is grid
-    b = bt.Battery(5000, 0.8, efficiency=1.0, output_w=1600, array="balcony")
+    b = bt.Battery(5000, 0.8, efficiency=1.0, output_w=1600, arrays=("balcony",))
     hours = [12 * H]
     caps = bt.limits([b], {"balcony": flat(500, [12])}, hours)
     assert caps.discharge == {12 * H: 1100} and caps.capped == {}
@@ -151,7 +151,7 @@ def test_output_cap_limits_battery_and_pv_together():
 
 def test_pv_above_the_cap_charges_the_battery_although_the_house_draws():
     # 2000 Wh PV behind an 800 W cap, 1500 Wh load: 800 reach the house, 1200 can only go into the battery
-    b = bt.Battery(5000, 0.5, efficiency=1.0, output_w=800, array="balcony")
+    b = bt.Battery(5000, 0.5, efficiency=1.0, output_w=800, arrays=("balcony",))
     caps = bt.limits([b], {"balcony": flat(2000, [12])}, [12 * H])
     assert caps.capped == {12 * H: 1200} and caps.discharge == {12 * H: 0}
     sim = bt.simulate(b, flat(2000, [12]), flat(1500, [12]), 12 * H, 13 * H, caps)
@@ -159,7 +159,7 @@ def test_pv_above_the_cap_charges_the_battery_although_the_house_draws():
 
 
 def test_capped_pv_that_does_not_fit_is_lost():
-    b = bt.Battery(1000, 1.0, efficiency=1.0, output_w=800, array="balcony")
+    b = bt.Battery(1000, 1.0, efficiency=1.0, output_w=800, arrays=("balcony",))
     caps = bt.limits([b], {"balcony": flat(1000, [12])}, [12 * H])
     sim = bt.simulate(b, flat(1000, [12]), flat(100, [12]), 12 * H, 13 * H, caps)
     # 700 Wh surplus of the house plus 200 Wh above the cap, the battery is full
@@ -168,8 +168,8 @@ def test_capped_pv_that_does_not_fit_is_lost():
 
 def test_caps_per_system_add_up_and_other_arrays_are_free():
     # two systems, each battery behind its own array; the roof has no cap
-    a = bt.Battery(2000, 0.5, output_w=800, array="a")
-    b = bt.Battery(2000, 0.5, output_w=1600, array="b", max_discharge_w=1000)
+    a = bt.Battery(2000, 0.5, output_w=800, arrays=("a",))
+    b = bt.Battery(2000, 0.5, output_w=1600, arrays=("b",), max_discharge_w=1000)
     pv = {"a": flat(300, [12]), "b": flat(1800, [12]), "roof": flat(5000, [12])}
     caps = bt.limits([a, b], pv, [12 * H])
     assert caps.capped == {12 * H: 200}                       # only b is above its cap
@@ -185,7 +185,7 @@ def test_cap_without_array_limits_the_battery_alone_and_no_cap_changes_nothing()
 
 def test_caps_reach_past_the_charge_start():
     # the plan for tomorrow and the card need the caps after the battery starts charging again, too
-    b = bt.Battery(2000, 0.5, efficiency=1.0, output_w=800, array="a")
+    b = bt.Battery(2000, 0.5, efficiency=1.0, output_w=800, arrays=("a",))
     pv = {h * H: (1000.0 if h in (12, 36) else 0.0) for h in range(10, 40)}
     load = {h * H: 100.0 for h in range(10, 40)}
     out = bt.day_simulation([b], pv, load, None, 10 * H, 24 * H, {"a": pv})

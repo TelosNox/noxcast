@@ -199,7 +199,7 @@ Ebene, die engere zählt:
 | Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
-| Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist) |
+| Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist). Ein System mit *Eigenverbrauch* ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise nichts bezog, zählen beim Lernen als „mindestens so viel“, weil das Gerät PV zurückgehalten haben kann |
 | Einspeisevorgabe, Einspeisegrenze | Was der Haushalt einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst: frei, höchstens eine Leistung in W, höchstens ein Anteil der PV-Leistung in % oder Nulleinspeisung (nie etwas; Überschuss bei vollen Akkus zählt als ungenutzt). Jedes System folgt dieser Vorgabe, außer es nennt eine Abweichung. Die Grenze wird gespeichert und zählt in einer späteren Version |
 | Prognosetage | 2–7, heute eingeschlossen (Standard 3) |
 

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
-    CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
+    CONF_GRID, CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSORS, CONF_SYSTEM,
     CONF_TEMPLATE, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
@@ -428,6 +428,23 @@ def charge_curtails(systems: Mapping[str, System], sid: str) -> bool:
     return behaviour(systems, sid, CONF_REGULATION) == "load" or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
 
 
+def coordinated(systems: Mapping[str, System], sid: str) -> bool:
+    """Whether a battery takes what the system holds back: one in the system, in its subsystems, or in a sibling
+    under the same control."""
+    s = systems[sid]
+    below = [s, *(systems[c] for c in s.children)]
+    return any(x.battery for x in below) or (
+        s.parent is not None and any(systems[c].battery for c in systems[s.parent].children))
+
+
+def held_back_arrays(systems: Mapping[str, System]) -> tuple[str, ...]:
+    """The arrays of systems that follow the house load without a battery to take the rest: they deliver only what
+    the house draws, so an hour in which the household stopped importing may have held PV back."""
+    return tuple(sorted(a for sid, s in systems.items() if not s.children
+                        and behaviour(systems, sid, CONF_REGULATION) == "load" and not coordinated(systems, sid)
+                        for a in s.arrays))
+
+
 def curtailed_arrays(systems: Mapping[str, System]) -> dict[str, tuple[str, ...]]:
     """System id (with a battery) -> the arrays its battery may curtail when full (chain of ceilings).
 
@@ -497,11 +514,10 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         regulation = behaviour(systems, sid, CONF_REGULATION)
         if regulation:
             # following the load: learning leaves out the hours with a full battery it coordinates with; without
-            # one, the hours it held back for a low load are not known yet
-            coordinated = any(x.battery for x in below) or (
-                sub and any(systems[c].battery for c in systems[s.parent].children))
-            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if regulation == "load" and coordinated
-                else NOT_YET, regulation, sub)
+            # one, hours in which the household stopped importing count as "at least" (needs the grid sensor)
+            follows = regulation == "load" and (coordinated(systems, sid) or bool(household.get(CONF_GRID)))
+            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if follows else NOT_YET,
+                regulation, sub)
         if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER):
             add(sid, "fixed_power", NOT_YET, behaviour(systems, sid, CONF_FIXED_POWER), sub)
         # the feed-in rule it follows: the household's, or its own deviation (a subsystem: its system's).

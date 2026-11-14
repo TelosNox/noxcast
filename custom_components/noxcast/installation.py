@@ -27,6 +27,9 @@ from .const import (
 
 FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
 CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (hourly peak)
+# a device that follows the house load regulates the grid to about zero: below this import at some time in an hour
+# it may have held PV back (zero-export controllers keep a small import of 10-50 W as margin)
+HELD_IMPORT_W = 60.0
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,12 @@ class Installation:
     inputs: Mapping[str, Input] = field(default_factory=dict)                # by sensor
     stores: Mapping[str, tuple[Store, ...]] = field(default_factory=dict)    # array -> batteries of its systems
     caps: tuple[Cap, ...] = ()
+    held: frozenset[str] = frozenset()     # arrays of systems that follow the load without a battery
+
+    def held_hours(self, array: str, grid_low: Mapping[float, float]) -> set[float]:
+        """Period starts in which the array's system may have held PV back for a low load: the household's lowest
+        grid import (W, export negative) in the period fell below HELD_IMPORT_W."""
+        return {t for t, w in grid_low.items() if w < HELD_IMPORT_W} if array in self.held else set()
 
     def inputs_of(self, array: str) -> list[Input]:
         return [i for i in self.inputs.values() if i.array == array]
@@ -208,4 +217,4 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
     systems = systems or {}
     return Installation(House(tuple(soc_sensors), float(soc_full_pct)), inputs,
                         _stores(systems, batteries or {}, feed_in_mode, float(soc_full_pct), max_soc or {}),
-                        _caps(systems, arrays))
+                        _caps(systems, arrays), frozenset(sy.held_back_arrays(systems)))

@@ -635,8 +635,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
         full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         charge = {sid: frozenset(installation.charge_hours(sid, charging)) for sid in self.arrays}
+        grid_low = await self._async_grid_low(installation, start)
+        held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
-                               air_temp, satellite_ghi, full, charge)
+                               air_temp, satellite_ghi, full, charge, held)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 
@@ -1129,6 +1131,17 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             return {}, {}
         return fc.today_actual(self.arrays, power, recent, self._factors, day_start, now)
 
+    async def _async_grid_low(self, installation: inst.Installation, start: datetime, period: str = "hour"
+                              ) -> dict[float, float]:
+        """The household's lowest grid import per period (W, export negative), where a system follows the load
+        without a battery (installation.held_hours); empty without the grid sensor."""
+        if not self.grid or not installation.held:
+            return {}
+        factor = (await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0) * self.grid_sign
+        # import positive: the lowest import is the minimum, or the maximum of a sensor that counts export positive
+        stats = await async_hourly_statistics(self.hass, [self.grid], start, "min" if factor > 0 else "max", period)
+        return {t: v * factor for t, v in stats.get(self.grid, {}).items() if v is not None}
+
     async def _async_charge_peaks(self, installation: inst.Installation, start: datetime, period: str = "hour",
                                   factors: dict[str, float] | None = None) -> dict[str, dict[float, float]]:
         """Battery power sensor -> highest charge power per period (W), for the batteries whose maximum charge
@@ -1148,8 +1161,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         its maximum power (see forecasting.curtailed_hours and installation.stores_of)."""
         installation = self._installation_now()
         soc_ids = installation.soc_sensors()
+        held = await self._async_held_today(installation, day_start, now)
         if not soc_ids:
-            return {}
+            return held
         charging = await self._async_charging_today(installation, day_start, now)
         live: dict[str, float] = {}
         for sid in soc_ids:
@@ -1178,7 +1192,32 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 out[sid] |= hours[(s.sensor, s.full_pct)]
                 if s.charger:
                     out[sid] |= {t for t, w in charging.get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
+            out[sid] |= held.get(sid, set())
         return out
+
+    async def _async_held_today(self, installation: inst.Installation, day_start: float, now: float
+                                ) -> dict[str, set[float]]:
+        """Per array today's hours in which its system may have held PV back for a low load: hourly minima,
+        5-minute minima for the hours not yet compiled, and the current state for the running hour."""
+        if not self.grid or not installation.held:
+            return {}
+        hour_now = now - now % 3600
+        try:
+            low = await self._async_grid_low(installation, dt_util.utc_from_timestamp(day_start))
+            for t, w in (await self._async_grid_low(installation, dt_util.utc_from_timestamp(
+                    max(hour_now - 3600, day_start)), "5minute")).items():
+                hour = t - t % 3600
+                low[hour] = min(low.get(hour, w), w)
+        except Exception as err:  # noqa: BLE001 – without them the correction reads held-back hours as clouds
+            _LOGGER.debug("Today's grid statistics unavailable: %s", err)
+            low = {}
+        try:
+            live = float(self.hass.states.get(self.grid).state) * self.grid_sign * (
+                await async_power_factors(self.hass, [self.grid])).get(self.grid, 1.0)
+            low[hour_now] = min(low.get(hour_now, live), live)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return {sid: installation.held_hours(sid, low) for sid in self.arrays if sid in installation.held}
 
     async def _async_charging_today(self, installation: inst.Installation, day_start: float, now: float
                                     ) -> dict[str, dict[float, float]]:

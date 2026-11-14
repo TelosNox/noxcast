@@ -60,7 +60,7 @@ SUBENTRY_SYSTEM = "system"
 CONF_SYSTEM = "system"                    # on arrays and batteries: subentry id of their system
 CONF_PARENT = "parent"                    # on systems: subentry id of the parent system (one level only)
 CONF_TEMPLATE = "template"
-TEMPLATE_OPTIONS = ("inverter", "pv_battery", "ac_battery", "coupled", "group")
+TEMPLATE_OPTIONS = ("inverter", "pv_battery", "ac_battery", "coupled")
 # CONF_OUTPUT_LIMIT: what the system delivers at most (W)
 CONF_LIMIT_PER_PHASE = "limit_per_phase"  # the output limit holds per phase (subsystems name their phase)
 CONF_PHASE = "phase"

@@ -531,8 +531,8 @@ def _system_basics(d: dict[str, Any], parents: dict[str, str]) -> vol.Schema:
 
 def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool) -> vol.Schema:
     """Only the settings that can apply: battery settings for templates with a battery, the shared settings for
-    systems with subsystems, the phase for subsystems. Regulation and "when full" left empty are inherited from
-    the parent."""
+    systems with subsystems, the phase for subsystems. Regulation and "when full" only on a system of the top
+    level: a subsystem follows its system (systems.behaviour)."""
     def choice(key: str, options) -> tuple:
         return vol.Optional(key, description={"suggested_value": d.get(key)}), _select(options, key)
 
@@ -541,8 +541,9 @@ def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool
         fields[vol.Optional(CONF_LIMIT_PER_PHASE, default=bool(d.get(CONF_LIMIT_PER_PHASE)))] = selector.BooleanSelector()
     if sub:
         fields.update(dict([choice(CONF_PHASE, PHASE_OPTIONS)]))
-    fields.update(dict([choice(CONF_REGULATION, REGULATION_OPTIONS), _number(d, CONF_FIXED_POWER, 0, 100000, 10, "W")]))
-    if battery or group:
+    if not sub:
+        fields.update(dict([choice(CONF_REGULATION, REGULATION_OPTIONS), _number(d, CONF_FIXED_POWER, 0, 100000, 10, "W")]))
+    if (battery or group) and not sub:
         fields.update(dict([choice(CONF_WHEN_FULL, WHEN_FULL_OPTIONS)]))
     if battery:
         fields.update(dict([choice(CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS)]))
@@ -727,7 +728,13 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
         systems = self._systems()
         # a changed template fills in its settings anew; the same template keeps what was set
         defaults = old if old.get(CONF_TEMPLATE) == template else {**old, **sy.template_data(template)}
-        group = template in ("coupled", "group") or bool(own in systems and systems[own].children)
+        sub = bool(self._basics.get(CONF_PARENT))
+        before = old.get(CONF_PARENT)
+        if not sub and before in systems:
+            # leaving its system, it keeps behaving as that made it until changed here
+            defaults = {**{k: systems[before].get(k) for k in sy.BEHAVIOUR if systems[before].get(k) is not None},
+                        **{k: v for k, v in defaults.items() if k not in sy.BEHAVIOUR or v is not None}}
+        group = template == "coupled" or bool(own in systems and systems[own].children)
         battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
         errors = {}
         if user_input is not None:
@@ -735,14 +742,15 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
                 errors = {CONF_FIXED_POWER: "fixed_power_needed"}
             else:
                 data = {k: v for k, v in {**self._basics, **user_input}.items() if v not in (None, "", False)}
+                if sub:
+                    data = {k: v for k, v in data.items() if k not in sy.BEHAVIOUR}
                 sid = own or ulid_now()
                 self._save({sid: (SUBENTRY_SYSTEM, data[CONF_NAME], data)})
                 self._node = sid
                 return await self.async_step_menu()
         return self.async_show_form(
             step_id="settings", errors=errors, description_placeholders={"name": self._basics[CONF_NAME]},
-            data_schema=_system_settings(user_input or defaults, battery=battery, group=group,
-                                         sub=bool(self._basics.get(CONF_PARENT))))
+            data_schema=_system_settings(user_input or defaults, battery=battery, group=group, sub=sub))
 
     async def async_step_array(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         own = self._edit

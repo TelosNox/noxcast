@@ -7,6 +7,16 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Regulation and what a system does when its battery is full are now set on the system only, and its subsystems
+  follow it. Subsystems are devices one control coordinates (EcoFlow Stream, for example), so they cannot choose
+  differently; a device that does not follow that control is a system of its own. The update moves the value of a
+  subsystem to its system where the system had none and its subsystems agreed, and drops it from the subsystems
+  otherwise: check the *Installation* tab if a subsystem was set differently from its system.
+- The template *Only group them* is gone. The update turns its subsystems into systems of their own, with the
+  behaviour they had, and removes the empty group; a group with an output limit or balancing batteries becomes
+  *Coupled systems*. Their PV arrays keep their entities, history and what was learned.
+
 ### Added
 - The output limit of a system without battery now caps the forecast also when several PV arrays share it, such
   as east and west on one inverter: their sum stays below the limit in every 10-minute step, and each array gives

@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b3] - 2026-11-14
+
 ### Added
 - The configuration forms explain the building blocks with small drawings: how household, systems, subsystems,
   PV arrays and batteries nest, the four templates, the three regulations, the chain of limits and what a PV array
@@ -25,10 +27,17 @@ breaking changes.
   5-minute values Noxcast has kept since its installation and PV arrays that have been learned.
 
 ### Changed
+- **Breaking:** Regulation and the deviation from the feed-in rule are now set on the system only, and its
+  subsystems follow it. Subsystems are devices one control coordinates (EcoFlow Stream, for example), so they
+  cannot choose differently. The update moves a subsystem's value to its system where the system had none and its
+  subsystems agreed, and drops it from the subsystems otherwise. If a subsystem was set differently from its
+  system, it is a device that control does not regulate: make it a system of its own (*Belongs to* empty), or it
+  now follows its system, also in what learning leaves out. The *Installation* tab shows the system's values on
+  its subsystems.
 - *When the battery is full* is replaced by an optional *Deviation from the feed-in rule* on the
-  system. A system follows the household's feed-in rule unless it deviates: *feeds the rest in anyway* or *never
+  system. A system follows the household's feed-in rule unless it deviates: *Feeds the rest in anyway* or *Never
   feeds in*. The update turns the old setting into a deviation where it disagreed with the household's rule, and
-  gives a system at full power a *feeds the rest in anyway* under zero export, since such an inverter cannot hold
+  gives a system at *Full power* a *Feeds the rest in anyway* under zero export, since such an inverter cannot hold
   the export at zero; so everything computes as before, and the day card now shows feed-in for such a household.
   Check the *Installation* tab: it shows per system which rule it follows.
 - The regulation options are named *Full power*, *Self-consumption* and *Fixed power*, and the household setting
@@ -40,13 +49,6 @@ breaking changes.
   clear what belongs together. The update moves existing PV arrays, batteries and subsystems into their systems;
   their devices, entities, history and what was learned stay. Deleting a system now deletes what is inside it
   as well, with what was learned for its PV arrays.
-- **Breaking:** Regulation and what a system does when its battery is full are now set on the system only, and
-  its subsystems follow it. Subsystems are devices one control coordinates (EcoFlow Stream, for example), so they
-  cannot choose differently. The update moves a subsystem's value to its system where the system had none and its
-  subsystems agreed, and drops it from the subsystems otherwise. If a subsystem was set differently from its
-  system, it is a device that control does not regulate: make it a system of its own (*Belongs to* empty), or it
-  now follows its system, also in what learning leaves out. The *Installation* tab shows the system's values on
-  its subsystems.
 - The template *Summarize only* is gone. The update turns its subsystems into systems of their own, with the
   behaviour they had, and removes the empty group; a group with an output limit or balancing batteries becomes
   *Coupled systems*. Their PV arrays keep their entities, history and what was learned.
@@ -55,10 +57,10 @@ breaking changes.
 - The household's zero export no longer makes a battery count for PV it is not coupled with. Learning left out
   the hours of every PV array whenever a battery at the house grid was full, although an inverter that holds the
   export at zero does not know that battery and curtails the same with it or without; and it counted hours in
-  which a battery charged at its maximum as "at least this much" also in a system that delivers everything, whose
+  which a battery charged at its maximum as "at least this much" also in a system at *Full power*, whose
   rest goes out. What counts now follows from the systems alone: the battery of the PV array's own system, and
   those of subsystems that follow the house load together or share an output limit. Learning may use more hours
-  from the next nightly run on. A system that covers the house load without a battery is still not checked for
+  from the next nightly run on. A system with the regulation *Self-consumption* and no battery is still not checked for
   the hours it held back (the *Installation* tab says "not used yet"). The household setting *Battery state of
   charge* still counts for every array.
 

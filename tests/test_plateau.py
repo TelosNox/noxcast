@@ -7,7 +7,7 @@ import pytest
 
 from custom_components.noxcast import plateau as pt
 from custom_components.noxcast import solar
-from custom_components.noxcast.model import ArrayGeometry, array_irradiance
+from custom_components.noxcast.model import ArrayGeometry, LearnedArray, array_irradiance
 
 UTC = timezone.utc
 
@@ -164,3 +164,75 @@ def test_there_is_no_limit_holds_until_the_level_moves():
     assert not pt.dismissed(["s1"], {"peak_w": 540.0}, {"s1": 495.0})
     assert not pt.dismissed(["s1", "s2"], suggested, {"s1": 501.0})
     assert not pt.dismissed([], suggested, {})
+
+
+EAST, WEST = ArrayGeometry(30, 90, 1000), ArrayGeometry(30, 270, 1000)
+
+
+def east_west(first: date, days: int, cap=None, west_share=1.0):
+    """5-minute means of an east and a west sensor on clear days; cap: the inverter's output limit on their sum,
+    taken off each in proportion to its power; west_share: what the west side delivers of its nominal output
+    (shade, soiling, a wrong peak power)."""
+    fine = {"e": {}, "w": {}}
+    hourly = {"e": ({}, {}, {}), "w": ({}, {}, {})}
+    for d in range(days):
+        start = datetime(first.year, first.month, first.day, tzinfo=UTC).timestamp() + d * 86400
+        e = clear_minutes(SITE, EAST, start, 1440)
+        w = [v * west_share for v in clear_minutes(SITE, WEST, start, 1440)]
+        if cap is not None:
+            k = [min(1.0, cap / (x + y)) if x + y > 0 else 1.0 for x, y in zip(e, w)]
+            e, w = [x * f for x, f in zip(e, k)], [y * f for y, f in zip(w, k)]
+        for key, minutes in (("e", e), ("w", w)):
+            for i in range(288):
+                fine[key][start + 300 * i] = sum(minutes[5 * i:5 * i + 5]) / 5
+            for h in range(24):
+                values = minutes[60 * h:60 * h + 60]
+                if max(values) > 0:
+                    t = start + 3600 * h
+                    for series, v in zip(hourly[key], (sum(values) / 60, min(values), max(values))):
+                        series[t] = v
+    return fine, hourly
+
+
+def learned(west_share=1.0):
+    """The learned clear sky of both sides as the data were made: 90 % efficiency, the west side's share learned."""
+    return pt.learned_clear(SITE, [(EAST, LearnedArray(efficiency=0.9)), (WEST, LearnedArray(efficiency=0.9 * west_share))])
+
+
+@pytest.mark.parametrize("west_share", [1.0, 0.75, 0.6])
+def test_an_output_limit_on_the_sum_of_east_and_west_is_found_where_no_sensor_is_flat(west_share):
+    first = date(2026, 5, 1)
+    now = datetime(2026, 5, 6, tzinfo=UTC).timestamp()
+    free, _ = east_west(first, 5, west_share=west_share)
+    peak = max(a + b for a, b in zip(free["e"].values(), free["w"].values()))
+    fine, hourly = east_west(first, 5, 0.8 * peak, west_share)
+    for key, geo in (("e", EAST), ("w", WEST)):          # each sensor alone keeps moving: no limit of its own
+        assert pt.detect(*hourly[key], now, day_of, pt.clear_change(SITE, geo), fine[key]) is None
+    found = pt.detect_sum(pt.summed_steps(fine), now, day_of, learned(west_share))
+    assert found is not None and found.flat_days == 5 and found.peak_w == pytest.approx(0.8 * peak, rel=0.002)
+    # without a limit the sum has a smooth maximum of its own; with one side weaker it is flat while the nominal
+    # sum still moves, but not against what was learned, and the learned clear sky lies on it, not above
+    assert pt.detect_sum(pt.summed_steps(free), now, day_of, learned(west_share)) is None
+    assert pt.detect_sum(pt.summed_steps(fine), datetime(2026, 5, 3, tzinfo=UTC).timestamp(), day_of,
+                         learned(west_share)) is None
+
+
+@pytest.mark.parametrize("learned_share", [0.65, 0.85])
+@pytest.mark.parametrize("month", [3, 8])
+def test_a_weaker_side_is_no_limit_even_where_it_was_learned_roughly(learned_share, month):
+    # the west side delivers 75 % of its nominal share: the sum's own maximum is flat within 2 % for over an hour
+    # while the nominal sum moves by more than 4 %, so nominal weights would count every clear day; the learned
+    # weights, even 10 points off, and the learned sky lying on the sum instead of above it, count none
+    first = date(2026, month, 10)
+    free, _ = east_west(first, 3, west_share=0.75)
+    now = datetime(first.year, first.month, first.day, tzinfo=UTC).timestamp() + 3 * 86400
+    nominal = learned()
+    steps = sorted(pt.summed_steps(free).items())
+    day = [x for x in steps if day_of(x[0]) == first]
+    assert pt.day_level_steps(day, max(v for _, v in day), pt._change_of(nominal)) is not None
+    assert pt.detect_sum(pt.summed_steps(free), now, day_of, learned(learned_share)) is None
+
+
+def test_the_sum_counts_only_where_every_sensor_has_a_value():
+    assert pt.summed_steps({"a": {0.0: 1.0, 300.0: 2.0}, "b": {300.0: 3.0, 600.0: 4.0}}) == {300.0: 5.0}
+    assert pt.summed_steps({}) == {}

@@ -6136,6 +6136,7 @@
      }
     ],
     "limits": {},
+    "caps": [],
     "uncapped": {},
     "profiles": {}
    },
@@ -15001,6 +15002,7 @@
     "weather": "= previous",
     "outlook": "= previous",
     "limits": "= previous",
+    "caps": "= previous",
     "uncapped": "= previous",
     "profiles": "= previous"
    },
@@ -15851,6 +15853,7 @@
     "weather": "= previous",
     "outlook": "= previous",
     "limits": "= previous",
+    "caps": "= previous",
     "uncapped": "= previous",
     "profiles": "= previous"
    },
@@ -16541,6 +16544,7 @@
     "weather": "= previous",
     "outlook": "= previous",
     "limits": "= previous",
+    "caps": "= previous",
     "uncapped": "= previous",
     "profiles": "= previous"
    },
@@ -22525,6 +22529,7 @@
      }
     ],
     "limits": "= previous",
+    "caps": "= previous",
     "uncapped": "= previous",
     "profiles": "= previous"
    },
@@ -23474,6 +23479,7 @@
     "weather": "= previous",
     "outlook": "= previous",
     "limits": "= previous",
+    "caps": "= previous",
     "uncapped": "= previous",
     "profiles": "= previous"
    },

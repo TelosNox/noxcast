@@ -465,9 +465,9 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
         else:
             steps, source = live[sid], "current" if current else "replay"
         # the forecast these steps explain, where a fixed limit capped it after the steps
-        if source == "morning" and sid in data.limits:
+        if source == "morning" and sid in data.capped:
             steps = explain.with_limit(steps, data.morning.get(sid, {}))
-        elif source == "current" and sid in data.limits:
+        elif source == "current" and sid in data.capped:
             steps = explain.with_limit(steps, data.forecast.get(sid, {}))
         elif source == "day_ahead" and (limit := getattr(arr, "limit_w", None)) is not None:
             # capped wherever the forecast was above the limit, whether or not the actual reached it; a capped

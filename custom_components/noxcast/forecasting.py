@@ -51,11 +51,18 @@ class NoxcastData:
     actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
-    limits: dict[str, float] = field(default_factory=dict)    # arrays with a fixed limit (W), capped last
+    limits: dict[str, float] = field(default_factory=dict)    # arrays with a fixed limit of their own (W), capped last
+    # fixed limits shared by several arrays: (arrays, W), their sum capped last (curtailment.cap_group)
+    caps: list[tuple[tuple[str, ...], float]] = field(default_factory=list)
     # forecast, morning and expected before the cap, by the same keys (arrays and TOTAL); empty without limits
     uncapped: dict[str, dict[str | None, Series]] = field(default_factory=dict)
     # per limited array: hour start -> clear-sky power at the sub-steps, the shape the cap follows
     profiles: dict[str, dict[float, list[float]]] = field(default_factory=dict, repr=False)
+
+    @property
+    def capped(self) -> set[str]:
+        """Arrays whose published values a fixed limit may cap, their own or a shared one."""
+        return set(self.limits) | {a for members, _ in self.caps for a in members}
 
     @property
     def arrays(self) -> dict[str, Series]:
@@ -213,9 +220,8 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
         result.effects[sub_id] = day_effects(site, arr.geometry, learned.get(sub_id), weather, day,
                                              result.expected[sub_id], day_start, day_end, clear_weather,
                                              today.held[sub_id], cut)
-    limits = {sid: w for sid, w in (inst.limited_arrays() if inst else {}).items() if sid in arrays}
-    if limits:
-        _cap(result, alt, site, arrays, learned, limits, temps, actual, ts_now)
+    if inst is not None:
+        _cap(result, alt, site, arrays, learned, inst, temps, actual, ts_now)
     for series in (result.forecast, result.morning, result.expected, result.clear, *result.uncapped.values()):
         series[TOTAL] = _total(series)
     return result, today, alt
@@ -232,33 +238,46 @@ def _total(series: dict[str | None, Series]) -> Series:
 
 
 def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], site: Site, arrays: dict[str, ArrayConfig],
-         learned: dict[str, LearnedArray], limits: dict[str, float], temps: dict[float, float | None],
+         learned: dict[str, LearnedArray], inst: Installation, temps: dict[float, float | None],
          actual: dict[str, Series], now: float) -> None:
-    """Cap the published values of arrays with a fixed limit, keeping the uncapped ones (see pv).
+    """Cap the published values of arrays with a fixed limit, their own or one they share with others (a system
+    without a battery holding several arrays), keeping the uncapped ones (see pv).
 
     Measured hours stay as measured. Held values are capped too: they are forecasts of hours that have begun.
     """
-    result.limits = dict(limits)
+    limits = {sid: w for sid, w in inst.limited_arrays().items() if sid in arrays}
+    caps = [(members, w) for group, w in inst.forecast_caps() if (members := tuple(a for a in group if a in arrays))]
+    if not limits and not caps:
+        return
+    result.limits, result.caps = limits, caps
     result.uncapped = {name: {sid: dict(getattr(result, name)[sid]) for sid in arrays}
                        for name in ("forecast", "morning", "expected")}
-    for sid, limit in limits.items():
-        geo, la = arrays[sid].geometry, learned.get(sid, LearnedArray())
+    capped = sorted(result.capped)
+
+    def profile(sid: str, t: float) -> list[float]:
         profiles = result.profiles.setdefault(sid, {})
+        if t not in profiles:
+            profiles[t] = clearsky_profile(site, arrays[sid].geometry, learned.get(sid, LearnedArray()), t,
+                                           temps.get(t), SUBSTEPS)
+        return profiles[t]
 
-        def profile(t: float, geo=geo, la=la, profiles=profiles) -> list[float]:
-            if t not in profiles:
-                profiles[t] = clearsky_profile(site, geo, la, t, temps.get(t), SUBSTEPS)
-            return profiles[t]
+    def apply(series: dict, keep=lambda sid, t: False) -> None:
+        for sid in capped:
+            if sid in series:
+                series[sid] = dict(series[sid])
+        members = [sid for sid in capped if sid in series]
+        for t in sorted({t for sid in members for t in series[sid]}):
+            hour = {sid: series[sid][t] for sid in members if t in series[sid]}
+            for sid, v in ct.cap_group(hour, lambda sid, t=t: profile(sid, t), limits, caps).items():
+                if not keep(sid, t):
+                    series[sid][t] = v
 
-        result.forecast[sid] = ct.cap(result.forecast[sid], limit, profile)
-        result.morning[sid] = ct.cap(result.morning[sid], limit, profile)
-        result.held[sid] = ct.cap(result.held[sid], limit, profile)
-        measured = actual.get(sid, {})
-        result.expected[sid] = {t: v if t + 3600 <= now and t in measured else ct.cap_hour(v, limit, profile(t))
-                                for t, v in result.expected[sid].items()}
-        for hours in alt.values():
-            if sid in hours:
-                hours[sid] = ct.cap(hours[sid], limit, profile)
+    apply(result.forecast)
+    apply(result.morning)
+    apply(result.held)
+    apply(result.expected, lambda sid, t: t + 3600 <= now and t in actual.get(sid, {}))
+    for hours in alt.values():
+        apply(hours)
 
 
 def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Profile, floor_profile: lf.Profile | None,
@@ -297,7 +316,7 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
     """Band, battery simulation and plan of flexible consumers, set on result (needs its PV and load)."""
     total = dict(result.forecast.get(TOTAL, {}))
     total.update(result.expected.get(TOTAL, {}))          # today: actual so far and the corrected rest
-    if result.limits:
+    if result.capped:
         # the band varies the clouds of the uncapped forecast; the limits cap it afterwards
         raw = {**result.uncapped["forecast"][TOTAL], **result.uncapped["expected"][TOTAL]}
         result.band = capped_band(bd.forecast_band(band, site, result.weather, raw, result.uncapped["expected"][TOTAL],
@@ -320,7 +339,7 @@ def capped_band(band: dict | None, result: NoxcastData, now: float, day_end: flo
     """The band of the uncapped total (band.forecast_band) under the fixed limits of the arrays.
 
     A band value is the uncapped total with its clearness shifted by s. The same shift is applied to each array
-    (bounded as in band.py), each limited array is capped like its forecast, and the arrays are summed again.
+    (bounded as in band.py), the arrays are capped like their forecast (own and shared limits), and summed again.
     """
     if not band:
         return band
@@ -331,16 +350,15 @@ def capped_band(band: dict | None, result: NoxcastData, now: float, day_end: flo
     expected = result.expected.get(TOTAL, {})
 
     def at(t: float, s: float) -> float:
-        out = 0.0
+        hour = {}
         for sid in arrays:
             f = raw[sid].get(t)
             if f is None:
                 continue
             c = result.clear.get(sid, {}).get(t, f)
-            v = min(max(f + s * c, 0.0), max(c * bd.CLEARNESS_MAX, f))
-            limit = result.limits.get(sid)
-            out += ct.cap_hour(v, limit, result.profiles.get(sid, {}).get(t)) if limit is not None else v
-        return out
+            hour[sid] = min(max(f + s * c, 0.0), max(c * bd.CLEARNESS_MAX, f))
+        return sum(ct.cap_group(hour, lambda sid: result.profiles.get(sid, {}).get(t), result.limits,
+                                result.caps).values())
 
     def shift(value_wh: float, ts: list[float], weight=lambda t: 1.0) -> float:
         f = sum(total_raw.get(t, 0.0) * weight(t) for t in ts)

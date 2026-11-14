@@ -524,7 +524,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         start = time.monotonic()
         result = pv_backtest.run(self.site, self.arrays, copy.deepcopy(learned), history, copy.deepcopy(archive), now,
                                  soc_full, exclusions, dt_util.get_default_time_zone(),
-                                 limits=self.installation.limited_arrays(), near_limit=self._near_limit(history))
+                                 limits=self.installation.limited_arrays(), caps=self.installation.forecast_caps(),
+                                 near_limit=self._near_limit(history))
         seconds = round(time.monotonic() - start, 1)
         _LOGGER.info("PV backtest took %.1f s: replay %s, hold-out %s", seconds, result["replay"]["total"],
                      result["holdout"]["total"])
@@ -622,7 +623,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _learn_band(self) -> dict:
         """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
         return bd.from_archive(self._eval_archive(), self.site, {sid: a.geometry for sid, a in self.arrays.items()},
-                               self.learned, limits=self.installation.limited_arrays())
+                               self.learned, limits=self.installation.limited_arrays(),
+                               caps=self.installation.forecast_caps())
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:
         """House load and consumer power in W: {sensor: {hour start: mean W}}.

@@ -197,7 +197,7 @@ def test_output_limit_without_battery_is_a_fixed_limit():
     assert single.array_limit("x") == 600 and single.limited_arrays() == {"x": 600}     # the tighter one wins
     two = {**one, "y": ("array", "Y", {"system": "s"})}
     shared = inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(two))
-    # shared by two arrays: lower bounds when they reach it together, but no cap of a single forecast
+    # shared by two arrays: lower bounds when they reach it together, and a cap of their sum (cap_group)
     assert shared.array_limit("x") is None and [c.arrays for c in shared.shared_caps("x")] == [("x", "y")]
     peaks = {"pv1": {0.0: 400.0, 3600.0: 100.0}, "pv2": {0.0: 200.0, 3600.0: 100.0}}
     assert ct.limited_hours(shared, "x", peaks) == {0.0} == ct.limited_hours(shared, "y", peaks)
@@ -278,3 +278,79 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000
     unknown = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, STREAM)}
     assert unknown[("u", "charge_learning")]["status"] == sy.NOT_YET
+
+
+SHARED = {"s": ("system", "Inverter", {"name": "Inverter", "template": "inverter", "output_limit_w": 900}),
+          "a": ("array", "A", {"system": "s"}), "b": ("array", "B", {"system": "s"})}
+SHARED_INST = inst.build({"a": ["pv1", "pv2"], "b": ["pv3"]}, systems=sy.systems_of(SHARED))
+
+
+def test_a_shared_limit_caps_the_sum_at_every_step_and_shares_the_cut_by_power():
+    east, west = [400.0, 300.0, 200.0, 100.0], [100.0, 200.0, 300.0, 400.0]     # mean 250 each
+    profiles = {"e": east, "w": west}
+    # the sum is 500 at every step: under 500 nothing changes, not even by rounding
+    assert ct.cap_group({"e": 250.0, "w": 250.0}, profiles.get, {}, [(("e", "w"), 500.0)]) == {"e": 250.0, "w": 250.0}
+    out = ct.cap_group({"e": 500.0, "w": 250.0}, profiles.get, {}, [(("e", "w"), 900.0)])
+    # e at 800, 600, 400, 200 and w at 100, 200, 300, 400: only the first step (900) is not above; at the second
+    # 800 of 600 + 200: e gives up 3/4 of the cut
+    steps_e = [800.0, 600.0, 400.0, 200.0]
+    steps_w = [100.0, 200.0, 300.0, 400.0]
+    capped = [(x, y) if x + y <= 900 else (x * 900 / (x + y), y * 900 / (x + y)) for x, y in zip(steps_e, steps_w)]
+    assert abs(out["e"] - sum(x for x, _ in capped) / 4) < 1e-9 and abs(out["w"] - sum(y for _, y in capped) / 4) < 1e-9
+    assert out["e"] + out["w"] <= 900 + 1e-9
+    # own limits alone are cap_hour; an array without a profile counts with its mean at every step
+    ramp = [0.0, 100.0, 200.0, 300.0, 400.0, 500.0]
+    assert ct.cap_group({"x": 250.0}, {"x": ramp}.get, {"x": 300.0}, []) == {"x": ct.cap_hour(250.0, 300.0, ramp)}
+    flat = ct.cap_group({"x": 600.0, "y": 600.0}, {"x": ramp}.get, {}, [(("x", "y"), 900.0)])
+    assert abs(flat["x"] + flat["y"] - (sum(min(x * 2.4 + 600, 900) for x in ramp) / 6)) < 1e-9
+    assert ct.cap_group({"x": 0.0, "y": -1.0}, profiles.get, {}, [(("x", "y"), 1.0)]) == {"x": 0.0, "y": -1.0}
+
+
+def test_a_limit_shared_by_several_arrays_caps_their_forecast_together():
+    plain, _, _ = run(10)
+    capped, _, _ = run(10, SHARED_INST)
+    assert capped.limits == {} and capped.caps == [(("a", "b"), 900.0)] and capped.capped == {"a", "b"}
+    assert max(plain.forecast[None].values()) > 900
+    for name in ("forecast", "morning", "expected"):
+        series = getattr(capped, name)
+        assert max(series[None].values()) <= 900 + 1e-6
+        assert capped.uncapped[name][None] == getattr(plain, name)[None]
+    for t in capped.held["a"]:
+        assert capped.held["a"][t] + capped.held["b"].get(t, 0.0) <= 900 + 1e-6
+    # each array keeps its share: neither is cut below what the other leaves it, and below the limit nothing changes
+    for t, v in plain.forecast[None].items():
+        if v <= 900 * 0.8:
+            assert capped.forecast["a"][t] == plain.forecast["a"][t] and capped.forecast["b"][t] == plain.forecast["b"][t]
+        assert capped.forecast["a"][t] <= plain.forecast["a"][t] + 1e-9 and capped.forecast["b"][t] <= plain.forecast["b"][t] + 1e-9
+    assert capped.clear["a"] == plain.clear["a"]
+
+
+def test_the_band_of_a_shared_limit_stays_below_it():
+    band = {"version": 2, "daily": {"all": [-0.3, 0.1, 20]}, "hourly": {"all": [-0.4, 0.1, 200]}}
+    now = DAY_START + 9 * 3600
+    plain, _, _ = run(9, k=0.5)
+    fc.surplus(plain, SITE, band, [], [], now, DAY_END)
+    capped, _, _ = run(9, SHARED_INST, k=0.5)
+    fc.surplus(capped, SITE, band, [], [], now, DAY_END)
+    for t, (lo, hi) in capped.band["hours"].items():
+        assert hi <= 900 + 1e-6 and lo <= capped.forecast[None][t] + 1e-6 <= hi + 2e-6
+    assert capped.band["days"][1][1] < plain.band["days"][1][1]
+
+
+def test_a_shared_limit_without_battery_counts_exactly():
+    effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(SHARED), SHARED)}
+    assert effects[("s", "output_limit")] == sy.EXACT
+
+
+def test_band_learning_leaves_out_hours_whose_sum_reached_a_shared_limit():
+    store = {}
+    for d in range(50):
+        hours = {}
+        for h in (11, 12):
+            t = DAY_START + d * 86400 + h * 3600
+            hours[str(t)] = {"ghi": 800.0, "forecast": {"a": 500.0, "b": 400.0 if h == 12 else 200.0},
+                             "actual": {"a": 300.0, "b": 100.0}}
+        store[(DAY.date() + timedelta(days=d)).isoformat()] = {"hours": hours}
+    kwargs = dict(clear_ghi=lambda ts: 900.0, clear_wh=lambda ts, ids: 1000.0)
+    skipped = bd.learn_band(store, **kwargs, caps=[(("a", "b"), 900.0)])
+    assert skipped["hourly"]["all"][2] == 50 and skipped["hourly"]["all"][0] == -0.3     # (400 - 700) / 1000

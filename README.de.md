@@ -203,7 +203,7 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 
 | Einstellung | Bedeutung |
 |---|---|
-| Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose eines Systems mit einer PV-Gruppe |
+| Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose; bei mehreren PV-Gruppen ihre Summe, jede gibt ihren Anteil an der Leistung darüber ab |
 | Grenze gilt pro Phase, Phase | Mehrere Geräte auf verschiedenen Phasen; jedes Teilsystem nennt seine Phase |
 | Regelung | Gibt alles ab, deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Ein leeres Teilsystem verhält sich wie sein System |
 | Wenn der Akku voll ist | Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken |
@@ -487,9 +487,12 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   Modellfehler).
 - Mit einer **Leistungsgrenze** werden Prognose, Korrektur und Band ohne sie gerechnet, und die Grenze deckelt das
   Ergebnis zuletzt: je 10-Minuten-Schritt jeder Stunde, sodass eine Stunde, die die Grenze nur zeitweise erreicht,
-  nur diesen Teil verliert. Eine Stunde an der Grenze zählt für die Korrektur nur, wenn sie sonniger war als
-  vorhergesagt. Die Prognosesensoren der PV-Gruppe zeigen `limit_w` und `limited_wh` (Energie über der Grenze), die
-  Gesamtsensoren `limited_wh`.
+  nur diesen Teil verliert. Eine Grenze, die sich mehrere PV-Gruppen teilen (die Ausgangsgrenze eines Systems ohne
+  Akku), deckelt in jedem Schritt ihre Summe; jede PV-Gruppe folgt innerhalb der Stunde ihrem eigenen Verlauf bei
+  klarem Himmel und gibt den Teil darüber im Verhältnis ihrer Leistung in diesem Schritt ab. Eine Stunde an der
+  Grenze zählt für die Korrektur nur, wenn sie sonniger war als vorhergesagt. Die Prognosesensoren der PV-Gruppe
+  zeigen `limited_wh` (Energie über der Grenze) und bei einer eigenen Grenze `limit_w`, die Gesamtsensoren
+  `limited_wh`.
 
 ### Wetter
 

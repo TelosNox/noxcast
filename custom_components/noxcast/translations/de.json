@@ -41,6 +41,7 @@
       },
       "reconfigure": {
         "title": "Noxcast",
+        "description": "Der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du auf der Seite der Integration hinzu.\n\n{concept}",
         "data": {
           "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
@@ -98,7 +99,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. Danach fügst du im Menü des Systems seine PV-Gruppen, seinen Akku oder seine Teilsysteme hinzu.\n\n{diagram}",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. Danach fügst du im Menü des Systems seine PV-Gruppen, seinen Akku oder seine Teilsysteme hinzu.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage"
@@ -106,7 +107,7 @@
         },
         "basics": {
           "title": "System",
-          "description": "Was das System ist und wozu es gehört. Ein System mit „Gehört zu“ ist Teilsystem eines anderen: ein Gerät, das dessen Steuerung mitregelt. Dessen gemeinsame Grenze und Regelung gelten dann auch hier.\n\n{diagram}",
+          "description": "Was das System ist und wozu es gehört. Ein System mit „Gehört zu“ ist Teilsystem eines anderen: ein Gerät, das dessen Steuerung mitregelt. Dessen gemeinsame Grenze und Regelung gelten dann auch hier.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage",
@@ -118,7 +119,7 @@
         },
         "settings": {
           "title": "Einstellungen von {name}",
-          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt. Ein Teilsystem folgt der Regelung und der Einspeisung seines Systems; ein Gerät, das dem nicht folgt, ist ein eigenes System.",
+          "description": "Alles optional. Was Noxcast noch nicht verrechnet, wird gespeichert und zählt in einer späteren Version; der Reiter „Anlage“ im Panel zeigt, wie weit jede Angabe zählt. Ein Teilsystem folgt der Regelung und der Einspeisung seines Systems; ein Gerät, das dem nicht folgt, ist ein eigenes System.\n\n{concept}",
           "data": {
             "output_limit_w": "Ausgangsgrenze",
             "regulation": "Regelung",
@@ -172,7 +173,7 @@
         },
         "array": {
           "title": "PV-Gruppe",
-          "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.\n\n{diagram}",
+          "description": "Module, deren Leistung gemeinsam gemessen wird (z. B. ein MPPT-Eingang). Mehrere Leistungssensoren werden addiert. Module in verschiedene Richtungen: hier die erste Ausrichtung eintragen, die anderen unter weitere Ausrichtungen.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "power_sensors": "Leistungssensoren",

@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- The configuration forms explain the building blocks with small drawings: how household, systems, subsystems,
+  PV arrays and batteries nest, the four templates, the three regulations, the chain of limits and what a PV array
+  is. Each form shows the drawings that fit its settings. The README has the same drawings and a new section *How
+  it fits together* with examples of common installations.
 - The household's feed-in rule can also limit the feed-in to a share of the PV peak power (e.g. 60 %). It is
   stored and counts in a later version, like the limit in W.
 - The output limit of a system without battery now caps the forecast also when several PV arrays share it, such

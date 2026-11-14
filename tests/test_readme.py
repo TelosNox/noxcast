@@ -18,7 +18,10 @@ def _headings(text: str) -> list[int]:
 
 
 def _images(text: str) -> list[str]:
-    return re.findall(r"!\[[^\]]*\]\(([^)]+)\)|<img src=\"([^\"]+)\"", text)
+    """Image addresses; a drawing in two languages (name.de.svg / name.en.svg) counts as the same image."""
+    found = re.findall(r"!\[[^\]]*\]\(([^)]+)\)|<img src=\"([^\"]+)\"", text)
+    return [tuple(re.sub(r"\.(de|en)\.svg$", ".svg", x) for x in m) if isinstance(m, tuple)
+            else re.sub(r"\.(de|en)\.svg$", ".svg", m) for m in found]
 
 
 def _code(text: str) -> Counter:

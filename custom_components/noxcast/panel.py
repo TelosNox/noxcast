@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import flowchart, store, systems, views
+from . import concepts, flowchart, store, systems, views
 from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     from homeassistant.components.http import StaticPathConfig
 
     hass.http.register_view(_diagram_view())
+    hass.http.register_view(_concept_view())
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
@@ -378,6 +379,41 @@ def diagram_markdown(hass: HomeAssistant, entry: Any) -> str:
     lang = (hass.config.language or "en")[:2]
     path = async_sign_path(hass, f"{DIAGRAM_URL}?entry={entry.entry_id}&lang={lang}", timedelta(minutes=30))
     return f"![]({path})"
+
+
+CONCEPT_URL = "/api/noxcast/concept"
+
+
+def concept_markdown(hass: HomeAssistant, *names: str) -> str:
+    """Explanatory drawings (concepts.py) as Markdown images for a form's description, one below the other; signed
+    like the flow diagram. Empty where the web server is not there (tests without it)."""
+    if getattr(hass, "http", None) is None:
+        return ""
+    from homeassistant.components.http.auth import async_sign_path
+
+    lang = (hass.config.language or "en")[:2]
+    return "\n\n".join(f"![]({async_sign_path(hass, f'{CONCEPT_URL}?name={name}&lang={lang}', timedelta(minutes=30))})"
+                       for name in names)
+
+
+def _concept_view() -> Any:
+    from homeassistant.components.http import HomeAssistantView
+    from aiohttp import web
+
+    class ConceptView(HomeAssistantView):
+        """An explanatory drawing as an SVG image, for the configuration forms."""
+
+        url = CONCEPT_URL
+        name = "api:noxcast:concept"
+        requires_auth = True
+
+        async def get(self, request: web.Request) -> web.Response:
+            svg = concepts.render(request.query.get("name", ""), request.query.get("lang", "en"))
+            if svg is None:
+                return web.Response(status=404)
+            return web.Response(text=svg, content_type="image/svg+xml", headers={"Cache-Control": "private, max-age=3600"})
+
+    return ConceptView()
 
 
 def _diagram_view() -> Any:

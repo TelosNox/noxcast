@@ -41,6 +41,7 @@
       },
       "reconfigure": {
         "title": "Noxcast",
+        "description": "The household: house load, grid and feed-in rule. Systems, PV arrays and batteries are added on the integration page.\n\n{concept}",
         "data": {
           "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
@@ -98,7 +99,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "A system is everything that delivers power to the house through one output: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Choose what fits; the template fills in the settings, each stays changeable. Then add its PV arrays, its battery or its subsystems in the system's menu.\n\n{diagram}",
+          "description": "A system is everything that delivers power to the house through one output: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Choose what fits; the template fills in the settings, each stays changeable. Then add its PV arrays, its battery or its subsystems in the system's menu.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template"
@@ -106,7 +107,7 @@
         },
         "basics": {
           "title": "System",
-          "description": "What the system is and where it belongs. A system with \"Belongs to\" is a subsystem of another: a device that its control coordinates. Its shared limit and its regulation hold here as well.\n\n{diagram}",
+          "description": "What the system is and where it belongs. A system with \"Belongs to\" is a subsystem of another: a device that its control coordinates. Its shared limit and its regulation hold here as well.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template",
@@ -118,7 +119,7 @@
         },
         "settings": {
           "title": "Settings of {name}",
-          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts. A subsystem follows its system's regulation and feed-in; a device that does not follow it is a system of its own.",
+          "description": "Everything optional. Settings Noxcast does not compute yet are stored and count in a later version; the Installation tab of the panel shows how far each one counts. A subsystem follows its system's regulation and feed-in; a device that does not follow it is a system of its own.\n\n{concept}",
           "data": {
             "output_limit_w": "Output limit",
             "regulation": "Regulation",
@@ -172,7 +173,7 @@
         },
         "array": {
           "title": "PV array",
-          "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.\n\n{diagram}",
+          "description": "Modules whose power is measured together (e.g. one MPPT input). Several power sensors are summed. Modules facing different directions: enter the first orientation here and the others under further orientations.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "power_sensors": "Power sensors",

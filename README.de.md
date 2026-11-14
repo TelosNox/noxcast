@@ -211,9 +211,9 @@ gehört zu einem System. Ein System enthält entweder PV-Gruppen und höchstens 
 nie beides.
 
 Ein System fragt zuerst, was es ist (Name, Vorlage, bei einem bestehenden auch *Gehört zu*), dann seine
-Einstellungen, von der Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar. Danach listet sein Menü *Einstellungen
-von …*, seine Teilsysteme, PV-Gruppen und seinen Akku und fügt sie hinzu oder entfernt sie; ein Teilsystem hat ein
-eigenes Menü. Jedes Formular speichert beim Absenden, *Fertig* schließt nur den Dialog. Ein System zu löschen löscht alles, was darin
+Einstellungen, von der Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar. Danach listet sein Menü, was sich tun lässt, jeder Eintrag
+markiert: ✎ ändert das System selbst oder eines seiner Teilsysteme, eine PV-Gruppe oder den Akku, + fügt etwas hinzu,
+− entfernt etwas nach einer Rückfrage (sie nennt, was mit verschwindet); ein Teilsystem hat ein eigenes Menü. Jedes Formular speichert beim Absenden, *Fertig* schließt nur den Dialog. Ein System zu löschen löscht alles, was darin
 steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres Systems, so zeigt die Liste der Einträge, was worin steckt.
 
 ![Die vier Vorlagen: Wechselrichter ohne Akku, PV mit Akku in einem Gerät, Akku am Hausnetz, gekoppelte Systeme](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-templates.de.svg)

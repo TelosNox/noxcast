@@ -169,12 +169,12 @@
         },
         "menu": {
           "title": "{name}",
-          "description": "Alles, was in {name} steckt. ✎ ändert Bestehendes, ＋ fügt hinzu, － entfernt. Jedes Formular speichert beim Absenden.\n\n{diagram}",
+          "description": "Alles, was in {name} steckt. ✎ ändert Bestehendes, + fügt hinzu, − entfernt. Jedes Formular speichert beim Absenden.\n\n{diagram}",
           "menu_option_descriptions": {
             "edit": "Die Einstellungen von {name} selbst, etwa Regelung und Grenzen",
             "add_sub": "Ein neues Teilsystem in {name}",
             "add_array": "Eine neue PV-Gruppe in {name}",
-            "add_battery": "Der Akku von {name}",
+            "add_battery": "Ein Akku für {name}",
             "remove": "Der nächste Schritt nennt, was mit entfernt wird, und fragt vorher nach",
             "back": "Zum System, zu dem dieses gehört",
             "finish": "Schließt den Dialog. Alles ist schon gespeichert"
@@ -317,7 +317,7 @@
         },
         "remove_confirm": {
           "title": "{name} entfernen?",
-          "description": "Mit entfernt wird: {inside}. Bei einer PV-Gruppe auch ihre Entitäten und was Noxcast für sie gelernt hat. Das lässt sich nicht rückgängig machen."
+          "description": "Mit entfernt wird: {inside}. Ihre Entitäten und was Noxcast dafür gelernt hat, gehen mit. Das lässt sich nicht rückgängig machen."
         }
       },
       "error": {

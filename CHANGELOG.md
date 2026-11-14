@@ -18,7 +18,7 @@ breaking changes.
   split the surplus at the limit yet.
 
 ### Changed
-- The menu of a system says what each item does: ✎ changes something that exists, ＋ adds, － removes, with a
+- The menu of a system says what each item does: ✎ changes something that exists, + adds, − removes, with a
   short description under the general items. Removing a part asks first and names what goes with it; until then
   nothing is removed.
 

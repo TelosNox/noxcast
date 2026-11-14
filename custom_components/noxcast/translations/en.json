@@ -169,12 +169,12 @@
         },
         "menu": {
           "title": "{name}",
-          "description": "Everything inside {name}. ✎ changes what exists, ＋ adds, － removes. Each form saves when you send it.\n\n{diagram}",
+          "description": "Everything inside {name}. ✎ changes what exists, + adds, − removes. Each form saves when you send it.\n\n{diagram}",
           "menu_option_descriptions": {
             "edit": "The settings of {name} itself, such as regulation and limits",
             "add_sub": "A new subsystem inside {name}",
             "add_array": "A new PV array in {name}",
-            "add_battery": "The battery of {name}",
+            "add_battery": "A battery for {name}",
             "remove": "The next step names what goes with it and asks before anything is removed",
             "back": "To the system this one belongs to",
             "finish": "Closes the dialog. Everything is saved already"
@@ -317,7 +317,7 @@
         },
         "remove_confirm": {
           "title": "Remove {name}?",
-          "description": "Removed with it: {inside}. For a PV array also its entities and what Noxcast learned for it. This cannot be undone."
+          "description": "Removed with it: {inside}. Its entities and what Noxcast learned for it are removed too. This cannot be undone."
         }
       },
       "error": {

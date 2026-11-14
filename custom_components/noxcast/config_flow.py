@@ -1,4 +1,5 @@
-"""Config flow: main entry (batteries, house load, grid) and subentries per PV array, consumer and battery."""
+"""Config flow: main entry (the household: house load, grid, feed-in) and subentries per system, PV array, battery
+and consumer."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -20,17 +21,27 @@ from .const import (
     WEATHER_MODEL_OPTIONS,
     CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_SOC_FULL, CONF_SOC_SENSORS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
-    CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FEED_IN, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
+    CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_START_SHARE,
-    CONF_CAPACITY, CONF_COUPLING, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, COUPLING_OPTIONS, SUBENTRY_BATTERY,
-    CONF_BATTERY_POWER, CONF_BATTERY_INVERT, CONF_BATTERY_ARRAY, CONF_OUTPUT_LIMIT,
+    CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY,
+    CONF_BATTERY_POWER, CONF_BATTERY_INVERT, CONF_OUTPUT_LIMIT,
+    CONF_FEED_IN_MODE, CONF_FEED_IN_LIMIT, FEED_IN_OPTIONS, SUBENTRY_SYSTEM, CONF_SYSTEM, CONF_PARENT, CONF_TEMPLATE,
+    TEMPLATE_OPTIONS, CONF_LIMIT_PER_PHASE, CONF_PHASE, PHASE_OPTIONS, CONF_REGULATION, REGULATION_OPTIONS,
+    CONF_FIXED_POWER, CONF_WHEN_FULL, WHEN_FULL_OPTIONS, CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS, CONF_BALANCE,
 )
+from . import systems as sy
 from .sources import async_archive_irradiance, async_archive_temperature, async_open_meteo
 
 
+def _select(options, key: str) -> selector.SelectSelector:
+    return selector.SelectSelector(selector.SelectSelectorConfig(options=list(options), translation_key=key))
+
+
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """The household. The battery sensors here leave full-battery hours out of learning for every array; they stay
+    until the systems' own batteries take that over (a later computation step)."""
     return vol.Schema({
         vol.Optional(CONF_SOC_SENSORS, default=defaults.get(CONF_SOC_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
@@ -41,7 +52,11 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_GRID, description={"suggested_value": defaults.get(CONF_GRID)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Optional(CONF_GRID_INVERT, default=defaults.get(CONF_GRID_INVERT, False)): selector.BooleanSelector(),
-        vol.Optional(CONF_FEED_IN, default=defaults.get(CONF_FEED_IN, False)): selector.BooleanSelector(),
+        vol.Required(CONF_FEED_IN_MODE, default=defaults.get(CONF_FEED_IN_MODE, "none")):
+            _select(FEED_IN_OPTIONS, CONF_FEED_IN_MODE),
+        vol.Optional(CONF_FEED_IN_LIMIT, description={"suggested_value": defaults.get(CONF_FEED_IN_LIMIT)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100000, step=10, unit_of_measurement="W",
+                                                                  mode=selector.NumberSelectorMode.BOX)),
         vol.Optional(CONF_FORECAST_DAYS, default=defaults.get(CONF_FORECAST_DAYS, FORECAST_DAYS)):
             selector.NumberSelector(selector.NumberSelectorConfig(min=2, max=MAX_FORECAST_DAYS, step=1,
                                                                   mode=selector.NumberSelectorMode.BOX)),
@@ -153,8 +168,17 @@ def _mounting(heating: float | None) -> tuple[str, float | None]:
     return "free", float(heating)
 
 
-def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
-    """defaults: stored (flat) data, or the form's own input when it is shown again with an error."""
+def _system_choice(defaults: dict[str, Any], choices: dict[str, str]) -> dict:
+    """The system a part belongs to; left empty, the part gets a system of its own (see systems.normalize)."""
+    return {vol.Optional(CONF_SYSTEM, description={"suggested_value": defaults.get(CONF_SYSTEM)}):
+            selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=sid, label=name) for sid, name in choices.items()],
+                mode=selector.SelectSelectorMode.DROPDOWN))}
+
+
+def _array_schema(defaults: dict[str, Any], choices: dict[str, str] | None = None) -> vol.Schema:
+    """defaults: stored (flat) data, or the form's own input when it is shown again with an error;
+    choices: the systems that can take PV arrays (id -> name)."""
     number = selector.NumberSelectorMode.BOX
     if ARRAY_ADVANCED in defaults or "mounting" in defaults:          # the form's input
         mounting = defaults.get("mounting", "free")
@@ -181,6 +205,7 @@ def _array_schema(defaults: dict[str, Any]) -> vol.Schema:
     }
     return vol.Schema({
         vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
+        **_system_choice(defaults, choices or {}),
         vol.Required(CONF_POWER_SENSORS, default=defaults.get(CONF_POWER_SENSORS, [])):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
         vol.Required(CONF_TILT, default=defaults.get(CONF_TILT, 30)): _tilt_selector(),
@@ -206,13 +231,15 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
         state = flow.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
             return {CONF_SOC_SENSORS: "soc_unit"}
+    if user_input.get(CONF_FEED_IN_MODE) == "limited" and not user_input.get(CONF_FEED_IN_LIMIT):
+        return {CONF_FEED_IN_LIMIT: "feed_in_limit_needed"}
     return {}
 
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 4              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
-                                   # 1.4: discontinued ICON models replaced (migration in __init__)
+    MINOR_VERSION = 5              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+                                   # 1.4: discontinued ICON models replaced, 1.5: systems (migration in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -243,8 +270,8 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_ARRAY: ArraySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow,
-                SUBENTRY_BATTERY: BatterySubentryFlow}
+        return {SUBENTRY_SYSTEM: SystemSubentryFlow, SUBENTRY_ARRAY: ArraySubentryFlow,
+                SUBENTRY_BATTERY: BatterySubentryFlow, SUBENTRY_CONSUMER: ConsumerSubentryFlow}
 
 
 class ConsumerSubentryFlow(ConfigSubentryFlow):
@@ -317,23 +344,43 @@ class ConsumerSubentryFlow(ConfigSubentryFlow):
                                     description_placeholders={"name": self._data[CONF_NAME]})
 
 
+def _systems(entry: ConfigEntry) -> dict[str, sy.System]:
+    return sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in entry.subentries.items()})
+
+
+def _part_choices(entry: ConfigEntry, battery: str | None = None) -> dict[str, str]:
+    """Systems that can take a PV array or a battery: those without subsystems; for a battery, those without one
+    (its own system excepted)."""
+    return {sid: s.name for sid, s in sorted(_systems(entry).items(), key=lambda kv: kv[1].name)
+            if not s.children and (battery is None or s.battery in (None, battery))}
+
+
 class ArraySubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure one PV array."""
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+    def _errors(self, user_input: dict[str, Any] | None) -> dict[str, str]:
         errors = _validate_array(self.hass, user_input)
+        if not errors and user_input and user_input.get(CONF_SYSTEM) \
+                and user_input[CONF_SYSTEM] not in _part_choices(self._get_entry()):
+            errors = {CONF_SYSTEM: "system_has_subsystems"}
+        return errors
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors = self._errors(user_input)
         if user_input is not None and not errors:
             return self.async_create_entry(title=user_input[CONF_NAME], data=_array_data(user_input))
-        return self.async_show_form(step_id="user", data_schema=_array_schema(user_input or {}), errors=errors)
+        return self.async_show_form(step_id="user", errors=errors,
+                                    data_schema=_array_schema(user_input or {}, _part_choices(self._get_entry())))
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
-        errors = _validate_array(self.hass, user_input)
+        errors = self._errors(user_input)
         if user_input is not None and not errors:
             return self.async_update_and_abort(self._get_entry(), subentry, title=user_input[CONF_NAME],
                                                data=_array_data(user_input))
-        return self.async_show_form(step_id="reconfigure", data_schema=_array_schema(user_input or dict(subentry.data)),
-                                    errors=errors)
+        return self.async_show_form(step_id="reconfigure", errors=errors,
+                                    data_schema=_array_schema(user_input or dict(subentry.data),
+                                                              _part_choices(self._get_entry())))
 
 
 def _array_data(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -444,12 +491,12 @@ class NoxcastOptionsFlow(OptionsFlow):
 
 
 # the battery form: what is needed on top, the rest in sections that open when they hold a value
-BATTERY_SECTIONS = ("limits", "power", "inverter")
+BATTERY_SECTIONS = ("limits", "power")
 BATTERY_DEFAULTS = {CONF_MAX_SOC: 100, CONF_MIN_SOC: 0, CONF_RESERVE: 0}
 
 
-def _battery_schema(d: dict[str, Any], arrays: dict[str, str]) -> vol.Schema:
-    """d: stored (flat) data; arrays: subentry id -> name of the PV arrays, to pick the one behind the same inverter."""
+def _battery_schema(d: dict[str, Any], choices: dict[str, str]) -> vol.Schema:
+    """d: stored (flat) data; choices: the systems that can take this battery (id -> name)."""
     box = selector.NumberSelectorMode.BOX
     pct = selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=box)
     soc_entity = ["sensor", "number", "input_number"]
@@ -468,18 +515,10 @@ def _battery_schema(d: dict[str, Any], arrays: dict[str, str]) -> vol.Schema:
         _number(d, CONF_MAX_CHARGE, 10, 100000, 10, "W"),
         _number(d, CONF_MAX_DISCHARGE, 10, 100000, 10, "W"),
     ])
-    inverter = dict([
-        (vol.Optional(CONF_BATTERY_ARRAY, description={"suggested_value": d.get(CONF_BATTERY_ARRAY)}),
-         selector.SelectSelector(selector.SelectSelectorConfig(
-             options=[selector.SelectOptionDict(value=sid, label=name) for sid, name in arrays.items()],
-             mode=selector.SelectSelectorMode.DROPDOWN))),
-        _number(d, CONF_OUTPUT_LIMIT, 10, 100000, 10, "W"),
-    ])
     used = {
         "limits": d.get(CONF_MAX_SOC_ENTITY) or d.get(CONF_MIN_SOC_ENTITY)
         or any(d.get(k, v) != v for k, v in BATTERY_DEFAULTS.items()),
         "power": d.get(CONF_BATTERY_POWER) or any(d.get(k) for k in (CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE)),
-        "inverter": d.get(CONF_BATTERY_ARRAY) or d.get(CONF_OUTPUT_LIMIT),
     }
     return vol.Schema(dict([
         (vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")), selector.TextSelector()),
@@ -487,10 +526,9 @@ def _battery_schema(d: dict[str, Any], arrays: dict[str, str]) -> vol.Schema:
          selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))),
         (vol.Required(CONF_CAPACITY, default=d.get(CONF_CAPACITY, 5)),
          selector.NumberSelector(selector.NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWh", mode=box))),
-        (vol.Required(CONF_COUPLING, default=d.get(CONF_COUPLING, COUPLING_OPTIONS[0])),
-         selector.SelectSelector(selector.SelectSelectorConfig(options=list(COUPLING_OPTIONS), translation_key=CONF_COUPLING))),
+        *_system_choice(d, choices).items(),
         *[(vol.Optional(name), section(vol.Schema(fields), {"collapsed": not used[name]}))
-          for name, fields in (("limits", limits), ("power", power), ("inverter", inverter))],
+          for name, fields in (("limits", limits), ("power", power))],
     ]))
 
 
@@ -502,8 +540,8 @@ def _battery_data(user_input: dict[str, Any]) -> dict[str, Any]:
 class BatterySubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure a battery for the surplus simulation."""
 
-    def _arrays(self) -> dict[str, str]:
-        return {sid: sub.title for sid, sub in self._get_entry().subentries.items() if sub.subentry_type == SUBENTRY_ARRAY}
+    def _choices(self, own: str | None) -> dict[str, str]:
+        return _part_choices(self._get_entry(), own or "")
 
     def _errors(self, user_input: dict[str, Any] | None, own: str | None = None) -> dict[str, str]:
         """Problems of fields inside a section are shown on top of the form."""
@@ -517,21 +555,17 @@ class BatterySubentryFlow(ConfigSubentryFlow):
             return {CONF_SOC_SENSOR: "soc_unit"}
         if float(user_input.get(CONF_MIN_SOC, 0)) + float(user_input.get(CONF_RESERVE, 0)) >= float(user_input.get(CONF_MAX_SOC, 100)):
             return {"base": "limits_order"}
-        if (array := user_input.get(CONF_BATTERY_ARRAY)):
-            if not user_input.get(CONF_OUTPUT_LIMIT):
-                return {"base": "output_needed"}
-            # one inverter per array: two batteries behind the same array would share its PV twice
-            if any(sid != own and sub.subentry_type == SUBENTRY_BATTERY and sub.data.get(CONF_BATTERY_ARRAY) == array
-                   for sid, sub in self._get_entry().subentries.items()):
-                return {"base": "array_taken"}
+        # one battery per system: a second one is a subsystem of its own
+        if user_input.get(CONF_SYSTEM) and user_input[CONF_SYSTEM] not in self._choices(own):
+            return {CONF_SYSTEM: "system_taken"}
         return {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errors = self._errors(user_input)
         if user_input is not None and not errors:
             return self.async_create_entry(title=user_input[CONF_NAME], data=_battery_data(user_input))
-        return self.async_show_form(step_id="user", data_schema=_battery_schema(_battery_data(user_input or {}), self._arrays()),
-                                    errors=errors)
+        return self.async_show_form(step_id="user", errors=errors,
+                                    data_schema=_battery_schema(_battery_data(user_input or {}), self._choices(None)))
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
@@ -541,5 +575,104 @@ class BatterySubentryFlow(ConfigSubentryFlow):
                                                data=_battery_data(user_input))
         return self.async_show_form(step_id="reconfigure",
                                     data_schema=_battery_schema(_battery_data(user_input) if user_input else dict(subentry.data),
-                                                                self._arrays()),
+                                                                self._choices(subentry.subentry_id)),
                                     errors=errors)
+
+
+def _system_basics(d: dict[str, Any], parents: dict[str, str]) -> vol.Schema:
+    fields = {
+        vol.Required(CONF_NAME, default=d.get(CONF_NAME, "")): selector.TextSelector(),
+        vol.Required(CONF_TEMPLATE, default=d.get(CONF_TEMPLATE, TEMPLATE_OPTIONS[0])): _select(TEMPLATE_OPTIONS, CONF_TEMPLATE),
+    }
+    if parents:
+        fields.update({vol.Optional(CONF_PARENT, description={"suggested_value": d.get(CONF_PARENT)}):
+                       selector.SelectSelector(selector.SelectSelectorConfig(
+                           options=[selector.SelectOptionDict(value=sid, label=name) for sid, name in parents.items()],
+                           mode=selector.SelectSelectorMode.DROPDOWN))})
+    return vol.Schema(fields)
+
+
+def _system_settings(d: dict[str, Any], *, battery: bool, group: bool, sub: bool) -> vol.Schema:
+    """Only the settings that can apply: battery settings for templates with a battery, the shared settings for
+    systems with subsystems, the phase for subsystems. Regulation and "when full" left empty are inherited from
+    the parent."""
+    def choice(key: str, options) -> tuple:
+        return vol.Optional(key, description={"suggested_value": d.get(key)}), _select(options, key)
+
+    fields = dict([_number(d, CONF_OUTPUT_LIMIT, 10, 100000, 10, "W")])
+    if group:
+        fields[vol.Optional(CONF_LIMIT_PER_PHASE, default=bool(d.get(CONF_LIMIT_PER_PHASE)))] = selector.BooleanSelector()
+    if sub:
+        fields.update(dict([choice(CONF_PHASE, PHASE_OPTIONS)]))
+    fields.update(dict([choice(CONF_REGULATION, REGULATION_OPTIONS), _number(d, CONF_FIXED_POWER, 0, 100000, 10, "W")]))
+    if battery or group:
+        fields.update(dict([choice(CONF_WHEN_FULL, WHEN_FULL_OPTIONS)]))
+    if battery:
+        fields.update(dict([choice(CONF_CHARGES_FROM, CHARGES_FROM_OPTIONS)]))
+    if group:
+        fields[vol.Optional(CONF_BALANCE, default=bool(d.get(CONF_BALANCE)))] = selector.BooleanSelector()
+    return vol.Schema(fields)
+
+
+class SystemSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a system: first what it is (template, parent), then its settings, filled in by the
+    template. Arrays and batteries choose their system in their own forms."""
+
+    _basics: dict[str, Any]
+    _old: dict[str, Any]
+
+    def _own(self) -> str | None:
+        return self._get_reconfigure_subentry().subentry_id if self.source == "reconfigure" else None
+
+    def _parents(self) -> dict[str, str]:
+        """Systems that can take subsystems: top level, no arrays or battery of their own (either, never both).
+        None for a system that has subsystems itself (two levels at most)."""
+        systems, own = _systems(self._get_entry()), self._own()
+        if own in systems and systems[own].children:
+            return {}
+        return {sid: s.name for sid, s in sorted(systems.items(), key=lambda kv: kv[1].name)
+                if sid != own and s.parent is None and not s.arrays and not s.battery}
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._old = {}
+        return await self._first("user", user_input)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._old = dict(self._get_reconfigure_subentry().data)
+        return await self._first("reconfigure", user_input)
+
+    async def _first(self, step: str, user_input: dict[str, Any] | None) -> SubentryFlowResult:
+        parents = self._parents()
+        errors = {}
+        if user_input is not None:
+            if user_input.get(CONF_PARENT) and user_input[CONF_PARENT] not in parents:
+                errors = {CONF_PARENT: "parent_not_possible"}
+            else:
+                self._basics = dict(user_input)
+                return await self.async_step_settings()
+        return self.async_show_form(step_id=step, data_schema=_system_basics(user_input or self._old, parents),
+                                    errors=errors)
+
+    async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        template = self._basics[CONF_TEMPLATE]
+        own = self._own()
+        systems = _systems(self._get_entry())
+        # a changed template fills in its settings anew; the same template keeps what was set
+        defaults = dict(self._old) if self._old.get(CONF_TEMPLATE) == template \
+            else {**self._old, **sy.template_data(template)}
+        group = template in ("coupled", "group") or bool(own in systems and systems[own].children)
+        battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
+        errors = {}
+        if user_input is not None:
+            if user_input.get(CONF_REGULATION) == "fixed" and not user_input.get(CONF_FIXED_POWER):
+                errors = {CONF_FIXED_POWER: "fixed_power_needed"}
+            else:
+                data = {k: v for k, v in {**self._basics, **user_input}.items() if v not in (None, "", False)}
+                if self.source == "reconfigure":
+                    return self.async_update_and_abort(self._get_entry(), self._get_reconfigure_subentry(),
+                                                       title=data[CONF_NAME], data=data)
+                return self.async_create_entry(title=data[CONF_NAME], data=data)
+        return self.async_show_form(
+            step_id="settings", errors=errors, description_placeholders={"name": self._basics[CONF_NAME]},
+            data_schema=_system_settings(user_input or defaults, battery=battery, group=group,
+                                         sub=bool(self._basics.get(CONF_PARENT))))

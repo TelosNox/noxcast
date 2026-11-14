@@ -6,7 +6,7 @@
 
 // payload schema the scripts read (WS_SCHEMA_VERSION in const.py): another one means the integration was updated
 // while this page was open, and the script asks for a reload instead of misreading the data
-export const WS_SCHEMA = 2;
+export const WS_SCHEMA = 3;
 
 // a websocket request that gives up: one lost while the connection was rebuilt never answers
 export function ask(hass, msg, timeoutMs = 20000) {

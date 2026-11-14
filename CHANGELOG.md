@@ -7,6 +7,33 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- Systems: a new entry *System* describes how modules and batteries reach the house: an inverter, a device with PV
+  and battery, a battery at the house grid, devices that coordinate (e.g. EcoFlow Stream), or several systems summed
+  up for the overview. Templates fill in the settings (output limit, per phase, regulation, when the battery is full,
+  where the battery charges from, batteries balancing each other); a system can hold subsystems that share its
+  limit. Every PV array and every battery belongs to a system, chosen in its own form.
+- A new panel tab *Installation* shows the installation as entered (household, systems, subsystems, PV arrays,
+  batteries) and per setting whether Noxcast computes it exactly, simplified or not yet. Settings that do not count
+  yet are stored and count in later versions without new input.
+- The household's feed-in can be limited to a value in W, besides free and none. The limit is stored now and counts
+  in a later version.
+- A Repairs notice asks which PV arrays charge a battery when the update could not tell (see below).
+
+### Changed
+- Migrated automatically, nothing to do in most cases: the configuration becomes systems on the
+  first start. Every PV array gets a system of its own; a battery with a PV array behind its inverter becomes a
+  system *PV with battery in one device* with that array and its output limit; an AC battery a system *Battery at
+  the house grid*; two or more batteries become subsystems of a system *Batteries* that balance each other, as they
+  were simulated before. *Surplus is fed into the grid* becomes the feed-in *free* or *none*. Forecasts, learning
+  and entities stay as they were. A DC battery without a PV array gets a Repairs notice: choose its system in the
+  PV arrays behind it, or change it to *Battery at the house grid*.
+- The battery form no longer has *Coupling* and *Shared inverter*: where the battery sits and the output limit are
+  set on its system. A battery added without a system gets one of its own at the house grid (default efficiency
+  90 %, as AC before); choose *PV with battery in one device* for a battery before the output (95 %).
+- A system's template can be changed; the output limit and the other values the new template does not set are
+  kept.
+
 ### Fixed
 - The shade area in the day card keeps the shape of the shadow once the hours have passed. It could swell into a
   hump or shrink where a shaded hour produced more or less than forecast, although that mostly showed how well the

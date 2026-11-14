@@ -130,9 +130,11 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 ### Einrichten
 
 1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Den Sensor für den Akku-Ladezustand
-   wählen, falls vorhanden; alles andere kann leer bleiben.
+   wählen, falls vorhanden, und ob Überschuss ins Netz darf; alles andere kann leer bleiben.
 2. Auf der Seite der Integration: ⋮ → *PV-Gruppe hinzufügen*. Den oder die Leistungssensoren wählen, Neigung, Azimut
-   und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird.
+   und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird. Jede PV-Gruppe
+   bekommt ein eigenes System (Wechselrichter ohne Akku); mit Akku oder mehreren Geräten zuerst ein *System* anlegen
+   und es in der PV-Gruppe wählen.
 3. Fertig. Noxcast lernt sofort aus dem vorhandenen Verlauf und danach jede Nacht um 01:30.
 
 Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und in den nächsten Tagen ansteht,
@@ -163,26 +165,58 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 ## Konfiguration
 
 Einstellungen → Geräte & Dienste → Integration hinzufügen → **Noxcast**. Danach auf der Seite der Integration
-Untereinträge anlegen (⋮ → *PV-Gruppe hinzufügen* / *Verbraucher hinzufügen* / *Akku hinzufügen*).
+Untereinträge anlegen (⋮ → *System hinzufügen* / *PV-Gruppe hinzufügen* / *Akku hinzufügen* / *Verbraucher hinzufügen*).
 
 ### 1. Haupteintrag
 
 | Feld | Bedeutung |
 |---|---|
-| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein) |
+| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein). Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme |
 | Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist) |
-| Überschuss wird eingespeist | Aus = Nulleinspeisung: Überschuss bei vollen Akkus zählt als ungenutzt |
+| Einspeisung, Einspeisegrenze | Frei, begrenzt auf einen Wert in W, oder keine (Nulleinspeisung: Überschuss bei vollen Akkus zählt als ungenutzt). Die Grenze wird gespeichert und zählt in einer späteren Version |
 | Prognosetage | 2–7, heute eingeschlossen (Standard 3) |
 
-### 2. PV-Gruppen (eine je Gruppe von Leistungssensoren)
+### 2. Systeme (wie die Module zum Haus kommen)
+
+Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein
+Akku mit eigenem Wechselrichter am Hausnetz oder mehrere Geräte, die sich absprechen. Jede PV-Gruppe und jeder Akku
+gehört zu einem System. Ein System enthält entweder PV-Gruppen und höchstens einen Akku oder Teilsysteme (eine Ebene),
+nie beides.
+
+Das Formular hat zwei Schritte: was das System ist (Name, Vorlage, *Teil von*), dann seine Einstellungen, von der
+Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar.
+
+| Vorlage | Für |
+|---|---|
+| Wechselrichter ohne Akku | Mikro-Wechselrichter, String-Wechselrichter, eine ältere Dachanlage |
+| PV mit Akku in einem Gerät | Balkongerät mit Akku, Hybrid-Wechselrichter, ein DC-Speicher zwischen Modulen und Mikro-Wechselrichter |
+| Akku am Hausnetz | Steckerspeicher oder Speicher-Wechselrichter mit eigenem Wechselrichter, ohne PV |
+| Gekoppelte Systeme | Geräte, die sich absprechen und eine Grenze teilen, z. B. EcoFlow Stream mit mehreren Geräten; sie werden seine Teilsysteme |
+| Nur zusammenfassen | Fasst Systeme für die Übersicht zusammen, ohne eine Zahl zu ändern, z. B. eine Altanlage und einen nachgerüsteten Speicher |
+
+| Einstellung | Bedeutung |
+|---|---|
+| Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt |
+| Grenze gilt pro Phase, Phase | Mehrere Geräte auf verschiedenen Phasen; jedes Teilsystem nennt seine Phase |
+| Regelung | Gibt alles ab, deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Ein leeres Teilsystem verhält sich wie sein System |
+| Wenn der Akku voll ist | Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken |
+| Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
+| Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
+
+Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet; der Panel-Reiter *Anlage* zeigt je
+Einstellung, ob sie genau, vereinfacht oder noch nicht zählt. Spätere Versionen verrechnen mehr davon, ohne dass du etwas
+neu eintragen musst.
+
+### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 
 Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein Wechselrichter.
 
 | Feld | Bedeutung |
 |---|---|
+| System | Das System, zu dem die PV-Gruppe gehört. Leer: ein eigenes System (Wechselrichter ohne Akku) |
 | Leistungssensoren | Einer oder mehrere; sie werden addiert |
 | Neigung, Azimut, Spitzenleistung | Der Module (Azimut 180° = Süd) |
 | Weitere Ausrichtung 2–4 | Optional: Module an denselben Sensoren, die in eine andere Richtung zeigen (z. B. Ost + Süd + West an einem Eingang, senkrecht Ost + West). Jede mit Neigung, Azimut und eigener Spitzenleistung; die Spitzenleistung der PV-Gruppe ist die Summe |
@@ -193,7 +227,7 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 
 Gelernt wird sofort aus dem vorhandenen Verlauf und danach jede Nacht (01:30).
 
-### 3. Verbraucher (optional, für die Lastprognose)
+### 4. Verbraucher (optional, für die Lastprognose)
 
 Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet und für sich prognostiziert. Das Formular
 hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitbindung.
@@ -207,10 +241,11 @@ hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitb
 | Leistung eines Laufs, Dauer eines Laufs | Nur flexibel, optional: sonst aus dem Verlauf gelernt |
 | Jetzt starten ab PV-Anteil | Nur flexibel, optional (Standard 70 %): Schwelle des Sensors *jetzt starten* |
 
-### 4. Akkus (optional, braucht den Hausverbrauch)
+### 5. Akkus (optional, braucht den Hausverbrauch)
 
-Name, Ladestand-Sensor, Kapazität und Kopplung stehen oben; Grenzen, Leistung und ein gemeinsamer Wechselrichter stehen in
-Abschnitten, die zu bleiben, bis sie einen Wert enthalten.
+Name, Ladestand-Sensor, Kapazität und System stehen oben; Grenzen und Leistung stehen in Abschnitten, die zu bleiben,
+bis sie einen Wert enthalten. Das System sagt, wo der Akku sitzt (siehe *Akku lädt aus*), und gibt seine
+Ausgangsgrenze.
 
 | Feld | Bedeutung |
 |---|---|
@@ -218,13 +253,15 @@ Abschnitten, die zu bleiben, bis sie einen Wert enthalten.
 | Lade-/Entladeleistung | Optional: Lade- und Entladeleistung für die Karte, positiv = Laden (sonst *umkehren*) |
 | Ladegrenze oben / Entladegrenze unten | Zahl oder Entität (z. B. Ladegrenze, Notstromreserve) |
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
-| Kopplung, Wirkungsgrad | DC (Standard 95 % im Zyklus) oder AC (90 %), oder eigener Wert |
+| System | Ein Akku je System. Leer: ein eigenes System am Hausnetz |
+| Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert |
-| Ausgangsgrenze, PV-Gruppe | Optional, für Balkonkraftwerke: was der Wechselrichter einspeisen darf (z. B. 800 W), und die PV-Gruppe am selben Wechselrichter. PV und Akku liefern zusammen höchstens die Grenze; PV darüber kann nur den Akku laden. Ein Akku je Gruppe |
 
-Alle Akkus werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet).
+Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
+nur den Akku laden. Alle Akkus werden weiter als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität
+gewichtet); eine Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späteren Version.
 
-### 5. Optionen (⋮ → Konfigurieren)
+### 6. Optionen (⋮ → Konfigurieren)
 
 | Option | Standard |
 |---|---|
@@ -254,6 +291,7 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 | Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
 | Akku & Überschuss | Simulation bis zum Ladebeginn morgen, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
+| Anlage | Die Anlage, wie eingetragen: Haushalt, Systeme, Teilsysteme, PV-Gruppen und Akkus, und je Einstellung, ob Noxcast sie genau, vereinfacht oder noch nicht verrechnet |
 | Diagnose | Installierte Version, Wetter, letzter Lernlauf, Archiv; jeder Sensor, den Noxcast liest, mit Zustand, Statistik und Abdeckung; fehlende Daten und Fehler |
 
 ### Tageskarte `custom:noxcast-card`
@@ -349,6 +387,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
 | Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
+| Welche PV-Gruppen laden den Akku? | Ein Akku lädt vor dem Ausgang eines Geräts mit PV, aber zu seinem System gehört keine PV-Gruppe (nach dem Update: seine bisherigen Einstellungen nannten keine PV-Gruppe). In diesen PV-Gruppen sein System wählen, oder das System auf *Akku am Hausnetz* umstellen. Bis dahin rechnet es wie bisher |
 | Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 
 ## Dienste
@@ -486,9 +525,9 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 
 - Stunde für Stunde von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
   oberen Grenze und zur Ladeleistung, der Rest geht verloren (oder wird eingespeist); ein Defizit entlädt bis
-  Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste nach Kopplung.
-- Mit Ausgangsgrenze liefert ein Akku höchstens die Grenze minus das, was seine PV-Gruppe in der Stunde liefert,
-  und PV der Gruppe über der Grenze geht in den Akku oder wird abgeregelt.
+  Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste danach, wo der Akku sitzt.
+- Mit Ausgangsgrenze am System liefert ein Akku höchstens die Grenze minus das, was die PV-Gruppen des Systems in der
+  Stunde liefern, und deren PV über der Grenze geht in den Akku oder wird abgeregelt.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

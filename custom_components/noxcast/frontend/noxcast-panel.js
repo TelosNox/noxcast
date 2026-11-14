@@ -5,7 +5,8 @@ const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-commo
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["overview", "noxcast-overview", "./noxcast-overview.js"], ["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
-  ["battery", "noxcast-battery", "./noxcast-battery.js"], ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
+  ["battery", "noxcast-battery", "./noxcast-battery.js"], ["installation", "noxcast-installation", "./noxcast-installation.js"],
+  ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
 // shared look of the panel and its sections, loaded with this module's cache buster
 const { adoptTheme, LOGO, ORBIT } = await import(new URL("./noxcast-theme.js" + new URL(import.meta.url).search, import.meta.url).href);
 
@@ -16,6 +17,7 @@ const SECTION_LEADS = {
     accuracy: "Wie gut die Prognose vom Vortag eingetroffen ist, nach Tag, Wetterlage und Wetterquelle.",
     load: "Wann im Haus wie viel verbraucht wird, aus welchen Teilen sich das zusammensetzt und wie verlässlich die Prognose ist.",
     battery: "Wohin der Überschuss heute und morgen geht und was sich mit mehr Kapazität oder einem weiteren Verbraucher ändert.",
+    installation: "Deine Anlage, wie du sie eingetragen hast: Haushalt, Systeme, PV-Gruppen und Akkus, und wie weit Noxcast jede Angabe schon verrechnet.",
     diagnostics: "Welche Daten Noxcast liest, wie vollständig sie sind und wo etwas fehlt." },
   en: { overview: "What is due today and in the days ahead. Every figure leads to the section that explains it.",
     day: "One day in detail: the groups stacked, forecast against expectation and actual, the weather of each hour and how an hour comes about.",
@@ -23,16 +25,17 @@ const SECTION_LEADS = {
     accuracy: "How well the day-ahead forecast came true, by day, weather and weather source.",
     load: "When the house uses how much, which parts it is made of and how reliable the forecast is.",
     battery: "Where today's and tomorrow's surplus goes and what changes with more capacity or another consumer.",
+    installation: "Your installation as you entered it: household, systems, PV arrays and batteries, and how far Noxcast already computes each setting.",
     diagnostics: "Which data Noxcast reads, how complete it is and where something is missing." },
 };
 // Home Assistant icons of the sections; on a phone the tabs get their own row, each with its icon over a short title
 const SECTION_ICONS = { overview: "mdi:view-dashboard", learned: "mdi:brain", day: "mdi:calendar-today", accuracy: "mdi:target", load: "mdi:home-lightning-bolt",
-  battery: "mdi:battery-charging", diagnostics: "mdi:stethoscope" };
+  battery: "mdi:battery-charging", installation: "mdi:sitemap-outline", diagnostics: "mdi:stethoscope" };
 
-const SECTION_TITLES = { de: { overview: "Übersicht", day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", diagnostics: "Diagnose" },
-  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", diagnostics: "Diagnostics" } };
-const SECTION_SHORT = { de: { overview: "Übersicht", day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", diagnostics: "Diagnose" },
-  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", diagnostics: "Data" } };
+const SECTION_TITLES = { de: { overview: "Übersicht", day: "Tag", learned: "Gelerntes", accuracy: "Prognosegüte", load: "Last", battery: "Akku & Überschuss", installation: "Anlage", diagnostics: "Diagnose" },
+  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Forecast accuracy", load: "Load", battery: "Battery & surplus", installation: "Installation", diagnostics: "Diagnostics" } };
+const SECTION_SHORT = { de: { overview: "Übersicht", day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", installation: "Anlage", diagnostics: "Diagnose" },
+  en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", installation: "Setup", diagnostics: "Data" } };
 
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;

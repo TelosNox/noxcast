@@ -3,7 +3,7 @@
 Power flows from the inputs (PV power sensors) through devices and groups to the house, and every level can hold
 a limit. This first stage knows the two ends only: inputs with a fixed limit (an MPPT or micro-inverter that
 delivers at most so many watts) and the house with the batteries whose full state may curtail the PV. Devices
-and groups follow (#250); arrays without them keep today's behaviour.
+and groups are entered as systems (systems.py, #250) and reach this computation step by step.
 
 A limit is fixed when no battery sits below it: the PV can never exceed it, so it caps the forecast. A limit that
 depends on a state (a full battery) is not a cap; the hours it may have cut are left out instead.

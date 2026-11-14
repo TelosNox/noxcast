@@ -387,11 +387,39 @@ orientation changes the geometry key and starts relearning.
   the cell is replaced rather than averaged (a felled tree disappears within days).
 - **Efficiency drift** raises a hint (soiling / degradation) instead of being absorbed silently.
 
+## Installation model
+
+The installation is entered as household -> system -> subsystem (`systems.py`, decisions on #250). A system is
+everything that delivers through one output to the house or to its parent: its PV arrays, at most one battery, its
+regulation. A system holds either arrays and a battery, or subsystems, never both; two levels at most. Every array
+belongs to a system. The common installations (micro-inverter, string inverter, compact device or hybrid inverter
+with battery, battery at the house grid, coupled devices such as EcoFlow Stream, a retrofit battery next to an old
+installation) are templates of the one block, not types of their own.
+
+- Cascade: a subsystem's limit and its system's both hold, the tighter wins, and all subsystems together never
+  deliver more than their system. Behaviour (regulation, "when the battery is full") is set on the system and
+  inherited unless a subsystem sets its own.
+- Chain of ceilings, the rule all later computation steps follow: PV of a system <= its output + the charge power
+  of its own battery (0 when full); the output <= the output limit, and with zero export or load following also <=
+  the house load + what coordinated batteries take; the household's feed-in <= its feed-in limit. A battery at the
+  house grid raises another system's ceiling only when both coordinate (same coupled system); otherwise it only
+  charges from what is fed in anyway. Only "output limit + largest charge power" of a system that delivers
+  everything is a fixed cap; everything below it is a state, decided by the battery simulation for the forecast
+  and by measurement in learning (an hour is left out when no battery that could take more still takes, and the
+  output is at its current ceiling).
+- Grid charging is not entered: forecasts start from the measured state of charge and learning uses measurements;
+  only future grid charging would change a forecast, and its timing is decided by an automation or the firmware.
+- Order of work: the complete input comes first with one migration (config entry 1.5) and the panel tab
+  *Installation*; computation follows setting by setting, each step proven in the backtest. Until a setting counts
+  exactly, it errs on the safe side (learning leaves out more, the forecast caps only with fixed limits), and the
+  tab shows per setting "exact", "simplified" or "not yet" (`systems.effects`). What the migration cannot derive is
+  asked through a repair; until answered it computes as before.
+
 ## Data filters
 
 - Curtailment by a state (`curtailment.py`): an hour in which the highest state of charge of the configured
   batteries reaches "full" is left out of learning and flagged `curtailed` in the archive. Export limits and an
-  inverter AC limit behind a battery are not detected yet (devices, #250).
+  output limit behind a battery are not used for learning yet (installation model above).
 - Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,
   micro-inverter). An hour whose maximum reaches 95 % of it is at the limit (`limited` in the archive; the band
   skips it, the forecast error does not, since forecast and measurement are both capped). In learning it is a

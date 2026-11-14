@@ -462,8 +462,9 @@ not types of their own. Independent devices are systems of their own, side by si
     0.03 or at the limit. Not identifiable, and said here rather than hidden: the efficiency at high sun with a
     strong limit, the direction factor in bins that are mostly at the limit (they keep 1), and shade that never
     pushes the power below the limit (it costs only on hazy days).
-- Snow: zero output under clear sky and frost.
-- Outages: `unavailable`, all-zero days, incomplete hours.
+- Snow: zero output under clear sky and frost. Not built yet (#282): such hours enter learning today.
+- Outages: `unavailable` and incomplete hours are left out; all-zero days are not yet (#282), only through a
+  manual exclusion.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
   its mean (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are
   left out of efficiency, direction factor, reflection and the clear-hour median of the shading
@@ -986,26 +987,18 @@ this.
 
 ## Roadmap (agreed next steps)
 
-Done: temperature loss (learned coefficient or datasheet value, fixed heating), the optional
-satellite filter with configurable sources and the sky view per array (learned against satellite
-irradiance; whether the forecast source's overcast irradiance matches is checked with the forecast
-archive).
+Done: temperature loss, the satellite filter and sky view, the geometry check, batteries and then the system model
+(household -> system -> subsystem, with the Installation tab), power limits per sensor and per system (forecast cap,
+lower bounds in learning, suggestion from flat maxima), curtailment per system (full battery, charge power, load
+following without battery, the household feed-in limit), the accuracy archive of 400 days and the backtest
+scorecard. The open work is tracked in GitHub issues:
 
-1. **Geometry check** as diagnostic (built): tilt and azimuth that fit clear unshaded hours best,
-   with a hint on clear deviations. Never applied automatically, since the shading map depends on
-   the geometry. The fit minimises the spread (interquartile range over median) of measured to
-   modelled power on a coarse and a fine grid; the confidence comes from how much the spread drops
-   and from the number of hours, so a flat array, where the azimuth barely matters, gets no hint.
-   Shown in the panel together with a clear-sky balance per month (what shade, reflection, the
-   direction factor and heat change on a cloudless mid-month day) and the efficiency per month.
-2. **Batteries as subentries:** state-of-charge sensor, charge limit (entity with history, or a
-   fixed value to be updated by the user), assignment to the arrays it charges. An hour counts
-   as possibly curtailed for those arrays when its maximum state of charge reaches the limit
-   within a small tolerance. The maximum is robust against saw-tooth charging when MPPTs
-   throttle in steps. A plateau-only detection is not used: a constant state of charge can also
-   mean PV exactly covers the load.
-3. **Optional power limit per sensor** (e.g. 500 W per MPPT): forecast capped per sensor;
-   hours at the limit count as lower bounds in learning.
-4. **Finer shading map from 5-minute statistics** (kept ~10 days by the recorder) for narrow,
-   moving shadows such as masts or chimneys; aggregates per cell are stored because the raw
-   data expires.
+1. **Snow and outage filter in learning** (#282): the filters promised under Data filters.
+2. **Light model** (#249): C1 and C2 were falsified on real data; next is C3, the bound as the brightest plausible
+   sky, then C5-C8.
+3. **Installation model, rest** (#250): battery forecast per independent system, the surplus at the feed-in limit
+   split into fed in and lost, shared limits per phase, fixed power, balancing.
+4. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
+   and the state of charge for 48 h, band coverage, shading map uncertainty, 15-minute steps.
+5. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
+   spring 2027 when the archive holds enough.

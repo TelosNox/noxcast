@@ -21,7 +21,8 @@ const INST_TEXT = {
       feed_in_rule: "Einspeisung", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
       sensor_limit: "Jeder Sensor liefert höchstens", full_learning: "PV-Gruppen, deren Lernen Stunden mit vollem Akku auslässt",
       charge_learning: "Stunden mit größter Ladeleistung zählen als „mindestens“",
-      held_learning: "Stunden, in denen der Haushalt kaum Strom bezog, zählen als „mindestens“" },
+      held_learning: "Stunden, in denen der Haushalt kaum Strom bezog, zählen als „mindestens“",
+      limit_learning: "Stunden mit der Einspeisung an der Grenze zählen als „mindestens“" },
     values: { free: "frei", none: "Nulleinspeisung", all: "volle Leistung", load: "Eigenverbrauch", fixed: "feste Leistung",
       export: "speist den Rest trotzdem ein", never: "speist nie ein",
       own_pv: "eigener PV", house: "dem Haushalt", l1: "L1", l2: "L2", l3: "L3", three: "dreiphasig", yes: "ja", no: "nein",
@@ -48,7 +49,8 @@ const INST_TEXT = {
       feed_in_rule: "Feed-in", charges_from: "Battery charges from", balance: "Batteries balance each other",
       sensor_limit: "Each sensor delivers at most", full_learning: "PV arrays whose learning leaves out hours with the battery full",
       charge_learning: "Hours charging at the maximum count as \"at least\"",
-      held_learning: "Hours in which the household imported little count as \"at least\"" },
+      held_learning: "Hours in which the household imported little count as \"at least\"",
+      limit_learning: "Hours with the feed-in at the limit count as \"at least\"" },
     values: { free: "free", none: "zero export", all: "full power", load: "self-consumption", fixed: "fixed power",
       export: "feeds the rest in anyway", never: "never feeds in",
       own_pv: "own PV", house: "the household", l1: "L1", l2: "L2", l3: "L3", three: "three-phase", yes: "yes", no: "no",
@@ -158,8 +160,10 @@ class NoxcastInstallation extends HTMLElement {
     if (["output_limit", "fixed_power"].includes(setting)) return this._w(v);
     if (setting === "charge_learning") return v == null ? t.chargeMissing : this._w(v);
     if (setting === "held_learning" && v == null) return t.gridMissing;
+    if (setting === "limit_learning") return v == null ? t.gridMissing : this._w(v);
     if (["feed_in", "feed_in_rule"].includes(setting) && typeof v === "number") return `≤ ${this._w(v)}`;
-    if (v && typeof v === "object" && "pct" in v) return `≤ ${Number(v.pct).toLocaleString(this._lang)} %`;
+    if (v && typeof v === "object" && "pct" in v)
+      return `≤ ${Number(v.pct).toLocaleString(this._lang)} %${v.w ? ` (${this._w(v.w)})` : ""}`;
     if (setting === "old_soc") return String(v);
     return t[v] || esc(String(v));
   }

@@ -14,6 +14,7 @@ EXTRA = """<style>
 .nx-flow .out { stroke: var(--nx-sys-line, var(--nf-sys-line)); stroke-width: 2.2; fill: none; }
 .nx-flow .load { stroke: var(--nx-muted, var(--nf-muted)); stroke-width: 1.4; stroke-dasharray: 4 3; fill: none; }
 .nx-flow .bat { fill: var(--nx-sys-line, var(--nf-sys-line)); fill-opacity: .28; stroke: none; }
+.nx-flow .dis { fill: var(--nx-limit-line, var(--nf-limit-line)); fill-opacity: .3; stroke: none; }
 .nx-flow .pva { fill: var(--nx-pv, var(--nf-pv)); stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: .8; }
 .nx-flow .h { fill: var(--nx-text, var(--nf-text)); font-size: 14px; font-weight: 600; }
 </style>"""
@@ -33,7 +34,9 @@ TEXT = {
         "load": "Eigenverbrauch", "load_sub": "deckt, was das Haus gerade braucht",
         "fixed": "Feste Leistung", "fixed_sub": "gibt eine eingestellte Leistung ab",
         "pv": "PV", "output": "Ausgang des Systems", "house_load": "Hausverbrauch", "to_battery": "in den Akku",
-        "note": "Ist der Akku voll, folgt das System der Einspeisevorgabe des Haushalts – außer es hat eine Abweichung.",
+        "from_battery": "aus dem Akku",
+        "note": ["Liefert die PV mehr als der Ausgang, lädt der Akku; liefert sie weniger, gibt er ab.",
+                 "Ist der Akku voll, folgt das System der Einspeisevorgabe des Haushalts – außer es hat eine Abweichung."],
         "templates": [("Wechselrichter", "ohne Akku", "Mikro-, String-WR,", "ältere Dachanlage"),
                       ("PV mit Akku", "in einem Gerät", "Balkongerät mit Akku,", "Hybrid-WR"),
                       ("Akku am", "Hausnetz", "Steckerspeicher mit", "eigenem WR, ohne PV"),
@@ -47,7 +50,7 @@ TEXT = {
         "array_note": ["Eine PV-Gruppe pro gemeinsam gemessener Einheit (MPPT-Eingang, Wechselrichter).",
                        "Mehrere Sensoren werden addiert; Module anderer Richtung am selben Sensor sind",
                        "eine weitere Ausrichtung. Die Grenze je Sensor gilt, wenn er flach am Maximum bleibt."],
-        "chain": [("PV-Gruppe", "Grenze je Sensor", "MPPT-Eingang oder Mikro-WR lässt höchstens so viel durch"),
+        "chain": [("PV-Gruppe", "Leistungsgrenze je Sensor", "MPPT-Eingang oder Mikro-WR lässt höchstens so viel durch"),
                   ("System", "Ausgangsgrenze", "was das System höchstens abgibt; sein Akku nimmt mehr auf, bis er voll ist"),
                   ("Haus", "Einspeisevorgabe", "was ins Netz darf; der Rest deckt das Haus oder wird abgeregelt"),
                   ("Netz", "", "")],
@@ -55,7 +58,7 @@ TEXT = {
         "sub_title": "Gekoppelte Systeme", "sub_sub": "eine Steuerung regelt alle Teilsysteme",
         "sub1": "Teilsystem 1", "sub2": "Teilsystem 2", "own_limit": "eigene Grenze",
         "shared_limit": "gemeinsame Grenze", "balance": "gleichen sich aus", "charges_house": "lädt aus dem Haus",
-        "from_system": ["Vom System: Regelung,", "Einspeisung, gemeinsame Grenze,", "Ausgleich der Akkus"],
+        "from_system": ["Vom System: Regelung,", "Einspeisung, gemeinsame", "Grenze, Ausgleich der Akkus"],
         "per_sub": ["Je Teilsystem: eigene Grenze,", "Phase, PV-Gruppen, ein Akku"],
     },
     "en": {
@@ -69,7 +72,9 @@ TEXT = {
         "load": "Self-consumption", "load_sub": "covers what the house needs right now",
         "fixed": "Fixed power", "fixed_sub": "delivers a set power",
         "pv": "PV", "output": "output of the system", "house_load": "house load", "to_battery": "into the battery",
-        "note": "With the battery full, the system follows the household's feed-in rule – unless it has a deviation.",
+        "from_battery": "from the battery",
+        "note": ["When the PV gives more than the output, the battery charges; when it gives less, the battery delivers.",
+                 "With the battery full, the system follows the household's feed-in rule – unless it has a deviation."],
         "templates": [("Inverter", "without battery", "micro or string inverter,", "older roof installation"),
                       ("PV with battery", "in one device", "balcony device with", "battery, hybrid inverter"),
                       ("Battery at the", "house grid", "plug-in battery with", "own inverter, no PV"),
@@ -83,7 +88,7 @@ TEXT = {
         "array_note": ["One PV array per unit that is measured together (MPPT input, inverter).",
                        "Several sensors are summed; modules facing another way on the same sensor are",
                        "a further orientation. The limit per sensor holds when it stays flat at a maximum."],
-        "chain": [("PV array", "limit per sensor", "an MPPT input or micro-inverter lets through at most this"),
+        "chain": [("PV array", "power limit per sensor", "an MPPT input or micro-inverter lets through at most this"),
                   ("System", "output limit", "what the system delivers at most; its battery takes more until full"),
                   ("House", "feed-in rule", "what may go to the grid; the rest covers the house or is curtailed"),
                   ("Grid", "", "")],
@@ -143,7 +148,7 @@ def blocks(lang: str) -> str:
     # the outputs join at the house, which feeds the grid within its rule
     b += [_arrow("M442 81 H460 V170 H478"), _arrow("M442 161 H478"), '<path class="ln" d="M442 266 H460 V170"/>',
           _box("node", 480, 148, 92, 44, t["house"]), _box("node", 604, 148, 68, 44, t["grid"]),
-          _arrow("M572 170 H602"), _text(638, 204, "s", t["rule"])]
+          _arrow("M572 170 H602"), _text(626, 204, "s", t["rule"])]
     return _svg(346, b)
 
 
@@ -176,26 +181,29 @@ def regulation(lang: str) -> str:
               _text(x + 106, 28, "h", t[key]), _text(x + 106, 46, "s", t[f"{key}_sub"])]
         top = _curve(x0, x1, base, pv)
         b.append(f'<path class="pva" d="{_path(top)} L{x1} {base} L{x0} {base} Z"/>')
-        delivered = _curve(x0, x1, base, lambda u, out=out: min(pv(u), out(u)))
+        output = _curve(x0, x1, base, out)
         if key != "full":
-            # what the PV gives above the output goes into the battery
-            b.append(f'<path class="bat" d="{_path(top)} L{_path(delivered[::-1])[1:]} Z"/>')
+            # what the PV gives above the output charges the battery, what it gives below comes from the battery
+            covered = _curve(x0, x1, base, lambda u, out=out: min(pv(u), out(u)))
+            b += [f'<path class="bat" d="{_path(top)} L{_path(covered[::-1])[1:]} Z"/>',
+                  f'<path class="dis" d="{_path(output)} L{_path(covered[::-1])[1:]} Z"/>']
         b += [f'<path class="load" d="{_path(_curve(x0, x1, base, load))}"/>',
-              f'<path class="out" d="{_path(delivered)}"/>',
+              f'<path class="out" d="{_path(output)}"/>',
               f'<path class="ln" d="M{x0} {base} H{x1}"/>']
     # legend and the rule when the battery is full
     y = 200
-    items = [("pva", t["pv"]), ("out", t["output"]), ("load", t["house_load"]), ("bat", t["to_battery"])]
-    x = 22
+    items = [("pva", t["pv"]), ("out", t["output"]), ("load", t["house_load"]), ("bat", t["to_battery"]),
+             ("dis", t["from_battery"])]
+    x = 14
     for cls, label in items:
-        if cls in ("pva", "bat"):
+        if cls in ("pva", "bat", "dis"):
             b.append(f'<rect class="{cls}" x="{x}" y="{y - 6}" width="18" height="12" rx="2"/>')
         else:
             b.append(f'<path class="{cls}" d="M{x} {y} H{x + 18}"/>')
         b.append(_text(x + 24, y, "s", label, "start"))
-        x += 34 + 6.2 * len(label) + 14
-    b.append(_text(WIDTH / 2, 226, "s", t["note"]))
-    return _svg(242, b)
+        x += 24 + 6.2 * len(label) + 14
+    b.append(_lines(WIDTH / 2, 226, "s", t["note"], dy=16))
+    return _svg(256, b)
 
 
 def _lines(x: float, y: float, cls: str, lines: list[str], anchor: str = "middle", dy: float = 14) -> str:
@@ -282,11 +290,12 @@ def subsystems(lang: str) -> str:
         if pv:
             b += [_box("pv", x + 10, 82, 96, 30, t["array"]), _box("node", x + 114, 82, 78, 30, t["battery"])]
         else:
-            b += [_text(x + 60, 97, "s", t["charges_house"]), _box("node", x + 114, 82, 78, 30, t["battery"])]
-    b += ['<path class="ln" marker-start="url(#nx-c-arrow)" marker-end="url(#nx-c-arrow)" d="M216 126 V136 H392 V114"/>',
+            b += [_lines(x + 54, 90, "s", t["charges_house"].rsplit(" ", 2)[0:1] + [" ".join(t["charges_house"].rsplit(" ", 2)[1:])]),
+                  _box("node", x + 114, 82, 78, 30, t["battery"])]
+    b += ['<path class="ln" marker-start="url(#nx-c-arrow)" marker-end="url(#nx-c-arrow)" d="M175 114 V136 H393 V114"/>',
           _text(304, 146, "s", t["balance"]),
           _arrow("M456 106 H496"), _box("node", 498, 84, 80, 44, t["house"]),
-          _lines(500, 156, "s", t["from_system"], "start"), _lines(22, 172, "s", t["per_sub"], "start")]
+          _lines(486, 156, "s", t["from_system"], "start"), _lines(22, 172, "s", t["per_sub"], "start")]
     return _svg(212, b)
 
 

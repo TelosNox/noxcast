@@ -173,14 +173,14 @@ Formular.
 ![Haushalt mit drei Systemen: ein Wechselrichter mit zwei PV-Gruppen, ein Gerät mit PV und Akku und gekoppelte Systeme mit zwei Teilsystemen; ihre Ausgänge gehen ins Haus, das im Rahmen der Einspeisevorgabe ins Netz einspeist](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-blocks.de.svg)
 
 Der Haushalt hat den Hausverbrauch, das Netz und die *Einspeisevorgabe*. Darin stecken die Systeme: Ein System ist,
-was über einen Ausgang Strom ans Haus abgibt. Es enthält PV-Gruppen und höchstens einen Akku oder Teilsysteme: Geräte,
+was über einen Ausgang Strom ans Haus abgibt. Es enthält PV-Gruppen und höchstens einen Akku, oder Teilsysteme: Geräte,
 die eine Steuerung gemeinsam regelt, etwa die Geräte eines EcoFlow Stream.
 
 Vorgaben gelten von außen nach innen: Ein Teilsystem folgt der Regelung und Einspeisung seines Systems, ein System
 der Einspeisevorgabe des Haushalts. Eingetragen wird nur, was abweicht, als Abweichung. Grenzen gelten auf jeder
 Ebene, die engere zählt:
 
-![Kette der Grenzen: Grenze je Sensor zwischen PV-Gruppe und System, Ausgangsgrenze zwischen System und Haus, Einspeisevorgabe zwischen Haus und Netz](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.de.svg)
+![Kette der Grenzen: Leistungsgrenze je Sensor zwischen PV-Gruppe und System, Ausgangsgrenze zwischen System und Haus, Einspeisevorgabe zwischen Haus und Netz](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.de.svg)
 
 | Deine Anlage | In Noxcast |
 |---|---|
@@ -188,7 +188,7 @@ Ebene, die engere zählt:
 | Hybrid-Wechselrichter mit Akku | Ein System *PV mit Akku in einem Gerät*: eine PV-Gruppe je MPPT-Eingang, sein Akku, Regelung *Eigenverbrauch* |
 | Balkongerät mit Akku | Dieselbe Vorlage mit der Ausgangsgrenze, z. B. 800 W |
 | Steckerspeicher, der aus dem Überschuss lädt | Ein System *Akku am Hausnetz*, ohne PV-Gruppen |
-| EcoFlow Stream mit Ultra und AC Pro | Ein System *Gekoppelte Systeme* mit der gemeinsamen Grenze und *Akkus gleichen sich aus*; Ultra und AC Pro sind seine Teilsysteme mit ihren PV-Gruppen und Akkus |
+| EcoFlow Stream mit Ultra und AC Pro | Ein System *Gekoppelte Systeme* mit der gemeinsamen Grenze und *Akkus gleichen sich aus*; seine Teilsysteme sind der Ultra mit seinen PV-Gruppen und seinem Akku und der AC Pro mit seinem Akku |
 | Alter Dach-Wechselrichter und ein Stream, Netzbetreiber verlangt Nulleinspeisung | Zwei Systeme und die Einspeisevorgabe *Nulleinspeisung*. Das Dach kann sie nicht einhalten: Sein System bekommt die Abweichung *Speist den Rest trotzdem ein*. Der Stream folgt der Vorgabe |
 
 ### 1. Haupteintrag

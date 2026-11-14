@@ -178,7 +178,7 @@ Rules go from the outside in: a subsystem follows the regulation and feed-in of 
 household's feed-in rule. Only what differs is entered, as a deviation. Limits hold at every level, the tighter one
 counts:
 
-![Chain of limits: limit per sensor between PV array and system, output limit between system and house, feed-in rule between house and grid](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.en.svg)
+![Chain of limits: power limit per sensor between PV array and system, output limit between system and house, feed-in rule between house and grid](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-limits.en.svg)
 
 | Your installation | In Noxcast |
 |---|---|
@@ -186,7 +186,7 @@ counts:
 | Hybrid inverter with battery | One system *PV with battery in one device*: one PV array per MPPT input, its battery, regulation *Self-consumption* |
 | Balcony device with battery | The same template with the output limit, e.g. 800 W |
 | Plug-in battery that charges from surplus | One system *Battery at the house grid*, without PV arrays |
-| EcoFlow Stream with Ultra and AC Pro | One system *Coupled systems* with the shared limit and *Batteries balance each other*; Ultra and AC Pro are its subsystems with their PV arrays and batteries |
+| EcoFlow Stream with Ultra and AC Pro | One system *Coupled systems* with the shared limit and *Batteries balance each other*; its subsystems are the Ultra with its PV arrays and battery and the AC Pro with its battery |
 | Old roof inverter and a Stream, grid operator requires zero export | Two systems and the feed-in rule *Zero export*. The roof cannot hold it: its system gets the deviation *Feeds the rest in anyway*. The Stream follows the rule |
 
 ### 1. Main entry

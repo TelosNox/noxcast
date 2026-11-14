@@ -83,7 +83,7 @@ def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusio
     """The array's hours learning would use, with the mean power (W = Wh per hour)."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
-                               valid_since=arr.valid_since))
+                               valid_since=arr.valid_since, full=history.full.get(arr.subentry_id, frozenset())))
 
 
 def _lit(*values: float) -> bool:

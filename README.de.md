@@ -33,7 +33,7 @@ deinem Verlauf, was auf deinem Dach anders ist.
 | **Erklärung** | Je Stunde vom klaren Himmel über Wolken, Schatten, Reflexion, Richtung und Wärme bis zur Prognose. Keine Blackbox: zuerst Physik, dann gelernte Werte, zuletzt eine statistische Korrektur. |
 | **Bandbreite** | P10–P90 aus deinem eigenen Archiv vergangener Prognosen. Es verschiebt die Wolken und liegt deshalb nie über klarem Himmel. |
 | **Genauigkeit** | Jede Vortagsprognose wird archiviert und mit dem verglichen, was passiert ist. Mit dem Satellitenfilter (eine Option) wird der Fehler jedes Tages in Wetteranteil und Modellanteil aufgeteilt. |
-| **Datenqualität** | Stunden mit vollem Akku, ausgeschlossenen Zeiträumen oder Ausfällen bleiben beim Lernen außen vor. Eine Leistungsgrenze eines Eingangs oder Mikrowechselrichters deckelt die Prognose. |
+| **Datenqualität** | Stunden mit vollem Akku, ausgeschlossenen Zeiträumen oder Ausfällen bleiben beim Lernen außen vor. Eine Leistungsgrenze eines Eingangs, Mikrowechselrichters oder Systems ohne Akku deckelt die Prognose. |
 | **Montage** | Mehrere Ausrichtungen an einem Eingang (Ost + West, senkrechte Balkonmodule) als eine PV-Gruppe. |
 | **Wetter** | Open-Meteo, ICON und ECMWF IFS stundenweise gemittelt. Kein Konto, kein API-Schlüssel, kostenlos für private Nutzung. |
 | **Datenschutz** | Läuft in Home Assistant. Nur deine Koordinaten gehen an Open-Meteo. |
@@ -156,8 +156,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   ist die Spitzenleistung zu niedrig, der Azimut gespiegelt (Ost und West vertauscht) oder ein Sensor fehlt in der
   PV-Gruppe. *Gelerntes* → die PV-Gruppe → *Passt die Konfiguration?* sagt, was zu prüfen ist.
 - **Schattenkarte größtenteils grau:** noch zu wenige klare Stunden. Sie füllt sich über die Wochen.
-- **Prognose zu hoch an Tagen mit vollem Akku:** den Akku-Ladezustand im Haupteintrag eintragen, dann den Dienst
-  `noxcast.relearn` aufrufen.
+- **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen (oder seinen Ladezustand im
+  Haupteintrag), dann den Dienst `noxcast.relearn` aufrufen.
 - **Tage mit Wartung oder Ausfall:** mit `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
@@ -171,7 +171,7 @@ Untereinträge anlegen (⋮ → *System hinzufügen* / *PV-Gruppe hinzufügen* /
 
 | Feld | Bedeutung |
 |---|---|
-| Akku-Ladezustand | Stunden, in denen ein Akku voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein). Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme |
+| Akku-Ladezustand | Stunden, in denen einer dieser Akkus voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein). Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind |
 | Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
@@ -199,7 +199,7 @@ Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar.
 
 | Einstellung | Bedeutung |
 |---|---|
-| Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt |
+| Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose eines Systems mit einer PV-Gruppe |
 | Grenze gilt pro Phase, Phase | Mehrere Geräte auf verschiedenen Phasen; jedes Teilsystem nennt seine Phase |
 | Regelung | Gibt alles ab, deckt den Hausverbrauch (Nulleinspeisung mit Zähler) oder gibt eine feste Leistung ab. Ein leeres Teilsystem verhält sich wie sein System |
 | Wenn der Akku voll ist | Alles bis zur Ausgangsgrenze abgeben, oder weiter nur den Verbrauch decken |
@@ -258,8 +258,16 @@ Ausgangsgrenze.
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert |
 
 Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
-nur den Akku laden. Alle Akkus werden weiter als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität
-gewichtet); eine Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späteren Version.
+nur den Akku laden. Teilsysteme mit Akkus unter einer gemeinsamen Grenze geben zusammen höchstens diese Grenze ab.
+Alle Akkus werden weiter als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet); eine
+Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späteren Version.
+
+Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;
+mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
+Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme; bei Nulleinspeisung auch jeder Akku am
+Hausnetz. Ein Akku gilt als voll ab *Akku gilt als voll ab*, oder 2 Punkte unter seiner oberen Grenze, wenn das
+niedriger ist (bei einer Grenze aus einer Entität ihr aktueller Wert). PV, die zurückgehalten wird, weil ein nicht
+voller Akku mit seiner größten Leistung lädt, erkennt Noxcast noch nicht.
 
 ### 6. Optionen (⋮ → Konfigurieren)
 
@@ -527,7 +535,8 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
   oberen Grenze und zur Ladeleistung, der Rest geht verloren (oder wird eingespeist); ein Defizit entlädt bis
   Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste danach, wo der Akku sitzt.
 - Mit Ausgangsgrenze am System liefert ein Akku höchstens die Grenze minus das, was die PV-Gruppen des Systems in der
-  Stunde liefern, und deren PV über der Grenze geht in den Akku oder wird abgeregelt.
+  Stunde liefern, und deren PV über der Grenze geht in den Akku oder wird abgeregelt. Teilsysteme unter einer
+  gemeinsamen Grenze: Ihre PV und Akkus geben zusammen höchstens die Grenze ab.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

@@ -13,6 +13,11 @@ Output cap (balcony systems): a battery can sit with PV arrays behind an inverte
 capped (800 W, 1600 W), the arrays of its system. PV and battery together deliver at most that much. PV above the cap cannot
 reach the house: it can only charge the battery, the rest is curtailed. And the battery delivers at
 most the cap minus what its PV delivers in that hour. Without an array the cap limits the battery alone.
+
+Shared cap (coupled systems, e.g. two devices behind one 800 W limit): the subsystems of a system with an output
+limit deliver together at most that much, their batteries and their PV, also the PV of subsystems without a
+battery. What their PV delivers above it can only charge the batteries; what is left for the batteries to deliver
+is the shared cap minus that PV.
 """
 from __future__ import annotations
 
@@ -39,6 +44,9 @@ class Battery:
     max_discharge_w: float | None = None
     output_w: float | None = None     # cap of the system's output, for PV of `arrays` and battery together
     arrays: tuple[str, ...] = ()      # the PV arrays (subentry ids) of the same system
+    # the output limit shared with the other subsystems of its system: (system id, W, the arrays of the
+    # subsystems without a battery); the arrays of the batteries' own systems count through `arrays`
+    shared: tuple[str, float, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,19 +63,31 @@ def limits(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[f
     (or none); with a cap its PV first goes to the house up to the cap, the battery gets what is left.
     """
     known = [b for b in batteries if b.capacity_wh > 0 and b.soc is not None]
-    if not any(b.output_w for b in known):
+    if not any(b.output_w or b.shared for b in known):
         return Limits()
     capped: dict[float, float] = {}
     discharge: dict[float, float] = {}
+    groups = {b.shared[0]: b.shared for b in known if b.shared}
     for t in hours:
         over, give = 0.0, 0.0
+        # per shared cap: the PV its subsystems deliver and what their batteries could give
+        delivered = {g: sum(pv_arrays.get(a, {}).get(t, 0.0) for a in shared[2]) for g, shared in groups.items()}
+        gives = dict.fromkeys(groups, 0.0)
         for b in known:
             own = b.max_discharge_w if b.max_discharge_w else math.inf
+            pv = sum(pv_arrays.get(a, {}).get(t, 0.0) for a in b.arrays)
             if b.output_w:
-                pv = sum(pv_arrays.get(a, {}).get(t, 0.0) for a in b.arrays)
                 over += max(pv - b.output_w, 0.0)
                 own = min(own, max(b.output_w - pv, 0.0))
-            give += own
+                pv = min(pv, b.output_w)
+            if b.shared:
+                delivered[b.shared[0]] += pv
+                gives[b.shared[0]] += own
+            else:
+                give += own
+        for g, (_, limit, _) in groups.items():
+            over += max(delivered[g] - limit, 0.0)
+            give += min(gives[g], max(limit - delivered[g], 0.0))
         if over > 0:
             capped[t] = over
         if give < math.inf:

@@ -14891,7 +14891,8 @@
       "max_charge_w": null,
       "max_discharge_w": null,
       "output_w": null,
-      "arrays": []
+      "arrays": [],
+      "shared": null
      },
      "day_end": 1781161200.0,
      "limits": {"__": "Limits", "capped": {}, "discharge": {}},

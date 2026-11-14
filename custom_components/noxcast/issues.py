@@ -37,7 +37,9 @@ def limit_suggestions(entry: NoxcastConfigEntry) -> dict[str, dict]:
     out = {}
     for sid, arr in c.arrays.items():
         sensors = list(arr.sensors)
-        if any(i.limit_w is not None for i in c.installation.inputs_of(sid)):
+        # a limit already known, of a sensor or of the array's system, needs no suggestion
+        if any(i.limit_w is not None for i in c.installation.inputs_of(sid)) or any(
+                sid in cap.arrays for cap in c.installation.caps):
             continue
         suggested = pt.suggestion(sensors, limits.get("detected") or {})
         if suggested and not pt.dismissed(sensors, suggested, limits.get("dismissed") or {}):

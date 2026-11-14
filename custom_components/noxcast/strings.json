@@ -16,7 +16,7 @@
           "feed_in_limit_w": "Feed-in limit"
         },
         "data_description": {
-          "soc_sensors": "Hours in which a battery is full are left out of learning for every PV array, because output may be curtailed. Later versions take this over from the batteries of each system.",
+          "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
@@ -48,7 +48,7 @@
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
           "feed_in_mode": "What may go to the grid. Free: everything. Limited: at most the feed-in limit. None: zero export, surplus with full batteries is lost.",
           "feed_in_limit_w": "Only with limited feed-in: what the household may feed in at most.",
-          "soc_sensors": "Hours in which a battery is full are left out of learning for every PV array, because output may be curtailed. Later versions take this over from the batteries of each system."
+          "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered."
         }
       }
     },

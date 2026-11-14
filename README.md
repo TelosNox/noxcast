@@ -33,7 +33,7 @@ roof.
 | **Explanation** | Per hour from clear sky through clouds, shade, reflection, direction and heat to the forecast. No black box: physics first, learned values second, a statistical correction last. |
 | **Range** | P10–P90 from your own archive of past forecasts. It shifts the clouds, so it never goes above a clear sky. |
 | **Accuracy** | Every day-ahead forecast is archived and compared with what happened. With the satellite filter (an option), each day's error is split into weather part and model part. |
-| **Data quality** | Hours with a full battery, excluded periods or outages are left out of learning. A power limit of an input or micro-inverter caps the forecast. |
+| **Data quality** | Hours with a full battery, excluded periods or outages are left out of learning. A power limit of an input, a micro-inverter or a system without battery caps the forecast. |
 | **Mounting** | Several orientations on one input (east + west, vertical balcony modules) as one array. |
 | **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, free for private use. |
 | **Privacy** | Runs in Home Assistant. Only your coordinates go to Open-Meteo. |
@@ -154,8 +154,8 @@ For the dashboard: *Add card* → *Noxcast*.
   the peak power is too low, the azimuth is mirrored (east and west swapped), or a sensor is missing from the
   array. *Learned* → the array → *Does the configuration fit?* says what to check.
 - **Shading map mostly grey:** not enough clear hours yet. It fills over the weeks.
-- **Forecast too high on days the battery was full:** add the battery's state of charge in the main entry, then
-  call the service `noxcast.relearn`.
+- **Forecast too high on days the battery was full:** enter the battery with its system (or its state of charge in
+  the main entry), then call the service `noxcast.relearn`.
 - **Days with maintenance or an outage:** leave them out with `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
@@ -169,7 +169,7 @@ integration page (⋮ → *Add system* / *Add PV array* / *Add battery* / *Add c
 
 | Field | Meaning |
 |---|---|
-| Battery state of charge sensors | Hours in which a battery is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds (output may be curtailed). Later versions take this over from the batteries of each system |
+| Battery state of charge sensors | Hours in which one of these batteries is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds (output may be curtailed). A battery entered with its system already does this for the arrays it can curtail; this setting is only needed for batteries that are not entered |
 | Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
@@ -196,7 +196,7 @@ Every setting stays changeable.
 
 | Setting | Meaning |
 |---|---|
-| Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins |
+| Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins. Without a battery below it the limit is fixed: learning counts hours at it as "at least this much", and it caps the PV forecast of a system with one PV array |
 | Limit holds per phase, phase | Several devices on different phases; each subsystem names its phase |
 | Regulation | Delivers everything, covers the house load (zero export with a meter) or delivers a fixed power. A subsystem left empty behaves like its system |
 | When the battery is full | Deliver everything up to the output limit, or keep covering the load only |
@@ -253,8 +253,16 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies |
 
 With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
-above it can only charge the battery. All batteries are still simulated as one storage (capacities add up, limits
-weighted by capacity); one forecast per system that does not balance with others follows in a later version.
+above it can only charge the battery. Subsystems with batteries under a shared limit deliver together at most that
+limit. All batteries are still simulated as one storage (capacities add up, limits weighted by capacity); one
+forecast per system that does not balance with others follows in a later version.
+
+Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
+*covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
+under a shared output limit, the batteries of the other subsystems; with zero export, also every battery at the house
+grid. A battery counts as full from *Battery considered full at*, or 2 points below its upper limit if that is lower
+(with a limit from an entity, its current value). PV held back because a battery that is not full charges at its
+maximum power is not recognised yet.
 
 ### 6. Options (⋮ → Configure)
 
@@ -419,8 +427,8 @@ temperature turn this irradiance into the clear-sky power of the array.
 
 ### Learning (nightly, from long-term statistics)
 
-- **Data filters:** hours with a full battery, excluded periods, outages and incomplete hours are
-  left out. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
+- **Data filters:** hours with a full battery that may curtail the array (see *Battery*), excluded periods, outages
+  and incomplete hours are left out. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
   Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,
   they would make efficiency and midday shade look too low; left out, only the clouded and shaded ones of the sunny
   hours would remain. Sun positions where most clear hours were at the limit show no shade on the map (marked *at
@@ -518,7 +526,8 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
   charges up to the upper limit and the charge power, the rest is lost (or fed in); a deficit
   discharges down to min SOC + reserve, the rest comes from the grid. Losses by where the battery sits.
 - With an output limit on its system, a battery delivers at most the limit minus what the system's arrays
-  deliver in that hour, and their PV above the limit goes into the battery or is curtailed.
+  deliver in that hour, and their PV above the limit goes into the battery or is curtailed. Subsystems under a
+  shared limit: their PV and batteries together deliver at most the limit.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

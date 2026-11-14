@@ -51,7 +51,7 @@ minimum number of hours stays the same observed time (see _periods).
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 
 from .solar import (
@@ -453,8 +453,13 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float, sky_view: float 
 # ---------------------------------------------------------------------------- learning
 
 def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
-                   exclusions: list[tuple[float, float]] = (), valid_since: float | None = None) -> list[tuple[float, float]]:
-    """Filter hourly mean power (W) for learning: commissioning, validity, curtailment, exclusions."""
+                   exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
+                   full: Collection[float] = frozenset()) -> list[tuple[float, float]]:
+    """Filter hourly mean power (W) for learning: commissioning, validity, curtailment, exclusions.
+
+    full: hour starts in which a battery of the array's systems was full (installation.full_hours); a period
+    in such an hour is left out like one with the household's state of charge at soc_full.
+    """
     producing = [t for t, p in power.items() if p is not None and p > 5]
     if not producing:
         return []
@@ -464,6 +469,8 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
         if p is None or t < start or p < 0:
             continue
         if soc and soc.get(t) is not None and soc[t] >= soc_full:
+            continue
+        if full and t - t % HOUR in full:
             continue
         if any(a <= t < b for a, b in exclusions):
             continue

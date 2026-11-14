@@ -180,6 +180,31 @@ def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
     return sid in systems and systems[sid].get(CONF_CHARGES_FROM) == "house"
 
 
+def curtailed_arrays(systems: Mapping[str, System], feed_in_mode: str) -> dict[str, tuple[str, ...]]:
+    """System id (with a battery) -> the arrays its battery may curtail when full (chain of ceilings).
+
+    Its own arrays: full, it takes nothing more. Under a parent: the arrays of every subsystem that follows the house
+    load together with it, and with a shared output limit those of subsystems without a battery, which the limit may
+    hold back. A battery at the house grid with zero export: every array, its surplus can go nowhere else.
+    """
+    out: dict[str, tuple[str, ...]] = {}
+    every = tuple(a for s in sorted(systems.values(), key=lambda s: s.id) for a in s.arrays)
+    for s in sorted(systems.values(), key=lambda s: s.id):
+        if s.battery is None:
+            continue
+        found = list(s.arrays)
+        if s.parent is not None:
+            parent = systems[s.parent]
+            for c in (systems[c] for c in parent.children):
+                if behaviour(systems, c.id, CONF_REGULATION) == "load" and behaviour(systems, s.id, CONF_REGULATION) == "load" \
+                        or (c.battery is None and parent.get(CONF_OUTPUT_LIMIT)):
+                    found += c.arrays
+        if feed_in_mode == "none" and charges_from_house(systems, s.id):
+            found += every
+        out[s.id] = tuple(dict.fromkeys(found))
+    return out
+
+
 # How far Noxcast computes each setting (shown in the Installation tab): exact, simplified (with how) or not yet.
 EXACT, SIMPLIFIED, NOT_YET = "exact", "simplified", "not_yet"
 
@@ -193,6 +218,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         out.append({"node": node, "setting": setting, "status": status, "value": value})
 
     mode = household.get(CONF_FEED_IN_MODE, "none")
+    curtailed = curtailed_arrays(systems, mode)
     # free and none are what the battery forecast and the day card have always known; a limit counts later
     add("house", "feed_in", NOT_YET if mode == "limited" else EXACT,
         household.get(CONF_FEED_IN_LIMIT) if mode == "limited" else mode)
@@ -208,11 +234,10 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         if d.get(CONF_SENSOR_LIMITS):
             add(aid, "sensor_limit", EXACT, sorted(set(d[CONF_SENSOR_LIMITS].values())))
     for sid, s in sorted(systems.items()):
+        below = [s, *(systems[c] for c in s.children)]
         limit = s.get(CONF_OUTPUT_LIMIT)
         if limit:
-            # with a battery: the battery forecast caps PV and battery together (since 0.3); without one the cap
-            # of the PV forecast and learning follow in a later step
-            add(sid, "output_limit", EXACT if s.battery else NOT_YET, limit)
+            add(sid, "output_limit", _limit_status(s, below), limit)
         if s.get(CONF_LIMIT_PER_PHASE):
             add(sid, "limit_per_phase", NOT_YET, True)
         if s.get(CONF_PHASE):
@@ -220,17 +245,39 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         # "delivers everything" and "deliver everything when full" are what Noxcast has always assumed
         regulation = s.get(CONF_REGULATION)
         if regulation:
-            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if s.battery else NOT_YET, regulation)
+            # following the load: learning leaves out the hours with a full battery it coordinates with; without
+            # one, the hours it held back for a low load are not known yet
+            coordinated = any(x.battery for x in below) or (
+                s.parent is not None and any(systems[c].battery for c in systems[s.parent].children))
+            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if regulation == "load" and coordinated
+                else NOT_YET, regulation)
         if s.get(CONF_FIXED_POWER):
             add(sid, "fixed_power", NOT_YET, s.get(CONF_FIXED_POWER))
         if s.get(CONF_WHEN_FULL):
-            add(sid, "when_full", EXACT if s.get(CONF_WHEN_FULL) == "all" else NOT_YET, s.get(CONF_WHEN_FULL))
+            add(sid, "when_full", EXACT if s.get(CONF_WHEN_FULL) == "all" else SIMPLIFIED if any(x.battery for x in below)
+                else NOT_YET, s.get(CONF_WHEN_FULL))
         if s.battery and s.get(CONF_CHARGES_FROM):
             add(sid, "charges_from", SIMPLIFIED, s.get(CONF_CHARGES_FROM))
+        if curtailed.get(sid):
+            # every hour with the battery full is left out, also one in which the output stayed below its ceiling;
+            # PV held back by the charge power of a battery that is not full is not known yet
+            add(sid, "full_learning", SIMPLIFIED, len(curtailed[sid]))
         if s.children:
             # today every battery is simulated in one storage: exact when they balance
             add(sid, "balance", EXACT if s.get(CONF_BALANCE) else NOT_YET, bool(s.get(CONF_BALANCE)))
     return out
+
+
+def _limit_status(s: System, below: list[System]) -> str:
+    """An output limit with a battery below it counts in the battery forecast (its own exactly; one shared by
+    subsystems as the cap of their batteries together). Without a battery it is a fixed limit: learning counts the
+    hours at it as lower bounds, and it caps the PV forecast where it holds one PV array only. Per phase it waits
+    for the phases."""
+    if s.get(CONF_LIMIT_PER_PHASE) and not s.battery:
+        return NOT_YET
+    if any(x.battery for x in below):
+        return EXACT if s.battery else SIMPLIFIED
+    return EXACT if sum(len(x.arrays) for x in below) == 1 else SIMPLIFIED
 
 
 def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:

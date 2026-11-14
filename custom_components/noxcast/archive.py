@@ -281,8 +281,9 @@ def add_actuals(archive: dict, array_id: str, actual_w: Series, before: float,
 
     Hours with possible curtailment (full battery) are flagged, so an evaluation can tell
     a forecast error from energy that could not be used. Hours in which the array was at a fixed limit
-    are flagged as limited: the forecast is capped the same way, so its error still counts, but the
-    actual value does not show how clear the sky was.
+    are flagged as limited: the forecast is capped the same way (a limit shared by several arrays caps
+    no forecast yet), so its error still counts, but the actual value does not show how clear the sky was.
+    Both flags hold for the hour, not per array: one array's full battery marks it for all.
     """
     for day in archive.values():
         for key, hour in day["hours"].items():

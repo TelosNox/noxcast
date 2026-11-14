@@ -16,7 +16,7 @@
           "feed_in_limit_w": "Einspeisegrenze"
         },
         "data_description": {
-          "soc_sensors": "Stunden, in denen ein Akku voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme.",
+          "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind.",
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
@@ -48,7 +48,7 @@
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
           "feed_in_mode": "Was ins Netz darf. Frei: alles. Begrenzt: höchstens die Einspeisegrenze. Keine: Nulleinspeisung, Überschuss bei vollem Akku geht verloren.",
           "feed_in_limit_w": "Nur bei begrenzter Einspeisung: was der Haushalt höchstens einspeisen darf.",
-          "soc_sensors": "Stunden, in denen ein Akku voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Spätere Versionen übernehmen das aus den Akkus der einzelnen Systeme."
+          "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind."
         }
       }
     },

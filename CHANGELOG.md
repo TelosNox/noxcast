@@ -19,8 +19,20 @@ breaking changes.
 - The household's feed-in can be limited to a value in W, besides free and none. The limit is stored now and counts
   in a later version.
 - A Repairs notice asks which PV arrays charge a battery when the update could not tell (see below).
+- The output limit of a system without a battery counts: hours at it are "at least this much" in learning, and it
+  caps the PV forecast of a system with one PV array (with several, the forecast is not capped yet).
+- Subsystems with batteries that share their system's output limit (e.g. EcoFlow Stream Ultra and AC Pro behind
+  800 W) deliver together at most that limit in the battery forecast.
 
 ### Changed
+- A full battery leaves hours out of learning only for the PV arrays it can curtail: those of its own system, of
+  subsystems that cover the house load together with it, and of subsystems without a battery under a shared output
+  limit; with zero export a battery at the house grid counts for every array. An array elsewhere keeps learning from
+  those hours, and an array whose system battery is entered now leaves its full hours out even without the sensors
+  in the main entry. A battery whose upper limit comes from an entity counts as full from that limit. The battery
+  state of charge sensors in the main entry still count for every array; remove them there once all batteries are
+  entered with their systems, then run `noxcast.relearn`.
+- Entering or changing the output limit of a system without a battery relearns its PV arrays from the history.
 - Migrated automatically, nothing to do in most cases: the configuration becomes systems on the
   first start. Every PV array gets a system of its own; a battery with a PV array behind its inverter becomes a
   system *PV with battery in one device* with that array and its output limit; an AC battery a system *Battery at

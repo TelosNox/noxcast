@@ -17,10 +17,12 @@ planned fix. Periods are neutral: the rules work in W on one period, hourly or 5
 The forecast is capped last, after the intraday correction and the band have varied the clouds: the capped
 value of an hour is the mean over its sub-steps of min(power, limit), with the power following the clear-sky
 shape of the hour scaled to the hour's value, so a ramp hour that crosses the limit loses only its part above.
+A limit shared by several arrays (cap_group) caps their sum at every sub-step, each array with its own clear-sky
+shape, and takes the part above off each array in proportion to its power at that step.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -144,6 +146,52 @@ def cap_hour(wh: float, limit: float, profile: list[float] | None) -> float:
     if k * max(profile) <= limit:
         return wh
     return sum(min(k * p, limit) for p in profile) / len(profile)
+
+
+def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] | None], own: Mapping[str, float],
+              shared: Iterable[tuple[tuple[str, ...], float]]) -> dict[str, float]:
+    """One hour of several arrays under their fixed limits: own (array -> W) caps an array alone, shared
+    (arrays, W) the sum of those arrays.
+
+    hours: the hour's energy (Wh = mean W) per array; profile(array): its clear-sky power at the hour's sub-steps.
+    Every array follows its own profile scaled to its value (as cap_hour), is capped by its own limit, and where
+    a shared limit is exceeded at a sub-step, each of its arrays gives up the same share of its power there. An
+    array without a usable profile counts with its hourly mean at every sub-step. Without a shared limit this is
+    cap_hour for each array.
+    """
+    out = dict(hours)
+    live = [a for a, wh in hours.items() if wh > 0]
+    if not live:
+        return out
+    steps: dict[str, list[float] | None] = {}
+    for a in live:
+        p = profile(a)
+        mean = sum(p) / len(p) if p else 0.0
+        k = hours[a] / mean if mean > 0 else 0.0
+        steps[a] = [k * x for x in p] if mean > 0 and p else None
+    n = max((len(v) for v in steps.values() if v), default=1)
+    power: dict[str, list[float]] = {}
+    for a in live:
+        v = steps[a]
+        power[a] = list(v) if v is not None and len(v) == n else [hours[a]] * n
+    changed: set[str] = set()
+    for a in live:
+        if a in own and max(power[a]) > own[a]:
+            power[a] = [min(w, own[a]) for w in power[a]]
+            changed.add(a)
+    # the inner limits first (a subsystem's before its parent's): the outer one then takes only what is left
+    # above it, while the other way round the inner one would cut arrays the outer one had already cut
+    for members, limit in sorted(shared, key=lambda c: len(c[0])):
+        group = [a for a in members if a in power]
+        for j in range(n):
+            total = sum(power[a][j] for a in group)
+            if total > limit:
+                for a in group:
+                    power[a][j] *= limit / total
+                changed.update(group)
+    for a in changed:
+        out[a] = sum(power[a]) / n
+    return out
 
 
 def cap(series: Series, limit: float, profile: Callable[[float], list[float] | None]) -> Series:

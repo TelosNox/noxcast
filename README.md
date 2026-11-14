@@ -200,7 +200,7 @@ entries shows what sits inside what.
 
 | Setting | Meaning |
 |---|---|
-| Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins. Without a battery below it the limit is fixed: learning counts hours at it as "at least this much", and it caps the PV forecast of a system with one PV array |
+| Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins. Without a battery below it the limit is fixed: learning counts hours at it as "at least this much", and it caps the PV forecast; with several PV arrays their sum, each array giving up its share of the power above |
 | Limit holds per phase, phase | Several devices on different phases; each subsystem names its phase |
 | Regulation | Delivers everything, covers the house load (zero export with a meter) or delivers a fixed power. A subsystem left empty behaves like its system |
 | When the battery is full | Deliver everything up to the output limit, or keep covering the load only |
@@ -479,8 +479,11 @@ temperature turn this irradiance into the clear-sky power of the array.
   5 % for model errors).
 - With a **power limit**, forecast, correction and band are computed without it, and the limit caps the result
   last: per 10-minute step of each hour, so an hour that only reaches the limit for part of the time loses only
-  that part. An hour at the limit counts for the correction only if it was sunnier than forecast. The forecast
-  sensors of the array show `limit_w` and `limited_wh` (energy above the limit), the total sensors `limited_wh`.
+  that part. A limit shared by several PV arrays (the output limit of a system without battery) caps their sum in
+  each step; each array follows its own clear-sky course within the hour and gives up the part above in proportion
+  to its power at that step. An hour at the limit counts for the correction only if it was sunnier than forecast.
+  The forecast sensors of the array show `limited_wh` (energy above the limit) and `limit_w` (its own limit, empty
+  where it only shares one); the total sensors `limited_wh`.
 
 ### Weather
 

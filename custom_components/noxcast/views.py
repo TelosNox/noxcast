@@ -435,6 +435,16 @@ def card_config(arrays: dict, house_load: str | None, grid: str | None, grid_inv
 
 # ---------------------------------------------------------------- noxcast/day
 
+def _shared(arrays: dict, sid: str) -> list[tuple[list[str], float]]:
+    """The limits an array shares with other arrays (learning.ArrayConfig.caps, by sensors) as (arrays, W)."""
+    own = set(getattr(arrays[sid], "sensors", ()))
+    out = []
+    for sensors, w in getattr(arrays[sid], "caps", ()):
+        if set(sensors) > own:
+            out.append(([a for a, x in arrays.items() if set(getattr(x, "sensors", ())) <= set(sensors)], w))
+    return out
+
+
 def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive_day: fc_archive.Day | None, data,
              a: float, b: float, now: float) -> dict:
     """One day [a, b): per array the forecasts, actual, steps of each hour; weather; band; history.
@@ -465,15 +475,19 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
         else:
             steps, source = live[sid], "current" if current else "replay"
         # the forecast these steps explain, where a fixed limit capped it after the steps
-        if source == "morning" and sid in data.limits:
+        if source == "morning" and sid in data.capped:
             steps = explain.with_limit(steps, data.morning.get(sid, {}))
-        elif source == "current" and sid in data.limits:
+        elif source == "current" and sid in data.capped:
             steps = explain.with_limit(steps, data.forecast.get(sid, {}))
         elif source == "day_ahead" and (limit := getattr(arr, "limit_w", None)) is not None:
             # capped wherever the forecast was above the limit, whether or not the actual reached it; a capped
             # value is never above the limit, so an archived forecast above it differs for another reason
             steps = explain.with_limit(steps, {h.ts: h.forecast[sid] for h in arch
                                                if sid in h.forecast and h.forecast[sid] <= limit + explain.LIMIT_TOLERANCE_WH})
+        elif source == "day_ahead" and (groups := _shared(arrays, sid)):
+            # a limit shared with other arrays capped their sum: the same, on the sum of the group's forecasts
+            steps = explain.with_limit(steps, {h.ts: h.forecast[sid] for h in arch if sid in h.forecast and all(
+                sum(h.forecast.get(m, 0.0) for m in members) <= w + explain.LIMIT_TOLERANCE_WH for members, w in groups)})
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
                  "steps": {str(int(t)): s for t, s in sorted(steps.items()) if a <= t < b}, "steps_from": source,
                  "efficiency": (learned.get(sid) or LearnedArray()).efficiency}

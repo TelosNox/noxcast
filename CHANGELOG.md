@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The output limit of a system without battery now caps the forecast also when several PV arrays share it, such
+  as east and west on one inverter: their sum stays below the limit in every 10-minute step, and each array gives
+  up its share of what lies above. Forecast sensors, band, battery forecast and day view follow. The
+  *Installation* tab shows this limit as computed exactly.
+
 ### Changed
 - Each system is one entry with its PV arrays, battery and subsystems inside. Opening it shows a menu with
   everything in it, and each item opens the form you know. The list of entries shows only the systems, so it is

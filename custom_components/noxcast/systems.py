@@ -392,13 +392,13 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
 def _limit_status(s: System, below: list[System]) -> str:
     """An output limit with a battery below it counts in the battery forecast (its own exactly; one shared by
     subsystems as the cap of their batteries together). Without a battery it is a fixed limit: learning counts the
-    hours at it as lower bounds, and it caps the PV forecast where it holds one PV array only. Per phase it waits
-    for the phases."""
+    hours at it as lower bounds, and it caps the PV forecast, the sum of its PV arrays where it holds several.
+    Per phase it waits for the phases."""
     if s.get(CONF_LIMIT_PER_PHASE) and not s.battery:
         return NOT_YET
     if any(x.battery for x in below):
         return EXACT if s.battery else SIMPLIFIED
-    return EXACT if sum(len(x.arrays) for x in below) == 1 else SIMPLIFIED
+    return EXACT
 
 
 def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:

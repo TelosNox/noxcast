@@ -125,8 +125,14 @@ class Installation:
         return min(found) if found else None
 
     def shared_caps(self, array: str) -> list[Cap]:
-        """The fixed limits the array shares with others: they mark lower bounds, but cap no single forecast."""
+        """The fixed limits the array shares with others: they mark lower bounds, and cap the sum of the arrays'
+        forecasts (curtailment.cap_group)."""
         return [c for c in self.caps if array in c.arrays and len(c.arrays) > 1]
+
+    def forecast_caps(self) -> list[tuple[tuple[str, ...], float]]:
+        """The fixed limits shared by several arrays as (arrays, W): they cap the sum of the arrays' forecasts
+        (curtailment.cap_group)."""
+        return [(c.arrays, c.limit_w) for c in self.caps if len(c.arrays) > 1]
 
     def limited_arrays(self) -> dict[str, float]:
         """Array id -> fixed limit (W), for arrays that have one."""

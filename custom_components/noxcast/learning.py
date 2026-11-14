@@ -90,6 +90,8 @@ class PvHistory:
     full: dict[str, frozenset[float]] = field(default_factory=dict)
     # per array the hour starts in which a battery of its systems charged at its maximum (installation.charge_hours)
     charge: dict[str, frozenset[float]] = field(default_factory=dict)
+    # per array the hour starts in which its system may have held PV back for a low load (installation.held_hours)
+    held: dict[str, frozenset[float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -171,7 +173,7 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
-                     air or None, satellite or None, history.full, history.charge)
+                     air or None, satellite or None, history.full, history.charge, history.held)
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
@@ -207,8 +209,9 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
                            for s in arr.sensors])
-    # an hour charging at the maximum: every period in it delivered at least what was measured
-    charge = history.charge.get(arr.subentry_id, frozenset())
+    # an hour charging at the maximum, or one in which a system following the load held PV back: every period in
+    # it delivered at least what was measured
+    charge = history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
     floors = floor_hours(arr, history) | {t for t, _ in samples if t - t % HOUR in charge}
     return samples, steady, floors
 
@@ -279,7 +282,8 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
         limited = ct.limited_hours(inst, sid, peaks) if peaks else set()
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
         fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
-                               full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset()),
+                               full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
+                               | history.held.get(sid, frozenset()),
                                limited)
         if history.satellite_ghi:
             fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp,

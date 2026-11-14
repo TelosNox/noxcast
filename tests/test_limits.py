@@ -9,6 +9,7 @@ inst = load("installation")
 archive = load("archive")
 bd = load("band")
 ln = load("learning")
+btest = load("backtest")
 model = load("model")
 solar = load("solar")
 
@@ -379,3 +380,36 @@ def test_the_archived_model_on_measured_weather_is_capped_by_a_shared_limit():
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 500.0, "b": 400.0}}}}}
     ln.record_archive(plain, SITE, ARRAYS, learned, history, t + 7200, 95.0)
     assert sum(plain["2026-06-01"]["hours"][str(t)]["measured"].values()) > 1000.0
+
+
+def test_a_system_following_the_load_without_battery_counts_held_back_hours_as_at_least():
+    subs = {"b": ("system", "Balcony", {"name": "Balcony", "template": "inverter", "regulation": "load"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "regulation": "all"}),
+            "s": ("system", "Stream", {"name": "Stream", "template": "pv_battery", "regulation": "load"}),
+            "bal": ("array", "Balcony", {"system": "b"}), "roof": ("array", "Roof", {"system": "r"}),
+            "south": ("array", "South", {"system": "s"}), "bs": ("battery", "Stream battery", {"system": "s"})}
+    systems = sy.systems_of(subs)
+    # only the system without a battery to take the rest; full power holds nothing back
+    assert sy.held_back_arrays(systems) == ("bal",)
+    built = inst.build({"bal": ["pv.b"], "roof": ["pv.r"], "south": ["pv.s"]}, {}, [], 95, systems, {}, "none")
+    # the household stopped importing at some time in the hour (export negative): the device may have regulated
+    low = {0.0: 400.0, 3600.0: 20.0, 7200.0: -150.0}
+    assert built.held_hours("bal", low) == {3600.0, 7200.0} and built.held_hours("roof", low) == set()
+    # a subsystem whose sibling has a battery under the same control: that battery takes the rest
+    coupled = {**subs, "p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load"}),
+               "b": ("system", "Balcony", {"name": "Balcony", "template": "inverter", "parent": "p"}),
+               "s": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"})}
+    assert sy.held_back_arrays(sy.systems_of(coupled)) == ()
+    arr = ln.ArrayConfig("bal", "Balcony", ("pv.b",), model.ArrayGeometry(30, 180, 800), None)
+    history = ln.PvHistory({"pv.b": {0.0: 300.0, 3600.0: 250.0, 7200.0: 200.0}}, {}, {}, {}, {},
+                           held={"bal": frozenset({3600.0, 7200.0})})
+    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    assert [t for t, _ in samples] == [0.0, 3600.0, 7200.0] and floors == {3600.0, 7200.0}
+    # the Installation tab: simplified with the grid sensor, not used yet without it
+    rows = {(e["node"], e["setting"]): e["status"] for e in sy.effects({"grid_power": "sensor.grid"}, systems, subs)}
+    assert rows[("b", "regulation")] == sy.SIMPLIFIED and rows[("b", "held_learning")] == sy.SIMPLIFIED
+    assert ("r", "held_learning") not in rows and ("s", "held_learning") not in rows
+    # the backtest leaves such an hour out as a measure of the forecast, like one at a charge ceiling
+    assert set(btest.usable(arr, history, 95.0, [])) == {0.0}
+    assert {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, systems, subs)}[("b", "regulation")] \
+        == sy.NOT_YET

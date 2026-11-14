@@ -19,7 +19,7 @@
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
-          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
+          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one. A system with Self-consumption and no battery needs it: hours in which the household imported little or nothing at times count as \"at least this much\" in learning.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
           "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation."
@@ -55,7 +55,7 @@
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
-          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one.",
+          "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one. A system with Self-consumption and no battery needs it: hours in which the household imported little or nothing at times count as \"at least this much\" in learning.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
           "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation.",

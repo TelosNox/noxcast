@@ -62,7 +62,7 @@ const DAY_TEXT = {
     dayHelp: {
       weather: "What the weather data fetched since 6 am changed in the forecast of the day.",
       corr: "The correction from today's measured hours, applied to the hours still ahead.",
-      measured: "How far the actual value of the past hours fell from their latest forecast.",
+      measured: "How far the actual value of the past hours differed from their latest forecast.",
     },
     stepHelp: {
       clear: (eff) => `What the array would give under a cloudless sky, with the learned efficiency of ${eff}.`,
@@ -178,11 +178,11 @@ class NoxcastDay extends HTMLElement {
 
   _sum(m) { let s = 0; for (const v of m.values()) s += v; return s; }
 
-  // the measured part of the main series: actual of the hours that are over
+  // the measured part of the main series: the hours that are over and have their actual, as _main takes them
   _done(arr) {
-    const now = this._data.now;
+    const now = this._data.now, actual = new Map(tsRows(arr.actual, "wh"));
     let s = 0;
-    for (const [t, v] of tsRows(arr.actual, "wh")) if (t + HOUR <= now) s += v;
+    for (const [t] of tsRows(arr.expected, "wh")) if (t + HOUR <= now && actual.has(t)) s += actual.get(t);
     return s;
   }
 
@@ -703,12 +703,14 @@ class NoxcastDay extends HTMLElement {
       return { items };
     }
     if (phase !== "today") return { items };
-    let level = sum("result");
-    if (from === "morning") {
-      const latest = arrays.reduce((s, a) => s + this._sum(series(a, "forecast")), 0);
-      if (Math.abs(latest - level) >= 10) items.push(["weather", latest - level, "step"], ["latest", latest, "total"]);
-      level = latest;
+    // newer weather only for arrays whose steps explain the 6 am forecast; an array added later has no such step
+    let level = sum("result"), weather = 0;
+    for (const a of arrays) {
+      if (a.steps_from !== "morning") continue;
+      weather += this._sum(series(a, "forecast")) - Object.values(a.steps || {}).reduce((s, st) => s + (st.result || 0), 0);
     }
+    if (Math.abs(weather) >= 50) items.push(["weather", weather, "step"], ["latest", level + weather, "total"]);
+    level += weather;
     let corr = 0;
     for (const a of arrays) {
       const fc = series(a, "forecast");
@@ -718,8 +720,9 @@ class NoxcastDay extends HTMLElement {
     const end = arrays.reduce((s, a) => s + this._sum(this._main(a)), 0);
     // what is left after weather and correction is how far the measured hours fell from the forecast they had
     const measured = end - level - corr;
-    if (Math.abs(corr) >= 10) items.push(["corr", corr, "step"]);
-    if (Math.abs(measured) >= 10) items.push(["measured", measured, "step"]);
+    // steps below 50 Wh would show as 0.0 kWh
+    if (Math.abs(corr) >= 50) items.push(["corr", corr, "step"]);
+    if (Math.abs(measured) >= 50) items.push(["measured", measured, "step"]);
     items.push(["expected", end, "total"]);
     return { items, split: { done, rest: end - done, until: now - (now % HOUR) } };
   }

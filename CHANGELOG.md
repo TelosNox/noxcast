@@ -47,6 +47,8 @@ breaking changes.
   integration page with ⋮ → *Reconfigure*.
 
 ### Fixed
+- The overview no longer lists the remaining or elapsed time of an appliance that is not running as a note: such
+  sensors are "unknown" while the appliance is idle. A sensor that is unavailable or missing is still listed.
 - Days on which a PV array delivered almost nothing (at most 2 % of a clear day) no longer count in learning:
   an inverter that was off, modules fully under snow or a day too dark for the inverter to start. Before, learning
   read such a day as shade and a darker sky, unless you excluded it by hand. *Learned* → the array → *Does the

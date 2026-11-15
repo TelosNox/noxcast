@@ -535,7 +535,20 @@ SNOW_MAX_DAYS = 7.0              # longest window; a longer full cover delivers 
 
 def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
                satellite_ghi: Series | None = None, valid_since: float | None = None) -> set[float]:
-    """Hour starts in which snow may have covered the array: left out of learning, since shade and efficiency would
+    """Hour starts in which snow may have covered the array (snow_windows)."""
+    return snow_windows(site, geo, power, snowfall, air_temp, satellite_ghi, valid_since)[0]
+
+
+def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
+                 satellite_ghi: Series | None = None, valid_since: float | None = None
+                 ) -> tuple[set[float], list[float]]:
+    """Hour starts in which snow may have covered the array, and the ends of the windows that closed only at
+    SNOW_MAX_DAYS although they had a measured hour bright enough to show free modules: the recovery rule had its
+    chance and did not fire. The panel points at those, since a rule that never fires on an array (shade, a weak
+    inverter) takes a week of hours from learning after every snowfall. A dull week or one without data is no such
+    case: the rule could not see anything.
+
+    The hours: left out of learning, since shade and efficiency would
     take the missing light for their own.
 
     power: mean W per period of any length; it is judged per hour. snowfall: cm per hour at the site
@@ -550,14 +563,14 @@ def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series |
     """
     start = first_use(power, valid_since)
     if not snowfall or start is None:
-        return set()
+        return set(), []
     daily: dict[int, float] = {}
     for t, cm in snowfall.items():
         if cm:
             daily[solar_day(site, t)] = daily.get(solar_day(site, t), 0.0) + cm
     starts = sorted(t for t, cm in snowfall.items() if cm and daily[solar_day(site, t)] >= SNOW_START_CM)
     if not starts:
-        return set()
+        return set(), []
     hourly: dict[float, list[float]] = {}
     for t, p in power.items():
         if p is not None:
@@ -573,11 +586,14 @@ def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series |
                        (air_temp or {}).get(t)) for t in hours]
     free = forecast(site, geo, LearnedArray(), sky)
     out: set[float] = set()
+    capped: list[float] = []
+    data_end = max(hourly, default=0.0)
     pending = iter(starts)
     nxt = next(pending, None)
     while nxt is not None:
         t = last_snow = nxt
         warmth = 0.0
+        chance = False                           # an hour in which free modules could have shown
         while t < last_snow + SNOW_MAX_DAYS * 86400:
             if snowfall.get(t) and daily[solar_day(site, t)] >= SNOW_START_CM:
                 last_snow, warmth = t, 0.0
@@ -590,15 +606,19 @@ def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series |
                 if satellite_ghi and t in satellite_ghi:
                     kt = satellite_ghi[t] / clear_sky[t] if clear_sky[t] > 0 else 0.0
                 expected = free.get(t, 0.0)
-                if (kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
-                        and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected):
+                bright = kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
+                if bright and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected:
                     break
+                chance = chance or bright
                 if expected > 0:
                     out.add(t)
             t += HOUR
+        else:
+            if chance and t - HOUR <= data_end:  # a window the history ends in is unfinished, not capped
+                capped.append(t)
         while nxt is not None and nxt <= t:
             nxt = next(pending, None)
-    return out
+    return out, capped
 
 
 def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,

@@ -21,7 +21,7 @@ from . import load as lf
 from . import plan as pl
 from .model import (
     EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
-    sample_reasons, snow_hours, solar_date, solar_day, steady_hours, usable_samples,
+    sample_reasons, snow_windows, solar_date, solar_day, steady_hours, usable_samples,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
@@ -211,8 +211,9 @@ class LeftOut:
     """What learning leaves out of an array because it says nothing about shade or efficiency."""
 
     dead: list[int]              # solar days with almost no output (model.dead_days)
-    snow: set[float]             # hour starts that snow may have covered (model.snow_hours)
+    snow: set[float]             # hour starts that snow may have covered (model.snow_windows)
     hours: frozenset[float]      # the hour starts of both
+    snow_capped: tuple[float, ...] = ()  # ends of the snow windows that closed only at model.SNOW_MAX_DAYS
 
 
 def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = HOUR) -> LeftOut:
@@ -226,11 +227,11 @@ def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = H
 def _left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float) -> LeftOut:
     summed = scaled_sum(history.power, arr.sensors, history.factors)
     dead = model_dead_days(site, arr.geometry, summed, valid_since=arr.valid_since, period=period)
-    snow = snow_hours(site, arr.geometry, summed, history.snowfall, history.air_temp, history.satellite_ghi,
-                      arr.valid_since)
+    snow, capped = snow_windows(site, arr.geometry, summed, history.snowfall, history.air_temp,
+                                history.satellite_ghi, arr.valid_since)
     wanted = set(dead)
     hours = {t - t % HOUR for t in summed if solar_day(site, t) in wanted} if dead else set()
-    return LeftOut(dead, snow, frozenset(hours | snow))
+    return LeftOut(dead, snow, frozenset(hours | snow), tuple(capped))
 
 
 def solar_dates(days: Collection[int]) -> list[str]:

@@ -134,6 +134,16 @@ def test_thaw_and_the_longest_window_end_it_although_the_array_stays_dim():
     assert warm and max(warm) < START + 86400 + 13 * 3600
     cold = model.snow_hours(SITE, GEO, _snow_power(20, dim), snowfall, _cold(20))
     assert _on(cold, 7) and not _on(cold, 8)                              # at most SNOW_MAX_DAYS after the snow
+    hours, capped = model.snow_windows(SITE, GEO, _snow_power(20, dim), snowfall, _cold(20))
+    assert hours == cold and capped == [START + 86400 + model.SNOW_MAX_DAYS * 86400]   # closed by the cap alone
+    assert model.snow_windows(SITE, GEO, _snow_power(20, dim), snowfall, _cold(20, 2.0))[1] == []   # by thaw
+    _, unfinished = model.snow_windows(SITE, GEO, _snow_power(5, dim), snowfall, _cold(5))
+    assert unfinished == []                                              # the history ends inside the window
+    power = _snow_power(20, dim)
+    dull = {t: 0.2 * model.clearsky_weather(SITE, t).ghi for t in power}       # an overcast week: no chance
+    assert model.snow_windows(SITE, GEO, power, snowfall, _cold(20), dull)[1] == []
+    later = {t: p for t, p in power.items() if t >= START + 10 * 86400}        # installed after the window
+    assert model.snow_windows(SITE, GEO, later, snowfall, _cold(20))[1] == []
 
 
 def test_under_clouds_the_array_cannot_show_it_is_free():

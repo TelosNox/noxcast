@@ -158,7 +158,7 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen (oder seinen Ladezustand im
   Haupteintrag), dann den Dienst `noxcast.relearn` aufrufen.
 - **Tage mit Wartung oder Ausfall:** Ein Tag, an dem eine PV-Gruppe fast nichts geliefert hat, bleibt von selbst
-  außen vor (*Passt die Konfiguration?* listet sie). Einen teilweisen Ausfall oder eine Wartung mit
+  außen vor (*Passt die Konfiguration?* zeigt, wie viele und den letzten). Einen teilweisen Ausfall oder eine Wartung mit
   `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
@@ -483,7 +483,7 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 ### Lernen (nachts, aus der Langzeitstatistik)
 
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
-  außen vor. Ebenso Tage, an denen eine PV-Gruppe weniger als 2 % eines klaren Tages geliefert hat (ausgefallen,
+  außen vor. Ebenso Tage, an denen eine PV-Gruppe höchstens 2 % eines klaren Tages geliefert hat (ausgefallen,
   ganz unter Schnee oder zu dunkel für den Wechselrichter), und mit dem Archiv (*Lufttemperatur aus Archiv*) die Stunden nach mindestens
   1 cm Schneefall, bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
   Reflexion. Stunden an einer *Leistungsgrenze* zählen als „mindestens so viel“: Die Module hätten mehr liefern

@@ -157,7 +157,7 @@ For the dashboard: *Add card* → *Noxcast*.
 - **Forecast too high on days the battery was full:** enter the battery with its system (or its state of charge in
   the main entry), then call the service `noxcast.relearn`.
 - **Days with maintenance or an outage:** a day on which an array delivered almost nothing is left out on its own
-  (*Does the configuration fit?* lists them). A partial outage or maintenance: leave it out with
+  (*Does the configuration fit?* shows how many and the last one). A partial outage or maintenance: leave it out with
   `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
@@ -475,7 +475,7 @@ temperature turn this irradiance into the clear-sky power of the array.
 ### Learning (nightly, from long-term statistics)
 
 - **Data filters:** hours with a full battery that may curtail the array (see *Battery*), excluded periods, outages
-  and incomplete hours are left out. So are days on which an array delivered less than 2 % of a clear day (off,
+  and incomplete hours are left out. So are days on which an array delivered at most 2 % of a clear day (off,
   fully under snow or too dark for the inverter), and, with *Air temperature from archive*, the hours after a snowfall of
   at least 1 cm until the array delivers again, it thawed or a week has passed. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
   Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,

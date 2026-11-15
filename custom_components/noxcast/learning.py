@@ -98,6 +98,8 @@ class PvHistory:
     # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
     snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
+    # left_out per (array, period), computed once: learning, backtest and hold-out of a night ask for it again
+    memo: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -215,9 +217,16 @@ class LeftOut:
 
 def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = HOUR) -> LeftOut:
     """Days without output and hours under snow of one array, from its whole history."""
+    key = (arr.subentry_id, arr.sensors, arr.geometry, arr.valid_since, period)
+    if key not in history.memo:
+        history.memo[key] = _left_out(site, arr, history, period)
+    return history.memo[key]
+
+
+def _left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float) -> LeftOut:
     summed = scaled_sum(history.power, arr.sensors, history.factors)
     dead = model_dead_days(site, arr.geometry, summed, valid_since=arr.valid_since, period=period)
-    snow = snow_hours(site, arr.geometry, summed, history.snowfall, history.air_temp, history.satellite_ghi, period,
+    snow = snow_hours(site, arr.geometry, summed, history.snowfall, history.air_temp, history.satellite_ghi,
                       arr.valid_since)
     wanted = set(dead)
     hours = {t - t % HOUR for t in summed if solar_day(site, t) in wanted} if dead else set()

@@ -23,7 +23,7 @@ breaking changes.
   nothing is removed.
 
 ### Fixed
-- Days on which a PV array delivered almost nothing (less than 2 % of a clear day) no longer count in learning:
+- Days on which a PV array delivered almost nothing (at most 2 % of a clear day) no longer count in learning:
   an inverter that was off, modules fully under snow or a day too dark for the inverter to start. Before, learning
   read such a day as shade and a darker sky, unless you excluded it by hand. *Learned* → the array → *Does the
   configuration fit?* lists how many days were left out and the last one. Learning may change from the next

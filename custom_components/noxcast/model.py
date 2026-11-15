@@ -491,7 +491,8 @@ def dead_days(site: Site, geo: ArrayGeometry, power: Series, *, valid_since: flo
     if start is None:
         return []
     periods = sorted(t for t, p in power.items() if p is not None and t >= start)
-    clear = forecast(site, geo, LearnedArray(), [clearsky_weather(site, t, period=period) for t in periods], period)
+    sky = [w for t in periods if (w := clearsky_weather(site, t, period=period)).ghi > 0]
+    clear = forecast(site, geo, LearnedArray(), sky, period)
     days: dict[int, list[float]] = {}
     for t in periods:
         row = days.setdefault(solar_day(site, t), [0.0, 0.0])
@@ -515,16 +516,17 @@ SNOW_MAX_DAYS = 7.0              # longest window; a longer full cover delivers 
 
 
 def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
-               satellite_ghi: Series | None = None, period: float = HOUR, valid_since: float | None = None
-               ) -> set[float]:
+               satellite_ghi: Series | None = None, valid_since: float | None = None) -> set[float]:
     """Hour starts in which snow may have covered the array: left out of learning, since shade and efficiency would
     take the missing light for their own.
 
-    snowfall: cm per hour at the site (reanalysis archive), keyed by hour start. A window opens with the first hour
+    power: mean W per period of any length; it is judged per hour. snowfall: cm per hour at the site
+    (reanalysis archive), keyed by hour start. A window opens with the first hour
     of snow on a solar day with at least SNOW_START_CM and closes with the first of: an hour of the array at
     SNOW_RECOVER_SHARE of free modules (the physics model with the default efficiency, no shade) under a sky of at
     least SNOW_RECOVER_KT, from the satellite or, without one, under the clear sky; SNOW_THAW_KH degree hours above
-    0 °C after the last snow; SNOW_MAX_DAYS. Shade the array really has can only delay the end, never hide snow.
+    0 °C after the last snow; SNOW_MAX_DAYS. Only snow on such a day counts as the last snow: the many traces of a
+    reanalysis would otherwise renew the window all winter. Shade the array really has can only delay the end, never hide snow.
     The hour that ends a window is kept; hours before first_use are not counted. Without a snowfall archive nothing
     is left out.
     """
@@ -544,7 +546,7 @@ def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series |
             hourly.setdefault(t - t % HOUR, []).append(p)
     # the model only for hours a window can reach (each new snow extends it by at most SNOW_MAX_DAYS)
     reach = SNOW_MAX_DAYS * 86400
-    snowy = sorted(t for t, cm in snowfall.items() if cm)
+    snowy = starts
     begin = max(starts[0], start - start % HOUR)
     hours = [t for t in sorted(hourly) if t >= begin and (k := bisect.bisect_right(snowy, t))
              and t < snowy[k - 1] + reach]
@@ -559,7 +561,7 @@ def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series |
         t = last_snow = nxt
         warmth = 0.0
         while t < last_snow + SNOW_MAX_DAYS * 86400:
-            if snowfall.get(t):
+            if snowfall.get(t) and daily[solar_day(site, t)] >= SNOW_START_CM:
                 last_snow, warmth = t, 0.0
             else:
                 warmth += max((air_temp or {}).get(t, 0.0), 0.0)

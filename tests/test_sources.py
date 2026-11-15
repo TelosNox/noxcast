@@ -162,3 +162,13 @@ async def test_archive_weather_reads_temperature_and_snowfall_in_one_request(has
     aioclient_mock.clear_requests()
     aioclient_mock.get(url, json={"hourly": {"time": times, "temperature_2m": [-2, 0, 2]}})
     assert (await sources.async_archive_weather(hass, url, 12.345, 6.789, day, day))[1] == {}
+
+
+async def test_archive_without_snowfall_still_gives_the_temperature(hass: HomeAssistant, aioclient_mock) -> None:
+    url = "https://archive.example.test/v1/archive"
+    times = [T.format(h)[:16] for h in range(2)]
+    aioclient_mock.get(url, params={"hourly": "temperature_2m,snowfall"}, exc=_failure(url))
+    aioclient_mock.get(url, json={"hourly": {"time": times, "temperature_2m": [0, 2]}})
+    day = datetime(2026, 10, 24, tzinfo=timezone.utc)
+    temp, snow = await sources.async_archive_weather(hass, url, 12.345, 6.789, day, day)
+    assert temp == {day.timestamp(): 1.0} and snow == {}

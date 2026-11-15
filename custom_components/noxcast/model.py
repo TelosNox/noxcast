@@ -531,6 +531,8 @@ SNOW_RECOVER_SHARE = 0.5         # an hour at this share of what free modules gi
 SNOW_RECOVER_KT = 0.5            # ... in an hour this clear (satellite clearness), else the share says nothing
 SNOW_THAW_KH = 24.0              # degree hours above 0 °C after the last snowfall that melt it off a tilted module
 SNOW_MAX_DAYS = 7.0              # longest window; a longer full cover delivers nothing and counts as a dead day
+SNOW_MAX_AIR_C = 3.0             # snowfall of an hour warmer than this at 2 m reaches the modules as rain or slush:
+                                 # a reanalysis books a shower's precipitation as snow at 7-8 °C
 
 
 def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
@@ -552,7 +554,8 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
     take the missing light for their own.
 
     power: mean W per period of any length; it is judged per hour. snowfall: cm per hour at the site
-    (reanalysis archive), keyed by hour start. A window opens with the first hour
+    (reanalysis archive), keyed by hour start; an hour with an air temperature above SNOW_MAX_AIR_C counts as no
+    snow (one without a temperature still counts). A window opens with the first hour
     of snow on a solar day with at least SNOW_START_CM and closes with the first of: an hour of the array at
     SNOW_RECOVER_SHARE of free modules (the physics model with the default efficiency, no shade) under a sky of at
     least SNOW_RECOVER_KT, from the satellite or, without one, under the clear sky; SNOW_THAW_KH degree hours above
@@ -562,6 +565,8 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
     is left out.
     """
     start = first_use(power, valid_since)
+    if snowfall and air_temp:
+        snowfall = {t: cm for t, cm in snowfall.items() if air_temp.get(t, -math.inf) <= SNOW_MAX_AIR_C}
     if not snowfall or start is None:
         return set(), []
     daily: dict[int, float] = {}

@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+
+- Snowfall in air warmer than 3 °C no longer counts as snow on the modules. The weather archive sometimes books a
+  shower as snow at 7-8 °C, and learning then left out the following hours, up to the next morning, although the
+  modules were free.
+
 ## [0.5.0b4] - 2026-11-15
 
 ### Added

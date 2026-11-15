@@ -8,6 +8,13 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- *Learned* → *Does the configuration fit?* exports every measured daylight hour of an array as CSV (*Hours as
+  CSV*, for admins): whether learning used it, counted it only as a lower bound (power limit, battery charging at full
+  power, PV held back) or left it out, with every reason (battery full, snow, no output, excluded period, before
+  commissioning), the measurement, the clear-sky power, temperature, snowfall and the household's state of charge.
+  With the satellite archive switched on in the options it also holds the model on the measured irradiance, split
+  into clear sky, clouds, shade, reflection, direction and heat. With it you can check whether the filters fit your installation, or attach it to an issue. The
+  diagnostics download holds the same table for every array (instead of only the hours learning used).
 - The household's feed-in limit now counts in learning, in W as well as in % of the PV peak power (the peak power
   of all PV arrays with their further orientations). With the *Grid power* sensor in the main entry, hours in which
   the household's export reached the limit (within 5 %, at least 100 W) count as "at least this much", since the PV
@@ -18,6 +25,9 @@ breaking changes.
   split the surplus at the limit yet.
 
 ### Changed
+- The diagnostics download no longer contains sensor IDs (each sensor gets an alias such as `sensor.entity_1`,
+  the same throughout the file) or the addresses of your own weather or archive services, so it can be posted in an
+  issue. Open-Meteo addresses stay, without their query.
 - The menu of a system says what each item does: ✎ changes something that exists, + adds, − removes, with a
   short description under the general items. Removing a part asks first and names what goes with it; until then
   nothing is removed.

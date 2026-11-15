@@ -115,9 +115,13 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
 
     learned = next(iter(coordinator.learned.values()))
     assert abs(learned.efficiency - 0.92) < 0.03
-    table = next(iter(diag["arrays"].values()))["learning_hours"]       # the hours behind the efficiency
-    assert diag["learning_hours_error"] is None and len(table["rows"]) > 100
-    assert "latitude" not in json.dumps(diag)
+    table = next(iter(diag["arrays"].values()))["hours"]                # every daylight hour with its status
+    assert diag["hours_error"] is None and len(table["rows"]) > 100
+    assert {row[1] for row in table["rows"]} >= {"used"}
+    dumped = json.dumps(diag)
+    assert "latitude" not in dumped and "sensor.pv1" not in dumped     # entity IDs only as aliases
+    aliases = next(iter(diag["arrays"].values()))["sensors"]
+    assert len(set(aliases)) == 2 and all(a.startswith("sensor.entity_") for a in aliases)
     tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
     assert len(coordinator.forecast_archive[tomorrow]["hours"]) >= 23        # day-ahead forecast archived
     lit = [h for h in coordinator.forecast_archive[tomorrow]["hours"].values() if h["ghi"] > 0]

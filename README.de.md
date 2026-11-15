@@ -162,6 +162,14 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
+- **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer
+  Gruppe als CSV (*Stunden als CSV*, für Administratoren), Zeiten in UTC. `status` ist `used` (verwendet),
+  `lower_bound` (`at_limit`, `charging_max`, `held_back`: die echte Leistung war mindestens so hoch) oder `left_out`
+  (ausgelassen), und `reasons` nennt alle Gründe: `before_use` (vor Inbetriebnahme), `soc_full` (Akku des Haushalts),
+  `battery_full` (ein Akku der Systeme der Gruppe), `maybe_charging`, `no_output` (kein Ertrag), `snow` (Schnee),
+  `excluded` (ausgeschlossen), `negative`. Mit dem Satellitenarchiv (Optionen) enthält die Datei auch das Modell mit
+  der gemessenen Strahlung, zerlegt in klaren Himmel, Wolken, Schatten, Reflexion, Richtung und Wärme. Öffne sie in
+  einer Tabellenkalkulation oder hänge sie an ein Issue.
 
 ## Konfiguration
 
@@ -599,8 +607,10 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 
 Noxcast sendet nur deine Koordinaten an Open-Meteo. Alles andere bleibt in Home Assistant. Fehlermeldungen und Logs
 nennen den Wetter-Host und seine Antwort, nicht die Anfrage, und enthalten deshalb weder deinen Standort noch einen
-API-Schlüssel. Der Diagnose-Download lässt Standort und API-Schlüssel weg, listet aber deine Sensor-IDs: Sieh ihn
-durch, bevor du ihn veröffentlichst.
+API-Schlüssel. Der Diagnose-Download und der CSV-Export lassen Standort, API-Schlüssel und die Adressen deiner
+eigenen Dienste weg und nennen Sensoren nur mit einem Ersatznamen (`sensor.entity_1`). Namen von Gruppen und Systemen
+und die Notizen ausgeschlossener Zeiträume bleiben, wie du sie vergeben hast, und der Verlauf der Stunden übers Jahr
+zeigt grob die Region: Sieh die Datei durch, bevor du sie veröffentlichst.
 
 ## Entwicklung
 

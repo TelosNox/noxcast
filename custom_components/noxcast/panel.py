@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import concepts, flowchart, store, systems, views
+from . import concepts, databasis, flowchart, store, systems, views
 from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,6 +76,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     hass.http.register_view(_diagram_view())
     hass.http.register_view(_concept_view())
+    hass.http.register_view(_hours_view())
 
     # the panel loads further section modules with its own cache buster, so it covers all of them
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
@@ -414,6 +415,39 @@ def _concept_view() -> Any:
             return web.Response(text=svg, content_type="image/svg+xml", headers={"Cache-Control": "private, max-age=3600"})
 
     return ConceptView()
+
+
+HOURS_URL = "/api/noxcast/hours"
+
+
+def _hours_view() -> Any:
+    from homeassistant.components.http import HomeAssistantView
+    from aiohttp import web
+
+    class HoursView(HomeAssistantView):
+        """Every daylight hour of one array with its status and reasons as CSV (databasis.py), for admins: it holds
+        the measured history."""
+
+        url = HOURS_URL
+        name = "api:noxcast:hours"
+        requires_auth = True
+
+        async def get(self, request: web.Request) -> web.Response:
+            if not request["hass_user"].is_admin:
+                return web.Response(status=403)
+            hass, sid = request.app["hass"], request.query.get("array", "")
+            c = next((c for c in _coordinators(hass) if sid in c.arrays), None)
+            if c is None:
+                return web.Response(status=404)
+            tables = await c.async_hour_tables(sid)
+            if sid not in tables:
+                return web.Response(status=404)
+            name = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in c.arrays[sid].name).strip("-").lower() or "array"
+            text = await hass.async_add_executor_job(databasis.to_csv, tables[sid])
+            return web.Response(text=text, content_type="text/csv", headers={
+                "Content-Disposition": f'attachment; filename="noxcast-hours-{name}.csv"', "Cache-Control": "no-store"})
+
+    return HoursView()
 
 
 def _diagram_view() -> Any:

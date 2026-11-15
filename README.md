@@ -161,6 +161,13 @@ For the dashboard: *Add card* → *Noxcast*.
   `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
+- **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an
+  array as CSV (*Hours as CSV*, for admins), times in UTC. `status` is `used`, `lower_bound` (`at_limit`,
+  `charging_max`, `held_back`: the real output was at least as high) or `left_out`, and `reasons` names all reasons:
+  `before_use`, `soc_full` (household battery), `battery_full` (a battery of the array's systems), `maybe_charging`,
+  `no_output`, `snow`, `excluded`, `negative`. With the satellite archive (options) the file also holds the model on
+  the measured irradiance, split into clear sky, clouds, shade, reflection, direction and heat. Open it in a
+  spreadsheet, or attach it to an issue.
 
 ## Configuration
 
@@ -590,8 +597,10 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 
 Noxcast sends only your coordinates to Open-Meteo. Everything else stays in Home Assistant. Error messages and
 logs name the weather host and its answer, not the request, so they hold neither your location nor an API key.
-The diagnostics download leaves out the location and API key, but lists your sensor IDs: look through it before
-you post it.
+The diagnostics download and the CSV export leave out the location, API keys and the addresses of your own
+services, and name sensors only by an alias (`sensor.entity_1`). Array and system names and the notes of excluded
+periods stay as you gave them, and the course of the hours over the year shows the region roughly: look through
+the file before you post it.
 
 ## Development
 

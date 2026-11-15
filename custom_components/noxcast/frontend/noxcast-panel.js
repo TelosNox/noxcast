@@ -100,7 +100,9 @@ const TEXT = {
       plOk: "Messwerte und Konfiguration passen zusammen.",
       deadDays: "Nicht ins Lernen eingeflossen: {n}, an denen die Gruppe fast nichts geliefert hat (höchstens 2 % eines klaren Tages: ausgefallen, ganz unter Schnee oder zu dunkel, als dass der Wechselrichter anläuft), zuletzt am {d}. Lag kein Ausfall vor, war es ein sehr dunkler Tag; die Gruppe verliert dadurch nichts.",
       days: { one: "1 Tag", other: "{n} Tage" }, snowDays: "Nicht ins Lernen eingeflossen: Stunden an {n} nach Schneefall, bis die Module wieder frei waren, getaut hat oder eine Woche vorbei war, zuletzt am {d}. Schnee auf den Modulen sähe sonst wie Schatten aus.",
-      plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Die Lernstunden einzeln stehen im Diagnose-Download der Integration.",
+      plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Jede Tagesstunde mit dem, was das Lernen aus ihr gemacht hat, steht im Export unten und im Diagnose-Download der Integration.",
+      export: "Stunden als CSV", exporting: "Wird erstellt …", exportFailed: "Export fehlgeschlagen ({e})",
+      exportHelp: "Jede gemessene Tagesstunde der Gruppe: verwendet, nur Untergrenze (Leistungsgrenze, Akku lädt mit voller Leistung, PV zurückgehalten) oder ausgelassen mit allen Gründen, dazu Messung, Leistung bei klarem Himmel, Temperatur, Schneefall und Ladestand des Haushalts. Mit dem Satellitenarchiv (Optionen) auch das Modell mit der gemessenen Strahlung, in Schritten zerlegt. Zeiten in UTC. Ohne Ort und Sensor-IDs, zum Ansehen in einer Tabelle oder zum Anhängen an ein Issue.",
       hint: {
         peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt aller Module) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
         high: "Der Wirkungsgrad liegt über 105 %: Die Gruppe liefert mehr, als die eingetragenen Module bei dieser Ausrichtung können. Bitte prüfen: die Wp je Ausrichtung, ob der Sensor nur diese Gruppe misst, und ob die Module steiler oder anders ausgerichtet sind als eingetragen.",
@@ -171,7 +173,9 @@ const TEXT = {
       plOk: "Measurements and configuration fit together.",
       deadDays: "Left out of learning: {n} on which the array delivered almost nothing (at most 2 % of a clear day: off, fully under snow or too dark for the inverter to start), last on {d}. If nothing was off, it was a very dark day; the array loses nothing by it.",
       days: { one: "1 day", other: "{n} days" }, snowDays: "Left out of learning: hours on {n} after snowfall, until the modules were free again, it thawed or a week had passed, last on {d}. Snow on the modules would otherwise look like shade.",
-      plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. The single learning hours are in the integration's diagnostics download.",
+      plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. Every daylight hour with what learning made of it is in the export below and in the integration's diagnostics download.",
+      export: "Hours as CSV", exporting: "Creating …", exportFailed: "Export failed ({e})",
+      exportHelp: "Every measured daylight hour of the array: used, only a lower bound (power limit, battery charging at full power, PV held back) or left out with all reasons, with the measurement, the clear-sky power, temperature, snowfall and the household's state of charge. With the satellite archive (options) also the model on the measured irradiance, split into its steps. Times in UTC. Without location and sensor IDs, to look at in a spreadsheet or attach to an issue.",
       hint: {
         peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
         high: "The efficiency is above 105 %: the array gives more than the configured modules can at this orientation. Please check the peak power of each plane, whether the sensor measures this array only, and whether the modules are steeper or face another way than configured.",
@@ -953,7 +957,12 @@ class NoxcastPanel extends HTMLElement {
         const n = (days.length === 1 ? c.days.one : c.days.other).replace("{n}", days.length);
         return `<p class="note">${c[key].replace("{n}", n).replace("{d}", day(days[days.length - 1]))}</p>`;
       }).join("");
-    return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}${left}<p class="help">${c.plHelp}</p></section>`;
+    const admin = this._hass.user && this._hass.user.is_admin;
+    // one export at a time: each fetches the whole history
+    const busy = this._exporting === arr.id, error = (this._exportErrors || {})[arr.id];
+    const exp = admin ? `<p><button class="btn" data-action="export" data-id="${arr.id}" ${this._exporting ? "disabled" : ""}>${busy ? c.exporting : c.export}</button>
+      ${error ? `<span class="bad small">${esc(c.exportFailed.replace("{e}", error))}</span>` : ""}</p><p class="help">${c.exportHelp}</p>` : "";
+    return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}${left}<p class="help">${c.plHelp}</p>${exp}</section>`;
   }
 
   _effDirections(la) {
@@ -1272,7 +1281,28 @@ class NoxcastPanel extends HTMLElement {
     else if (a === "today") { s.doy = dayOfYear(new Date()); this._stop(); }
     else if (a === "play") { if (s.playing) this._stop(); else this._play(); }
     else if (a === "relearn") { this._relearn(); return; }
+    else if (a === "export") { this._export(el.dataset.id); return; }
     this._render();
+  }
+
+  async _export(id) {
+    // a file download needs the token: fetchWithAuth, then a link to the blob
+    if (this._exporting) return;
+    this._exportErrors = { ...(this._exportErrors || {}), [id]: null };
+    this._exporting = id; this._render();
+    try {
+      const res = await this._hass.fetchWithAuth(`/api/noxcast/hours?array=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const name = (/filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "") || [])[1] || "noxcast-hours.csv";
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = name;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      this._exportErrors[id] = err.message || String(err);
+    }
+    this._exporting = null; this._render();
   }
 
   _onInput(ev) {

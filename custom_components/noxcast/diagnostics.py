@@ -1,15 +1,19 @@
-"""Diagnostics download: configuration, learned state, learning hours and forecast (location is not included)."""
+"""Diagnostics download: configuration, learned state, every daylight hour and forecast.
+
+Without location, entity IDs (stable aliases instead) and addresses of private services (redact.py), so that it can
+be posted in a public issue.
+"""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from . import fine as fn
-from .const import CONF_API_KEY, Series
+from .const import Series
+from .redact import redact
 from .coordinator import NoxcastConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,20 +23,20 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
     coordinator = entry.runtime_data
     data = coordinator.data
 
-    def hours(series: Series) -> dict[str, float]:
+    def by_hour(series: Series) -> dict[str, float]:
         return {dt_util.utc_from_timestamp(t).isoformat(): round(v, 1) for t, v in series.items()}
 
-    # the hours behind an implausible efficiency; fetched first, so archive_errors below belong to this fetch
-    learning_error = None
+    # every daylight hour with what learning made of it; archive_errors stay those of the last learning run
+    hours_error = None
     try:
-        learning_hours = await coordinator.async_learning_hours()
+        hours = await coordinator.async_hour_tables()
     except Exception as err:  # noqa: BLE001 – the rest of the download stays useful
-        _LOGGER.exception("Learning hours for the diagnostics failed")
-        learning_hours, learning_error = {}, str(err) or type(err).__name__
+        _LOGGER.exception("Hours for the diagnostics failed")
+        hours, hours_error = {}, str(err) or type(err).__name__
 
-    return {
+    raw = {
         "config": dict(entry.data),
-        "options": async_redact_data(dict(entry.options), {CONF_API_KEY}),
+        "options": dict(entry.options),
         "archive_errors": coordinator.archive_errors,
         "arrays": {
             sid: {
@@ -40,12 +44,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
                 "azimuth": arr.geometry.azimuth, "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
                 "valid_since": arr.valid_since,
                 "learned": coordinator.learned[sid].as_dict() if sid in coordinator.learned else None,
-                "learning_hours": learning_hours.get(sid),
-                "forecast_wh": hours(data.arrays.get(sid, {})) if data else None,
+                "hours": hours.get(sid),
+                "forecast_wh": by_hour(data.arrays.get(sid, {})) if data else None,
             }
             for sid, arr in coordinator.arrays.items()
         },
-        "learning_hours_error": learning_error,
+        "hours_error": hours_error,
         "exclusions": coordinator.exclusions,
         # limits seen in the measurements, and the levels the user answered "There is no limit" to (plateau.py)
         "limits": coordinator.limits,
@@ -55,3 +59,4 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         "fine_archive": fn.summary(coordinator.fine),
         "forecast_updated": data.updated.isoformat() if data and data.updated else None,
     }
+    return await hass.async_add_executor_job(redact, raw)        # every string of every hour table: not in the loop

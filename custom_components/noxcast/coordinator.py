@@ -44,6 +44,7 @@ from . import explain
 from . import flows as fl
 from . import battery as bt
 from . import curtailment as ct
+from . import databasis
 from . import installation as inst
 from . import systems as sy
 from . import forecasting as fc
@@ -173,6 +174,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.load_backtest: dict | None = None
         self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
         self._backtest_task: asyncio.Task | None = None
+        self._hours_lock = asyncio.Lock()             # async_hour_tables: one export or download at a time
         self.model_compare: dict | None = None       # last successful weather model comparison (hindcast.run)
         # the running or last failed comparison: {"running", "done", "total", "error", "limited"}
         self.compare_state: dict = {"running": False, "done": 0, "total": 0, "error": None, "limited": False}
@@ -382,17 +384,23 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _option(self, key: str, default=None):
         return self.config_entry.options.get(key, default)
 
-    async def _async_archives(self, start: datetime, end: datetime) -> tuple[dict | None, dict | None, dict | None]:
-        """Optional history archives (temperature, satellite, snowfall); a failure only disables that refinement."""
+    async def _async_archives(self, start: datetime, end: datetime, record: bool = True
+                              ) -> tuple[dict | None, dict | None, dict | None]:
+        """Optional history archives (temperature, satellite, snowfall); a failure only disables that refinement.
+
+        record: the errors become archive_errors, the errors of the last learning run (panel, sensor attribute); an
+        export fetches with False and leaves them alone."""
         lat, lon, key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
-        self.archive_errors = {}
+        errors: dict[str, str] = {}
+        if record:
+            self.archive_errors = errors
         temp = sat = snow = None
         if self._option(CONF_ARCHIVE_TEMPERATURE, True):
             try:
                 temp, snow = await async_archive_weather(
                     self.hass, self._option(CONF_ARCHIVE_URL) or DEFAULT_ARCHIVE_URL, lat, lon, start, end, key)
             except Exception as err:  # noqa: BLE001
-                self.archive_errors["temperature"] = str(err) or type(err).__name__
+                errors["temperature"] = str(err) or type(err).__name__
                 _LOGGER.warning("Temperature archive unavailable, learning without temperature: %s", err)
         if self._option(CONF_SATELLITE, False):
             try:
@@ -400,7 +408,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     self.hass, self._option(CONF_SATELLITE_URL) or DEFAULT_SATELLITE_URL,
                     self._option(CONF_SATELLITE_MODEL) or DEFAULT_SATELLITE_MODEL, lat, lon, start, end, key)
             except Exception as err:  # noqa: BLE001
-                self.archive_errors["satellite"] = str(err) or type(err).__name__
+                errors["satellite"] = str(err) or type(err).__name__
                 _LOGGER.warning("Satellite archive unavailable, learning without clear-hour filter: %s", err)
         return temp, sat, snow or None
 
@@ -634,12 +642,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self._archive_store.async_delay_save(self._archive_data, 5)
         return history, now.timestamp(), soc_full, exclusions
 
-    async def _async_pv_history(self, now: datetime, start: datetime | None = None, archives: bool = True
-                                ) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
+    async def _async_pv_history(self, now: datetime, start: datetime | None = None, archives: bool = True,
+                                record: bool = True) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
         """The arrays' history as learning sees it, the full state of charge and the exclusions.
 
         start: from when (default: the whole learning history); archives: also fetch the temperature and
-        satellite archives, which only learning needs.
+        satellite archives, which only learning needs; record: see _async_archives.
         """
         start = start or now - timedelta(days=365 * HISTORY_YEARS)
         options = self.config_entry.data
@@ -662,7 +670,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         days = dict(self.fine)
         fine = inst.charge_power(own, await self.hass.async_add_executor_job(
             lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
-        air_temp, satellite_ghi, snowfall = await self._async_archives(start, now) if archives else (None, None, None)
+        air_temp, satellite_ghi, snowfall = await self._async_archives(start, now, record) if archives else (None, None, None)
         full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         at_charge_max = {sid: installation.charge_hours(sid, charging, fine) for sid in self.arrays}
         charge = {sid: frozenset(hours) for sid, (hours, _) in at_charge_max.items()}
@@ -674,13 +682,21 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 
-    async def async_learning_hours(self) -> dict[str, dict]:
-        """Per array the hours learning used, for the diagnostics download (fetched anew, nothing is kept)."""
-        if not self.learned:
+    async def async_hour_tables(self, only: str | None = None) -> dict[str, dict]:
+        """Per learned array (or only that one) every daylight hour with its status and reasons (databasis.py), for
+        the diagnostics download and the export; fetched anew, nothing is kept. One at a time: each fetches the whole
+        history and both archives."""
+        arrays = {sid: arr for sid, arr in self.arrays.items() if sid in self.learned and only in (None, sid)}
+        if not arrays:
             return {}
-        history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow())
-        return await self.hass.async_add_executor_job(
-            ln.learning_hours, self.site, self.arrays, dict(self.learned), history, soc_full, exclusions)
+        async with self._hours_lock:
+            history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow(), record=False)
+            learned = dict(self.learned)
+
+            def tables() -> dict[str, dict]:
+                return {sid: databasis.hour_table(self.site, arr, learned[sid], history, soc_full, exclusions)
+                        for sid, arr in arrays.items()}
+            return await self.hass.async_add_executor_job(tables)
 
     async def _async_forecast_error(self) -> None:
         """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""

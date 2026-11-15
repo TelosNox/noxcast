@@ -21,7 +21,7 @@ from . import load as lf
 from . import plan as pl
 from .model import (
     EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
-    snow_hours, solar_day, steady_hours, usable_samples,
+    sample_reasons, snow_hours, solar_day, steady_hours, usable_samples,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
@@ -260,18 +260,30 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     return samples, steady, floors
 
 
-def learning_hours(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray], history: PvHistory,
-                   soc_full: float, exclusions: list[tuple[float, float]]) -> dict[str, dict]:
-    """Per array the hours learning used, with what each says about the efficiency (arraycheck.hour_table)."""
-    out = {}
-    for sid, arr in arrays.items():
-        if sid not in learned:
-            continue
-        samples, steady, floors = array_samples(arr, history, soc_full, exclusions,
-                                                skip=left_out(site, arr, history).hours)
-        out[sid] = ac.hour_table(site, arr.geometry, learned[sid], samples, history.satellite_ghi, history.air_temp,
-                                 steady, floors)
-    return out
+def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: float,
+                 exclusions: list[tuple[float, float]]) -> dict[float, tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Per period with a value: (why learning leaves it out, why it counts only as a lower bound).
+
+    The same sets as array_samples and learn_array, by name: an hour with no reason to leave it out is a sample of
+    learning (test_databasis checks that both agree).
+    """
+    sid = arr.subentry_id
+    out = left_out(site, arr, history)
+    dead = set(out.dead)
+    left = {"battery_full": history.full.get(sid, frozenset()), "maybe_charging": history.unsure.get(sid, frozenset()),
+            "no_output": {t for t in out.hours if solar_day(site, t) in dead}, "snow": out.snow}
+    reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors), soc=history.soc,
+                             soc_full=soc_full, exclusions=exclusions, valid_since=arr.valid_since,
+                             left={k: v for k, v in left.items() if v})
+    limit = floor_hours(arr, history)
+    bounds = {"at_limit": None, "charging_max": history.charge.get(sid, frozenset()),
+              "held_back": history.held.get(sid, frozenset())}
+    result = {}
+    for t, why in reasons.items():
+        hour = t - t % HOUR
+        low = tuple(name for name, hours in bounds.items() if (t in limit if hours is None else hour in hours))
+        result[t] = (why, () if why else low)
+    return result
 
 
 def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,

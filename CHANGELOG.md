@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b4] - 2026-11-15
+
 ### Added
 - *Learned* → *Data basis* shows per array what the daylight hours were used for (used, lower bound, battery full,
   snow, no output, excluded), weighted by the energy a clear sky would have given, overall and per month. It points

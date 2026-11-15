@@ -163,18 +163,18 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
 - **Was hat das Lernen gesehen?** *Gelernt* → *Datenbasis* zeigt pro Gruppe, wofür die Tagesstunden verwendet
-  wurden (verwendet, Untergrenze, Akku voll, Schnee, kein Ertrag, ausgeschlossen), gewichtet nach der Energie bei
+  wurden (verwendet, begrenzt, Akku voll, Schnee, kein Ertrag, ausgeschlossen), gewichtet nach der Energie bei
   klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
   obwohl die Gruppe lieferte, was das Modell erwartet, deutlich über dem, was das gelernte Modell bei klarem Himmel
   zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
   erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
   gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
   Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und Obergrenze bei klarem Himmel mit den
-  ausgelassenen Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,
+  ausgelassenen und begrenzten Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,
   Wolken, Schatten, Reflexion, Richtung, Temperatur).
 - **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer
   Gruppe als CSV (*Stunden als CSV*, für Administratoren), Zeiten in UTC. `status` ist `used` (verwendet),
-  `lower_bound` (`at_limit`, `charging_max`, `held_back`: die echte Leistung war mindestens so hoch) oder `left_out`
+  `lower_bound` (angezeigt als *begrenzt*: `at_limit`, `charging_max`, `held_back`; die echte Leistung war mindestens so hoch) oder `left_out`
   (ausgelassen), und `reasons` nennt alle Gründe: `before_use` (vor Inbetriebnahme), `soc_full` (Akku des Haushalts),
   `battery_full` (ein Akku der Systeme der Gruppe), `maybe_charging`, `no_output` (kein Ertrag), `snow` (Schnee),
   `excluded` (ausgeschlossen), `negative`. Mit dem Satellitenarchiv (Optionen) enthält die Datei auch das Modell mit

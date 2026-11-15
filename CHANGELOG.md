@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+
+- *Data basis* calls the hours in which the PV could not deliver everything *capped* instead of *lower bound*: at a
+  power limit, with the battery charging at full power or with PV held back. The CSV export keeps its status
+  `lower_bound`.
+
 ### Fixed
 
 - Snowfall in air warmer than 3 °C no longer counts as snow on the modules. The weather archive sometimes books a

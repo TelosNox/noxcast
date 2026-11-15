@@ -6377,7 +6377,7 @@
      "dead_days": [],
      "snow_days": [],
      "basis": {
-      "version": 1,
+      "version": 2,
       "hours": 1052,
       "shares": {"used": 0.752, "battery": 0.234, "excluded": 0.014},
       "months": {
@@ -6386,7 +6386,7 @@
        "2026-05": {"used": 0.762, "battery": 0.205, "excluded": 0.032},
        "2026-06": {"used": 0.914, "battery": 0.086}
       },
-      "anomalies": [{"key": "battery_matches", "count": 30, "value": 0.39, "day": 1780861735}]
+      "anomalies": []
      }
     },
     "S": {
@@ -6609,7 +6609,7 @@
      "dead_days": [],
      "snow_days": [],
      "basis": {
-      "version": 1,
+      "version": 2,
       "hours": 885,
       "shares": {"used": 0.758, "battery": 0.226, "excluded": 0.016},
       "months": {
@@ -6617,7 +6617,7 @@
        "2026-05": {"used": 0.747, "battery": 0.221, "excluded": 0.032},
        "2026-06": {"used": 0.921, "battery": 0.079}
       },
-      "anomalies": [{"key": "battery_matches", "count": 22, "value": 1.0, "day": 1780861735}]
+      "anomalies": []
      }
     }
    },
@@ -7056,7 +7056,7 @@
        "dead_days": [],
        "snow_days": [],
        "basis": {
-        "version": 1,
+        "version": 2,
         "hours": 1052,
         "shares": {"used": 0.752, "battery": 0.234, "excluded": 0.014},
         "months": {
@@ -7065,7 +7065,7 @@
          "2026-05": {"used": 0.762, "battery": 0.205, "excluded": 0.032},
          "2026-06": {"used": 0.914, "battery": 0.086}
         },
-        "anomalies": [{"key": "battery_matches", "count": 30, "value": 0.39, "day": 1780861735}]
+        "anomalies": []
        }
       }
      },
@@ -7290,7 +7290,7 @@
        "dead_days": [],
        "snow_days": [],
        "basis": {
-        "version": 1,
+        "version": 2,
         "hours": 885,
         "shares": {"used": 0.758, "battery": 0.226, "excluded": 0.016},
         "months": {
@@ -7298,7 +7298,7 @@
          "2026-05": {"used": 0.747, "battery": 0.221, "excluded": 0.032},
          "2026-06": {"used": 0.921, "battery": 0.079}
         },
-        "anomalies": [{"key": "battery_matches", "count": 22, "value": 1.0, "day": 1780861735}]
+        "anomalies": []
        }
       }
      }
@@ -23832,7 +23832,7 @@
        "dead_days": [],
        "snow_days": [],
        "basis": {
-        "version": 1,
+        "version": 2,
         "hours": 1052,
         "shares": {"used": 0.752, "battery": 0.234, "excluded": 0.014},
         "months": {
@@ -23841,7 +23841,7 @@
          "2026-05": {"used": 0.762, "battery": 0.205, "excluded": 0.032},
          "2026-06": {"used": 0.914, "battery": 0.086}
         },
-        "anomalies": [{"key": "battery_matches", "count": 30, "value": 0.39, "day": 1780861735}]
+        "anomalies": []
        }
       },
       "facade_cells": {},
@@ -24073,7 +24073,7 @@
        "dead_days": [],
        "snow_days": [],
        "basis": {
-        "version": 1,
+        "version": 2,
         "hours": 885,
         "shares": {"used": 0.758, "battery": 0.226, "excluded": 0.016},
         "months": {
@@ -24081,7 +24081,7 @@
          "2026-05": {"used": 0.747, "battery": 0.221, "excluded": 0.032},
          "2026-06": {"used": 0.921, "battery": 0.079}
         },
-        "anomalies": [{"key": "battery_matches", "count": 22, "value": 1.0, "day": 1780861735}]
+        "anomalies": []
        }
       },
       "facade_cells": {},

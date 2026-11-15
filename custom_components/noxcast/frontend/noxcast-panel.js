@@ -108,12 +108,10 @@ const TEXT = {
       basisOk: "Keine Auffälligkeiten.",
       basisHelp: "Gewichtet nach der Energie bei klarem Himmel: Eine ausgelassene Mittagsstunde im Juni kostet das Lernen viel mehr als eine Randstunde im Dezember. Untergrenze: an einer Leistungsgrenze, Akku lädt mit voller Leistung oder PV zurückgehalten; die echte Leistung war mindestens so hoch. Neu berechnet bei jedem nächtlichen Lernen; die einzelnen Stunden stehen im CSV-Export.",
       anomaly: {
-        battery_matches: "„Akku voll“ an {n} Tagen, obwohl die Gruppe lieferte, was das Modell erwartet ({v} dieser Stunden innerhalb von 5 %), am deutlichsten am {d}. Der Akku hat dort offenbar nicht begrenzt: Prüfe die Schwelle „Akku voll“ oder die Zuordnung zum System.",
-        often_at_limit: "{v} der gezählten Energie liegen an einer Grenze (an {n} Tagen, am meisten am {d}). Ist die Grenze richtig eingetragen, oder regelt etwas ab, das Noxcast nicht kennt?",
-        above_clear: "In {n} Stunden lieferte die Gruppe deutlich mehr, als die eingetragenen Module bei klarem Himmel können (bis zum {v}-Fachen, am {d}). Immer zur selben Tageszeit: Prüfe die Ausrichtung; den ganzen Tag: Peakleistung oder Einheit des Sensors.",
-        long_snow: "{n} Schneefenster endeten erst nach 7 Tagen, ohne dass die Gruppe wieder frei aussah (zuletzt ab {d}). Lag wirklich so lange Schnee, oder liefert die Gruppe sonst auch so wenig?",
-        bright_outage: "{n} Tage ohne Ertrag bei hellem Himmel (Satellit im Mittel {v} klar, z. B. am {d}): eher ein Ausfall als Schnee.",
-        unexplained: "{n} Tage, die kein Filter erklärt, lagen unter 70 % des Modells, am schlechtesten der {d} mit {v}. Gab es dort einen Ausfall oder eine Abregelung?",
+        battery_matches: "„Akku voll“ an {n} Tagen, obwohl die Gruppe lieferte, was das Modell erwartet: {v} dieser Stunden innerhalb von 5 %, bei den verwendeten Stunden nur {u} (am deutlichsten am {d}). Der Akku hat dort offenbar nicht begrenzt, etwa weil die Anlage dann einspeist; dem Lernen fehlen diese Stunden unnötig. Prüfe die Schwelle „Akku voll“ im Haupteintrag oder die Zuordnung zum System.",
+        above_clear: "In {n} Stunden lieferte die Gruppe deutlich mehr, als das gelernte Modell bei klarem Himmel ohne Schatten zulässt (bis zum {v}-Fachen, am {d}). Immer zur selben Tageszeit: Prüfe die Ausrichtung; den ganzen Tag: Peakleistung oder Einheit des Sensors.",
+        bright_outage: "{n} Tage ohne Ertrag bei hellem Himmel und ohne Schnee (Satellit im Mittel {v} klar, z. B. am {d}): eher ein Ausfall.",
+        unexplained: "{n} helle Tage, die kein Filter erklärt, lagen unter 70 % des Modells, am schlechtesten der {d} mit {v}. Gab es dort einen Ausfall oder eine Abregelung?",
       },
       hint: {
         peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt aller Module) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
@@ -193,12 +191,10 @@ const TEXT = {
       basisOk: "Nothing stands out.",
       basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Lower bound: at a power limit, battery charging at full power or PV held back; the real output was at least as high. Renewed by every nightly learning run; the single hours are in the CSV export.",
       anomaly: {
-        battery_matches: "“Battery full” on {n} days although the array delivered what the model expects ({v} of these hours within 5 %), most clearly on {d}. The battery did not seem to hold it back: check the “battery full” threshold or the system the array belongs to.",
-        often_at_limit: "{v} of the counted energy is at a limit (on {n} days, most on {d}). Is the limit right, or does something curtail that Noxcast does not know?",
-        above_clear: "In {n} hours the array delivered clearly more than the configured modules can under a clear sky (up to {v} times, on {d}). Always at the same time of day: check the orientation; all day: the peak power or the sensor's unit.",
-        long_snow: "{n} snow windows ended only after 7 days without the array looking free again (the last from {d}). Was there really snow that long, or does the array deliver this little anyway?",
-        bright_outage: "{n} days without output under a bright sky (satellite {v} clear on average, e.g. {d}): an outage rather than snow.",
-        unexplained: "{n} days that no filter explains were below 70 % of the model, the worst {d} at {v}. Was there an outage or curtailment?",
+        battery_matches: "“Battery full” on {n} days although the array delivered what the model expects: {v} of these hours within 5 %, against only {u} of the used hours (most clearly on {d}). The battery did not seem to hold it back, for example because the installation exports then; learning lost these hours for nothing. Check the “battery full” threshold in the main entry or the system the array belongs to.",
+        above_clear: "In {n} hours the array delivered clearly more than the learned model allows under a clear sky without shade (up to {v} times, on {d}). Always at the same time of day: check the orientation; all day: the peak power or the sensor's unit.",
+        bright_outage: "{n} days without output under a bright sky and without snow (satellite {v} clear on average, e.g. {d}): an outage, most likely.",
+        unexplained: "{n} bright days that no filter explains were below 70 % of the model, the worst {d} at {v}. Was there an outage or curtailment?",
       },
       hint: {
         peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
@@ -991,7 +987,7 @@ class NoxcastPanel extends HTMLElement {
 
   _basis(la) {
     const b = la.basis, c = this._t.checks;
-    if (!b || !b.shares) return "";
+    if (!b || !b.hours || !Object.keys(b.shares || {}).length) return "";
     const COLORS = { used: "#1D9E75", lower_bound: "#7F77DD", battery: "#EF9F27", snow: "#85B7EB", no_output: "#888780", excluded: "#D85A30", other: "#B4B2A9" };
     const pct = (v) => `${Math.round(v * 100).toLocaleString(this._lang)} %`;
     const segs = (shares) => Object.keys(COLORS).filter((k) => shares[k]).map((k) =>
@@ -1004,7 +1000,7 @@ class NoxcastPanel extends HTMLElement {
     // shares as percent, the clear-sky factor as a plain number
     const value = (a) => a.value == null ? "" : a.key === "above_clear" ? a.value.toLocaleString(this._lang) : pct(a.value);
     const notes = (b.anomalies || []).map((a) => `<p class="note warn">${c.anomaly[a.key] ? c.anomaly[a.key].replace("{n}", a.count)
-      .replace("{v}", value(a)).replace("{d}", day(a.day)) : a.key}</p>`).join("") || `<p class="note">${c.basisOk}</p>`;
+      .replace("{v}", value(a)).replace("{u}", a.used == null ? "" : pct(a.used)).replace("{d}", day(a.day)) : a.key}</p>`).join("") || `<p class="note">${c.basisOk}</p>`;
     return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
       <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
       ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}

@@ -115,9 +115,10 @@ def test_redaction_keeps_the_structure_and_removes_what_identifies_a_home():
 
 
 def _row(start: str, status: str, reasons: str = "", power: float = 500.0, clear: float = 800.0,
-         model: float | None = 500.0, kt: float | None = 0.6) -> list:
+         model: float | None = 500.0, kt: float | None = 0.6, bound: float = 900.0) -> list:
     r = dict.fromkeys(db.COLUMNS)
-    r.update(start=start, status=status, reasons=reasons, power_w=power, clear_w=clear, model_w=model, kt=kt)
+    r.update(start=start, status=status, reasons=reasons, power_w=power, clear_w=clear, model_w=model, kt=kt,
+             bound_w=bound)
     return [r[c] for c in db.COLUMNS]
 
 
@@ -127,8 +128,8 @@ def _hours(day: int, month: int = 6, **kw) -> list[list]:
 
 def test_summary_weighs_by_clear_sky_energy_and_names_anomalies():
     rows = []
-    for d in range(1, 21):
-        rows += _hours(d, status="used")
+    for d in range(1, 21):                        # used hours 10 % off the model: none within 5 %
+        rows += _hours(d, status="used", power=450.0)
     for d in range(21, 25):                       # "battery full" while delivering the model: did not limit
         rows += _hours(d, status="left_out", reasons="battery_full", power=500.0, model=505.0)
     rows += _hours(25, status="left_out", reasons="no_output", power=0.0, kt=0.8)        # bright: an outage
@@ -145,12 +146,17 @@ def test_summary_weighs_by_clear_sky_energy_and_names_anomalies():
     assert keys["unexplained"]["day"] == noon
 
 
-def test_a_snow_window_of_seven_days_and_lower_bounds_stand_out():
+def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     rows = []
-    for d in range(1, 9):
-        rows += _hours(d, month=1, status="left_out", reasons="snow", power=50.0, kt=0.2)
-    for d in range(9, 20):
+    for d in range(1, 4):                         # covered under a bright sky after snowfall: snow, not an outage
+        rows += _hours(d, month=1, status="left_out", reasons="no_output snow", power=0.0, kt=0.8)
+    for d in range(4, 20):                        # a configured limit is no anomaly
         rows += _hours(d, month=1, status="lower_bound", reasons="at_limit")
+    for d in range(20, 22):                       # above the clear-sky bound of the learned model in every hour
+        rows += _hours(d, month=1, status="used", power=700.0, bound=600.0)
     out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    assert out["shares"]["snow"] > 0 and "no_output" not in out["shares"]
     keys = {a["key"]: a for a in out["anomalies"]}
-    assert keys["long_snow"]["count"] == 1 and keys["often_at_limit"]["value"] == 1.0
+    assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
+    assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": []}

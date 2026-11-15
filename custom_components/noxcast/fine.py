@@ -7,6 +7,8 @@ Assistant keeps 5-minute statistics for only about ten days, so Noxcast keeps it
 sharper shading later. The size stays bounded however long the integration runs: only periods with
 the sun in front of the modules, whole watts, and only the last FINE_DAYS days (three times the same
 season, e.g. to see a tree grow). About 0.5 kB per sensor and day, some 0.5 MB per sensor in all.
+The power sensors of batteries whose charge maximum may curtail PV are kept too, while the sun is up:
+their 5-minute means tell a battery at its maximum from a spike (installation.charge_hours).
 """
 from __future__ import annotations
 

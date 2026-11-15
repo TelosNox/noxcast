@@ -301,10 +301,12 @@ under a shared output limit, the batteries of the other subsystems. A battery ou
 the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so it
 curtails the same with it or without. A battery counts as full from *Battery considered full at*, or 2 points below
 its upper limit if that is lower (with a limit from an entity, its current value). A battery that charges at its
-maximum power (hourly peak from 95 % of *Max charge power*) takes no more either: where the rest cannot go out (the
-system covers the house load or an output limit holds), learning counts these hours as "at least this
-much", like a fixed limit. Leaving them out would drop just the bright hours. This needs the battery power sensor and
-the maximum charge power.
+maximum power takes no more either: where the rest cannot go out (the system covers the house load or an output limit
+holds), learning counts these hours as "at least this much", like a fixed limit. Leaving them out would drop just the
+bright hours. Noxcast reads the charge power from means, since a single reading of a few seconds can lie far above
+what the battery takes: an hour counts when one of its 5-minute means reaches 95 % of *Max charge power*. Noxcast keeps
+these 5-minute means in its own archive; hours from before have only their hourly mean, which counts from 85 %, and
+an hour between 70 and 85 % is left out of learning. This needs the battery power sensor and the maximum charge power.
 
 ### 6. Options (⋮ → Configure)
 

@@ -93,6 +93,9 @@ class PvHistory:
     # per array the hour starts in which its system may have held PV back for a low load or at the household's
     # feed-in limit (installation.held_hours)
     held: dict[str, frozenset[float]] = field(default_factory=dict)
+    # per array the hour starts known only by an hourly mean in which a battery of its systems may have charged at
+    # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
+    unsure: dict[str, frozenset[float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -174,7 +177,7 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
-                     air or None, satellite or None, history.full, history.charge, history.held)
+                     air or None, satellite or None, history.full, history.charge, history.held, history.unsure)
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
@@ -205,7 +208,8 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
-                             valid_since=arr.valid_since, full=history.full.get(arr.subentry_id, frozenset()))
+                             valid_since=arr.valid_since,
+                             full=history.full.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset()))
     if keep is not None:
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
@@ -284,7 +288,7 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
         fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
                                full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
-                               | history.held.get(sid, frozenset()),
+                               | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset()),
                                limited)
         if history.satellite_ghi:
             fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp,

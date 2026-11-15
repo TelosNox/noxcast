@@ -84,7 +84,7 @@ def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusio
     ceiling, or one a system following the load may have held back, is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     full = (history.full.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
-            | history.held.get(arr.subentry_id, frozenset()))
+            | history.held.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset()))
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
                                valid_since=arr.valid_since, full=full))
 

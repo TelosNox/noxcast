@@ -161,6 +161,11 @@ For the dashboard: *Add card* → *Noxcast*.
   `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
+- **What did learning see?** *Learned* → *Data basis* shows per array what the daylight hours were used for
+  (used, lower bound, battery full, snow, no output, excluded), weighted by clear-sky energy, overall and per month,
+  and points at anomalies with their most telling day: "battery full" while the array delivered what the model
+  expects, often at a limit, clearly above clear sky, snow windows that ran 7 days, days without output under a
+  bright sky, and days below 70 % of the model that no filter explains. Renewed by every nightly learning run.
 - **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an
   array as CSV (*Hours as CSV*, for admins), times in UTC. `status` is `used`, `lower_bound` (`at_limit`,
   `charging_max`, `held_back`: the real output was at least as high) or `left_out`, and `reasons` names all reasons:

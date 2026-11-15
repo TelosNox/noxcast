@@ -112,3 +112,45 @@ def test_redaction_keeps_the_structure_and_removes_what_identifies_a_home():
     assert out["options"]["satellite_url"].endswith("open-meteo.com/v1/archive")   # the public default stays
     assert out["note"] == "open-meteo.com answered 429" and out["version"] == "2026.10.1"
     assert _privacy().scan(json.dumps(out, indent=1)) == []
+
+
+def _row(start: str, status: str, reasons: str = "", power: float = 500.0, clear: float = 800.0,
+         model: float | None = 500.0, kt: float | None = 0.6) -> list:
+    r = dict.fromkeys(db.COLUMNS)
+    r.update(start=start, status=status, reasons=reasons, power_w=power, clear_w=clear, model_w=model, kt=kt)
+    return [r[c] for c in db.COLUMNS]
+
+
+def _hours(day: int, month: int = 6, **kw) -> list[list]:
+    return [_row(f"2026-{month:02d}-{day:02d}T{h:02d}:00:00+00:00", **kw) for h in range(8, 16)]
+
+
+def test_summary_weighs_by_clear_sky_energy_and_names_anomalies():
+    rows = []
+    for d in range(1, 21):
+        rows += _hours(d, status="used")
+    for d in range(21, 25):                       # "battery full" while delivering the model: did not limit
+        rows += _hours(d, status="left_out", reasons="battery_full", power=500.0, model=505.0)
+    rows += _hours(25, status="left_out", reasons="no_output", power=0.0, kt=0.8)        # bright: an outage
+    rows += _hours(26, status="used", power=200.0)                                       # 40 % of the model
+    rows += [_row("2026-06-27T12:00:00+00:00", "left_out", "before_use")]                # not data quality
+    rows += _hours(27, status="used", power=40.0, clear=50.0, model=40.0)                # too dark for the rules
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    assert out["shares"]["battery"] == round(4 * 8 * 800 / (26 * 8 * 800 + 8 * 50), 3)  # per hour: 800 or 50
+    assert set(out["months"]) == {"2026-06"}
+    keys = {a["key"]: a for a in out["anomalies"]}
+    assert set(keys) == {"battery_matches", "bright_outage", "unexplained"}
+    assert keys["battery_matches"]["count"] == 4 and keys["unexplained"]["value"] == 0.4
+    noon = ln.noons(SITE, [model.solar_day(SITE, datetime(2026, 6, 26, 12, tzinfo=timezone.utc).timestamp())])[0]
+    assert keys["unexplained"]["day"] == noon
+
+
+def test_a_snow_window_of_seven_days_and_lower_bounds_stand_out():
+    rows = []
+    for d in range(1, 9):
+        rows += _hours(d, month=1, status="left_out", reasons="snow", power=50.0, kt=0.2)
+    for d in range(9, 20):
+        rows += _hours(d, month=1, status="lower_bound", reasons="at_limit")
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    keys = {a["key"]: a for a in out["anomalies"]}
+    assert keys["long_snow"]["count"] == 1 and keys["often_at_limit"]["value"] == 1.0

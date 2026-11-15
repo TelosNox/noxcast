@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from . import arraycheck as ac
 from . import explain
 from . import learning as ln
-from .model import LearnedArray, WeatherHour, clearsky_hour, clearsky_weather
+from .model import LearnedArray, WeatherHour, clearsky_hour, clearsky_weather, solar_day
 from .solar import Site
 
 VERSION = 1
@@ -86,3 +86,139 @@ def to_csv(table: dict) -> str:
     for row in table["rows"]:
         writer.writerow(["" if v is None else int(v) if isinstance(v, bool) else v for v in row])
     return out.getvalue()
+
+
+# ---------------------------------------------------------------------------- summary for the panel
+
+SUMMARY_VERSION = 1
+CATEGORIES = ("used", "lower_bound", "battery", "snow", "no_output", "excluded", "other")
+_LEFT = (("excluded", {"excluded"}), ("no_output", {"no_output"}), ("snow", {"snow"}),
+         ("battery", {"soc_full", "battery_full", "maybe_charging"}))
+LIT_SHARE = 0.1             # an hour counts for a rule from this share of the peak power on (model or clear sky)
+MATCH = 0.05                # "battery full" although the power is within this of the model
+MATCH_DAYS = 3              # ... on at least this many days (two such hours each), and
+MATCH_SHARE = 0.3           # ... for at least this share of the "battery full" hours with a model
+LIMIT_SHARE = 0.1           # lower bounds above this share of the counted energy
+ABOVE_CLEAR = 1.15          # power above this many times the clear-sky output of the learned model
+ABOVE_HOURS = 5
+SNOW_RUN_DAYS = 7           # a snow window this long ended at its longest (model.SNOW_MAX_DAYS), not by recovery
+BRIGHT_KT = 0.5             # a day without output under a sky this clear: an outage rather than snow
+DAY_RATIO = 0.7             # a used day at less than this share of the model, which no filter explains
+DAY_MIN_H = 0.5             # ... with a model day of at least this many hours at peak power
+
+
+def category(status: str, reasons: str) -> str | None:
+    """The one category a row counts in: its status, or for a left-out row its main reason; None before the array
+    was in use (commissioning is not data quality)."""
+    if status != LEFT_OUT:
+        return status
+    names = set(reasons.split())
+    if "before_use" in names:
+        return None
+    return next((cat for cat, keys in _LEFT if names & keys), "other")
+
+
+def summary(site: Site, table: dict, peak_w: float) -> dict:
+    """What learning saw, for the panel: shares of the clear-sky energy per category (whole history and per month,
+    UTC) and the anomalies, each with a count and its most telling day (UTC time of solar noon).
+
+    Weighted by clear_w, not by hours: a June noon left out costs learning far more than a December edge hour.
+    """
+    cols = table["columns"]
+    rows = [dict(zip(cols, r)) for r in table["rows"]]
+    energy = dict.fromkeys(CATEGORIES, 0.0)
+    months: dict[str, dict[str, float]] = {}
+    days: dict[int, list[dict]] = {}
+    for r in rows:
+        cat = category(r["status"], r["reasons"])
+        if cat is None:
+            continue
+        r["cat"] = cat
+        clear = r["clear_w"] or 0.0
+        energy[cat] += clear
+        month = months.setdefault(r["start"][:7], dict.fromkeys(CATEGORIES, 0.0))
+        month[cat] += clear
+        days.setdefault(_solar_day(site, r["start"]), []).append(r)
+
+    def shares(e: dict[str, float]) -> dict[str, float]:
+        total = sum(e.values())
+        return {k: round(v / total, 3) for k, v in e.items() if v > 0} if total > 0 else {}
+
+    return {"version": SUMMARY_VERSION, "hours": sum(len(v) for v in days.values()), "shares": shares(energy),
+            "months": {m: shares(e) for m, e in sorted(months.items())},
+            "anomalies": _anomalies(site, days, energy, peak_w)}
+
+
+def _solar_day(site: Site, iso: str) -> int:
+    return solar_day(site, datetime.fromisoformat(iso).timestamp())
+
+
+def _anomalies(site: Site, days: dict[int, list[dict]], energy: dict[str, float], peak_w: float) -> list[dict]:
+    lit = LIT_SHARE * peak_w
+    noon = lambda d: ln.noons(site, [d])[0]                       # noqa: E731
+    out = []
+
+    # "battery full", but the array delivered what the model says: the battery did not hold it back
+    with_model = matched = 0
+    per_day: dict[int, int] = {}
+    for d, rs in days.items():
+        for r in rs:
+            if r["cat"] == "battery" and (r["model_w"] or 0) >= lit:
+                with_model += 1
+                if abs(r["power_w"] / r["model_w"] - 1) <= MATCH:
+                    matched += 1
+                    per_day[d] = per_day.get(d, 0) + 1
+    good = {d: n for d, n in per_day.items() if n >= 2}
+    if len(good) >= MATCH_DAYS and matched >= MATCH_SHARE * with_model:
+        out.append({"key": "battery_matches", "count": len(good), "value": round(matched / with_model, 2),
+                    "day": noon(max(good, key=lambda d: (good[d], d)))})
+
+    counted = energy["used"] + energy["lower_bound"]
+    if counted > 0 and energy["lower_bound"] >= LIMIT_SHARE * counted:
+        busiest = max(days, key=lambda d: (sum(r["cat"] == "lower_bound" for r in days[d]), d))
+        out.append({"key": "often_at_limit", "count": sum(any(r["cat"] == "lower_bound" for r in rs)
+                                                          for rs in days.values()),
+                    "value": round(energy["lower_bound"] / counted, 2), "day": noon(busiest)})
+
+    above = [(r["power_w"] / r["clear_w"], d) for d, rs in days.items() for r in rs
+             if r["cat"] in ("used", "lower_bound") and (r["clear_w"] or 0) >= lit
+             and r["power_w"] > ABOVE_CLEAR * r["clear_w"]]
+    if len(above) >= ABOVE_HOURS:
+        ratio, d = max(above)
+        out.append({"key": "above_clear", "count": len(above), "value": round(ratio, 2), "day": noon(d)})
+
+    snowy = sorted(d for d, rs in days.items() if any(r["cat"] == "snow" for r in rs))
+    runs, start = [], None
+    for i, d in enumerate(snowy):
+        if start is None:
+            start = d
+        if i + 1 == len(snowy) or snowy[i + 1] != d + 1:
+            if d - start + 1 >= SNOW_RUN_DAYS:
+                runs.append(start)
+            start = None
+    if runs:
+        out.append({"key": "long_snow", "count": len(runs), "value": None, "day": noon(runs[-1])})
+
+    bright = []
+    for d, rs in days.items():
+        kts = [r["kt"] for r in rs if r["cat"] == "no_output" and r["kt"] is not None and (r["clear_w"] or 0) >= lit]
+        if kts and sum(kts) / len(kts) >= BRIGHT_KT:
+            bright.append((sum(kts) / len(kts), d))
+    if bright:
+        kt, d = max(bright)
+        out.append({"key": "bright_outage", "count": len(bright), "value": round(kt, 2), "day": noon(d)})
+
+    worst = []
+    for d, rs in days.items():
+        hours = [r for r in rs if r["cat"] == "used" and r["model_w"] is not None]
+        model = sum(r["model_w"] for r in hours)
+        # only whole days: a day that is mostly left out says nothing about the model
+        if len(hours) < 0.8 * len(rs) or model < DAY_MIN_H * peak_w:
+            continue
+        ratio = sum(r["power_w"] for r in hours) / model
+        if ratio < DAY_RATIO:
+            worst.append((ratio, d))
+    if worst:
+        ratio, d = min(worst)
+        out.append({"key": "unexplained", "count": len(worst), "value": round(ratio, 2), "day": noon(d)})
+    return out

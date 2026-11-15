@@ -437,14 +437,19 @@ def test_overview_entry():
     d = data()
     status = {"running": False, "last": None, "arrays": []}
     sensors = [("sensor.pv1", "pv", "Roof", "1200"), ("sensor.pv2", "pv", "Roof", "unavailable"),
-               ("sensor.pv3", "pv", "Wall", None)]
+               ("sensor.pv3", "pv", "Wall", None),
+               # an idle appliance has no remaining time; only an unreachable one is a note
+               ("sensor.rest_w", "remaining_time", "Washer", "unknown"), ("sensor.run_w", "elapsed_time", "Washer", "unknown"),
+               ("sensor.rest_d", "remaining_time", "Dryer", "unavailable"), ("sensor.load", "house_load", "House", "unknown")]
     out = views.overview_entry(arrays(), d, {}, 3, DAY, day_start, {}, status, sensors,
                                {"b1": {"soc_sensor": "sensor.soc", "capacity": 5}}, "sensor.rest")
     assert list(out) == ["today", "day_end", "days", "battery", "load", "consumers", "accuracy", "status", "live"]
     assert out["day_end"] == A + 86400 and [x["date"] for x in out["days"]] == ["2026-07-01", "2026-07-02", "2026-07-03"]
     assert out["battery"] is None and out["load"] is None and out["consumers"] == []
-    assert out["status"] == {**status, "sensors": 3, "unavailable": [
-        {"entity_id": "sensor.pv2", "role": "pv", "owner": "Roof"}, {"entity_id": "sensor.pv3", "role": "pv", "owner": "Wall"}]}
+    assert out["status"] == {**status, "sensors": 7, "unavailable": [
+        {"entity_id": "sensor.pv2", "role": "pv", "owner": "Roof"}, {"entity_id": "sensor.pv3", "role": "pv", "owner": "Wall"},
+        {"entity_id": "sensor.rest_d", "role": "remaining_time", "owner": "Dryer"},
+        {"entity_id": "sensor.load", "role": "house_load", "owner": "House"}]}
     assert out["live"] == {"pv": ["sensor.pv1", "sensor.pv2", "sensor.pv3"], "soc": [{"entity": "sensor.soc", "capacity": 5000.0}],
                            "remaining": "sensor.rest"}
     empty = views.overview_entry(arrays(), None, {}, 3, DAY, day_start, {}, status, [], {}, None)

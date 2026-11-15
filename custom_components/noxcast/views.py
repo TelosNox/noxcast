@@ -527,6 +527,12 @@ def day_pv(view: dict) -> Series:
 ACCURACY_DAYS = 14          # the overview's accuracy figure: the shortest range of the accuracy view
 SEARCH_DAYS = 7             # how far before that range the last complete day may lie
 UNAVAILABLE = (None, "unavailable", "unknown")
+# an appliance that is not running has no remaining or elapsed time: "unknown" is its normal idle state, not a fault
+IDLE_UNKNOWN_ROLES = ("remaining_time", "elapsed_time")
+
+
+def _unavailable(role: str, state: str | None) -> bool:
+    return state in UNAVAILABLE and not (state == "unknown" and role in IDLE_UNKNOWN_ROLES)
 
 
 def _total(per_array: dict[str, Series], ids: list[str]) -> Series:
@@ -620,7 +626,7 @@ def overview_entry(arrays: dict, data, consumers: dict, days: int, today: date, 
     out["consumers"] = overview_consumers(consumers, data.plan if data is not None else {})
     out["accuracy"] = recent_accuracy(archive, arrays, today)
     out["status"] = {**status, "sensors": len(sensors), "unavailable": [{"entity_id": e, "role": role, "owner": owner}
-                                               for e, role, owner, state in sensors if state in UNAVAILABLE]}
+                                               for e, role, owner, state in sensors if _unavailable(role, state)]}
     out["live"] = {"pv": [s for arr in arrays.values() for s in arr.sensors],
                    "soc": [{"entity": e, "capacity": c} for e, c in soc_capacities(batteries).items()],
                    "remaining": remaining}

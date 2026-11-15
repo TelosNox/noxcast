@@ -172,7 +172,8 @@ entry: opening it shows a menu with everything in it, and each item opens its fo
 
 The household holds the house load, the grid and the *feed-in rule*. Inside it sit the systems: a system is what
 delivers through one output to the house. It holds PV arrays and at most one battery, or subsystems: devices that
-one control coordinates, such as the units of an EcoFlow Stream.
+one control coordinates, such as the units of an EcoFlow Stream. The household is the Noxcast entry itself: change it
+on the integration page with ⋮ → *Reconfigure*.
 
 Rules go from the outside in: a subsystem follows the regulation and feed-in of its system, a system follows the
 household's feed-in rule. Only what differs is entered, as a deviation. Limits hold at every level, the tighter one

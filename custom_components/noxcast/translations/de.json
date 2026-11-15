@@ -145,7 +145,7 @@
             },
             "deviation": {
               "name": "Abweichung von der Einspeisevorgabe",
-              "description": "Leer: Das System folgt der Einspeisevorgabe des Haushalts. Nur eintragen, was abweicht: Ein Wechselrichter mit voller Leistung, der keine Nulleinspeisung einhalten kann, speist den Rest trotzdem ein; ein Gerät, das bei vollem Akku weiter nur den Verbrauch deckt, speist nie ein.",
+              "description": "Leer: Das System folgt der Einspeisevorgabe des Haushalts (Seite der Integration → ⋮ → Neu konfigurieren). Nur eintragen, was abweicht: Ein Wechselrichter mit voller Leistung, der keine Nulleinspeisung einhalten kann, speist den Rest trotzdem ein; ein Gerät, das bei vollem Akku weiter nur den Verbrauch deckt, speist nie ein.",
               "data": {
                 "own_feed_in": "Einspeisung"
               },

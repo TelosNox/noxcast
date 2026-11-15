@@ -1116,6 +1116,7 @@ class NoxcastPanel extends HTMLElement {
   }
 
   _dayDate(day) {
+    if (typeof day !== "string") return "";
     const [y, m, d] = day.split("-").map(Number);
     return new Date(y, m - 1, d).toLocaleDateString(this._lang);
   }

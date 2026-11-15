@@ -98,9 +98,6 @@ class PvHistory:
     # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
     snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
-    # 5-minute means (W) of the power sensors where they are kept (fine.py): they tell an hour at a limit from a
-    # short peak at it (floor_hours)
-    fine: dict[str, Series] | None = None
     # left_out per (array, period), computed once: learning, backtest and hold-out of a night ask for it again
     memo: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -202,11 +199,10 @@ def floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) 
     """Periods in which a sensor of the array reached its fixed limit, or the arrays of a system without a battery
     reached its output limit together: the array's power then is only a lower bound (curtailment.at_limit).
 
-    An hour with kept 5-minute means (history.fine) counts when one of them is at the limit, as for a battery at its
-    charge maximum (installation.charge_hours): a peak of a minute cuts little. Other periods go by their maximum,
-    the mean where there is none; with site, an hour whose mean reached LIMIT_FREE_SHARE of free modules under the
-    satellite sky and stayed below LIMIT_MEAN_SHARE of the limit counts as measured although its maximum touched
-    the limit. The sum of period maxima is at least
+    A period goes by its maximum, the mean where there is none. With site, an hour whose mean stayed below
+    LIMIT_MEAN_SHARE of the limit and reached LIMIT_FREE_SHARE of free modules under the satellite sky counts as
+    measured although its maximum touched the limit: a peak of a minute cuts little. The 5-minute means are no
+    better judge: passing clouds cut within each 5 minutes without bringing their mean to the limit. The sum of period maxima is at least
     the maximum of the sum, so a period a little below a shared limit may count as at it: it becomes a lower bound
     where it was exact."""
     def peaks(sensors: tuple[str, ...]) -> dict[float, tuple[float, float]]:
@@ -219,18 +215,6 @@ def floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) 
                            if mean is not None and (peak := high.get(t) if high.get(t) is not None else mean) is not None})
         common = set(series[0]).intersection(*series[1:]) if series else set()
         return {t: (sum(p[t][0] for p in series), sum(p[t][1] for p in series)) for t in common}
-
-    def fine_peaks(sensors: tuple[str, ...]) -> dict[float, float]:
-        """Hour start -> the highest 5-minute mean (summed over the sensors) in it."""
-        fine = history.fine or {}
-        series = [fine.get(s) or {} for s in sensors]
-        common = set(series[0]).intersection(*series[1:]) if series else set()
-        out: dict[float, float] = {}
-        for t in common:
-            if all(p[t] is not None for p in series):
-                hour, v = t - t % HOUR, sum(p[t] for p in series)
-                out[hour] = max(out.get(hour, v), v)
-        return out
 
     free_ok: dict[float, bool] = {}
     summed: Series = {}
@@ -246,13 +230,8 @@ def floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) 
 
     out: set[float] = set()
     for sensors, limit in [((s,), w) for s, w in arr.limits] + list(arr.caps):
-        fine = fine_peaks(sensors)
         for t, (peak, mean) in peaks(sensors).items():
-            if t in fine:
-                hit = ct.at_limit(fine[t], limit)
-            else:
-                hit = ct.at_limit(peak, limit) and (mean >= LIMIT_MEAN_SHARE * limit or not near_free(t))
-            if hit:
+            if ct.at_limit(peak, limit) and (mean >= LIMIT_MEAN_SHARE * limit or not near_free(t)):
                 out.add(t)
     return out
 

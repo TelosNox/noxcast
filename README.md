@@ -499,8 +499,8 @@ temperature turn this irradiance into the clear-sky power of the array.
   Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,
   they would make efficiency and midday shade look too low; left out, only the clouded and shaded ones of the sunny
   hours would remain. A short peak at the limit, as at the edge of a cloud, does not count: an hour stays as measured
-  when its 5-minute means stay below the limit, or, before the 5-minute archive, when its mean stayed below 80 % of
-  the limit and reached 90 % of what the modules give unshaded under the satellite sky. Sun positions where most clear hours were at the limit show no shade on the map (marked *at
+  when its mean stayed below 80 % of the limit and reached 90 % of what the modules give unshaded under the
+  satellite sky, since then the limit can have cut little. Sun positions where most clear hours were at the limit show no shade on the map (marked *at
   the power limit*): shade there is visible only once it pushes the power below the limit. With a limit far below
   what the modules deliver, the efficiency comes from low sun and morning or evening hours, where the model is
   least exact, and may be a few percent off; the limit caps the forecast on sunny hours anyway. Where even those

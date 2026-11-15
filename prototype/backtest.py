@@ -7,7 +7,8 @@ JSON. To compare two model versions, run this script from both checkouts on the 
         --satellite data/satellite.json --temperature data/temperature.json --archive data/archive.json
 
 --config      as config.example.json: location (with timezone), arrays and curtailment; per array optionally
-              id (the array id used in the archive), heating, temp_coeff (per K), valid_since (ISO date) and
+              id (the array id used in the archive), heating, temp_coeff (per K), valid_since (ISO date),
+              limits ({sensor: fixed limit in W}, e.g. the inputs of an inverter) and
               extra ([{tilt, azimuth, peak_w}]; peak_w of the array is that of its first plane).
 --statistics  recorder/statistics_during_period answer: {sensor: [{start (ms), mean, min, max}]}, power in W.
 --satellite   Open-Meteo archive answer (or its "hourly" block) with shortwave_radiation; optional.
@@ -15,7 +16,9 @@ JSON. To compare two model versions, run this script from both checkouts on the 
               (cm, for the snow filter); optional.
 --archive     the day-ahead archive, as stored ({"days": ...}) or plain; optional.
 --fine        the 5-minute archive, as stored (.storage/noxcast.<entry id>.fine) or plain {"days": ...}; optional.
+              Its means of limited sensors tell an hour at a limit from a short peak at it, as in the integration.
               Adds "fine_holdout": would learning from it be better? Takes much longer than the rest.
+--no-fine-holdout  use --fine for the limits only, without "fine_holdout".
 --now         ISO time of the run, the reference for ageing; default: the last hour of the statistics.
 --scorecard   print the hold-out scorecard as a Markdown table instead of the JSON, for a pull request.
 
@@ -39,6 +42,7 @@ _pkg.__path__ = [str(PKG)]
 sys.modules["noxcast"] = _pkg
 archive = importlib.import_module("noxcast.archive")
 backtest = importlib.import_module("noxcast.backtest")
+fn = importlib.import_module("noxcast.fine")
 ln = importlib.import_module("noxcast.learning")
 model = importlib.import_module("noxcast.model")
 solar = importlib.import_module("noxcast.solar")
@@ -74,7 +78,9 @@ def _array(cfg: dict, tz: ZoneInfo) -> tuple[str, ln.ArrayConfig]:
     since = cfg.get("valid_since")
     valid_since = datetime.combine(date.fromisoformat(since), datetime.min.time(), tz).timestamp() if since else None
     sid = cfg.get("id", cfg["name"])
-    return sid, ln.ArrayConfig(sid, cfg["name"], tuple(cfg["sensors"]), geometry, valid_since, cfg.get("temp_coeff"))
+    limits = tuple((s, float(w)) for s, w in sorted((cfg.get("limits") or {}).items()))
+    return sid, ln.ArrayConfig(sid, cfg["name"], tuple(cfg["sensors"]), geometry, valid_since, cfg.get("temp_coeff"),
+                               limits)
 
 
 def _cell(s: dict) -> str:
@@ -106,6 +112,7 @@ def main() -> None:
     parser.add_argument("--temperature")
     parser.add_argument("--archive")
     parser.add_argument("--fine")
+    parser.add_argument("--no-fine-holdout", action="store_true")
     parser.add_argument("--now")
     parser.add_argument("--scorecard", action="store_true")
     args = parser.parse_args()
@@ -123,8 +130,14 @@ def main() -> None:
     instant = _hourly(args.temperature, "temperature_2m")
     air = {t: (v + instant[t + 3600]) / 2 for t, v in instant.items() if t + 3600 in instant}
     snowfall = {t - 3600: max(v, 0.0) for t, v in _snowfall(args.temperature).items()}
+    fine: dict = {}
+    if args.fine:
+        stored_fine = json.loads(pathlib.Path(args.fine).read_text(encoding="utf-8"))
+        fine = stored_fine.get("data", stored_fine).get("days", {})
+    limited = {s for a in arrays.values() if a.limits for s in a.sensors}
     history = ln.PvHistory(_statistics(raw, "mean"), _statistics(raw, "min"), _statistics(raw, "max"), {},
-                           ln.highest(socs), air or None, satellite or None, snowfall=snowfall or None)
+                           ln.highest(socs), air or None, satellite or None, snowfall=snowfall or None,
+                           fine={s: fn.series(fine, s) for s in limited} if fine else None)
     last = max(t for s in arrays.values() for sensor in s.sensors for t in history.power.get(sensor, {}))
     now = datetime.fromisoformat(args.now).timestamp() if args.now else last + 3600
     soc_full = float(curtailment.get("soc_full_pct", 95))
@@ -138,9 +151,7 @@ def main() -> None:
     learned = ln.learn_arrays(site, arrays, history, now, soc_full, exclusions)
     learning = time.monotonic() - start
     result = backtest.run(site, arrays, learned, history, days, now, soc_full, exclusions, tz)
-    if args.fine:
-        fine = json.loads(pathlib.Path(args.fine).read_text(encoding="utf-8"))
-        fine = fine.get("data", fine).get("days", {})
+    if args.fine and not args.no_fine_holdout:
         result["fine_holdout"] = backtest.fine_holdout(site, arrays, history, fine, now, soc_full, exclusions, tz)
     names = {sid: arr.name for sid, arr in arrays.items()}
     if args.scorecard:

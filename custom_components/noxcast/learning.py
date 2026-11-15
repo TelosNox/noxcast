@@ -20,8 +20,8 @@ from . import fine as fn
 from . import load as lf
 from . import plan as pl
 from .model import (
-    EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
-    sample_reasons, snow_windows, solar_date, solar_day, steady_hours, usable_samples,
+    EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather,
+    forecast, learn, measured_forecast, sample_reasons, snow_windows, solar_date, solar_day, steady_hours, usable_samples,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
@@ -98,6 +98,9 @@ class PvHistory:
     # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
     snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
+    # 5-minute means (W) of the power sensors where they are kept (fine.py): they tell an hour at a limit from a
+    # short peak at it (floor_hours)
+    fine: dict[str, Series] | None = None
     # left_out per (array, period), computed once: learning, backtest and hold-out of a night ask for it again
     memo: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -185,25 +188,83 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
                      history.snowfall)
 
 
-def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
-    """Periods in which a sensor of the array reached its fixed limit (curtailment.at_limit on the period maximum,
-    the mean where there is none), or the arrays of a system without a battery reached its output limit together:
-    the array's power then is only a lower bound. The sum of period maxima is at least the maximum of the sum, so
-    a period a little below a shared limit may count as at it: it becomes a lower bound where it was exact."""
-    def peaks(sensor: str) -> dict[float, float]:
-        factor = history.factors.get(sensor, 1.0)
-        high = history.power_max.get(sensor, {})
-        return {t: peak * factor for t, mean in history.power.get(sensor, {}).items()
-                if (peak := high.get(t) if high.get(t) is not None else mean) is not None}
+# An hour whose maximum touched a limit, but whose mean reached this share of what free modules give under the
+# satellite sky (geometry, default efficiency, no learned shade): the limit can have cut little, since what it cut
+# is missing from the mean. Typical of cloud edges, whose light peaks for a minute above the limit. Below the share,
+# a cut and shade look the same, and the hour stays a lower bound, which is true either way.
+LIMIT_FREE_SHARE = 0.9
+# ... and whose mean at the limit stayed below this share of it: a mean near the limit is an hour spent at it, cut
+# a little every clear noon, which taken as measured would bend the efficiency down
+LIMIT_MEAN_SHARE = 0.8
+
+
+def floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) -> set[float]:
+    """Periods in which a sensor of the array reached its fixed limit, or the arrays of a system without a battery
+    reached its output limit together: the array's power then is only a lower bound (curtailment.at_limit).
+
+    An hour with kept 5-minute means (history.fine) counts when one of them is at the limit, as for a battery at its
+    charge maximum (installation.charge_hours): a peak of a minute cuts little. Other periods go by their maximum,
+    the mean where there is none; with site, an hour whose mean reached LIMIT_FREE_SHARE of free modules under the
+    satellite sky and stayed below LIMIT_MEAN_SHARE of the limit counts as measured although its maximum touched
+    the limit. The sum of period maxima is at least
+    the maximum of the sum, so a period a little below a shared limit may count as at it: it becomes a lower bound
+    where it was exact."""
+    def peaks(sensors: tuple[str, ...]) -> dict[float, tuple[float, float]]:
+        """Period start -> (maximum, mean) of the sensors' sum, in W."""
+        series = []
+        for sensor in sensors:
+            factor = history.factors.get(sensor, 1.0)
+            high = history.power_max.get(sensor, {})
+            series.append({t: (peak * factor, mean * factor) for t, mean in history.power.get(sensor, {}).items()
+                           if mean is not None and (peak := high.get(t) if high.get(t) is not None else mean) is not None})
+        common = set(series[0]).intersection(*series[1:]) if series else set()
+        return {t: (sum(p[t][0] for p in series), sum(p[t][1] for p in series)) for t in common}
+
+    def fine_peaks(sensors: tuple[str, ...]) -> dict[float, float]:
+        """Hour start -> the highest 5-minute mean (summed over the sensors) in it."""
+        fine = history.fine or {}
+        series = [fine.get(s) or {} for s in sensors]
+        common = set(series[0]).intersection(*series[1:]) if series else set()
+        out: dict[float, float] = {}
+        for t in common:
+            if all(p[t] is not None for p in series):
+                hour, v = t - t % HOUR, sum(p[t] for p in series)
+                out[hour] = max(out.get(hour, v), v)
+        return out
+
+    free_ok: dict[float, bool] = {}
+    summed: Series = {}
+
+    def near_free(t: float) -> bool:
+        if site is None or t % HOUR:
+            return False
+        if t not in free_ok:
+            if not summed:
+                summed.update(scaled_sum(history.power, arr.sensors, history.factors))
+            free_ok[t] = _near_free(site, arr, history, t, summed.get(t))
+        return free_ok[t]
 
     out: set[float] = set()
-    for sensor, limit in arr.limits:
-        out |= {t for t, v in peaks(sensor).items() if ct.at_limit(v, limit)}
-    for sensors, limit in arr.caps:
-        series = [peaks(s) for s in sensors]
-        common = set(series[0]).intersection(*series[1:]) if series else set()
-        out |= {t for t in common if ct.at_limit(sum(p[t] for p in series), limit)}
+    for sensors, limit in [((s,), w) for s, w in arr.limits] + list(arr.caps):
+        fine = fine_peaks(sensors)
+        for t, (peak, mean) in peaks(sensors).items():
+            if t in fine:
+                hit = ct.at_limit(fine[t], limit)
+            else:
+                hit = ct.at_limit(peak, limit) and (mean >= LIMIT_MEAN_SHARE * limit or not near_free(t))
+            if hit:
+                out.add(t)
     return out
+
+
+def _near_free(site: Site, arr: ArrayConfig, history: PvHistory, t: float, measured: float | None) -> bool:
+    """Whether the array's mean in hour t (measured, W) reached LIMIT_FREE_SHARE of free modules under the
+    satellite sky."""
+    ghi = (history.satellite_ghi or {}).get(t)
+    if ghi is None:
+        return False
+    free = forecast(site, arr.geometry, LearnedArray(), [WeatherHour(t, max(0.0, ghi), temp=(history.air_temp or {}).get(t))])
+    return measured is not None and free.get(t, 0.0) > 0 and measured >= LIMIT_FREE_SHARE * free[t]
 
 
 @dataclass(frozen=True)
@@ -240,10 +301,11 @@ def solar_dates(days: Collection[int]) -> list[str]:
 
 
 def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
-                  keep: Keep | None = None, skip: frozenset[float] = frozenset()
+                  keep: Keep | None = None, skip: frozenset[float] = frozenset(), site: Site | None = None
                   ) -> tuple[list[tuple[float, float]], set[float], set[float]]:
     """An array's usable (period start, mean W) samples, its steady hours and its hours at a fixed limit: what
-    learning sees. skip: hour starts left out besides (left_out)."""
+    learning sees. skip: hour starts left out besides (left_out). site: for hourly periods, to keep the hours that
+    only a short peak brought to a limit (floor_hours)."""
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
@@ -257,7 +319,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     # an hour charging at the maximum, or one in which a system following the load held PV back: every period in
     # it delivered at least what was measured
     charge = history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
-    floors = floor_hours(arr, history) | {t for t, _ in samples if t - t % HOUR in charge}
+    floors = floor_hours(arr, history, site) | {t for t, _ in samples if t - t % HOUR in charge}
     return samples, steady, floors
 
 
@@ -276,7 +338,7 @@ def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: flo
     reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors), soc=history.soc,
                              soc_full=soc_full, exclusions=exclusions, valid_since=arr.valid_since,
                              left={k: v for k, v in left.items() if v})
-    limit = floor_hours(arr, history)
+    limit = floor_hours(arr, history, site)
     bounds = {"at_limit": None, "charging_max": history.charge.get(sid, frozenset()),
               "held_back": history.held.get(sid, frozenset())}
     result = {}
@@ -298,7 +360,8 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
         _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
                         arr.name, ", ".join(missing))
     out = left_out(site, arr, history, period)
-    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep, out.hours)
+    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep, out.hours,
+                                            site if period == HOUR else None)
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
                    datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
                    limit_w=arr.limit_w)

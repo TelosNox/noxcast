@@ -9,6 +9,10 @@ breaking changes.
 
 ### Fixed
 
+- A short peak at a *Power limit*, as at the edge of a cloud, no longer turns the whole hour into "at least this
+  much" for learning. Such hours were lost for shade and efficiency on every changeable day. An hour now counts as
+  at the limit when a 5-minute mean reached it, or, for hours older than the 5-minute archive, when its mean shows
+  that the limit can have cut a noticeable part. Learning may change from the next nightly run on.
 - Snowfall in air warmer than 3 °C no longer counts as snow on the modules. The weather archive sometimes books a
   shower as snow at 7-8 °C, and learning then left out the following hours, up to the next morning, although the
   modules were free.

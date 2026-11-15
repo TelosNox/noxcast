@@ -692,6 +692,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         days = dict(self.fine)
         fine = inst.charge_power(own, await self.hass.async_add_executor_job(
             lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
+        # the PV sensors' 5-minute means tell an hour at a power limit from a short peak at it (learning.floor_hours)
+        limited = sorted({s for arr in self.arrays.values() if arr.limits or arr.caps
+                          for s in arr.sensors + tuple(x for group, _ in arr.caps for x in group)})
+        pv_fine = await self.hass.async_add_executor_job(lambda: {s: fn.series(days, s) for s in limited})
         air_temp, satellite_ghi, snowfall = await self._async_archives(start, now, record) if archives else (None, None, None)
         full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         at_charge_max = {sid: installation.charge_hours(sid, charging, fine) for sid in self.arrays}
@@ -700,7 +704,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
-                               air_temp, satellite_ghi, full, charge, held, unsure, snowfall)
+                               air_temp, satellite_ghi, full, charge, held, unsure, snowfall, fine=pv_fine or None)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 

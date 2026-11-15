@@ -507,7 +507,10 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   1 cm Schneefall (in Stunden bis 3 °C; wärmer fällt er als Regen), bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
   Reflexion. Stunden an einer *Leistungsgrenze* zählen als „mindestens so viel“: Die Module hätten mehr liefern
   können. Als Messwert genommen, ließen sie Wirkungsgrad und Mittagsschatten zu niedrig erscheinen; ohne sie blieben
-  von den sonnigen Stunden nur die bewölkten und verschatteten übrig. Sonnenstände, an denen die meisten klaren
+  von den sonnigen Stunden nur die bewölkten und verschatteten übrig. Eine kurze Spitze an der Grenze, etwa am Rand
+  einer Wolke, zählt nicht: Eine Stunde bleibt Messwert, wenn ihre 5-Minuten-Mittel unter der Grenze bleiben, oder,
+  vor dem 5-Minuten-Archiv, wenn ihr Mittel unter 80 % der Grenze blieb und 90 % dessen erreichte, was die Module
+  unverschattet unter dem Himmel des Satelliten liefern. Sonnenstände, an denen die meisten klaren
   Stunden an der Grenze lagen, zeigt die Karte ohne Schatten (markiert *an der Leistungsgrenze*): Ein Schatten ist
   dort erst zu sehen, wenn er die Leistung unter die Grenze drückt. Liegt die Grenze weit unter dem, was die Module
   liefern, kommt der Wirkungsgrad aus Stunden mit tiefer Sonne, morgens und abends, wo das Modell am ungenauesten ist,

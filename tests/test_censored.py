@@ -121,6 +121,26 @@ def test_floor_hours_from_the_period_maximum():
     assert both.limit_w == 199_300.0
 
 
+def test_a_short_peak_at_the_limit_keeps_the_hour_as_measured():
+    noon = START + 180 * 86400 + 11 * 3600                   # end of June, around solar noon
+    ghi = 0.6 * model.clearsky_weather(SITE, noon).ghi       # broken clouds
+    free = model.forecast(SITE, GEO, model.LearnedArray(), [model.WeatherHour(noon, ghi)])[noon]
+
+    def floors(mean: float, limit: float = 1.3 * free, fine: dict | None = None, site=SITE) -> set[float]:
+        history = ln.PvHistory(power={"a": {noon: mean}}, power_min={}, power_max={"a": {noon: limit}}, factors={},
+                               soc={}, satellite_ghi={noon: ghi}, fine=fine)
+        return ln.floor_hours(ln.ArrayConfig("x", "X", ("a",), GEO, None, limits=(("a", limit),)), history, site)
+
+    assert floors(0.95 * free) == set()                      # a cloud edge peaked at the limit, the mean lacks nothing
+    assert floors(0.6 * free) == {noon}                      # cut or shade: only "at least"
+    assert floors(0.95 * free, limit=free) == {noon}         # a mean near the limit: an hour spent at it
+    assert floors(0.95 * free, site=None) == {noon}          # without the sky (5-minute periods): as before
+    steps = [noon + k * 300 for k in range(12)]
+    short = {"a": {t: (1.3 * free if k == 3 else 0.6 * free) for k, t in enumerate(steps)}}
+    assert floors(0.6 * free, fine=short) == {noon}          # a 5-minute mean at the limit: cut
+    assert floors(0.6 * free, fine={"a": {t: 0.6 * free for t in steps}}) == set()   # its 5-minute means stay below
+
+
 def test_cells_at_the_limit_are_marked_in_the_image():
     learned = model.LearnedArray(cells={"18,10": 1.0, "17,10": 0.5}, limit_cells=["18,10"], learned_at=START)
     svg = visual.render_shading_map(SITE, learned, set(), date(2026, 6, 1), "Roof", "en", GEO)

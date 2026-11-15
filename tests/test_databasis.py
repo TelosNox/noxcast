@@ -96,15 +96,19 @@ def test_redaction_keeps_the_structure_and_removes_what_identifies_a_home():
                     "satellite_url": "https://satellite-api.open-meteo.com/v1/archive"},
         "arrays": {"x": {"sensors": ["sensor.pv1", "sensor.pv10"], "latitude": 48.1234}},       # privacy-ok
         "limits": {"detected": {"sensor.pv1": {"w": 600}}},
-        "archive_errors": ["sensor.pv1 has no statistics; http://my.duckdns.org/x refused"],   # privacy-ok
-        "note": "open-meteo.com answered 429",
+        "archive_errors": ["sensor.pv1 has no statistics; http://my.duckdns.org/x refused",     # privacy-ok
+                           "my.duckdns.org answered 500", "10.0.0.7: ClientConnectorError"],    # privacy-ok
+        "weather_url": "https://api.open-meteo.com/v1/forecast?apikey=xyz&latitude=48.12",     # privacy-ok
+        "note": "open-meteo.com answered 429", "version": "2026.10.1",
     }
     out = rd.redact(diag)
     text = json.dumps(out)
-    assert not any(s in text for s in ("home_battery", "house_power", "pv1", "192.168", "duckdns", "abc", "48.1"))
+    assert not any(s in text for s in ("home_battery", "house_power", "pv1", "192.168", "duckdns", "abc", "48.1", "10.0.0.7"))  # privacy-ok
     pv1, pv10 = out["arrays"]["x"]["sensors"]
     assert pv1 != pv10 and out["limits"]["detected"] == {pv1: {"w": 600}}         # the same sensor, the same alias
-    assert out["archive_errors"] == [f"{pv1} has no statistics; {rd.REDACTED} refused"]
+    assert out["archive_errors"] == [f"{pv1} has no statistics; {rd.REDACTED} refused", f"{rd.REDACTED} answered 500",
+                                     f"{rd.REDACTED}: ClientConnectorError"]
+    assert out["weather_url"] == "https://api.open-meteo.com/v1/forecast"        # no query: a key may sit in it
     assert out["options"]["satellite_url"].endswith("open-meteo.com/v1/archive")   # the public default stays
-    assert out["note"] == "open-meteo.com answered 429"
+    assert out["note"] == "open-meteo.com answered 429" and out["version"] == "2026.10.1"
     assert _privacy().scan(json.dumps(out, indent=1)) == []

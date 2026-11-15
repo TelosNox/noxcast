@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from . import arraycheck as ac
 from . import explain
 from . import learning as ln
-from .model import LearnedArray, WeatherHour, clearsky_hour
+from .model import LearnedArray, WeatherHour, clearsky_hour, clearsky_weather
 from .solar import Site
 
 VERSION = 1
@@ -32,8 +32,12 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
                exclusions: list[tuple[float, float]]) -> dict:
     """{"version", "columns", "rows"}: every hour of the array's history with the sun up, oldest first.
 
-    reasons: the names joined by a space (learning.hour_reasons). The model columns are empty without a satellite
-    value for the hour; efficiency and check only exist for samples (arraycheck.hour_table).
+    reasons: the names joined by a space (learning.hour_reasons). clear_w exists for every row (the learned model
+    under a clear sky, to weigh an hour by what it could have given); the other model columns are empty without a
+    satellite value for the hour (the satellite archive is an option). model_w is the model without
+    the output limits, so a lower_bound hour at a limit shows more than the limit. soc_pct is the household's state of
+    charge (main entry); battery_full also comes from the batteries of the array's systems. Only hours with a
+    measurement are listed. efficiency and check only exist for samples (arraycheck.hour_table).
     """
     geo = arr.geometry
     reasons = ln.hour_reasons(site, arr, history, soc_full, exclusions)
@@ -52,6 +56,10 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
             sky[t] = (el, cs_ghi)
     steps = explain.hour_steps(site, geo, learned, [WeatherHour(t, max(0.0, sat[t]), temp=air.get(t))
                                                     for t in sky if sat.get(t) is not None])
+    # without a satellite value only the clear-sky start: what the hour could have given, to weigh it by
+    clear_only = explain.hour_steps(site, geo, learned, [clearsky_weather(site, t, air.get(t))
+                                                         for t in sky if t not in steps])
+    steps.update({t: {"clear": step["clear"]} for t, step in clear_only.items()})
     rows = []
     for t, (why, low) in reasons.items():
         if t not in sky:
@@ -59,7 +67,7 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
         status = LEFT_OUT if why else LOWER_BOUND if low else USED
         step = steps.get(t, {})
         g, cs_ghi = sat.get(t), sky[t][1]
-        kt = round(min(g / cs_ghi, 1.2), 3) if g is not None and cs_ghi > 50 else None
+        kt = round(min(max(0.0, g) / cs_ghi, 1.2), 3) if g is not None and cs_ghi > 50 else None
         iso = datetime.fromtimestamp(t, timezone.utc).isoformat()
         eff, check = checked.get(iso, (None, None))
         temp = air.get(t)

@@ -26,7 +26,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
     def by_hour(series: Series) -> dict[str, float]:
         return {dt_util.utc_from_timestamp(t).isoformat(): round(v, 1) for t, v in series.items()}
 
-    # every daylight hour with what learning made of it; fetched first, so archive_errors below belong to this fetch
+    # every daylight hour with what learning made of it; archive_errors stay those of the last learning run
     hours_error = None
     try:
         hours = await coordinator.async_hour_tables()
@@ -34,7 +34,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         _LOGGER.exception("Hours for the diagnostics failed")
         hours, hours_error = {}, str(err) or type(err).__name__
 
-    return redact({
+    raw = {
         "config": dict(entry.data),
         "options": dict(entry.options),
         "archive_errors": coordinator.archive_errors,
@@ -58,4 +58,5 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Noxcast
         "forecast_archive": coordinator.forecast_archive,
         "fine_archive": fn.summary(coordinator.fine),
         "forecast_updated": data.updated.isoformat() if data and data.updated else None,
-    })
+    }
+    return await hass.async_add_executor_job(redact, raw)        # every string of every hour table: not in the loop

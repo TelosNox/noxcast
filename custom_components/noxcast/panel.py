@@ -443,7 +443,8 @@ def _hours_view() -> Any:
             if sid not in tables:
                 return web.Response(status=404)
             name = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in c.arrays[sid].name).strip("-").lower() or "array"
-            return web.Response(text=databasis.to_csv(tables[sid]), content_type="text/csv", headers={
+            text = await hass.async_add_executor_job(databasis.to_csv, tables[sid])
+            return web.Response(text=text, content_type="text/csv", headers={
                 "Content-Disposition": f'attachment; filename="noxcast-hours-{name}.csv"', "Cache-Control": "no-store"})
 
     return HoursView()

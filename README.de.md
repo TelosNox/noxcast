@@ -306,12 +306,12 @@ hält, kennt ihn nicht und regelt mit ihm genauso ab wie ohne ihn. Ein Akku gilt
 oder 2 Punkte unter seiner oberen Grenze, wenn das niedriger ist (bei einer Grenze aus einer Entität ihr aktueller
 Wert). Ein Akku, der mit seiner größten Leistung lädt, nimmt
 ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann (das System deckt den Hausverbrauch, oder eine
-Ausgangsgrenze gilt), zählt das Lernen diese Stunden als „mindestens so viel“, wie bei einer festen Grenze. Noxcast
-liest die Ladeleistung aus Mittelwerten, weil ein einzelner Messwert von wenigen Sekunden weit über dem liegen kann,
-was der Akku aufnimmt: Eine Stunde zählt, wenn einer ihrer 5-Minuten-Mittelwerte 95 % der *Max. Ladeleistung*
-erreicht. Diese 5-Minuten-Mittelwerte hebt Noxcast ab jetzt auf; ältere Stunden haben nur ihren Stundenmittelwert, der
-ab 85 % zählt, und eine Stunde zwischen 70 und 85 % lässt das Lernen aus. Sie
-auszulassen würde gerade die hellen Stunden entfernen. Dafür braucht es den Sensor für die Akkuleistung und die
+Ausgangsgrenze gilt), zählt das Lernen diese Stunden als „mindestens so viel“, wie bei einer festen Grenze. Sie
+auszulassen würde gerade die hellen Stunden entfernen. Noxcast liest die Ladeleistung aus Mittelwerten, weil ein
+einzelner Messwert von wenigen Sekunden weit über dem liegen kann, was der Akku aufnimmt: Eine Stunde zählt, wenn
+einer ihrer 5-Minuten-Mittelwerte 95 % der *Max. Ladeleistung* erreicht. Diese 5-Minuten-Mittelwerte hebt Noxcast in
+seinem eigenen Archiv auf; Stunden von davor haben nur ihren Stundenmittelwert, der ab 85 % zählt, und eine Stunde
+zwischen 70 und 85 % lässt das Lernen aus. Dafür braucht es den Sensor für die Akkuleistung und die
 größte Ladeleistung.
 
 ### 6. Optionen (⋮ → Konfigurieren)

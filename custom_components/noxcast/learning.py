@@ -288,7 +288,7 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
         fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
                                full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
-                               | history.held.get(sid, frozenset()),
+                               | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset()),
                                limited)
         if history.satellite_ghi:
             fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp,

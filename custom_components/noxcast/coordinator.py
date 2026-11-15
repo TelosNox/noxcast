@@ -330,7 +330,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # a sun position per 5-minute step and plane: after a few missed days too much for the event loop
         steps = await self.hass.async_add_executor_job(self._fine_steps, stats, factors, bounds, chargers)
         for day, sensor, day_steps in steps:
-            fn.add_day(self.fine, day, sensor, day_steps)
+            # a day refetched for a newly kept sensor keeps what it holds: the statistics may reach less far back
+            if sensor not in self.fine.get(day.isoformat(), {}):
+                fn.add_day(self.fine, day, sensor, day_steps)
         fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids))
         self._fine_store.async_delay_save(lambda: {"days": self.fine}, 60)
 
@@ -514,7 +516,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
             # a system following the load at a flat base load would look like a limit too
             def keep(t: float, since=arr.valid_since, own=history.full.get(arr.subentry_id, frozenset())
-                     | history.held.get(arr.subentry_id, frozenset())) -> bool:
+                     | history.held.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
+                     | history.unsure.get(arr.subentry_id, frozenset())) -> bool:
                 return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
@@ -553,7 +556,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     members(self.systems[c]) == members(s) for c in s.children):
                 continue
             since = max((arr.valid_since for arr in arrays if arr.valid_since is not None), default=None)
-            own = frozenset().union(*(history.full.get(arr.subentry_id, frozenset()) for arr in arrays))
+            own = frozenset().union(*(history.full.get(arr.subentry_id, frozenset())
+                                      | history.charge.get(arr.subentry_id, frozenset())
+                                      | history.unsure.get(arr.subentry_id, frozenset()) for arr in arrays))
 
             def keep(t: float, since=since, own=own) -> bool:
                 return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
@@ -650,9 +655,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(installation.soc_sensors())),
                                             start, "max")
         charging = await self._async_charge_means(installation, start)
-        # the kept 5-minute means are in W already: charge_power only turns the sign of an inverted sensor
-        fine = inst.charge_power(installation.chargers(),
-                                 {c.sensor: fn.series(self.fine, c.sensor) for c in installation.chargers()}, {})
+        # the kept 5-minute means are in W already: charge_power only turns the sign of an inverted sensor. A
+        # battery sensor that is also a PV sensor is kept with the PV's periods only: its hours go by the hourly mean
+        pv_sensors = set(sensor_ids)
+        own = [c for c in installation.chargers() if c.sensor not in pv_sensors]
+        days = dict(self.fine)
+        fine = inst.charge_power(own, await self.hass.async_add_executor_job(
+            lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
         air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
         full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         at_charge_max = {sid: installation.charge_hours(sid, charging, fine) for sid in self.arrays}
@@ -1257,8 +1266,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_limited(self, day_start: float, now: float) -> dict[str, set[float]]:
         """Per array today's hours in which a sensor was at its fixed limit (see curtailment.limited_hours).
 
-        Like _async_curtailed: hourly maxima, 5-minute maxima for the hours not yet compiled, and the current
-        state for the running hour.
+        Hourly maxima, 5-minute maxima for the hours not yet compiled, and the current state for the running hour.
         """
         limited = self._limited_arrays()
         cap_arrays = {a for c in self.installation.caps for a in c.arrays}

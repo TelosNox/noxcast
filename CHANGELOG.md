@@ -28,7 +28,8 @@ breaking changes.
   learning read the PV of that hour only as "at least this much". Shade that falls in such hours could vanish from
   the map. Noxcast now reads the charge power from means: it keeps 5-minute means of the battery power sensors from
   now on, and an hour counts when one of them reaches 95 % of the maximum; older hours count from an hourly mean of
-  85 %, and between 70 and 85 % they are left out. Learning may change from the next nightly run on.
+  85 %, and between 70 and 85 % they are left out. The correction of today's forecast reads the same 5-minute means,
+  so a spike no longer hides an hour from it either. Learning may change from the next nightly run on.
 - A system with the regulation *Self-consumption* and no battery delivers only what the house draws, so on days
   with a low load it held PV back, and learning read that as weak sun: efficiency and shade came out too low. With
   the *Grid power* sensor in the main entry, hours in which the household imported little or nothing at times

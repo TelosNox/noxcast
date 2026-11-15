@@ -1051,7 +1051,12 @@ class NoxcastPanel extends HTMLElement {
       if (!d) return '<i class="empty"></i>';
       let style = "", cls = "";
       if (d.cat !== "used") { style = `--c:${COLORS[d.cat] || COLORS.other}`; cls = "left"; }
-      else if (d.ratio != null) { style = `background:${DEV.find(([hi]) => d.ratio < hi)[1]}`; if (d.input) cls = "input"; }
+      else if (d.ratio != null) {
+        const col = DEV.find(([hi]) => d.ratio < hi)[1];
+        // pale: only the fill, so that the battery dot and the selection keep their strength; the outline keeps it
+        // apart from the grey of "no comparison" on a light theme
+        style = d.input ? `background:color-mix(in srgb, ${col} 40%, transparent);outline:1px solid ${col};outline-offset:-1px` : `background:${col}`;
+      }
       const label = this._dayDate(d.day) + " · " + (d.cat !== "used" ? c.basisCat[d.cat] || d.cat
         : d.ratio == null ? c.calDev.none : `${Math.round(d.ratio * 100)} %${d.input ? ` · ${c.calInput}` : ""}`) + (d.battery ? ` · ${c.calBattery} (${d.battery})` : "");
       return `<i class="${cls}${d.battery && d.cat === "used" ? " bat" : ""}${open === d.day ? " sel" : ""}" style="${style}" title="${esc(label)}"
@@ -1671,7 +1676,7 @@ class NoxcastPanel extends HTMLElement {
       .crow i { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--divider-color, #ddd); position: relative; max-height: 16px; }
       .crow i.void { background: none; } .crow i.empty { background: none; outline: 1px solid var(--divider-color, #ddd); outline-offset: -1px; }
       .crow i.left { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 4px); outline: 1px solid var(--c); outline-offset: -1px; }
-      .crow i.input { opacity: .35; } .blegend b.input { background: #1D9E75; opacity: .35; }
+      .blegend b.input { background: color-mix(in srgb, #1D9E75 40%, transparent); outline: 1px solid #1D9E75; outline-offset: -1px; }
       .crow i.bat::after { content: ""; position: absolute; right: 1px; top: 1px; width: 4px; height: 4px; border-radius: 50%; background: #EF9F27; }
       .crow i[data-action] { cursor: pointer; } .crow i.sel { box-shadow: 0 0 0 2px var(--primary-text-color); }
       .blegend b.none { background: var(--divider-color, #ddd); } .blegend b.dot { background: #EF9F27; border-radius: 50%; width: 6px; height: 6px; }

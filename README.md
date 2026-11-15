@@ -165,8 +165,8 @@ For the dashboard: *Add card* → *Noxcast*.
   (used, lower bound, battery full, snow, no output, excluded), weighted by clear-sky energy, overall and per month,
   and points at anomalies with their most telling day: "battery full" while the array delivered what the model
   expects, clearly above the learned model's clear-sky output, days without output under a bright sky and without
-  snow, bright days below 70 % of the model that no filter explains, and snow windows that only the 7-day limit
-  closed. Renewed by every nightly learning run.
+  snow, bright days below 70 % of the model that no filter explains, and snow periods that only the limit of 7 days
+  after the last snowfall ended, although bright hours would have shown free modules. Renewed by every nightly learning run.
   A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
   of the reason the day was left out; admins click a day to see its hours as measured, model and clear-sky bound lines with
   the left-out hours shaded, and an hour to see how the model comes about (clear sky, clouds, shade, reflection,

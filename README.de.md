@@ -167,7 +167,7 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
   obwohl die Gruppe lieferte, was das Modell erwartet, deutlich über dem, was das gelernte Modell bei klarem Himmel
   zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
-  erklärt, und Schneefenster, die erst die Grenze von 7 Tagen beendet hat. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
+  erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
   gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
   Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und Obergrenze bei klarem Himmel mit den
   ausgelassenen Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,

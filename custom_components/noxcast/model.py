@@ -543,8 +543,10 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
                  satellite_ghi: Series | None = None, valid_since: float | None = None
                  ) -> tuple[set[float], list[float]]:
     """Hour starts in which snow may have covered the array, and the ends of the windows that closed only at
-    SNOW_MAX_DAYS (neither thaw nor an hour of free modules): the panel points at those, since a recovery rule
-    that never fires on an array takes a week of hours from learning after every snowfall.
+    SNOW_MAX_DAYS although they had a measured hour bright enough to show free modules: the recovery rule had its
+    chance and did not fire. The panel points at those, since a rule that never fires on an array (shade, a weak
+    inverter) takes a week of hours from learning after every snowfall. A dull week or one without data is no such
+    case: the rule could not see anything.
 
     The hours: left out of learning, since shade and efficiency would
     take the missing light for their own.
@@ -591,6 +593,7 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
     while nxt is not None:
         t = last_snow = nxt
         warmth = 0.0
+        chance = False                           # an hour in which free modules could have shown
         while t < last_snow + SNOW_MAX_DAYS * 86400:
             if snowfall.get(t) and daily[solar_day(site, t)] >= SNOW_START_CM:
                 last_snow, warmth = t, 0.0
@@ -603,14 +606,15 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
                 if satellite_ghi and t in satellite_ghi:
                     kt = satellite_ghi[t] / clear_sky[t] if clear_sky[t] > 0 else 0.0
                 expected = free.get(t, 0.0)
-                if (kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
-                        and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected):
+                bright = kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
+                if bright and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected:
                     break
+                chance = chance or bright
                 if expected > 0:
                     out.add(t)
             t += HOUR
         else:
-            if t <= data_end:                    # a window the history ends in is unfinished, not capped
+            if chance and t - HOUR <= data_end:  # a window the history ends in is unfinished, not capped
                 capped.append(t)
         while nxt is not None and nxt <= t:
             nxt = next(pending, None)

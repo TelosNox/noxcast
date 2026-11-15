@@ -225,9 +225,9 @@ def _solar_day(site: Site, iso: str) -> int:
 
 
 def _snow_capped(site: Site, ends: Collection[float]) -> list[dict]:
-    """Snow windows that neither thaw nor an hour of free modules closed: either snow lay that long, or the rule
-    that sees the modules free again does not fire on this array (shade, a weak inverter) and every snowfall costs
-    learning a week. The day is the last one of the latest such window."""
+    """Snow windows that only their longest closed although bright hours were measured (model.snow_windows):
+    either snow lay that long, or the rule that sees the modules free again does not fire on this array (shade, a
+    weak inverter) and every snowfall costs learning a week. The day is the last one of the latest such window."""
     if not ends:
         return []
     return [{"key": "snow_cap", "count": len(ends), "value": None,

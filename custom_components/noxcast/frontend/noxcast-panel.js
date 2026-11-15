@@ -201,7 +201,7 @@ const TEXT = {
       basisTitle: "Data basis", basisSub: "What the daylight hours since commissioning were used for, weighted by clear-sky energy", basisMonths: "Per month",
       basisCat: { used: "used", lower_bound: "capped", battery: "battery full", snow: "snow", no_output: "no output", excluded: "excluded", other: "other" },
       basisOk: "Nothing stands out.",
-      basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Capped: at a power limit, battery charging at full power or PV held back; the real output was at least as high, and learning uses the hour only as \"at least this much\". Renewed by every nightly learning run; the single hours are in the CSV export.",
+      basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Capped: at a power limit, battery charging at full power or PV held back; the real output was at least as high, and learning uses the hour only as “at least this much”. Renewed by every nightly learning run; the single hours are in the CSV export.",
       calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Grey: no comparison (a dull day, no satellite value or mostly capped); outline only: no measurement.",
       calOpen: "Click a day to see its hours.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "no comparison" },

@@ -591,20 +591,36 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
     full: hour starts in which a battery of the array's systems was full (installation.full_hours); a period
     in such an hour is left out like one with the household's state of charge at soc_full.
     """
+    reasons = sample_reasons(power, soc=soc, soc_full=soc_full, exclusions=exclusions, valid_since=valid_since,
+                             left={"full": full} if full else {})
+    return [(t, power[t]) for t, why in reasons.items() if not why]
+
+
+def sample_reasons(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
+                   exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
+                   left: dict[str, Collection[float]] | None = None) -> dict[float, tuple[str, ...]]:
+    """Per period with a value, oldest first: every reason learning leaves it out for; empty = used.
+
+    The one rule behind usable_samples, so that what the data basis shows (databasis.py) is what learning did.
+    left: further reasons by name, each with the hour starts it covers (a full battery, snow, a day without output).
+    """
     start = first_use(power, valid_since)
-    if start is None:
-        return []
-    out = []
+    out = {}
     for t, p in sorted(power.items()):
-        if p is None or t < start or p < 0:
+        if p is None:
             continue
+        why = []
+        if start is None or t < start:
+            why.append("before_use")
+        if p < 0:
+            why.append("negative")
         if soc and soc.get(t) is not None and soc[t] >= soc_full:
-            continue
-        if full and t - t % HOUR in full:
-            continue
+            why.append("soc_full")
+        hour = t - t % HOUR
+        why += [name for name, hours in (left or {}).items() if hour in hours]
         if any(a <= t < b for a, b in exclusions):
-            continue
-        out.append((t, p))
+            why.append("excluded")
+        out[t] = tuple(why)
     return out
 
 

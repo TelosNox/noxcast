@@ -12,6 +12,7 @@ issue. Noxcast is maintained in spare time, so an answer can take a few days.
 
 ## Posting logs and diagnostics
 
-The diagnostics download leaves out your location and API key, but it lists your sensor IDs. Look through logs and
-diagnostics before you attach them to a public issue. If either one shows your location or a key, that is a
-vulnerability: please report it as described above.
+The diagnostics download and the CSV export of the hours leave out your location, API keys and the addresses of
+your own services, and name sensors only by an alias. Logs are not redacted, and names you gave arrays and systems
+stay. Look through logs and downloads before you attach them to a public issue. If one shows your location, a key
+or a sensor ID, that is a vulnerability: please report it as described above.

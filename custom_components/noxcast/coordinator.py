@@ -44,6 +44,7 @@ from . import explain
 from . import flows as fl
 from . import battery as bt
 from . import curtailment as ct
+from . import databasis
 from . import installation as inst
 from . import systems as sy
 from . import forecasting as fc
@@ -674,13 +675,19 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 
-    async def async_learning_hours(self) -> dict[str, dict]:
-        """Per array the hours learning used, for the diagnostics download (fetched anew, nothing is kept)."""
-        if not self.learned:
+    async def async_hour_tables(self, only: str | None = None) -> dict[str, dict]:
+        """Per learned array (or only that one) every daylight hour with its status and reasons (databasis.py), for
+        the diagnostics download and the export; fetched anew, nothing is kept."""
+        arrays = {sid: arr for sid, arr in self.arrays.items() if sid in self.learned and only in (None, sid)}
+        if not arrays:
             return {}
         history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow())
-        return await self.hass.async_add_executor_job(
-            ln.learning_hours, self.site, self.arrays, dict(self.learned), history, soc_full, exclusions)
+        learned = dict(self.learned)
+
+        def tables() -> dict[str, dict]:
+            return {sid: databasis.hour_table(self.site, arr, learned[sid], history, soc_full, exclusions)
+                    for sid, arr in arrays.items()}
+        return await self.hass.async_add_executor_job(tables)
 
     async def _async_forecast_error(self) -> None:
         """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""

@@ -162,6 +162,11 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
+- **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede Tagesstunde einer Gruppe als
+  CSV (*Stunden als CSV*, für Administratoren): verwendet, nur Untergrenze (an einer Leistungsgrenze) oder
+  ausgelassen mit allen Gründen (Akku voll, Schnee, kein Ertrag, ausgeschlossen, ...), dazu die Messung und das
+  Modell mit der Satellitenstrahlung in Schritten zerlegt. Öffne sie in einer Tabellenkalkulation oder hänge sie an
+  ein Issue.
 
 ## Konfiguration
 
@@ -599,8 +604,9 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 
 Noxcast sendet nur deine Koordinaten an Open-Meteo. Alles andere bleibt in Home Assistant. Fehlermeldungen und Logs
 nennen den Wetter-Host und seine Antwort, nicht die Anfrage, und enthalten deshalb weder deinen Standort noch einen
-API-Schlüssel. Der Diagnose-Download lässt Standort und API-Schlüssel weg, listet aber deine Sensor-IDs: Sieh ihn
-durch, bevor du ihn veröffentlichst.
+API-Schlüssel. Der Diagnose-Download und der CSV-Export lassen Standort, API-Schlüssel und die Adressen deiner
+eigenen Dienste weg und nennen Sensoren nur mit einem Ersatznamen (`sensor.entity_1`). Namen von Gruppen und Systemen
+bleiben, wie du sie vergeben hast: Sieh die Datei durch, bevor du sie veröffentlichst.
 
 ## Entwicklung
 

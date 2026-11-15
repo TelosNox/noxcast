@@ -999,11 +999,10 @@ class NoxcastPanel extends HTMLElement {
       <div class="tile ${hints.includes("peak") ? "warn" : ""}"><span class="muted small">${c.maxPower}</span><b>${max == null ? "–" : `${Math.round(max).toLocaleString(this._lang)} W`}</b><span class="muted small">${sub}</span></div>
       <div class="tile ${hints.includes("high") ? "warn" : ""}"><span class="muted small">${c.effLearnedTile}</span><b>${pct(la.efficiency)}</b></div></div>`;
     const notes = hints.length ? hints.map((h) => `<p class="note warn">${c.hint[h] || h}</p>`).join("") : `<p class="note">${c.plOk}</p>`;
-    const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang);
     const left = [["deadDays", la.dead_days], ["snowDays", la.snow_days]].filter(([, days]) => (days || []).length)
       .map(([key, days]) => {
         const n = (days.length === 1 ? c.days.one : c.days.other).replace("{n}", days.length);
-        return `<p class="note">${c[key].replace("{n}", n).replace("{d}", day(days[days.length - 1]))}</p>`;
+        return `<p class="note">${c[key].replace("{n}", n).replace("{d}", this._dayDate(days[days.length - 1]))}</p>`;
       }).join("");
     const admin = this._hass.user && this._hass.user.is_admin;
     // one export at a time: each fetches the whole history
@@ -1024,11 +1023,10 @@ class NoxcastPanel extends HTMLElement {
       `<span><b style="background:${COLORS[k]}"></b>${c.basisCat[k]} ${pct(b.shares[k])}</span>`).join("");
     const months = Object.entries(b.months || {}).slice(-12).map(([m, sh]) =>
       `<div class="bm"><div class="bstack">${segs(sh)}</div><span>${this._t.months[Number(m.slice(5)) - 1]}</span></div>`).join("");
-    const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang);
     // shares as percent, the clear-sky factor as a plain number
     const value = (a) => a.value == null ? "" : a.key === "above_clear" ? a.value.toLocaleString(this._lang) : pct(a.value);
     const notes = (b.anomalies || []).map((a) => `<p class="note warn">${c.anomaly[a.key] ? c.anomaly[a.key].replace("{n}", a.count)
-      .replace("{v}", value(a)).replace("{u}", a.used == null ? "" : pct(a.used)).replace("{d}", day(a.day)) : a.key}</p>`).join("") || `<p class="note">${c.basisOk}</p>`;
+      .replace("{v}", value(a)).replace("{u}", a.used == null ? "" : pct(a.used)).replace("{d}", this._dayDate(a.day)) : a.key}</p>`).join("") || `<p class="note">${c.basisOk}</p>`;
     return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
       <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
       ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}
@@ -1118,6 +1116,7 @@ class NoxcastPanel extends HTMLElement {
   }
 
   _dayDate(day) {
+    if (typeof day !== "string") return "";
     const [y, m, d] = day.split("-").map(Number);
     return new Date(y, m - 1, d).toLocaleDateString(this._lang);
   }

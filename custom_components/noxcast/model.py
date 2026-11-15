@@ -54,6 +54,7 @@ import bisect
 import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from .solar import (
     Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
@@ -204,11 +205,11 @@ class LearnedArray:
     limit_cells: list[str] = field(default_factory=list)
     # learned | typical: hours at a power limit hid the efficiency, or the few hours below it gave an implausible one
     efficiency_source: str = "learned"
-    # days left out of learning because the array delivered almost nothing (dead_days), as the UTC time of their
-    # solar noon, oldest first: an outage, snow or a very dark day
-    dead_days: list[float] = field(default_factory=list)
+    # days left out of learning because the array delivered almost nothing (dead_days), as solar days in ISO form
+    # (solar_date), oldest first: an outage, snow or a very dark day
+    dead_days: list[str] = field(default_factory=list)
     # days with hours left out because snow may have covered the array (snow_hours), the same way
-    snow_days: list[float] = field(default_factory=list)
+    snow_days: list[str] = field(default_factory=list)
     # what learning saw (databasis.summary): shares per category and anomalies, for the panel; never read by the
     # forecast. Set by the nightly run, not by learn_array (the hold-out learns many times)
     basis: dict | None = None
@@ -473,6 +474,20 @@ def solar_day(site: Site, t: float) -> int:
     """The day number of a moment by local solar time: a day runs from solar midnight to solar midnight, so its
     daylight never splits, and no time zone is needed."""
     return int((t + site.longitude * 240.0) // 86400)
+
+
+_EPOCH = date(1970, 1, 1)                 # solar day numbers count from here
+
+
+def solar_date(day: int) -> str:
+    """A solar day number as ISO date, the way the panel names a day. Not the time of its solar noon: that time
+    would give the longitude of the site."""
+    return (_EPOCH + timedelta(days=day)).isoformat()
+
+
+def solar_day_of(day: date) -> int:
+    """The solar day number of a date from solar_date."""
+    return (day - _EPOCH).days
 
 
 def first_use(power: Series, valid_since: float | None = None) -> float | None:

@@ -225,7 +225,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             arrays = stored.get("arrays", {}) if stored.get("learned_version", 1) == LEARNED_VERSION else {}
             for sub_id, data in arrays.items():
                 if sub_id in self.arrays and data.get("geometry") == self._geometry_key(sub_id):
-                    self.learned[sub_id] = LearnedArray.from_dict(data["learned"])
+                    self.learned[sub_id] = databasis.dated(self.site, LearnedArray.from_dict(data["learned"]))
             self.band = bd.valid(stored.get("band"))
             self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
             self.model_compare = hc.valid(stored.get("model_compare"))

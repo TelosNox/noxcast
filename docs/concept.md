@@ -558,6 +558,9 @@ not types of their own. Independent devices are systems of their own, side by si
     6 o'clock forecast today, the day-ahead forecast for past days), the running forecast and the
     P10–P90 band; a weather strip (clearness of each hour, temperature) and today's shade and
     reflection periods per group. A table per group with its deviation, correction and share.
+    Until an hour is chosen, the same waterfall shows the whole day: the steps of all hours summed, per array
+    or for all; today it goes on over newer weather and the correction of the hours ahead, the rest up to the
+    expectation is what the measured hours brought, and the measured and expected parts are named below.
     For a chosen hour a waterfall shows how its forecast comes about (`explain.py`): clear sky with
     the learned efficiency, then clouds, shade, reflection, direction factor and heat, the steps
     adding up to the forecast, in Wh of that hour. The steps explain the reference the day is

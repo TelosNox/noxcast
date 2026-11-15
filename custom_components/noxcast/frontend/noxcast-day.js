@@ -13,9 +13,16 @@ const DAY_TEXT = {
     devHint: (kwh, pct) => `${kwh} kWh daneben, ${pct} % des Ertrags bei klarem Himmel. Die Farbe richtet sich danach, nicht nach der Richtung: ab 10 % gelb, ab 25 % rot.`, noData: "Für diesen Tag liegen keine Daten vor.",
     chart: "Tagesverlauf", weather: "Wetter", clearness: "Klarheit", effects: "Effekte", shade: "Schatten", refl: "Reflexion",
     waterfall: "Wie die Stunde zustande kommt", all: "Alle", hourHint: "Stunde im Diagramm anklicken",
+    waterfallDay: "Wie der Tag zustande kommt", wholeDay: "Ganzer Tag", soFar: "Ist bis jetzt",
+    measuredUntil: (hm) => `Gemessen bis ${hm}`, restExpected: "Rest erwartet", noDaySteps: "Für diesen Tag gibt es keine Herleitung.",
     steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme", limit: "Grenze",
       result: "Prognose", morning: "Prognose 6 Uhr", dayAhead: "Prognose Vortag", latest: "Prognose aktuell", replay: "Modell heute",
-      weather: "Neueres Wetter", corr: "Korrektur heute", expected: "Erwartung", actual: "Ist" },
+      weather: "Neueres Wetter", corr: "Korrektur heute", measured: "Gemessene Stunden", expected: "Erwartung", actual: "Ist" },
+    dayHelp: {
+      weather: "Was die seit 6 Uhr abgerufenen Wetterdaten an der Prognose des Tages geändert haben.",
+      corr: "Die Korrektur aus den gemessenen Stunden von heute, angewandt auf die Stunden, die noch kommen.",
+      measured: "Wie weit das Ist der vergangenen Stunden von ihrer aktuellen Prognose abwich.",
+    },
     stepHelp: {
       clear: (eff) => `Was die Gruppe bei wolkenlosem Himmel liefern würde, mit dem gelernten Wirkungsgrad von ${eff}.`,
       clouds: "Der Unterschied durch die Einstrahlung der Wetterquelle gegenüber klarem Himmel.",
@@ -47,9 +54,16 @@ const DAY_TEXT = {
     devHint: (kwh, pct) => `${kwh} kWh off, ${pct} % of the clear-sky yield. The colour follows this, not the direction: yellow from 10 %, red from 25 %.`, noData: "No data for this day.",
     chart: "Course of the day", weather: "Weather", clearness: "Clearness", effects: "Effects", shade: "Shade", refl: "Reflection",
     waterfall: "How the hour comes about", all: "All", hourHint: "Click an hour in the chart",
+    waterfallDay: "How the day comes about", wholeDay: "Whole day", soFar: "Actual so far",
+    measuredUntil: (hm) => `Measured until ${hm}`, restExpected: "Rest expected", noDaySteps: "No derivation for this day.",
     steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat", limit: "Limit",
       result: "Forecast", morning: "Forecast 6 am", dayAhead: "Day-ahead forecast", latest: "Latest forecast", replay: "Today's model",
-      weather: "Newer weather", corr: "Correction today", expected: "Expected", actual: "Actual" },
+      weather: "Newer weather", corr: "Correction today", measured: "Measured hours", expected: "Expected", actual: "Actual" },
+    dayHelp: {
+      weather: "What the weather data fetched since 6 am changed in the forecast of the day.",
+      corr: "The correction from today's measured hours, applied to the hours still ahead.",
+      measured: "How far the actual value of the past hours differed from their latest forecast.",
+    },
     stepHelp: {
       clear: (eff) => `What the array would give under a cloudless sky, with the learned efficiency of ${eff}.`,
       clouds: "The difference the weather source's irradiance makes compared with a clear sky.",
@@ -109,8 +123,8 @@ class NoxcastDay extends HTMLElement {
       this._data = data;
       this._loaded = Date.now();
       this._error = null;
-      const e = (this._data.entries || [])[0];
-      if (this._hour === null || this._hour < this._data.start || this._hour >= this._data.end) this._hour = e ? this._defaultHour(e) : null;
+      // without a chosen hour the waterfall tells the whole day
+      if (this._hour !== null && (this._hour < this._data.start || this._hour >= this._data.end)) this._hour = null;
     } catch (err) {
       this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
@@ -127,8 +141,10 @@ class NoxcastDay extends HTMLElement {
       this._offset = act === "today" ? 0 : this._offset + (act === "prev" ? -1 : 1);
       this._hour = null;
       this._load();
-    } else if (act === "hour") {
-      this._hour = Number(el.dataset.t);
+    } else if (act === "hour" || act === "day") {
+      // the chosen hour clicked again goes back to the day
+      const h = act === "hour" ? Number(el.dataset.t) : null;
+      this._hour = h === this._hour ? null : h;
       this._refresh();
     } else if (act === "focus") {
       this._focus = el.dataset.id;
@@ -162,6 +178,14 @@ class NoxcastDay extends HTMLElement {
 
   _sum(m) { let s = 0; for (const v of m.values()) s += v; return s; }
 
+  // the measured part of the main series: the hours that are over and have their actual, as _main takes them
+  _done(arr) {
+    const now = this._data.now, actual = new Map(tsRows(arr.actual, "wh"));
+    let s = 0;
+    for (const [t] of tsRows(arr.expected, "wh")) if (t + HOUR <= now && actual.has(t)) s += actual.get(t);
+    return s;
+  }
+
   _hours() {
     const d = this._data, out = [];
     for (let t = d.start; t < d.end; t += HOUR) out.push(t);
@@ -175,17 +199,6 @@ class NoxcastDay extends HTMLElement {
     const lit = hours.filter((h) => e.arrays.some((a) => (this._main(a).get(h) || 0) > 1 || (this._reference(a).get(h) || 0) > 1) || (sky.get(h) || 0) > 20);
     const h0 = lit.length ? Math.max(d.start, lit[0] - HOUR) : d.start + 5 * HOUR, h1 = lit.length ? Math.min(d.end, lit[lit.length - 1] + 2 * HOUR) : d.end - 3 * HOUR;
     return { h0, h1, span: hours.filter((h) => h >= h0 && h < h1) };
-  }
-
-  _defaultHour(e) {
-    const now = this._data.now, hour = now - (now % HOUR);
-    if (this._phase === "today" && e.arrays.some((a) => (a.steps || {})[String(hour)])) return hour;
-    let best = null, peak = -1;
-    for (const t of this._hours()) {
-      const v = e.arrays.reduce((a, arr) => a + (this._main(arr).get(t) || 0), 0);
-      if (v > peak) { peak = v; best = t; }
-    }
-    return best;
   }
 
   // ------------------------------------------------------------ rendering
@@ -554,7 +567,7 @@ class NoxcastDay extends HTMLElement {
     const t = this._t, phase = this._phase;
     const rows = e.arrays.map((arr, i) => {
       const m = this._main(arr), r = this._reference(arr), main = this._sum(m), ref = this._sum(r);
-      return { arr, i, m, r, main, ref, clear: this._clear(arr) };
+      return { arr, i, m, r, main, ref, clear: this._clear(arr), done: this._done(arr) };
     });
     const total = rows.reduce((a, r) => a + r.main, 0);
     // same hours as the main chart and one scale for all groups, so the courses line up and their heights compare
@@ -585,6 +598,7 @@ class NoxcastDay extends HTMLElement {
           <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main, 2)} ${t.kwh}</b></div></div>
         ${spark(r)}
         <div class="gfigs">
+          ${phase === "today" ? fig(t.soFar, `${this._kwh(r.done)} ${t.kwh}`) : ""}
           ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, r.ref > 0 ? this._dev(r.main, r.ref, r.clear) : "–") : ""}
           ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
           ${fig(t.share, `${total > 0 ? Math.round(r.main / total * 100) : 0} %`)}
@@ -608,13 +622,48 @@ class NoxcastDay extends HTMLElement {
   }
 
   _waterfallBody(e) {
-    const t = this._t, h = this._hour, phase = this._phase, now = this._data.now;
+    const t = this._t, h = this._hour, day = h === null;
     const chips = [["all", t.all], ...e.arrays.map((a) => [a.id, a.name])].map(([id, name]) =>
       `<button class="chip ${this._focus === id ? "on" : ""}" data-act="focus" data-id="${esc(id)}">${esc(name)}</button>`).join("");
     const arrays = this._focus === "all" ? e.arrays : e.arrays.filter((a) => a.id === this._focus);
+    const title = day ? t.waterfallDay : `${t.waterfall} · ${this._hm(h)}–${this._hm(h + HOUR)}`;
+    const toggle = day ? `<span class="muted small">${t.hourHint}</span>` : `<button class="chip" data-act="day">${t.wholeDay}</button>`;
+    const head = `<div class="wfhead"><h3>${title}</h3>${toggle}</div><div class="chips">${chips}</div>`;
+    const built = day ? this._dayItems(arrays) : this._hourItems(arrays, h);
+    if (!built) return `${head}<p class="muted">${day ? t.noDaySteps : t.noSteps}</p>`;
+    const { items, split } = built;
+    // a day is told in kWh, an hour in Wh
+    const val = (v) => day ? `${this._kwh(v)} ${t.kwh}` : `${Math.round(v)} Wh`;
+    const shown = (v) => Math.round(Math.abs(v) / (day ? 100 : 1)) > 0;    // no sign on a step that rounds to zero
+    const W = 520, rowH = 30, L = 136, R = W - 78, n = items.length;
+    let run = 0;
+    const max = Math.max(1, ...items.map(([, v, kind]) => { if (kind === "start" || kind === "total" || kind === "actual") { run = v; return v; } run += v; return Math.max(run, run - v); }));
+    const x = (v) => L + Math.max(0, v) / max * (R - L);
+    let svg = "", level = 0;
+    items.forEach(([key, v, kind], i) => {
+      const yy = i * rowH + 4;
+      let a, b, cls;
+      if (kind === "step") { a = level; b = level + v; level = b; cls = v < 0 ? "neg" : "pos"; } else { a = 0; b = v; level = v; cls = kind; }
+      const x0 = x(Math.min(a, b)), x1 = x(Math.max(a, b));
+      svg += `<text x="${L - 8}" y="${yy + 15}" text-anchor="end" class="wl">${t.steps[key]}</text>
+        <rect x="${x0.toFixed(1)}" y="${yy + 3}" width="${Math.max(1.5, x1 - x0).toFixed(1)}" height="${rowH - 10}" rx="5" class="wf ${cls}"></rect>
+        <text x="${(x1 + 6).toFixed(1)}" y="${yy + 15}" class="wv ${cls}">${kind === "step" && shown(v) ? (v > 0 ? "+" : "−") : ""}${val(Math.abs(v))}</text>`;
+      if (i < n - 1 && kind !== "actual") svg += `<line x1="${x(level).toFixed(1)}" x2="${x(level).toFixed(1)}" y1="${yy + rowH - 7}" y2="${yy + rowH + 3}" class="wc"></line>`;
+    });
+    const eff = arrays.length === 1 ? `${this._num(arrays[0].efficiency * 100, 1)} %` : `${this._num(arrays.reduce((a, arr) => a + arr.efficiency, 0) / arrays.length * 100, 1)} %`;
+    const minor = day ? 50 : 5;
+    const help = (k) => (day && t.dayHelp[k]) || t.stepHelp[k];
+    const notes = items.filter(([k, v, kind]) => (kind === "start" || (kind === "step" && Math.abs(v) >= minor) || k === "replay") && help(k))
+      .map(([k]) => `<li><b>${t.steps[k]}</b> ${k === "clear" ? t.stepHelp.clear(eff) : help(k)}</li>`).join("");
+    const parts = split ? `<div class="gfigs wsplit"><span class="gfig"><span class="muted">${t.measuredUntil(this._hm(split.until))}</span> ${this._kwh(split.done)} ${t.kwh}</span>
+      <span class="gfig"><span class="muted">${t.restExpected}</span> ${this._kwh(split.rest)} ${t.kwh}</span></div>` : "";
+    return `${head}<svg viewBox="0 0 ${W} ${n * rowH + 8}" class="wfall" role="img" aria-label="${title}">${svg}</svg>${parts}<ul class="notes">${notes}</ul>`;
+  }
+
+  _hourItems(arrays, h) {
+    const phase = this._phase, now = this._data.now;
     const steps = arrays.map((a) => (a.steps || {})[String(h)]).filter(Boolean);
-    const head = `<h3>${t.waterfall}${h !== null ? ` · ${this._hm(h)}–${this._hm(h + HOUR)}` : ""}</h3><div class="chips">${chips}</div>`;
-    if (h === null || !steps.length) return `${head}<p class="muted">${h === null ? t.hourHint : t.noSteps}</p>`;
+    if (!steps.length) return null;
     const sum = (k) => steps.reduce((a, s) => a + (s[k] || 0), 0);
     const from = this._stepsFrom(arrays);
     const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => k !== "limit" || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
@@ -635,25 +684,47 @@ class NoxcastDay extends HTMLElement {
     }
     const act = arrays.map((a) => at("actual", a)).filter((v) => v !== undefined);
     if (act.length === arrays.length && (phase === "past" || h + HOUR <= now)) items.push(["actual", act.reduce((a, v) => a + v, 0), "actual"]);
-    const W = 520, rowH = 30, L = 118, R = W - 70, n = items.length;
-    let run = 0;
-    const max = Math.max(1, ...items.map(([, v, kind]) => { if (kind === "start" || kind === "total" || kind === "actual") { run = v; return v; } run += v; return Math.max(run, run - v); }));
-    const x = (v) => L + Math.max(0, v) / max * (R - L);
-    let svg = "", level = 0;
-    items.forEach(([key, v, kind], i) => {
-      const yy = i * rowH + 4;
-      let a, b, cls;
-      if (kind === "step") { a = level; b = level + v; level = b; cls = v < 0 ? "neg" : "pos"; } else { a = 0; b = v; level = v; cls = kind; }
-      const x0 = x(Math.min(a, b)), x1 = x(Math.max(a, b));
-      svg += `<text x="${L - 8}" y="${yy + 15}" text-anchor="end" class="wl">${t.steps[key]}</text>
-        <rect x="${x0.toFixed(1)}" y="${yy + 3}" width="${Math.max(1.5, x1 - x0).toFixed(1)}" height="${rowH - 10}" rx="5" class="wf ${cls}"></rect>
-        <text x="${(x1 + 6).toFixed(1)}" y="${yy + 15}" class="wv ${cls}">${kind === "step" && v > 0 ? "+" : kind === "step" && v < 0 ? "−" : ""}${Math.abs(Math.round(v))} Wh</text>`;
-      if (i < n - 1 && kind !== "actual") svg += `<line x1="${x(level).toFixed(1)}" x2="${x(level).toFixed(1)}" y1="${yy + rowH - 7}" y2="${yy + rowH + 3}" class="wc"></line>`;
-    });
-    const eff = arrays.length === 1 ? `${this._num(arrays[0].efficiency * 100, 1)} %` : `${this._num(arrays.reduce((a, arr) => a + arr.efficiency, 0) / arrays.length * 100, 1)} %`;
-    const notes = items.filter(([k, v, kind]) => (kind === "start" || (kind === "step" && Math.abs(v) >= 5) || k === "replay") && t.stepHelp[k])
-      .map(([k]) => `<li><b>${t.steps[k]}</b> ${k === "clear" ? t.stepHelp.clear(eff) : t.stepHelp[k]}</li>`).join("");
-    return `${head}<svg viewBox="0 0 ${W} ${n * rowH + 8}" class="wfall" role="img" aria-label="${t.waterfall}">${svg}</svg><ul class="notes">${notes}</ul>`;
+    return { items };
+  }
+
+  // the whole day: the steps of all hours summed, like the energy card, but for the chosen arrays. Today the chain
+  // goes on from the 6 am forecast over newer weather, the correction of the hours ahead and what the measured hours
+  // brought, so it ends at the expectation the chart and the groups show.
+  _dayItems(arrays) {
+    const phase = this._phase, now = this._data.now;
+    const all = arrays.flatMap((a) => Object.values(a.steps || {}));
+    if (!all.length) return null;
+    const sum = (k) => all.reduce((a, s) => a + (s[k] || 0), 0);
+    const from = this._stepsFrom(arrays);
+    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => k !== "limit" || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
+    const series = (a, key) => new Map(tsRows(a[key], "wh"));
+    if (phase === "past") {
+      if (arrays.every((a) => a.actual && a.actual.t.length)) items.push(["actual", arrays.reduce((s, a) => s + this._sum(series(a, "actual")), 0), "actual"]);
+      return { items };
+    }
+    if (phase !== "today") return { items };
+    // newer weather only for arrays whose steps explain the 6 am forecast; an array added later has no such step
+    let level = sum("result"), weather = 0;
+    for (const a of arrays) {
+      if (a.steps_from !== "morning") continue;
+      weather += this._sum(series(a, "forecast")) - Object.values(a.steps || {}).reduce((s, st) => s + (st.result || 0), 0);
+    }
+    if (Math.abs(weather) >= 50) items.push(["weather", weather, "step"], ["latest", level + weather, "total"]);
+    level += weather;
+    let corr = 0;
+    for (const a of arrays) {
+      const fc = series(a, "forecast");
+      for (const [h, v] of series(a, "expected")) if (h + HOUR > now) corr += v - (fc.get(h) || 0);
+    }
+    const done = arrays.reduce((s, a) => s + this._done(a), 0);
+    const end = arrays.reduce((s, a) => s + this._sum(this._main(a)), 0);
+    // what is left after weather and correction is how far the measured hours fell from the forecast they had
+    const measured = end - level - corr;
+    // steps below 50 Wh would show as 0.0 kWh
+    if (Math.abs(corr) >= 50) items.push(["corr", corr, "step"]);
+    if (Math.abs(measured) >= 50) items.push(["measured", measured, "step"]);
+    items.push(["expected", end, "total"]);
+    return { items, split: { done, rest: end - done, until: now - (now % HOUR) } };
   }
 
   // ------------------------------------------------------------ formatting
@@ -702,6 +773,9 @@ class NoxcastDay extends HTMLElement {
       .round:disabled { opacity: .35; cursor: default; }
       .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
       .chip { min-height: 32px; padding: 0 14px; border-radius: 16px; border: 1px solid var(--divider-color); background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+      .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+      .wfhead { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; margin-bottom: 4px; }
+      .wfhead h3 { margin: 0; } .wsplit { margin-top: 6px; font-size: 13px; }
       svg { display: block; width: 100%; height: auto; }
       .ax { font-size: 10px; fill: var(--secondary-text-color); }
       .rail { stroke: var(--nx-rail); }

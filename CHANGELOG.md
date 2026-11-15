@@ -35,6 +35,11 @@ breaking changes.
   affected. The *Installation* tab shows the limit in W, also for a share in %, or that the grid power sensor is
   needed. Learning may change for such installations from the next nightly run on. The battery forecast does not
   split the surplus at the limit yet.
+- The *Day* view explains the whole day, per array or for all together: until an hour is chosen in the chart, its
+  waterfall sums the steps of all hours, from clear sky to the forecast and on to the actual value. Today it goes on
+  over newer weather, today's correction and the measured hours to the expectation, and below it says how much is
+  measured so far and how much is still expected. Clicking the chosen hour again, or *Whole day*, goes back to the
+  day. Under *Groups* each array shows its actual value so far today.
 
 ### Changed
 - The diagnostics download no longer contains sensor IDs (each sensor gets an alias such as `sensor.entity_1`,

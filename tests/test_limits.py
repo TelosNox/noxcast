@@ -262,11 +262,12 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
     built = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {}, [], 95, systems, batteries, "free")
     assert [c.sensor for c in built.chargers()] == ["p.a", "p.u"]
-    # an inverted sensor reads charging as negative: its minimum is the highest charge power; kW to W
-    peaks = inst.charge_peaks(built.chargers(), {"p.u": {0.0: 0.98, 3600.0: 0.5}}, {"p.a": {7200.0: -0.49}},
+    # an inverted sensor reads charging as negative; kW to W
+    means = inst.charge_power(built.chargers(), {"p.u": {0.0: 0.9, 3600.0: 0.5}, "p.a": {7200.0: -0.45}},
                               {"p.u": 1000.0, "p.a": 1000.0})
-    assert peaks == {"p.u": {0.0: 980.0, 3600.0: 500.0}, "p.a": {7200.0: 490.0}}
-    assert built.charge_hours("south", peaks) == {0.0, 7200.0} and built.charge_hours("roof", peaks) == set()
+    assert means == {"p.u": {0.0: 900.0, 3600.0: 500.0}, "p.a": {7200.0: 450.0}}
+    assert built.charge_hours("south", means, {}) == ({0.0, 7200.0}, set())
+    assert built.charge_hours("roof", means, {}) == (set(), set())
     cut = ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0}))
     assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and cut["south"].fixed
     # learning keeps the hour as a lower bound instead of leaving it out
@@ -283,6 +284,29 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000
     unknown = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, STREAM)}
     assert unknown[("u", "charge_learning")]["status"] == sy.NOT_YET
+
+
+def test_the_charge_maximum_is_read_from_means_not_from_spikes():
+    power = {**STREAM, "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u",
+                                                          "battery_power": "p.u", "max_charge_w": 1000})}
+    systems = sy.systems_of(power)
+    batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
+    built = inst.build({"south": ["pv.s"]}, {}, [], 95, systems, batteries, "free")
+    h = 3600.0
+    # hours known only by their mean: from 85 % at the maximum, from 70 % unsure, below free
+    hourly = {"p.u": {0.0: 860.0, h: 750.0, 2 * h: 690.0, 3 * h: 400.0}}
+    assert built.charge_hours("south", hourly, {}) == ({0.0}, {h})
+    # with kept 5-minute means they decide: one period at the maximum makes the hour a lower bound, whatever the
+    # hourly mean; an hour whose periods all stay below is free even with a high mean
+    fine = {"p.u": {3 * h + 600: 960.0, 3 * h + 900: 300.0, 0.0: 900.0, 300.0: 900.0}}
+    assert built.charge_hours("south", hourly, fine) == ({3 * h}, {h})
+    # learning leaves an unsure hour out, as one with a full battery; the backtest too
+    arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
+    history = ln.PvHistory({"pv.s": {0.0: 900.0, h: 400.0, 2 * h: 500.0}}, {}, {}, {}, {},
+                           charge={"south": frozenset({0.0})}, unsure={"south": frozenset({h})})
+    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    assert [t for t, _ in samples] == [0.0, 2 * h] and floors == {0.0}
+    assert set(btest.usable(arr, history, 95.0, [])) == {2 * h}
 
 
 SHARED = {"s": ("system", "Inverter", {"name": "Inverter", "template": "inverter", "output_limit_w": 900}),

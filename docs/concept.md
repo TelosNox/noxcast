@@ -431,7 +431,9 @@ not types of their own. Independent devices are systems of their own, side by si
   battery that can curtail the array reaches "full" is left out of learning and flagged `curtailed` in the
   archive. The maximum is robust against saw-tooth charging when MPPTs throttle in steps; a constant state of
   charge alone is not used, since it can also mean PV exactly covers the load. Hours in which such a battery
-  charges at its maximum power, in which a system following the load without a battery may have held PV back
+  charges at its maximum power (a 5-minute mean from 95 % of it where the 5-minute archive holds the battery's power
+  sensor, else an hourly mean from 85 %; between 70 and 85 % the hour is left out; never a period's maximum, which a
+  spike of a second lifts), in which a system following the load without a battery may have held PV back
   (the household imported less than 100 W), and in which the household's export reached its feed-in limit count
   as lower bounds instead. An output limit behind a battery is not used for learning yet (installation model
   above).

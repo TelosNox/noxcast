@@ -11,7 +11,11 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
 - A battery charging at its maximum power takes no more either, where the rest cannot go out
   (systems.charge_curtails): a ceiling of output plus charge power. The hour delivered at least what was measured,
   so it is a lower bound in learning like a fixed limit (charge_hours). Leaving it out instead would select on the
-  measured PV itself, dropping the bright hours and bending the learned efficiency down (#248, E1).
+  measured PV itself, dropping the bright hours and bending the learned efficiency down (#248, E1). The charge power
+  is read from means, never from a period's maximum: a power sensor, above all one computed from several others,
+  shows spikes of a second far above what the battery can take, and one of them would turn the whole hour into a
+  lower bound. Where the 5-minute means are kept (fine.py) they decide; older hours have only their hourly mean,
+  which says less, so an hour in between is left out (charge_hours).
 """
 from __future__ import annotations
 
@@ -25,8 +29,14 @@ from .const import (
     CONF_SOC_SENSOR,
 )
 
+HOUR = 3600.0
 FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
-CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (hourly peak)
+CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (5-minute mean)
+# an hour known only by its mean: from 85 % of the maximum the battery stood at it for most of the hour; from 70 % it
+# may have for a part of it (a ramp up to the maximum, a plateau broken by clouds), so the hour is left out; below,
+# it held nothing back
+HOUR_AT_MAX = 0.85
+HOUR_UNSURE = 0.70
 # a device that follows the house load regulates the grid to about zero: below this import at some time in an hour
 # it may have held PV back. Zero-export controllers keep an import of 10-100 W as margin; marking an hour too many
 # only turns an exact value into a lower bound, missing one teaches too little PV
@@ -59,6 +69,7 @@ class Charger:
     max_w: float
 
     def at_max(self, charging_w: float | None) -> bool:
+        """At its maximum, judged by a 5-minute mean (or a value as short)."""
         return charging_w is not None and charging_w >= (1 - CHARGE_MARGIN) * self.max_w
 
 
@@ -128,12 +139,32 @@ class Installation:
         return {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
                 if v is not None and v >= s.full_pct}
 
-    def charge_hours(self, array: str, charging: Mapping[str, Mapping[float, float]]) -> set[float]:
-        """Period starts in which a battery that may curtail the array charged at its maximum power: the array
-        delivered at least what was measured. charging: power sensor -> highest charge power per period, W
-        (charge_peaks)."""
-        return {t for s in self.stores_of(array) if s.charger
-                for t, w in charging.get(s.charger.sensor, {}).items() if s.charger.at_max(w)}
+    def charge_hours(self, array: str, hourly: Mapping[str, Mapping[float, float]],
+                     fine: Mapping[str, Mapping[float, float]]) -> tuple[set[float], set[float]]:
+        """(hour starts, unsure hour starts) in which a battery that may curtail the array charged at its maximum
+        power: the array delivered at least what was measured in the first, the second are left out of learning.
+
+        hourly, fine: power sensor -> mean charge power per hour, per 5-minute period, W (charge_power). An hour
+        with kept 5-minute means counts when one of them is at the maximum (Charger.at_max); one without is judged
+        by its hourly mean (HOUR_AT_MAX, HOUR_UNSURE).
+        """
+        at_max: set[float] = set()
+        unsure: set[float] = set()
+        for s in self.stores_of(array):
+            if s.charger is None:
+                continue
+            c = s.charger
+            periods = fine.get(c.sensor, {})
+            known = {t - t % HOUR for t in periods}
+            at_max |= {t - t % HOUR for t, w in periods.items() if c.at_max(w)}
+            for t, w in hourly.get(c.sensor, {}).items():
+                if t in known:
+                    continue
+                if w >= HOUR_AT_MAX * c.max_w:
+                    at_max.add(t)
+                elif w >= HOUR_UNSURE * c.max_w:
+                    unsure.add(t)
+        return at_max, unsure - at_max
 
     def array_limit(self, array: str) -> float | None:
         """The fixed limit of an array's measured sum: the sum of its sensors' limits, if every sensor has one,
@@ -162,16 +193,14 @@ class Installation:
         return {a: w for a in {i.array for i in self.inputs.values()} if (w := self.array_limit(a)) is not None}
 
 
-def charge_peaks(chargers: Iterable[Charger], high: Mapping[str, Mapping[float, float | None]],
-                 low: Mapping[str, Mapping[float, float | None]], factors: Mapping[str, float]
-                 ) -> dict[str, dict[float, float]]:
-    """Power sensor -> highest charge power per period in W, from the period maxima (or minima of an inverted
-    sensor, which reads charging as negative); factors: the sensor's unit to W."""
+def charge_power(chargers: Iterable[Charger], values: Mapping[str, Mapping[float, float | None]],
+                 factors: Mapping[str, float]) -> dict[str, dict[float, float]]:
+    """Power sensor -> mean charge power per period in W (charging positive, also for an inverted sensor), from the
+    sensors' period means; factors: the sensor's unit to W (none for values already in W)."""
     out: dict[str, dict[float, float]] = {}
     for c in chargers:
         f = factors.get(c.sensor, 1.0) * (-1.0 if c.invert else 1.0)
-        values = (low if c.invert else high).get(c.sensor, {})
-        out[c.sensor] = {t: v * f for t, v in values.items() if v is not None}
+        out[c.sensor] = {t: v * f for t, v in values.get(c.sensor, {}).items() if v is not None}
     return out
 
 

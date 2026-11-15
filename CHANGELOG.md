@@ -47,6 +47,9 @@ breaking changes.
   integration page with ⋮ → *Reconfigure*.
 
 ### Fixed
+- Days left out of learning (no output, snow) and the days of the data basis anomalies are stored and shown as
+  dates. They were stored as the time of solar noon, which gives away the longitude of the installation in a
+  diagnostics download. Stored days are converted on the first start, nothing learned is lost.
 - Days on which a PV array delivered almost nothing (at most 2 % of a clear day) no longer count in learning:
   an inverter that was off, modules fully under snow or a day too dark for the inverter to start. Before, learning
   read such a day as shade and a darker sky, unless you excluded it by hand. *Learned* → the array → *Does the

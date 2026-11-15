@@ -83,7 +83,7 @@ def test_learning_leaves_dead_days_out_as_if_excluded_by_hand():
     assert (filtered.efficiency, filtered.cells, filtered.sky_view) == (by_hand.efficiency, by_hand.cells,
                                                                          by_hand.sky_view)
     assert len(filtered.dead_days) == 10
-    assert all(start < t < end for t in filtered.dead_days)              # solar noon of each day
+    assert filtered.dead_days == [model.solar_date(_day(d)) for d in range(20, 30)]   # dates, not noon times
     kept = ln.learn_array(SITE, arr, _history(power), now, 95.0, [], keep=lambda t: t < start)
     assert len(kept.dead_days) == 10                                     # the list does not depend on the half learned
 

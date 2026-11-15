@@ -142,8 +142,18 @@ def test_summary_weighs_by_clear_sky_energy_and_names_anomalies():
     keys = {a["key"]: a for a in out["anomalies"]}
     assert set(keys) == {"battery_matches", "bright_outage", "unexplained"}
     assert keys["battery_matches"]["count"] == 4 and keys["unexplained"]["value"] == 0.4
-    noon = ln.noons(SITE, [model.solar_day(SITE, datetime(2026, 6, 26, 12, tzinfo=timezone.utc).timestamp())])[0]
-    assert keys["unexplained"]["day"] == noon
+    assert keys["unexplained"]["day"] == "2026-06-26"                    # a date: its noon would give the longitude
+
+
+def test_days_stored_as_noon_times_load_as_dates():
+    d = model.solar_day(SITE, datetime(2026, 6, 26, 12, tzinfo=timezone.utc).timestamp())
+    noon = d * 86400 + 43200 - SITE.longitude * 240                     # how versions before 4 stored a day
+    learned = model.LearnedArray(efficiency=0.8, dead_days=[noon], snow_days=[noon, noon + 86400],
+                                 basis={"version": 3, "anomalies": [{"key": "unexplained", "day": noon}]})
+    out = db.dated(SITE, learned)
+    assert out.dead_days == ["2026-06-26"] and out.snow_days == ["2026-06-26", "2026-06-27"]
+    assert out.basis == {"version": db.SUMMARY_VERSION, "anomalies": [{"key": "unexplained", "day": "2026-06-26"}]}
+    assert db.dated(SITE, out).dead_days == ["2026-06-26"]               # already dates: unchanged
 
 
 def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():

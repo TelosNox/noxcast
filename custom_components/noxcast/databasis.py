@@ -18,14 +18,14 @@ from datetime import date, datetime, timezone
 from . import arraycheck as ac
 from . import explain
 from . import learning as ln
-from .model import LearnedArray, WeatherHour, clearsky_hour, clearsky_weather, forecast, solar_day
+from .model import (LearnedArray, WeatherHour, clearsky_hour, clearsky_weather, forecast, solar_date, solar_day,
+                    solar_day_of)
 from .solar import Site
 
 VERSION = 2
 COLUMNS = ["start", "status", "reasons", "power_w", "model_w", "bound_w", "clear_w", "clouds_w", "shade_w", "reflection_w",
            "direction_w", "heat_w", "kt", "air_temp", "snowfall_cm", "soc_pct", "steady", "efficiency", "check"]
 USED, LOWER_BOUND, LEFT_OUT = "used", "lower_bound", "left_out"
-_EPOCH = date(1970, 1, 1)                 # solar day numbers count from here (model.solar_day)
 _STEP_COLUMNS = ("clear", "clouds", "shade", "reflection", "direction", "heat")
 
 
@@ -96,7 +96,7 @@ def to_csv(table: dict) -> str:
 
 # ---------------------------------------------------------------------------- summary for the panel
 
-SUMMARY_VERSION = 3
+SUMMARY_VERSION = 4
 CATEGORIES = ("used", "lower_bound", "battery", "snow", "no_output", "excluded", "other")
 # a day under snow that delivered nothing is snow first: it is the textbook snow case, not an outage
 _LEFT = (("excluded", {"excluded"}), ("snow", {"snow"}), ("no_output", {"no_output"}),
@@ -132,7 +132,7 @@ def category(status: str, reasons: str) -> str | None:
 
 def summary(site: Site, table: dict, peak_w: float) -> dict:
     """What learning saw, for the panel: shares of the clear-sky energy per category (whole history and per month,
-    UTC) and the anomalies, each with a count, a value and its most telling day (UTC time of solar noon).
+    UTC) and the anomalies, each with a count, a value and its most telling day (a solar day as ISO date).
 
     Weighted by clear_w, not by hours: a June noon left out costs learning far more than a December edge hour.
     """
@@ -190,7 +190,7 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
             if peak_w > 0 and model >= CALENDAR_MIN_H * peak_w:
                 ratio = round(sum(r["power_w"] for r in used) / model, 2)
         battery = sum(1 for r in rs if r["cat"] == "battery" and (r["clear_w"] or 0) >= lit)
-        for key, value in (("day", _EPOCH.fromordinal(_EPOCH.toordinal() + d).isoformat()), ("cat", cat),
+        for key, value in (("day", solar_date(d)), ("cat", cat),
                            ("ratio", ratio), ("battery", battery)):
             out[key].append(value)
     return out
@@ -198,9 +198,24 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
 
 def day_rows(site: Site, table: dict, day: date) -> dict:
     """The rows of the table on a solar day of the calendar: the day view of the panel."""
-    d = day.toordinal() - _EPOCH.toordinal()
+    d = solar_day_of(day)
     return {"version": table["version"], "columns": table["columns"],
             "rows": [r for r in table["rows"] if _solar_day(site, r[0]) == d]}
+
+
+def dated(site: Site, learned: LearnedArray) -> LearnedArray:
+    """Learned data stored before SUMMARY_VERSION 4 names its days by the UTC time of their solar noon, which gives
+    the longitude; turned into ISO dates (solar_date) when it is loaded, so nothing learned is lost."""
+    def day(v):
+        return solar_date(solar_day(site, v)) if isinstance(v, (int, float)) else v
+    learned.dead_days = [day(v) for v in learned.dead_days]
+    learned.snow_days = [day(v) for v in learned.snow_days]
+    if learned.basis:
+        for a in learned.basis.get("anomalies", []):
+            a["day"] = day(a.get("day"))
+        if learned.basis.get("version") == 3:
+            learned.basis["version"] = SUMMARY_VERSION
+    return learned
 
 
 def _solar_day(site: Site, iso: str) -> int:
@@ -209,7 +224,6 @@ def _solar_day(site: Site, iso: str) -> int:
 
 def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[dict]:
     lit = LIT_SHARE * peak_w
-    noon = lambda d: ln.noons(site, [d])[0]                       # noqa: E731
     close = lambda r: abs(r["power_w"] / r["model_w"] - 1) <= MATCH       # noqa: E731
     out = []
 
@@ -230,14 +244,14 @@ def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[d
     share = matched / with_model if with_model else 0.0
     if len(good) >= MATCH_DAYS and share >= max(MATCH_SHARE, MATCH_OVER_USED * used_share):
         out.append({"key": "battery_matches", "count": len(good), "value": round(share, 2),
-                    "used": round(used_share, 2), "day": noon(max(good, key=lambda d: (good[d], d)))})
+                    "used": round(used_share, 2), "day": solar_date(max(good, key=lambda d: (good[d], d)))})
 
     counted = [(r, d) for d, rs in days.items() for r in rs
                if r["cat"] in ("used", "lower_bound") and (r["bound_w"] or 0) >= lit]
     above = [(r["power_w"] / r["bound_w"], d) for r, d in counted if r["power_w"] > ABOVE_BOUND * r["bound_w"]]
     if len(above) >= max(ABOVE_HOURS, ABOVE_SHARE * len(counted)):
         ratio, d = max(above)
-        out.append({"key": "above_clear", "count": len(above), "value": round(ratio, 2), "day": noon(d)})
+        out.append({"key": "above_clear", "count": len(above), "value": round(ratio, 2), "day": solar_date(d)})
 
     bright = []
     for d, rs in days.items():
@@ -246,7 +260,7 @@ def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[d
             bright.append((sum(kts) / len(kts), d))
     if bright:
         kt, d = max(bright)
-        out.append({"key": "bright_outage", "count": len(bright), "value": round(kt, 2), "day": noon(d)})
+        out.append({"key": "bright_outage", "count": len(bright), "value": round(kt, 2), "day": solar_date(d)})
 
     worst = []
     for d, rs in days.items():
@@ -260,5 +274,5 @@ def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[d
             worst.append((ratio, d))
     if worst:
         ratio, d = min(worst)
-        out.append({"key": "unexplained", "count": len(worst), "value": round(ratio, 2), "day": noon(d)})
+        out.append({"key": "unexplained", "count": len(worst), "value": round(ratio, 2), "day": solar_date(d)})
     return out

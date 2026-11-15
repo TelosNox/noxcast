@@ -21,7 +21,7 @@ from . import load as lf
 from . import plan as pl
 from .model import (
     EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
-    sample_reasons, snow_hours, solar_day, steady_hours, usable_samples,
+    sample_reasons, snow_hours, solar_date, solar_day, steady_hours, usable_samples,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
@@ -233,9 +233,9 @@ def _left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float) -
     return LeftOut(dead, snow, frozenset(hours | snow))
 
 
-def noons(site: Site, days: Collection[int]) -> list[float]:
-    """The UTC time of solar noon of solar days, oldest first: a moment the panel can show as the day."""
-    return [round(d * 86400 + 43200 - site.longitude * 240.0) for d in sorted(days)]
+def solar_dates(days: Collection[int]) -> list[str]:
+    """Solar days as ISO dates, oldest first: the days the panel names."""
+    return [solar_date(d) for d in sorted(days)]
 
 
 def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
@@ -304,8 +304,8 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
-    result.dead_days = noons(site, out.dead)
-    result.snow_days = noons(site, {solar_day(site, t) for t in out.snow})
+    result.dead_days = solar_dates(out.dead)
+    result.snow_days = solar_dates({solar_day(site, t) for t in out.snow})
     if out.dead or out.snow:
         _LOGGER.info("%s: left out of learning: %d days with almost no output (outage, snow or too dark), %d hours "
                      "that snow may have covered", arr.name, len(out.dead), len(out.snow))

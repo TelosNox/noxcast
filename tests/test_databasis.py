@@ -112,3 +112,51 @@ def test_redaction_keeps_the_structure_and_removes_what_identifies_a_home():
     assert out["options"]["satellite_url"].endswith("open-meteo.com/v1/archive")   # the public default stays
     assert out["note"] == "open-meteo.com answered 429" and out["version"] == "2026.10.1"
     assert _privacy().scan(json.dumps(out, indent=1)) == []
+
+
+def _row(start: str, status: str, reasons: str = "", power: float = 500.0, clear: float = 800.0,
+         model: float | None = 500.0, kt: float | None = 0.6, bound: float = 900.0) -> list:
+    r = dict.fromkeys(db.COLUMNS)
+    r.update(start=start, status=status, reasons=reasons, power_w=power, clear_w=clear, model_w=model, kt=kt,
+             bound_w=bound)
+    return [r[c] for c in db.COLUMNS]
+
+
+def _hours(day: int, month: int = 6, **kw) -> list[list]:
+    return [_row(f"2026-{month:02d}-{day:02d}T{h:02d}:00:00+00:00", **kw) for h in range(8, 16)]
+
+
+def test_summary_weighs_by_clear_sky_energy_and_names_anomalies():
+    rows = []
+    for d in range(1, 21):                        # used hours 10 % off the model: none within 5 %
+        rows += _hours(d, status="used", power=450.0)
+    for d in range(21, 25):                       # "battery full" while delivering the model: did not limit
+        rows += _hours(d, status="left_out", reasons="battery_full", power=500.0, model=505.0)
+    rows += _hours(25, status="left_out", reasons="no_output", power=0.0, kt=0.8)        # bright: an outage
+    rows += _hours(26, status="used", power=200.0)                                       # 40 % of the model
+    rows += [_row("2026-06-27T12:00:00+00:00", "left_out", "before_use")]                # not data quality
+    rows += _hours(27, status="used", power=40.0, clear=50.0, model=40.0)                # too dark for the rules
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    assert out["shares"]["battery"] == round(4 * 8 * 800 / (26 * 8 * 800 + 8 * 50), 3)  # per hour: 800 or 50
+    assert set(out["months"]) == {"2026-06"}
+    keys = {a["key"]: a for a in out["anomalies"]}
+    assert set(keys) == {"battery_matches", "bright_outage", "unexplained"}
+    assert keys["battery_matches"]["count"] == 4 and keys["unexplained"]["value"] == 0.4
+    noon = ln.noons(SITE, [model.solar_day(SITE, datetime(2026, 6, 26, 12, tzinfo=timezone.utc).timestamp())])[0]
+    assert keys["unexplained"]["day"] == noon
+
+
+def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
+    rows = []
+    for d in range(1, 4):                         # covered under a bright sky after snowfall: snow, not an outage
+        rows += _hours(d, month=1, status="left_out", reasons="no_output snow", power=0.0, kt=0.8)
+    for d in range(4, 20):                        # a configured limit is no anomaly
+        rows += _hours(d, month=1, status="lower_bound", reasons="at_limit")
+    for d in range(20, 22):                       # above the clear-sky bound of the learned model in every hour
+        rows += _hours(d, month=1, status="used", power=700.0, bound=600.0)
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    assert out["shares"]["snow"] > 0 and "no_output" not in out["shares"]
+    keys = {a["key"]: a for a in out["anomalies"]}
+    assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
+    assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": []}

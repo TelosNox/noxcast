@@ -103,6 +103,16 @@ const TEXT = {
       plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Jede Tagesstunde mit dem, was das Lernen aus ihr gemacht hat, steht im Export unten und im Diagnose-Download der Integration.",
       export: "Stunden als CSV", exporting: "Wird erstellt …", exportFailed: "Export fehlgeschlagen ({e})",
       exportHelp: "Jede gemessene Tagesstunde der Gruppe: verwendet, nur Untergrenze (Leistungsgrenze, Akku lädt mit voller Leistung, PV zurückgehalten) oder ausgelassen mit allen Gründen, dazu Messung, Leistung bei klarem Himmel, Temperatur, Schneefall und Ladestand des Haushalts. Mit dem Satellitenarchiv (Optionen) auch das Modell mit der gemessenen Strahlung, in Schritten zerlegt. Zeiten in UTC. Ohne Ort und Sensor-IDs, zum Ansehen in einer Tabelle oder zum Anhängen an ein Issue.",
+      basisTitle: "Datenbasis", basisSub: "Wofür die Tagesstunden seit Inbetriebnahme verwendet wurden, gewichtet nach der Energie bei klarem Himmel", basisMonths: "Pro Monat",
+      basisCat: { used: "verwendet", lower_bound: "Untergrenze", battery: "Akku voll", snow: "Schnee", no_output: "kein Ertrag", excluded: "ausgeschlossen", other: "sonstiges" },
+      basisOk: "Keine Auffälligkeiten.",
+      basisHelp: "Gewichtet nach der Energie bei klarem Himmel: Eine ausgelassene Mittagsstunde im Juni kostet das Lernen viel mehr als eine Randstunde im Dezember. Untergrenze: an einer Leistungsgrenze, Akku lädt mit voller Leistung oder PV zurückgehalten; die echte Leistung war mindestens so hoch. Neu berechnet bei jedem nächtlichen Lernen; die einzelnen Stunden stehen im CSV-Export.",
+      anomaly: {
+        battery_matches: "„Akku voll“ an {n} Tagen, obwohl die Gruppe lieferte, was das Modell erwartet: {v} dieser Stunden innerhalb von 5 %, bei den verwendeten Stunden nur {u} (am deutlichsten am {d}). Der Akku hat dort offenbar nicht begrenzt, etwa weil die Anlage dann einspeist; dem Lernen fehlen diese Stunden unnötig. Prüfe die Schwelle „Akku voll“ im Haupteintrag oder die Zuordnung zum System.",
+        above_clear: "In {n} Stunden lieferte die Gruppe deutlich mehr, als das gelernte Modell bei klarem Himmel ohne Schatten zulässt (bis zum {v}-Fachen, am {d}). Immer zur selben Tageszeit: Prüfe die Ausrichtung; den ganzen Tag: Peakleistung oder Einheit des Sensors.",
+        bright_outage: "{n} Tage ohne Ertrag bei hellem Himmel und ohne Schnee (Satellit im Mittel {v} klar, z. B. am {d}): eher ein Ausfall.",
+        unexplained: "{n} helle Tage, die kein Filter erklärt, lagen unter 70 % des Modells, am schlechtesten der {d} mit {v}. Gab es dort einen Ausfall oder eine Abregelung?",
+      },
       hint: {
         peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt aller Module) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
         high: "Der Wirkungsgrad liegt über 105 %: Die Gruppe liefert mehr, als die eingetragenen Module bei dieser Ausrichtung können. Bitte prüfen: die Wp je Ausrichtung, ob der Sensor nur diese Gruppe misst, und ob die Module steiler oder anders ausgerichtet sind als eingetragen.",
@@ -176,6 +186,16 @@ const TEXT = {
       plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. Every daylight hour with what learning made of it is in the export below and in the integration's diagnostics download.",
       export: "Hours as CSV", exporting: "Creating …", exportFailed: "Export failed ({e})",
       exportHelp: "Every measured daylight hour of the array: used, only a lower bound (power limit, battery charging at full power, PV held back) or left out with all reasons, with the measurement, the clear-sky power, temperature, snowfall and the household's state of charge. With the satellite archive (options) also the model on the measured irradiance, split into its steps. Times in UTC. Without location and sensor IDs, to look at in a spreadsheet or attach to an issue.",
+      basisTitle: "Data basis", basisSub: "What the daylight hours since commissioning were used for, weighted by clear-sky energy", basisMonths: "Per month",
+      basisCat: { used: "used", lower_bound: "lower bound", battery: "battery full", snow: "snow", no_output: "no output", excluded: "excluded", other: "other" },
+      basisOk: "Nothing stands out.",
+      basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Lower bound: at a power limit, battery charging at full power or PV held back; the real output was at least as high. Renewed by every nightly learning run; the single hours are in the CSV export.",
+      anomaly: {
+        battery_matches: "“Battery full” on {n} days although the array delivered what the model expects: {v} of these hours within 5 %, against only {u} of the used hours (most clearly on {d}). The battery did not seem to hold it back, for example because the installation exports then; learning lost these hours for nothing. Check the “battery full” threshold in the main entry or the system the array belongs to.",
+        above_clear: "In {n} hours the array delivered clearly more than the learned model allows under a clear sky without shade (up to {v} times, on {d}). Always at the same time of day: check the orientation; all day: the peak power or the sensor's unit.",
+        bright_outage: "{n} days without output under a bright sky and without snow (satellite {v} clear on average, e.g. {d}): an outage, most likely.",
+        unexplained: "{n} bright days that no filter explains were below 70 % of the model, the worst {d} at {v}. Was there an outage or curtailment?",
+      },
       hint: {
         peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
         high: "The efficiency is above 105 %: the array gives more than the configured modules can at this orientation. Please check the peak power of each plane, whether the sensor measures this array only, and whether the modules are steeper or face another way than configured.",
@@ -937,7 +957,7 @@ class NoxcastPanel extends HTMLElement {
   _checks(arr) {
     const la = arr.learned;
     if (!la) return "";
-    return `${this._plausible(arr, la)}${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._effDirections(la)}${this._geometry(arr, la)}</div>`;
+    return `${this._plausible(arr, la)}${this._basis(la)}${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._effDirections(la)}${this._geometry(arr, la)}</div>`;
   }
 
   _plausible(arr, la) {
@@ -963,6 +983,28 @@ class NoxcastPanel extends HTMLElement {
     const exp = admin ? `<p><button class="btn" data-action="export" data-id="${arr.id}" ${this._exporting ? "disabled" : ""}>${busy ? c.exporting : c.export}</button>
       ${error ? `<span class="bad small">${esc(c.exportFailed.replace("{e}", error))}</span>` : ""}</p><p class="help">${c.exportHelp}</p>` : "";
     return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}${left}<p class="help">${c.plHelp}</p>${exp}</section>`;
+  }
+
+  _basis(la) {
+    const b = la.basis, c = this._t.checks;
+    if (!b || !b.hours || !Object.keys(b.shares || {}).length) return "";
+    const COLORS = { used: "#1D9E75", lower_bound: "#7F77DD", battery: "#EF9F27", snow: "#85B7EB", no_output: "#888780", excluded: "#D85A30", other: "#B4B2A9" };
+    const pct = (v) => `${Math.round(v * 100).toLocaleString(this._lang)} %`;
+    const segs = (shares) => Object.keys(COLORS).filter((k) => shares[k]).map((k) =>
+      `<i style="flex:${shares[k]};background:${COLORS[k]}" title="${c.basisCat[k]} ${pct(shares[k])}"></i>`).join("");
+    const legend = Object.keys(COLORS).filter((k) => b.shares[k]).map((k) =>
+      `<span><b style="background:${COLORS[k]}"></b>${c.basisCat[k]} ${pct(b.shares[k])}</span>`).join("");
+    const months = Object.entries(b.months || {}).slice(-12).map(([m, sh]) =>
+      `<div class="bm"><div class="bstack">${segs(sh)}</div><span>${this._t.months[Number(m.slice(5)) - 1]}</span></div>`).join("");
+    const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang);
+    // shares as percent, the clear-sky factor as a plain number
+    const value = (a) => a.value == null ? "" : a.key === "above_clear" ? a.value.toLocaleString(this._lang) : pct(a.value);
+    const notes = (b.anomalies || []).map((a) => `<p class="note warn">${c.anomaly[a.key] ? c.anomaly[a.key].replace("{n}", a.count)
+      .replace("{v}", value(a)).replace("{u}", a.used == null ? "" : pct(a.used)).replace("{d}", day(a.day)) : a.key}</p>`).join("") || `<p class="note">${c.basisOk}</p>`;
+    return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
+      <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
+      ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}
+      ${notes}<p class="help">${c.basisHelp}</p></section>`;
   }
 
   _effDirections(la) {
@@ -1452,6 +1494,13 @@ class NoxcastPanel extends HTMLElement {
       .tile.warn { border-color: #FF6A3D; } .tile.ok { border-color: rgba(46, 170, 110, .6); }
       .mgrid + .help, svg + .legend, .legend + .help, .note + .help, .help + .help { margin-top: 10px; }
       .note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; } .note.warn { color: #E8543C; }
+      .bbar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+      .bbar i, .bstack i { display: block; }
+      .blegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--secondary-text-color); }
+      .blegend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+      .bmonths { display: flex; gap: 4px; margin-top: 4px; }
+      .bm { flex: 1; min-width: 0; text-align: center; font-size: 11px; color: var(--secondary-text-color); }
+      .bstack { display: flex; flex-direction: column-reverse; height: 60px; border-radius: 2px; overflow: hidden; margin-bottom: 2px; }
       .badge { margin-left: 8px; font-size: 11px; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
         color: #fff; background: linear-gradient(115deg, #FF6A3D, #8B5CF6); }
     </style>`;

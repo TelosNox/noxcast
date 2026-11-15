@@ -209,6 +209,9 @@ class LearnedArray:
     dead_days: list[float] = field(default_factory=list)
     # days with hours left out because snow may have covered the array (snow_hours), the same way
     snow_days: list[float] = field(default_factory=list)
+    # what learning saw (databasis.summary): shares per category and anomalies, for the panel; never read by the
+    # forecast. Set by the nightly run, not by learn_array (the hold-out learns many times)
+    basis: dict | None = None
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)

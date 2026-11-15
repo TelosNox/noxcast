@@ -162,6 +162,12 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
+- **Was hat das Lernen gesehen?** *Gelernt* → *Datenbasis* zeigt pro Gruppe, wofür die Tagesstunden verwendet
+  wurden (verwendet, Untergrenze, Akku voll, Schnee, kein Ertrag, ausgeschlossen), gewichtet nach der Energie bei
+  klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
+  obwohl die Gruppe lieferte, was das Modell erwartet, deutlich über dem, was das gelernte Modell bei klarem Himmel
+  zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee und helle Tage unter 70 % des Modells, die kein Filter
+  erklärt. Neu berechnet bei jedem nächtlichen Lernen.
 - **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer
   Gruppe als CSV (*Stunden als CSV*, für Administratoren), Zeiten in UTC. `status` ist `used` (verwendet),
   `lower_bound` (`at_limit`, `charging_max`, `held_back`: die echte Leistung war mindestens so hoch) oder `left_out`

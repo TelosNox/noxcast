@@ -610,6 +610,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      result["holdout"]["total"])
         return {**result, "seconds": seconds}
 
+    def _basis(self, learned: dict[str, LearnedArray], history: ln.PvHistory, soc_full: float,
+               exclusions: list[tuple[float, float]]) -> None:
+        """Executor. What learning saw per array (databasis.summary), on the history it learned from."""
+        for sid, la in learned.items():
+            arr = self.arrays[sid]
+            table = databasis.hour_table(self.site, arr, la, history, soc_full, exclusions)
+            la.basis = databasis.summary(self.site, table, arr.geometry.peak_w)
+
     async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
         """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""
         now = dt_util.utcnow()
@@ -617,6 +625,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp = history.air_temp
         learned = await self.hass.async_add_executor_job(
             ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
+        try:
+            await self.hass.async_add_executor_job(self._basis, learned, history, soc_full, exclusions)
+        except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
+            _LOGGER.exception("Noxcast could not summarise the data basis")
         # a copy: add_history replaces days of the live dict, and merged() tells those by identity
         base = dict(self.forecast_archive)
         work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),

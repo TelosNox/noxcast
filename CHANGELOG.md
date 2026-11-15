@@ -8,6 +8,14 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- *Learned* → *Data basis* shows per array what the daylight hours were used for (used, lower bound, battery full,
+  snow, no output, excluded), weighted by the energy a clear sky would have given, overall and per month. It points
+  at anomalies with their most telling day: "battery full" although the array delivered what the model expects,
+  clearly more often than in the hours learning used (the threshold or the system assignment may be wrong), clearly
+  above the learned model's clear-sky output (orientation, peak power or sensor unit), days without output under a
+  bright sky and without snow (an outage), and bright days below 70 % of the model that no filter explains. The CSV
+  export gains the column `bound_w`, that clear-sky output without the shading map. Renewed by every nightly
+  learning run; it does not change learning or the forecast.
 - *Learned* → *Does the configuration fit?* exports every measured daylight hour of an array as CSV (*Hours as
   CSV*, for admins): whether learning used it, counted it only as a lower bound (power limit, battery charging at full
   power, PV held back) or left it out, with every reason (battery full, snow, no output, excluded period, before

@@ -145,7 +145,7 @@
             },
             "deviation": {
               "name": "Deviation from the feed-in rule",
-              "description": "Empty: the system follows the household's feed-in rule. Set only what differs: an inverter at full power that cannot hold zero export feeds the rest in anyway; a device that keeps covering only the load when its battery is full never feeds in.",
+              "description": "Empty: the system follows the household's feed-in rule (integration page → ⋮ → Reconfigure). Set only what differs: an inverter at full power that cannot hold zero export feeds the rest in anyway; a device that keeps covering only the load when its battery is full never feeds in.",
               "data": {
                 "own_feed_in": "Feed-in"
               },

@@ -21,6 +21,8 @@ breaking changes.
 - The menu of a system says what each item does: ✎ changes something that exists, + adds, − removes, with a
   short description under the general items. Removing a part asks first and names what goes with it; until then
   nothing is removed.
+- The deviation from the feed-in rule in a system's settings says where the household's rule is set: on the
+  integration page with ⋮ → *Reconfigure*.
 
 ### Fixed
 - A single reading of the battery power sensor above the *Max charge power* (a few seconds are enough, common with

@@ -174,7 +174,8 @@ Formular.
 
 Der Haushalt hat den Hausverbrauch, das Netz und die *Einspeisevorgabe*. Darin stecken die Systeme: Ein System ist,
 was über einen Ausgang Strom ans Haus abgibt. Es enthält PV-Gruppen und höchstens einen Akku, oder Teilsysteme: Geräte,
-die eine Steuerung gemeinsam regelt, etwa die Geräte eines EcoFlow Stream.
+die eine Steuerung gemeinsam regelt, etwa die Geräte eines EcoFlow Stream. Der Haushalt ist der Noxcast-Eintrag selbst:
+Ändern auf der Seite der Integration mit ⋮ → *Neu konfigurieren*.
 
 Vorgaben gelten von außen nach innen: Ein Teilsystem folgt der Regelung und Einspeisung seines Systems, ein System
 der Einspeisevorgabe des Haushalts. Eingetragen wird nur, was abweicht, als Abweichung. Grenzen gelten auf jeder

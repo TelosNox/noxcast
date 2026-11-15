@@ -135,6 +135,8 @@ def test_snowfall_in_warm_air_is_rain():
     near_zero = {**warm, START + 86400 + 15 * 3600: model.SNOW_MAX_AIR_C}
     assert _on(model.snow_hours(SITE, GEO, power, snowfall, near_zero), 1)
     assert _on(model.snow_hours(SITE, GEO, power, snowfall, {}), 1)       # no temperature: the snowfall counts
+    gap = {t: v for t, v in warm.items() if t != START + 86400 + 15 * 3600}
+    assert _on(model.snow_hours(SITE, GEO, power, snowfall, gap), 1)      # nor for an hour missing in the archive
 
 
 def test_thaw_and_the_longest_window_end_it_although_the_array_stays_dim():

@@ -127,6 +127,16 @@ def test_a_dusting_and_no_archive_leave_nothing_out():
     assert model.snow_hours(SITE, GEO, power, None, _cold(4)) == set()
 
 
+def test_snowfall_in_warm_air_is_rain():
+    power = _snow_power(4, {1: 0.3})
+    snowfall = {START + 86400 + 15 * 3600: 0.8, START + 86400 + 16 * 3600: 0.4}
+    warm = {**_cold(4), START + 86400 + 15 * 3600: 7.1}                 # a shower the reanalysis booked as snow
+    assert model.snow_hours(SITE, GEO, power, snowfall, warm) == set()   # 0.4 cm left: a dusting
+    near_zero = {**warm, START + 86400 + 15 * 3600: model.SNOW_MAX_AIR_C}
+    assert _on(model.snow_hours(SITE, GEO, power, snowfall, near_zero), 1)
+    assert _on(model.snow_hours(SITE, GEO, power, snowfall, {}), 1)       # no temperature: the snowfall counts
+
+
 def test_thaw_and_the_longest_window_end_it_although_the_array_stays_dim():
     snowfall = {START + 86400: 3.0}
     dim = {d: 0.3 for d in range(1, 20)}                                 # e.g. deep shade: never looks free

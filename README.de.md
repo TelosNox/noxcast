@@ -504,7 +504,7 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
   außen vor. Ebenso Tage, an denen eine PV-Gruppe höchstens 2 % eines klaren Tages geliefert hat (ausgefallen,
   ganz unter Schnee oder zu dunkel für den Wechselrichter), und mit dem Archiv (*Lufttemperatur aus Archiv*) die Stunden nach mindestens
-  1 cm Schneefall, bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
+  1 cm Schneefall (in Stunden bis 3 °C; wärmer fällt er als Regen), bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
   Reflexion. Stunden an einer *Leistungsgrenze* zählen als „mindestens so viel“: Die Module hätten mehr liefern
   können. Als Messwert genommen, ließen sie Wirkungsgrad und Mittagsschatten zu niedrig erscheinen; ohne sie blieben
   von den sonnigen Stunden nur die bewölkten und verschatteten übrig. Sonnenstände, an denen die meisten klaren

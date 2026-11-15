@@ -493,6 +493,10 @@ not types of their own. Independent devices are systems of their own, side by si
   the defaults hardly sees snow. They are to be checked on installations with winters (the panel lists the snow
   days per array). The correction of today's forecast is unchanged: it works per array on its own clearness, so a
   covered array lowers only its own coming hours, which is what it will deliver.
+  Snowfall in an hour above 3 °C air temperature counts as none: there it falls as rain or slush, and the
+  reanalysis books the precipitation of a shower as snow at 7-8 °C (on the maintainer's history a false window
+  after such a shower took the next morning's hours). In the backtest the balcony array got 19 hours back, the
+  errors stayed within ±0.02 points.
 - Outages of a sensor: hours without statistics (a sensor unavailable the whole hour, or one of the array's
   sensors missing) are left out. A sensor unavailable for part of an hour still enters with the recorder's mean.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from

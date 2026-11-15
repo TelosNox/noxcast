@@ -495,7 +495,7 @@ temperature turn this irradiance into the clear-sky power of the array.
 - **Data filters:** hours with a full battery that may curtail the array (see *Battery*), excluded periods, outages
   and incomplete hours are left out. So are days on which an array delivered at most 2 % of a clear day (off,
   fully under snow or too dark for the inverter), and, with *Air temperature from archive*, the hours after a snowfall of
-  at least 1 cm until the array delivers again, it thawed or a week has passed. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
+  at least 1 cm (in hours up to 3 °C; warmer it falls as rain) until the array delivers again, it thawed or a week has passed. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
   Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,
   they would make efficiency and midday shade look too low; left out, only the clouded and shaded ones of the sunny
   hours would remain. Sun positions where most clear hours were at the limit show no shade on the map (marked *at

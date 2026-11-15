@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from . import arraycheck as ac
 from . import explain
@@ -25,6 +25,7 @@ VERSION = 2
 COLUMNS = ["start", "status", "reasons", "power_w", "model_w", "bound_w", "clear_w", "clouds_w", "shade_w", "reflection_w",
            "direction_w", "heat_w", "kt", "air_temp", "snowfall_cm", "soc_pct", "steady", "efficiency", "check"]
 USED, LOWER_BOUND, LEFT_OUT = "used", "lower_bound", "left_out"
+_EPOCH = date(1970, 1, 1)                 # solar day numbers count from here (model.solar_day)
 _STEP_COLUMNS = ("clear", "clouds", "shade", "reflection", "direction", "heat")
 
 
@@ -95,7 +96,7 @@ def to_csv(table: dict) -> str:
 
 # ---------------------------------------------------------------------------- summary for the panel
 
-SUMMARY_VERSION = 2
+SUMMARY_VERSION = 3
 CATEGORIES = ("used", "lower_bound", "battery", "snow", "no_output", "excluded", "other")
 # a day under snow that delivered nothing is snow first: it is the textbook snow case, not an outage
 _LEFT = (("excluded", {"excluded"}), ("snow", {"snow"}), ("no_output", {"no_output"}),
@@ -112,6 +113,10 @@ BRIGHT_KT = 0.5             # a day without output (and no snow) under a sky thi
 DAY_RATIO = 0.7             # a used day at less than this share of the model, which no filter explains
 DAY_MIN_H = 2.0             # ... with a model day of at least this many hours at peak power: bright days only, on
                             # dull days the satellite itself is often off by a third
+CALENDAR_DAYS = 365         # the calendar shows the year before the last day; older days stay in the CSV export
+DAY_LEFT = 0.5              # a day counts as left out when more than this share of its clear-sky energy was
+CALENDAR_MIN_H = 0.2        # a day's deviation needs a model day of this many hours at peak power: below it the
+                            # ratio of two small numbers says nothing
 
 
 def category(status: str, reasons: str) -> str | None:
@@ -153,7 +158,49 @@ def summary(site: Site, table: dict, peak_w: float) -> dict:
 
     return {"version": SUMMARY_VERSION, "hours": sum(len(v) for v in days.values()), "shares": shares(energy),
             "months": {m: shares(e) for m, e in sorted(months.items())},
-            "anomalies": _anomalies(site, days, peak_w) if peak_w > 0 else []}
+            "anomalies": _anomalies(site, days, peak_w) if peak_w > 0 else [],
+            "days": _calendar(site, days, peak_w)}
+
+
+def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[str, list]:
+    """The days with data in the CALENDAR_DAYS before the last one, oldest first, as columns:
+
+    day: the solar day as ISO date (a date, not its noon: the time of solar noon would give the longitude). cat:
+    "used" when learning kept most of the day's clear-sky energy (as sample or lower bound), else the category that
+    took most of it. ratio: actual against model over the used hours with a satellite value, None for a left-out
+    day, a dull one (CALENDAR_MIN_H) or one mostly at a lower bound. battery: lit hours left out as "battery full",
+    so a day that learning used can still show that its noon was missing.
+    """
+    lit = LIT_SHARE * peak_w
+    out: dict[str, list] = {"day": [], "cat": [], "ratio": [], "battery": []}
+    last = max(days, default=0)
+    for d in sorted(d for d in days if d > last - CALENDAR_DAYS):
+        rs = days[d]
+        energy: dict[str, float] = {}
+        for r in rs:
+            energy[r["cat"]] = energy.get(r["cat"], 0.0) + (r["clear_w"] or 0.0)
+        total = sum(energy.values())
+        kept = energy.get("used", 0.0) + energy.get("lower_bound", 0.0)
+        cat = "used" if total <= 0 or kept >= (1 - DAY_LEFT) * total else max(
+            (k for k in energy if k not in ("used", "lower_bound")), key=lambda k: energy[k])
+        ratio = None
+        if cat == "used":
+            used = [r for r in rs if r["cat"] == "used" and r["model_w"] is not None]
+            model = sum(r["model_w"] for r in used)
+            if peak_w > 0 and model >= CALENDAR_MIN_H * peak_w:
+                ratio = round(sum(r["power_w"] for r in used) / model, 2)
+        battery = sum(1 for r in rs if r["cat"] == "battery" and (r["clear_w"] or 0) >= lit)
+        for key, value in (("day", _EPOCH.fromordinal(_EPOCH.toordinal() + d).isoformat()), ("cat", cat),
+                           ("ratio", ratio), ("battery", battery)):
+            out[key].append(value)
+    return out
+
+
+def day_rows(site: Site, table: dict, day: date) -> dict:
+    """The rows of the table on a solar day of the calendar: the day view of the panel."""
+    d = day.toordinal() - _EPOCH.toordinal()
+    return {"version": table["version"], "columns": table["columns"],
+            "rows": [r for r in table["rows"] if _solar_day(site, r[0]) == d]}
 
 
 def _solar_day(site: Site, iso: str) -> int:

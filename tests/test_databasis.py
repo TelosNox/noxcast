@@ -1,6 +1,6 @@
 """Every daylight hour with what learning made of it (databasis.py), and the redacted diagnostics (redact.py)."""
 import csv
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import importlib.util
 import io
 import json
@@ -159,4 +159,24 @@ def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     keys = {a["key"]: a for a in out["anomalies"]}
     assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
     assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
-        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": []}
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": {"day": [], "cat": [], "ratio": [], "battery": []}}
+
+
+def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
+    rows = _hours(1, status="used", power=450.0)                                   # 90 % of the model
+    rows += _hours(2, status="left_out", reasons="no_output snow", power=0.0)      # left out: snow first
+    day3 = _hours(3, status="used")
+    day3[3:5] = [_row(r[0], "left_out", "battery_full") for r in day3[3:5]]        # two noon hours battery full
+    rows += day3
+    rows += _hours(4, status="used", clear=10.0, model=10.0)                        # too dull to compare
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    assert out["days"] == {"day": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
+                           "cat": ["used", "snow", "used", "used"], "ratio": [0.9, None, 1.0, None], "battery": [0, 0, 2, 0]}
+    table = {"version": db.VERSION, "columns": db.COLUMNS, "rows": rows}
+    assert db.day_rows(SITE, table, date(2026, 6, 3))["rows"] == day3
+    assert db.day_rows(SITE, table, date(2026, 7, 3))["rows"] == []
+    # only the year before the last day
+    old = _hours(1, month=1, status="used") + _hours(2, month=1, status="used")
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": old + [
+        _row(r[0].replace("2026", "2027"), "used") for r in old[:8]]}, 1000.0)
+    assert out["days"]["day"] == ["2026-01-02", "2027-01-01"]

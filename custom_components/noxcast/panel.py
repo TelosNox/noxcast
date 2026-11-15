@@ -426,7 +426,8 @@ def _hours_view() -> Any:
 
     class HoursView(HomeAssistantView):
         """Every daylight hour of one array with its status and reasons as CSV (databasis.py), for admins: it holds
-        the measured history."""
+        the measured history. With day (an ISO date from the calendar, a solar day): only that day's rows as JSON,
+        for the day view."""
 
         url = HOURS_URL
         name = "api:noxcast:hours"
@@ -439,6 +440,15 @@ def _hours_view() -> Any:
             c = next((c for c in _coordinators(hass) if sid in c.arrays), None)
             if c is None:
                 return web.Response(status=404)
+            if "day" in request.query:
+                try:
+                    day = date.fromisoformat(request.query["day"])
+                except ValueError:
+                    return web.Response(status=400)
+                rows = await c.async_day(sid, day)
+                if rows is None:
+                    return web.Response(status=404)
+                return web.json_response(rows, headers={"Cache-Control": "no-store"})
             tables = await c.async_hour_tables(sid)
             if sid not in tables:
                 return web.Response(status=404)

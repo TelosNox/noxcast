@@ -63,6 +63,7 @@ from .sources import (
 from .sources import SourceError, async_ensemble, async_open_meteo, async_power_factors, async_previous_runs
 
 _LOGGER = logging.getLogger(__name__)
+DAY_TABLE_SECONDS = 600
 
 __all__ = ["ArrayConfig", "ConsumerConfig", "NoxcastConfigEntry", "NoxcastCoordinator", "NoxcastData"]
 
@@ -175,6 +176,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
         self._backtest_task: asyncio.Task | None = None
         self._hours_lock = asyncio.Lock()             # async_hour_tables: one export or download at a time
+        # the last hour table of the day view: (array, table); one array only, it holds MBs, dropped after
+        # DAY_TABLE_SECONDS, on relearning and when an excluded period changes
+        self._day_table: tuple[str, dict] | None = None
+        self._day_drop = None                     # cancels the pending drop of _day_table
+        self._day_gen = 0                         # counts the drops: a table built across one is not kept
+        self._day_lock = asyncio.Lock()           # clicks while the table is built wait for it instead of building more
         self.model_compare: dict | None = None       # last successful weather model comparison (hindcast.run)
         # the running or last failed comparison: {"running", "done", "total", "error", "limited"}
         self.compare_state: dict = {"running": False, "done": 0, "total": 0, "error": None, "limited": False}
@@ -293,6 +300,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self.hass, self._async_scheduled_refresh, minute=UPDATE_MINUTES, second=0))
         entry.async_on_unload(async_at_started(self.hass, self._async_started))
         entry.async_on_unload(self._cancel_weather_retry)
+        entry.async_on_unload(self._drop_day_table)
 
     async def _async_scheduled_refresh(self, _now: datetime) -> None:
         await self.async_refresh()
@@ -456,6 +464,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
         backtest: afterwards start the backtest in the background (the nightly run), on the same history.
         """
+        self._drop_day_table()
         if not self.arrays:
             return True
         async with self._learn_lock:
@@ -709,6 +718,34 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 return {sid: databasis.hour_table(self.site, arr, learned[sid], history, soc_full, exclusions)
                         for sid, arr in arrays.items()}
             return await self.hass.async_add_executor_job(tables)
+
+    async def async_day(self, sid: str, day: date) -> dict | None:
+        """The hour table rows of one solar day for the panel's day view; None without that array. The whole table
+        is kept for a few minutes, so clicking through the calendar does not fetch the history again for each day."""
+        async with self._day_lock:
+            cached = self._day_table
+            if cached and cached[0] == sid:
+                table = cached[1]
+            else:
+                self._drop_day_table()
+                gen = self._day_gen
+                tables = await self.async_hour_tables(sid)
+                if sid not in tables:
+                    return None
+                table = tables[sid]
+                # relearned or an excluded period changed meanwhile: answer this click, keep nothing
+                if gen == self._day_gen:
+                    self._day_table = (sid, table)
+                    self._day_drop = async_call_later(self.hass, DAY_TABLE_SECONDS, self._drop_day_table)
+        return await self.hass.async_add_executor_job(databasis.day_rows, self.site, table, day)
+
+    @callback
+    def _drop_day_table(self, _now: datetime | None = None) -> None:
+        self._day_table = None
+        self._day_gen += 1
+        if self._day_drop is not None:
+            self._day_drop()
+            self._day_drop = None
 
     async def _async_forecast_error(self) -> None:
         """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""
@@ -999,6 +1036,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def async_add_exclusion(self, start: datetime, end: datetime, note: str = "") -> None:
         self.exclusions.append({"start": start.timestamp(), "end": end.timestamp(), "note": note})
+        self._drop_day_table()
         self._store.async_delay_save(self._store_data, 5)
 
     async def async_remove_exclusion(self, start: float, end: float) -> bool:
@@ -1007,6 +1045,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if len(keep) == len(self.exclusions):
             return False
         self.exclusions = keep
+        self._drop_day_table()
         self._store.async_delay_save(self._store_data, 5)
         return True
 

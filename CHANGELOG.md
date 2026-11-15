@@ -18,7 +18,7 @@ breaking changes.
   learning run; it does not change learning or the forecast.
 - *Data basis* gains a calendar of the last year: one cell per day, coloured by output against the model, or hatched
   in the colour of the reason when most of the day was left out, with a dot for single "battery full" hours. Admins
-  click a day to see its hours (measured, model and clear sky, left-out hours shaded) and an hour to see the model's
+  click a day to see its hours (measured, model and the clear-sky bound, left-out hours shaded) and an hour to see the model's
   steps from clear sky to the result.
 - *Learned* → *Does the configuration fit?* exports every measured daylight hour of an array as CSV (*Hours as
   CSV*, for admins): whether learning used it, counted it only as a lower bound (power limit, battery charging at full

@@ -20,6 +20,7 @@ def _coordinator() -> NoxcastCoordinator:
     c._store = MagicMock()
     c._store_data = lambda: {}
     c.async_learn = AsyncMock(return_value=True)
+    c._day_table, c._day_drop, c._day_gen = ("x", {}), None, 0
     return c
 
 
@@ -27,6 +28,7 @@ async def test_remove_exclusion_drops_only_that_period(hass: HomeAssistant) -> N
     c = _coordinator()
     assert await c.async_remove_exclusion(A + 0.5, B)
     assert c.exclusions == [{"start": B, "end": B + 86400, "note": ""}]
+    assert c._day_table is None                       # the day view's kept table no longer fits
     assert not await c.async_remove_exclusion(A, B)                 # already gone
     c._store.async_delay_save.assert_called_once()
 

@@ -113,11 +113,13 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         await hass.async_block_till_done()
         diag = await diagnostics.async_get_config_entry_diagnostics(hass, coordinator.config_entry)
         sid, learned = next(iter(coordinator.learned.items()))
-        noon = learned.basis["days"][-2][0]                                # a calendar day of the nightly summary
-        day = await coordinator.async_day(sid, noon)
+        last = date.fromisoformat(learned.basis["days"]["day"][-2])         # a calendar day of the nightly summary
+        day = await coordinator.async_day(sid, last)
         with patch.object(coordinator, "async_hour_tables") as fetch:       # the next day comes from the kept table
-            again = await coordinator.async_day(sid, noon - 86400)
+            again = await coordinator.async_day(sid, last - timedelta(days=1))
         fetch.assert_not_called()
+        await coordinator.async_add_exclusion(dt_util.now() - timedelta(days=3), dt_util.now() - timedelta(days=2))
+        assert coordinator._day_table is None                               # an excluded period drops it
 
     assert day["rows"] and len(day["rows"]) < 24 and again["rows"] and again["rows"][0][0] < day["rows"][0][0]
     learned = next(iter(coordinator.learned.values()))

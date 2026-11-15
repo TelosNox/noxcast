@@ -169,7 +169,7 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee und helle Tage unter 70 % des Modells, die kein Filter
   erklärt. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
   gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
-  Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und klaren Himmel mit den
+  Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und Obergrenze bei klarem Himmel mit den
   ausgelassenen Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,
   Wolken, Schatten, Reflexion, Richtung, Temperatur).
 - **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer

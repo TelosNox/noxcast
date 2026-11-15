@@ -167,7 +167,7 @@ For the dashboard: *Add card* → *Noxcast*.
   expects, clearly above the learned model's clear-sky output, days without output under a bright sky and without
   snow, and bright days below 70 % of the model that no filter explains. Renewed by every nightly learning run.
   A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
-  of the reason the day was left out; admins click a day to see its hours as actual, model and clear-sky lines with
+  of the reason the day was left out; admins click a day to see its hours as measured, model and clear-sky bound lines with
   the left-out hours shaded, and an hour to see how the model comes about (clear sky, clouds, shade, reflection,
   direction, temperature).
 - **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an

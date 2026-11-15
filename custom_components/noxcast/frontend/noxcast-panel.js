@@ -107,13 +107,13 @@ const TEXT = {
       basisCat: { used: "verwendet", lower_bound: "Untergrenze", battery: "Akku voll", snow: "Schnee", no_output: "kein Ertrag", excluded: "ausgeschlossen", other: "sonstiges" },
       basisOk: "Keine Auffälligkeiten.",
       basisHelp: "Gewichtet nach der Energie bei klarem Himmel: Eine ausgelassene Mittagsstunde im Juni kostet das Lernen viel mehr als eine Randstunde im Dezember. Untergrenze: an einer Leistungsgrenze, Akku lädt mit voller Leistung oder PV zurückgehalten; die echte Leistung war mindestens so hoch. Neu berechnet bei jedem nächtlichen Lernen; die einzelnen Stunden stehen im CSV-Export.",
-      calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Grau: dunkler Tag oder kein Satellitenwert, kein Vergleich.",
+      calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Grau: kein Vergleich (dunkler Tag, kein Satellitenwert oder überwiegend Untergrenze); nur umrandet: keine Messung.",
       calOpen: "Ein Klick auf einen Tag zeigt seine Stunden.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "kein Vergleich" },
       calBattery: "einzelne Stunden Akku voll",
       dayTitle: "Stunden am {d}", dayLoading: "Lade die Stunden …", dayFailed: "Die Stunden konnten nicht geladen werden ({e}).",
-      dayActual: "gemessen", dayModel: "Modell", dayBound: "klarer Himmel", dayHint: "Ein Klick auf eine Stunde zeigt, wie das Modell zustande kommt.",
-      daySum: "Gemessen {a}, Modell {m} an den Stunden mit Satellitenwert.", dayNoModel: "Ohne Satellitenarchiv gibt es keinen Modellwert der vergangenen Stunden.",
+      dayActual: "gemessen", dayModel: "Modell", dayBound: "Obergrenze bei klarem Himmel", dayHint: "Ein Klick auf eine Stunde zeigt, wie das Modell zustande kommt.",
+      daySum: "Gemessen {a}, Modell {m} an den verwendeten Stunden mit Satellitenwert, wie im Kalender.", dayNoModel: "Keine verwendete Stunde mit Satellitenwert: kein Vergleich mit dem Modell.",
       dayStatus: { used: "verwendet", lower_bound: "Untergrenze", left_out: "ausgelassen" },
       dayStep: { clear: "klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Temperatur" },
       dayKt: "Satellit {v} klar", dayTemp: "{v} °C", daySnow: "Schneefall {v} cm", daySoc: "Ladestand {v} %",
@@ -201,13 +201,13 @@ const TEXT = {
       basisCat: { used: "used", lower_bound: "lower bound", battery: "battery full", snow: "snow", no_output: "no output", excluded: "excluded", other: "other" },
       basisOk: "Nothing stands out.",
       basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Lower bound: at a power limit, battery charging at full power or PV held back; the real output was at least as high. Renewed by every nightly learning run; the single hours are in the CSV export.",
-      calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Grey: a dull day or no satellite value, no comparison.",
+      calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Grey: no comparison (a dull day, no satellite value or mostly a lower bound); outline only: no measurement.",
       calOpen: "Click a day to see its hours.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "no comparison" },
       calBattery: "single hours battery full",
       dayTitle: "Hours on {d}", dayLoading: "Loading the hours …", dayFailed: "The hours could not be loaded ({e}).",
-      dayActual: "measured", dayModel: "model", dayBound: "clear sky", dayHint: "Click an hour to see how the model comes about.",
-      daySum: "Measured {a}, model {m} in the hours with a satellite value.", dayNoModel: "Without the satellite archive there is no model value for past hours.",
+      dayActual: "measured", dayModel: "model", dayBound: "clear-sky bound", dayHint: "Click an hour to see how the model comes about.",
+      daySum: "Measured {a}, model {m} in the used hours with a satellite value, as in the calendar.", dayNoModel: "No used hour with a satellite value: no comparison with the model.",
       dayStatus: { used: "used", lower_bound: "lower bound", left_out: "left out" },
       dayStep: { clear: "clear sky", clouds: "clouds", shade: "shade", reflection: "reflection", direction: "direction", heat: "temperature" },
       dayKt: "satellite {v} clear", dayTemp: "{v} °C", daySnow: "snowfall {v} cm", daySoc: "state of charge {v} %",
@@ -1032,31 +1032,32 @@ class NoxcastPanel extends HTMLElement {
     return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
       <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
       ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}
-      ${notes}<p class="help">${c.basisHelp}</p>${this._calendar(arr, b.days || [], COLORS)}</section>`;
+      ${notes}<p class="help">${c.basisHelp}</p>${this._calendar(arr, b.days, COLORS)}</section>`;
   }
 
   _calendar(arr, days, COLORS) {
-    if (!days.length) return "";
+    if (!days || !(days.day || []).length) return "";
     const c = this._t.checks, admin = this._hass.user && this._hass.user.is_admin;
     const DEV = [[0.7, "#B23A48", "low"], [0.9, "#E8A0A0", "lowish"], [1.1, "#1D9E75", "ok"], [1.3, "#7FA8E8", "highish"], [Infinity, "#2B4F9E", "high"]];
     const months = new Map();
-    for (const [noon, cat, ratio, battery] of days) {
-      const dt = new Date(noon * 1000), key = `${dt.getFullYear()}-${dt.getMonth()}`;
-      if (!months.has(key)) months.set(key, { y: dt.getFullYear(), m: dt.getMonth(), cells: {} });
-      months.get(key).cells[dt.getDate()] = { noon, cat, ratio, battery };
-    }
-    const open = this._bday && this._bday.id === arr.id ? this._bday.noon : null;
+    // solar days as ISO dates: a calendar date, no time zone involved
+    days.day.forEach((day, i) => {
+      const [y, m, dd] = day.split("-").map(Number), key = `${y}-${m}`;
+      if (!months.has(key)) months.set(key, { y, m: m - 1, cells: {} });
+      months.get(key).cells[dd] = { day, cat: days.cat[i], ratio: days.ratio[i], battery: days.battery[i] };
+    });
+    const open = this._bday && this._bday.id === arr.id ? this._bday.day : null;
     const cell = (d) => {
-      if (!d) return "<i></i>";
+      if (!d) return '<i class="empty"></i>';
       let style = "", cls = "";
       if (d.cat !== "used") { style = `--c:${COLORS[d.cat] || COLORS.other}`; cls = "left"; }
       else if (d.ratio != null) style = `background:${DEV.find(([hi]) => d.ratio < hi)[1]}`;
-      const label = new Date(d.noon * 1000).toLocaleDateString(this._lang) + " · " + (d.cat !== "used" ? c.basisCat[d.cat] || d.cat
+      const label = this._dayDate(d.day) + " · " + (d.cat !== "used" ? c.basisCat[d.cat] || d.cat
         : d.ratio == null ? c.calDev.none : `${Math.round(d.ratio * 100)} %`) + (d.battery ? ` · ${c.calBattery} (${d.battery})` : "");
-      return `<i class="${cls}${d.battery && d.cat === "used" ? " bat" : ""}${open === d.noon ? " sel" : ""}" style="${style}" title="${esc(label)}"
-        ${admin ? `data-action="bday" data-id="${arr.id}" data-noon="${d.noon}" role="button" tabindex="0" aria-label="${esc(label)}"` : ""}></i>`;
+      return `<i class="${cls}${d.battery && d.cat === "used" ? " bat" : ""}${open === d.day ? " sel" : ""}" style="${style}" title="${esc(label)}"
+        ${admin ? `data-action="bday" data-id="${esc(arr.id)}" data-day="${d.day}" role="button" tabindex="0" aria-label="${esc(label)}"` : ""}></i>`;
     };
-    const rows = [...months.values()].slice(-12).map(({ y, m, cells }) => {
+    const rows = [...months.values()].map(({ y, m, cells }) => {
       const n = new Date(y, m + 1, 0).getDate();
       return `<span class="muted small">${this._t.months[m]} ${String(y).slice(2)}</span><div class="crow">${Array.from({ length: 31 }, (_, i) => i < n ? cell(cells[i + 1]) : '<i class="void"></i>').join("")}</div>`;
     }).join("");
@@ -1068,7 +1069,7 @@ class NoxcastPanel extends HTMLElement {
 
   _dayView(COLORS) {
     const c = this._t.checks, v = this._bday;
-    const title = c.dayTitle.replace("{d}", new Date(v.noon * 1000).toLocaleDateString(this._lang));
+    const title = c.dayTitle.replace("{d}", this._dayDate(v.day));
     const head = `<div class="dhead"><h4>${title}</h4><button class="x" data-action="bdayclose" aria-label="${this._t.close}">✕</button></div>`;
     if (v.loading) return `${head}<p class="muted">${c.dayLoading}</p>`;
     if (v.error) return `${head}<p class="bad small">${esc(c.dayFailed.replace("{e}", v.error))}</p>`;
@@ -1093,15 +1094,17 @@ class NoxcastPanel extends HTMLElement {
     });
     const line = (key) => {
       // a missing value splits the line: no line across hours without one
+      // the table lists only hours with a measurement: a missing hour splits the line too
       const segs = [[]];
-      for (const r of rows) {
-        if (r[key] == null) segs.push([]);
-        else segs[segs.length - 1].push(`${x(ts(r) + 1800).toFixed(1)},${y(r[key]).toFixed(1)}`);
-      }
+      rows.forEach((r, i) => {
+        if (r[key] == null || (i && ts(r) - ts(rows[i - 1]) > 3600)) segs.push([]);
+        if (r[key] != null) segs[segs.length - 1].push(`${x(ts(r) + 1800).toFixed(1)},${y(r[key]).toFixed(1)}`);
+      });
       return segs.filter((seg) => seg.length).map((seg) => seg.length === 1 ? `M${seg[0]}h0.1` : `M${seg.join("L")}`).join("");
     };
     const kwh = (wh) => `${(wh / 1000).toLocaleString(this._lang, { maximumFractionDigits: 1 })} kWh`;
-    const withModel = rows.filter((r) => r.model_w != null);
+    // the hours the calendar's ratio rests on: used, with a model value
+    const withModel = rows.filter((r) => r.status === "used" && r.model_w != null);
     const sum = withModel.length ? c.daySum.replace("{a}", kwh(withModel.reduce((a, r) => a + r.power_w, 0)))
       .replace("{m}", kwh(withModel.reduce((a, r) => a + r.model_w, 0))) : c.dayNoModel;
     const svg = `<svg viewBox="0 0 ${W} ${H}" class="dchart" role="img" aria-label="${esc(title)}">${bands}
@@ -1112,6 +1115,11 @@ class NoxcastPanel extends HTMLElement {
       <span><b style="background:${COLORS.lower_bound};opacity:.4"></b>${c.basisCat.lower_bound}</span></div>`;
     const detail = v.hour != null && rows[v.hour] ? `<p class="note">${esc(this._hourDetail(rows[v.hour]))}</p>` : `<p class="help">${c.dayHint}</p>`;
     return `${head}${svg}${legend}<p class="small">${sum}</p>${detail}`;
+  }
+
+  _dayDate(day) {
+    const [y, m, d] = day.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(this._lang);
   }
 
   _dayCat(reasons) {
@@ -1460,18 +1468,18 @@ class NoxcastPanel extends HTMLElement {
     else if (a === "play") { if (s.playing) this._stop(); else this._play(); }
     else if (a === "relearn") { this._relearn(); return; }
     else if (a === "export") { this._export(el.dataset.id); return; }
-    else if (a === "bday") { this._openDay(el.dataset.id, Number(el.dataset.noon)); return; }
+    else if (a === "bday") { this._openDay(el.dataset.id, el.dataset.day); return; }
     else if (a === "bdayclose") this._bday = null;
     else if (a === "bhour" && this._bday) this._bday.hour = Number(el.dataset.i);
     this._render();
   }
 
-  async _openDay(id, noon) {
-    if (this._bday && this._bday.id === id && this._bday.noon === noon && !this._bday.error) return;
-    const req = { id, noon, loading: true };
+  async _openDay(id, day) {
+    if (this._bday && this._bday.id === id && this._bday.day === day && !this._bday.error) return;
+    const req = { id, day, loading: true };
     this._bday = req; this._render();
     try {
-      const res = await this._hass.fetchWithAuth(`/api/noxcast/hours?array=${encodeURIComponent(id)}&day=${noon}`);
+      const res = await this._hass.fetchWithAuth(`/api/noxcast/hours?array=${encodeURIComponent(id)}&day=${encodeURIComponent(day)}`);
       if (!res.ok) throw new Error(String(res.status));
       req.data = await res.json();
     } catch (err) {
@@ -1660,7 +1668,7 @@ class NoxcastPanel extends HTMLElement {
       .cal { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; margin: 6px 0; }
       .crow { display: grid; grid-template-columns: repeat(31, 1fr); gap: 2px; }
       .crow i { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--divider-color, #ddd); position: relative; max-height: 16px; }
-      .crow i.void { background: none; }
+      .crow i.void { background: none; } .crow i.empty { background: none; outline: 1px solid var(--divider-color, #ddd); outline-offset: -1px; }
       .crow i.left { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 4px); outline: 1px solid var(--c); outline-offset: -1px; }
       .crow i.bat::after { content: ""; position: absolute; right: 1px; top: 1px; width: 4px; height: 4px; border-radius: 50%; background: #EF9F27; }
       .crow i[data-action] { cursor: pointer; } .crow i.sel { box-shadow: 0 0 0 2px var(--primary-text-color); }

@@ -95,7 +95,7 @@ def to_csv(table: dict) -> str:
 
 # ---------------------------------------------------------------------------- summary for the panel
 
-SUMMARY_VERSION = 2
+SUMMARY_VERSION = 3
 CATEGORIES = ("used", "lower_bound", "battery", "snow", "no_output", "excluded", "other")
 # a day under snow that delivered nothing is snow first: it is the textbook snow case, not an outage
 _LEFT = (("excluded", {"excluded"}), ("snow", {"snow"}), ("no_output", {"no_output"}),
@@ -112,6 +112,10 @@ BRIGHT_KT = 0.5             # a day without output (and no snow) under a sky thi
 DAY_RATIO = 0.7             # a used day at less than this share of the model, which no filter explains
 DAY_MIN_H = 2.0             # ... with a model day of at least this many hours at peak power: bright days only, on
                             # dull days the satellite itself is often off by a third
+CALENDAR_DAYS = 366         # the calendar shows the last year; older days stay in the CSV export
+DAY_LEFT = 0.5              # a day counts as left out when more than this share of its clear-sky energy was
+CALENDAR_MIN_H = 0.2        # a day's deviation needs a model day of this many hours at peak power: below it the
+                            # ratio of two small numbers says nothing
 
 
 def category(status: str, reasons: str) -> str | None:
@@ -153,7 +157,45 @@ def summary(site: Site, table: dict, peak_w: float) -> dict:
 
     return {"version": SUMMARY_VERSION, "hours": sum(len(v) for v in days.values()), "shares": shares(energy),
             "months": {m: shares(e) for m, e in sorted(months.items())},
-            "anomalies": _anomalies(site, days, peak_w) if peak_w > 0 else []}
+            "anomalies": _anomalies(site, days, peak_w) if peak_w > 0 else [],
+            "days": _calendar(site, days, peak_w)}
+
+
+def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[list]:
+    """The last CALENDAR_DAYS days, oldest first, each [solar noon (UTC), category, ratio, battery hours]:
+
+    category "used" when learning kept most of the day's clear-sky energy (as sample or lower bound), else the
+    category that took most of it. ratio: actual against model over the used hours with a satellite value, None for
+    a left-out day or a dull one (CALENDAR_MIN_H). battery hours: lit hours left out as "battery full", so a day that
+    learning used can still show that its noon was missing.
+    """
+    lit = LIT_SHARE * peak_w
+    out = []
+    for d in sorted(days)[-CALENDAR_DAYS:]:
+        rs = days[d]
+        energy: dict[str, float] = {}
+        for r in rs:
+            energy[r["cat"]] = energy.get(r["cat"], 0.0) + (r["clear_w"] or 0.0)
+        total = sum(energy.values())
+        kept = energy.get("used", 0.0) + energy.get("lower_bound", 0.0)
+        cat = "used" if total <= 0 or kept >= (1 - DAY_LEFT) * total else max(
+            (k for k in energy if k not in ("used", "lower_bound")), key=lambda k: energy[k])
+        ratio = None
+        if cat == "used":
+            used = [r for r in rs if r["cat"] == "used" and r["model_w"] is not None]
+            model = sum(r["model_w"] for r in used)
+            if peak_w > 0 and model >= CALENDAR_MIN_H * peak_w:
+                ratio = round(sum(r["power_w"] for r in used) / model, 2)
+        battery = sum(1 for r in rs if r["cat"] == "battery" and (r["clear_w"] or 0) >= lit)
+        out.append([ln.noons(site, [d])[0], cat, ratio, battery])
+    return out
+
+
+def day_rows(site: Site, table: dict, noon: float) -> dict:
+    """The rows of the table on the solar day of noon (a time from the calendar): the day view of the panel."""
+    d = solar_day(site, noon)
+    return {"version": table["version"], "columns": table["columns"],
+            "rows": [r for r in table["rows"] if _solar_day(site, r[0]) == d]}
 
 
 def _solar_day(site: Site, iso: str) -> int:

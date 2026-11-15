@@ -6,6 +6,7 @@ function of views.py build the payload and sends it with the schema version (see
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -426,7 +427,8 @@ def _hours_view() -> Any:
 
     class HoursView(HomeAssistantView):
         """Every daylight hour of one array with its status and reasons as CSV (databasis.py), for admins: it holds
-        the measured history."""
+        the measured history. With day (a solar noon from the calendar): only that day's rows as JSON, for the day
+        view."""
 
         url = HOURS_URL
         name = "api:noxcast:hours"
@@ -439,6 +441,17 @@ def _hours_view() -> Any:
             c = next((c for c in _coordinators(hass) if sid in c.arrays), None)
             if c is None:
                 return web.Response(status=404)
+            if "day" in request.query:
+                try:
+                    noon = float(request.query["day"])
+                except ValueError:
+                    return web.Response(status=400)
+                if not math.isfinite(noon):
+                    return web.Response(status=400)
+                rows = await c.async_day(sid, noon)
+                if rows is None:
+                    return web.Response(status=404)
+                return web.json_response(rows, headers={"Cache-Control": "no-store"})
             tables = await c.async_hour_tables(sid)
             if sid not in tables:
                 return web.Response(status=404)

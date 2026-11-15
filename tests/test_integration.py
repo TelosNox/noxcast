@@ -112,7 +112,14 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         await coordinator.async_learn()
         await hass.async_block_till_done()
         diag = await diagnostics.async_get_config_entry_diagnostics(hass, coordinator.config_entry)
+        sid, learned = next(iter(coordinator.learned.items()))
+        noon = learned.basis["days"][-2][0]                                # a calendar day of the nightly summary
+        day = await coordinator.async_day(sid, noon)
+        with patch.object(coordinator, "async_hour_tables") as fetch:       # the next day comes from the kept table
+            again = await coordinator.async_day(sid, noon - 86400)
+        fetch.assert_not_called()
 
+    assert day["rows"] and len(day["rows"]) < 24 and again["rows"] and again["rows"][0][0] < day["rows"][0][0]
     learned = next(iter(coordinator.learned.values()))
     assert abs(learned.efficiency - 0.92) < 0.03
     table = next(iter(diag["arrays"].values()))["hours"]                # every daylight hour with its status

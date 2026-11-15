@@ -107,6 +107,17 @@ const TEXT = {
       basisCat: { used: "verwendet", lower_bound: "Untergrenze", battery: "Akku voll", snow: "Schnee", no_output: "kein Ertrag", excluded: "ausgeschlossen", other: "sonstiges" },
       basisOk: "Keine Auffälligkeiten.",
       basisHelp: "Gewichtet nach der Energie bei klarem Himmel: Eine ausgelassene Mittagsstunde im Juni kostet das Lernen viel mehr als eine Randstunde im Dezember. Untergrenze: an einer Leistungsgrenze, Akku lädt mit voller Leistung oder PV zurückgehalten; die echte Leistung war mindestens so hoch. Neu berechnet bei jedem nächtlichen Lernen; die einzelnen Stunden stehen im CSV-Export.",
+      calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Grau: dunkler Tag oder kein Satellitenwert, kein Vergleich.",
+      calOpen: "Ein Klick auf einen Tag zeigt seine Stunden.",
+      calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "kein Vergleich" },
+      calBattery: "einzelne Stunden Akku voll",
+      dayTitle: "Stunden am {d}", dayLoading: "Lade die Stunden …", dayFailed: "Die Stunden konnten nicht geladen werden ({e}).",
+      dayActual: "gemessen", dayModel: "Modell", dayBound: "klarer Himmel", dayHint: "Ein Klick auf eine Stunde zeigt, wie das Modell zustande kommt.",
+      daySum: "Gemessen {a}, Modell {m} an den Stunden mit Satellitenwert.", dayNoModel: "Ohne Satellitenarchiv gibt es keinen Modellwert der vergangenen Stunden.",
+      dayStatus: { used: "verwendet", lower_bound: "Untergrenze", left_out: "ausgelassen" },
+      dayStep: { clear: "klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Temperatur" },
+      dayKt: "Satellit {v} klar", dayTemp: "{v} °C", daySnow: "Schneefall {v} cm", daySoc: "Ladestand {v} %",
+      reason: { before_use: "vor Inbetriebnahme", negative: "negativer Messwert", soc_full: "Akku voll (Haushalt)", battery_full: "Akku voll (System)", maybe_charging: "Akku lädt vielleicht", no_output: "kein Ertrag am Tag", snow: "Schnee", excluded: "ausgeschlossen", at_limit: "an der Leistungsgrenze", charging_max: "Akku lädt mit voller Leistung", held_back: "PV zurückgehalten" },
       anomaly: {
         battery_matches: "„Akku voll“ an {n} Tagen, obwohl die Gruppe lieferte, was das Modell erwartet: {v} dieser Stunden innerhalb von 5 %, bei den verwendeten Stunden nur {u} (am deutlichsten am {d}). Der Akku hat dort offenbar nicht begrenzt, etwa weil die Anlage dann einspeist; dem Lernen fehlen diese Stunden unnötig. Prüfe die Schwelle „Akku voll“ im Haupteintrag oder die Zuordnung zum System.",
         above_clear: "In {n} Stunden lieferte die Gruppe deutlich mehr, als das gelernte Modell bei klarem Himmel ohne Schatten zulässt (bis zum {v}-Fachen, am {d}). Immer zur selben Tageszeit: Prüfe die Ausrichtung; den ganzen Tag: Peakleistung oder Einheit des Sensors.",
@@ -190,6 +201,17 @@ const TEXT = {
       basisCat: { used: "used", lower_bound: "lower bound", battery: "battery full", snow: "snow", no_output: "no output", excluded: "excluded", other: "other" },
       basisOk: "Nothing stands out.",
       basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Lower bound: at a power limit, battery charging at full power or PV held back; the real output was at least as high. Renewed by every nightly learning run; the single hours are in the CSV export.",
+      calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Grey: a dull day or no satellite value, no comparison.",
+      calOpen: "Click a day to see its hours.",
+      calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "no comparison" },
+      calBattery: "single hours battery full",
+      dayTitle: "Hours on {d}", dayLoading: "Loading the hours …", dayFailed: "The hours could not be loaded ({e}).",
+      dayActual: "measured", dayModel: "model", dayBound: "clear sky", dayHint: "Click an hour to see how the model comes about.",
+      daySum: "Measured {a}, model {m} in the hours with a satellite value.", dayNoModel: "Without the satellite archive there is no model value for past hours.",
+      dayStatus: { used: "used", lower_bound: "lower bound", left_out: "left out" },
+      dayStep: { clear: "clear sky", clouds: "clouds", shade: "shade", reflection: "reflection", direction: "direction", heat: "temperature" },
+      dayKt: "satellite {v} clear", dayTemp: "{v} °C", daySnow: "snowfall {v} cm", daySoc: "state of charge {v} %",
+      reason: { before_use: "before commissioning", negative: "negative reading", soc_full: "battery full (household)", battery_full: "battery full (system)", maybe_charging: "battery may be charging", no_output: "no output that day", snow: "snow", excluded: "excluded", at_limit: "at the power limit", charging_max: "battery charging at full power", held_back: "PV held back" },
       anomaly: {
         battery_matches: "“Battery full” on {n} days although the array delivered what the model expects: {v} of these hours within 5 %, against only {u} of the used hours (most clearly on {d}). The battery did not seem to hold it back, for example because the installation exports then; learning lost these hours for nothing. Check the “battery full” threshold in the main entry or the system the array belongs to.",
         above_clear: "In {n} hours the array delivered clearly more than the learned model allows under a clear sky without shade (up to {v} times, on {d}). Always at the same time of day: check the orientation; all day: the peak power or the sensor's unit.",
@@ -401,6 +423,12 @@ class NoxcastPanel extends HTMLElement {
     this._data = null;
     this._cache = {};
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+    // the calendar cells are not buttons (a few hundred of them): Enter and Space open a day like a click
+    this.shadowRoot.addEventListener("keydown", (ev) => {
+      if ((ev.key === "Enter" || ev.key === " ") && ev.target.getAttribute && ev.target.getAttribute("role") === "button") {
+        ev.preventDefault(); this._onClick(ev);
+      }
+    });
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     // the overview links each figure to the section that explains it
     this.shadowRoot.addEventListener("noxcast-section", (ev) => {
@@ -957,7 +985,7 @@ class NoxcastPanel extends HTMLElement {
   _checks(arr) {
     const la = arr.learned;
     if (!la) return "";
-    return `${this._plausible(arr, la)}${this._basis(la)}${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._effDirections(la)}${this._geometry(arr, la)}</div>`;
+    return `${this._plausible(arr, la)}${this._basis(arr, la)}${this._balance(la)}<div class="checks">${this._effMonths(la)}${this._effDirections(la)}${this._geometry(arr, la)}</div>`;
   }
 
   _plausible(arr, la) {
@@ -985,7 +1013,7 @@ class NoxcastPanel extends HTMLElement {
     return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}${left}<p class="help">${c.plHelp}</p>${exp}</section>`;
   }
 
-  _basis(la) {
+  _basis(arr, la) {
     const b = la.basis, c = this._t.checks;
     if (!b || !b.hours || !Object.keys(b.shares || {}).length) return "";
     const COLORS = { used: "#1D9E75", lower_bound: "#7F77DD", battery: "#EF9F27", snow: "#85B7EB", no_output: "#888780", excluded: "#D85A30", other: "#B4B2A9" };
@@ -1004,7 +1032,115 @@ class NoxcastPanel extends HTMLElement {
     return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
       <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
       ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}
-      ${notes}<p class="help">${c.basisHelp}</p></section>`;
+      ${notes}<p class="help">${c.basisHelp}</p>${this._calendar(arr, b.days || [], COLORS)}</section>`;
+  }
+
+  _calendar(arr, days, COLORS) {
+    if (!days.length) return "";
+    const c = this._t.checks, admin = this._hass.user && this._hass.user.is_admin;
+    const DEV = [[0.7, "#B23A48", "low"], [0.9, "#E8A0A0", "lowish"], [1.1, "#1D9E75", "ok"], [1.3, "#7FA8E8", "highish"], [Infinity, "#2B4F9E", "high"]];
+    const months = new Map();
+    for (const [noon, cat, ratio, battery] of days) {
+      const dt = new Date(noon * 1000), key = `${dt.getFullYear()}-${dt.getMonth()}`;
+      if (!months.has(key)) months.set(key, { y: dt.getFullYear(), m: dt.getMonth(), cells: {} });
+      months.get(key).cells[dt.getDate()] = { noon, cat, ratio, battery };
+    }
+    const open = this._bday && this._bday.id === arr.id ? this._bday.noon : null;
+    const cell = (d) => {
+      if (!d) return "<i></i>";
+      let style = "", cls = "";
+      if (d.cat !== "used") { style = `--c:${COLORS[d.cat] || COLORS.other}`; cls = "left"; }
+      else if (d.ratio != null) style = `background:${DEV.find(([hi]) => d.ratio < hi)[1]}`;
+      const label = new Date(d.noon * 1000).toLocaleDateString(this._lang) + " · " + (d.cat !== "used" ? c.basisCat[d.cat] || d.cat
+        : d.ratio == null ? c.calDev.none : `${Math.round(d.ratio * 100)} %`) + (d.battery ? ` · ${c.calBattery} (${d.battery})` : "");
+      return `<i class="${cls}${d.battery && d.cat === "used" ? " bat" : ""}${open === d.noon ? " sel" : ""}" style="${style}" title="${esc(label)}"
+        ${admin ? `data-action="bday" data-id="${arr.id}" data-noon="${d.noon}" role="button" tabindex="0" aria-label="${esc(label)}"` : ""}></i>`;
+    };
+    const rows = [...months.values()].slice(-12).map(({ y, m, cells }) => {
+      const n = new Date(y, m + 1, 0).getDate();
+      return `<span class="muted small">${this._t.months[m]} ${String(y).slice(2)}</span><div class="crow">${Array.from({ length: 31 }, (_, i) => i < n ? cell(cells[i + 1]) : '<i class="void"></i>').join("")}</div>`;
+    }).join("");
+    const legend = DEV.map(([, col, k]) => `<span><b style="background:${col}"></b>${c.calDev[k]}</span>`).join("")
+      + `<span><b class="none"></b>${c.calDev.none}</span><span><b class="dot"></b>${c.calBattery}</span>`;
+    return `<h4>${c.calTitle}</h4><div class="cal">${rows}</div><div class="blegend">${legend}</div>
+      <p class="help">${c.calHelp}${admin ? ` ${c.calOpen}` : ""}</p>${open != null ? this._dayView(COLORS) : ""}`;
+  }
+
+  _dayView(COLORS) {
+    const c = this._t.checks, v = this._bday;
+    const title = c.dayTitle.replace("{d}", new Date(v.noon * 1000).toLocaleDateString(this._lang));
+    const head = `<div class="dhead"><h4>${title}</h4><button class="x" data-action="bdayclose" aria-label="${this._t.close}">✕</button></div>`;
+    if (v.loading) return `${head}<p class="muted">${c.dayLoading}</p>`;
+    if (v.error) return `${head}<p class="bad small">${esc(c.dayFailed.replace("{e}", v.error))}</p>`;
+    const cols = v.data.columns, rows = v.data.rows.map((r) => Object.fromEntries(cols.map((k, i) => [k, r[i]])));
+    if (!rows.length) return `${head}<p class="muted">–</p>`;
+    const W = 420, H = 170, L = 34, B = 18, T = 6;
+    const ts = (r) => Date.parse(r.start) / 1000;
+    const t0 = ts(rows[0]), t1 = ts(rows[rows.length - 1]) + 3600;
+    const hi = Math.max(1, ...rows.map((r) => Math.max(r.power_w || 0, r.model_w || 0, r.bound_w || 0))) * 1.08;
+    const x = (t) => L + (t - t0) / (t1 - t0) * (W - L - 4), y = (w) => T + (1 - w / hi) * (H - T - B);
+    const hw = x(t0 + 3600) - x(t0);
+    let bands = "", hits = "", ticks = "";
+    rows.forEach((r, i) => {
+      const t = ts(r), left = r.status === "left_out";
+      const col = left ? COLORS[this._dayCat(r.reasons)] || COLORS.other : r.status === "lower_bound" ? COLORS.lower_bound : null;
+      const rect = `x="${x(t).toFixed(1)}" y="${T}" width="${hw.toFixed(1)}" height="${H - T - B}"`;
+      if (col) bands += `<rect ${rect} fill="${col}" opacity="0.22"></rect>`;
+      if (v.hour === i) bands += `<rect ${rect} fill="none" stroke="var(--primary-text-color)" stroke-width="1"></rect>`;
+      hits += `<rect ${rect} fill="transparent" data-action="bhour" data-i="${i}" style="cursor:pointer"><title>${esc(this._hourLabel(r))}</title></rect>`;
+      const hr = new Date(t * 1000).getHours();
+      if (hr % 3 === 0) ticks += `<text x="${x(t).toFixed(1)}" y="${H - 4}" class="tick">${hr}</text>`;
+    });
+    const line = (key) => {
+      // a missing value splits the line: no line across hours without one
+      const segs = [[]];
+      for (const r of rows) {
+        if (r[key] == null) segs.push([]);
+        else segs[segs.length - 1].push(`${x(ts(r) + 1800).toFixed(1)},${y(r[key]).toFixed(1)}`);
+      }
+      return segs.filter((seg) => seg.length).map((seg) => seg.length === 1 ? `M${seg[0]}h0.1` : `M${seg.join("L")}`).join("");
+    };
+    const kwh = (wh) => `${(wh / 1000).toLocaleString(this._lang, { maximumFractionDigits: 1 })} kWh`;
+    const withModel = rows.filter((r) => r.model_w != null);
+    const sum = withModel.length ? c.daySum.replace("{a}", kwh(withModel.reduce((a, r) => a + r.power_w, 0)))
+      .replace("{m}", kwh(withModel.reduce((a, r) => a + r.model_w, 0))) : c.dayNoModel;
+    const svg = `<svg viewBox="0 0 ${W} ${H}" class="dchart" role="img" aria-label="${esc(title)}">${bands}
+      <line x1="${L}" x2="${W - 4}" y1="${H - B}" y2="${H - B}" class="axis"></line>
+      <text x="${L - 4}" y="${T + 8}" class="tick" text-anchor="end">${Math.round(hi)}</text><text x="${L - 4}" y="${H - B}" class="tick" text-anchor="end">0 W</text>${ticks}
+      <path d="${line("bound_w")}" class="lbound"></path><path d="${line("model_w")}" class="lmodel"></path><path d="${line("power_w")}" class="lactual"></path>${hits}</svg>`;
+    const legend = `<div class="blegend"><span><b class="lk actual"></b>${c.dayActual}</span><span><b class="lk model"></b>${c.dayModel}</span><span><b class="lk bound"></b>${c.dayBound}</span>
+      <span><b style="background:${COLORS.lower_bound};opacity:.4"></b>${c.basisCat.lower_bound}</span></div>`;
+    const detail = v.hour != null && rows[v.hour] ? `<p class="note">${esc(this._hourDetail(rows[v.hour]))}</p>` : `<p class="help">${c.dayHint}</p>`;
+    return `${head}${svg}${legend}<p class="small">${sum}</p>${detail}`;
+  }
+
+  _dayCat(reasons) {
+    // the same order as databasis.category
+    const names = (reasons || "").split(" ");
+    return names.includes("excluded") ? "excluded" : names.includes("snow") ? "snow" : names.includes("no_output") ? "no_output"
+      : names.includes("soc_full") || names.includes("battery_full") ? "battery" : "other";
+  }
+
+  _hourLabel(r) {
+    const c = this._t.checks, t = new Date(r.start);
+    const hh = (d) => d.toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit" });
+    const why = (r.reasons || "").split(" ").filter(Boolean).map((k) => c.reason[k] || k).join(", ");
+    return `${hh(t)}–${hh(new Date(t.getTime() + 3600000))} · ${c.dayStatus[r.status] || r.status}${why ? `: ${why}` : ""}`;
+  }
+
+  _hourDetail(r) {
+    const c = this._t.checks, num = (v) => v.toLocaleString(this._lang), w = (v) => `${num(Math.round(v))} W`;
+    const signed = (v) => `${v < 0 ? "−" : "+"}${num(Math.abs(Math.round(v)))}`;
+    const parts = [this._hourLabel(r), `${c.dayActual} ${w(r.power_w)}`];
+    if (r.model_w != null) {
+      const steps = ["clouds", "shade", "reflection", "direction", "heat"].filter((k) => r[`${k}_w`]).map((k) => `${c.dayStep[k]} ${signed(r[`${k}_w`])}`);
+      parts.push(`${c.dayModel} ${w(r.model_w)} = ${c.dayStep.clear} ${num(Math.round(r.clear_w))}${steps.length ? ` ${steps.join(" ")}` : ""}`);
+    } else if (r.clear_w != null) parts.push(`${c.dayStep.clear} ${w(r.clear_w)}`);
+    if (r.kt != null) parts.push(c.dayKt.replace("{v}", `${Math.round(r.kt * 100)} %`));
+    if (r.air_temp != null) parts.push(c.dayTemp.replace("{v}", num(r.air_temp)));
+    if (r.snowfall_cm) parts.push(c.daySnow.replace("{v}", num(r.snowfall_cm)));
+    if (r.soc_pct != null) parts.push(c.daySoc.replace("{v}", num(Math.round(r.soc_pct))));
+    return parts.join(" · ");
   }
 
   _effDirections(la) {
@@ -1324,7 +1460,26 @@ class NoxcastPanel extends HTMLElement {
     else if (a === "play") { if (s.playing) this._stop(); else this._play(); }
     else if (a === "relearn") { this._relearn(); return; }
     else if (a === "export") { this._export(el.dataset.id); return; }
+    else if (a === "bday") { this._openDay(el.dataset.id, Number(el.dataset.noon)); return; }
+    else if (a === "bdayclose") this._bday = null;
+    else if (a === "bhour" && this._bday) this._bday.hour = Number(el.dataset.i);
     this._render();
+  }
+
+  async _openDay(id, noon) {
+    if (this._bday && this._bday.id === id && this._bday.noon === noon && !this._bday.error) return;
+    const req = { id, noon, loading: true };
+    this._bday = req; this._render();
+    try {
+      const res = await this._hass.fetchWithAuth(`/api/noxcast/hours?array=${encodeURIComponent(id)}&day=${noon}`);
+      if (!res.ok) throw new Error(String(res.status));
+      req.data = await res.json();
+    } catch (err) {
+      req.error = err.message || String(err);
+    }
+    req.loading = false;
+    // a later click wins: only the day still open is drawn
+    if (this._bday === req) this._render();
   }
 
   async _export(id) {
@@ -1409,6 +1564,7 @@ class NoxcastPanel extends HTMLElement {
       .figs { flex: 0 1 220px; min-width: 200px; display: flex; flex-direction: column; }
       h2 { margin: 0 0 8px; font-size: 18px; font-weight: 500; }
       h3 { margin: 0 0 6px; font-size: 14px; font-weight: 500; }
+      h4 { margin: 14px 0 4px; font-size: 13px; font-weight: 500; } .dhead h4 { margin: 0; }
       .fig { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--divider-color); font-size: 13px; }
       .minis { flex: 999 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
       .mini { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
@@ -1501,6 +1657,21 @@ class NoxcastPanel extends HTMLElement {
       .bmonths { display: flex; gap: 4px; margin-top: 4px; }
       .bm { flex: 1; min-width: 0; text-align: center; font-size: 11px; color: var(--secondary-text-color); }
       .bstack { display: flex; flex-direction: column-reverse; height: 60px; border-radius: 2px; overflow: hidden; margin-bottom: 2px; }
+      .cal { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; margin: 6px 0; }
+      .crow { display: grid; grid-template-columns: repeat(31, 1fr); gap: 2px; }
+      .crow i { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--divider-color, #ddd); position: relative; max-height: 16px; }
+      .crow i.void { background: none; }
+      .crow i.left { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 4px); outline: 1px solid var(--c); outline-offset: -1px; }
+      .crow i.bat::after { content: ""; position: absolute; right: 1px; top: 1px; width: 4px; height: 4px; border-radius: 50%; background: #EF9F27; }
+      .crow i[data-action] { cursor: pointer; } .crow i.sel { box-shadow: 0 0 0 2px var(--primary-text-color); }
+      .blegend b.none { background: var(--divider-color, #ddd); } .blegend b.dot { background: #EF9F27; border-radius: 50%; width: 6px; height: 6px; }
+      .blegend b.lk { height: 2px; width: 14px; vertical-align: 3px; } .lk.actual { background: var(--primary-text-color); }
+      .lk.model { background: #1D9E75; } .lk.bound { background: var(--secondary-text-color); }
+      .dhead { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+      .dchart { width: 100%; height: auto; display: block; }
+      .dchart .axis { stroke: var(--divider-color, #ccc); } .dchart .tick { font-size: 10px; fill: var(--secondary-text-color); }
+      .dchart path { fill: none; stroke-width: 2; } .dchart .lactual { stroke: var(--primary-text-color); }
+      .dchart .lmodel { stroke: #1D9E75; stroke-dasharray: 5 3; } .dchart .lbound { stroke: var(--secondary-text-color); stroke-width: 1; stroke-dasharray: 2 3; }
       .badge { margin-left: 8px; font-size: 11px; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
         color: #fff; background: linear-gradient(115deg, #FF6A3D, #8B5CF6); }
     </style>`;

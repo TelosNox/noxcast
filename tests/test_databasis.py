@@ -159,4 +159,20 @@ def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     keys = {a["key"]: a for a in out["anomalies"]}
     assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
     assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
-        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": []}
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": []}
+
+
+def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
+    rows = _hours(1, status="used", power=450.0)                                   # 90 % of the model
+    rows += _hours(2, status="left_out", reasons="no_output snow", power=0.0)      # left out: snow first
+    day3 = _hours(3, status="used")
+    day3[3:5] = [_row(r[0], "left_out", "battery_full") for r in day3[3:5]]        # two noon hours battery full
+    rows += day3
+    rows += _hours(4, status="used", clear=10.0, model=10.0)                        # too dull to compare
+    out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
+    noon = lambda d: ln.noons(SITE, [model.solar_day(SITE, datetime(2026, 6, d, 12, tzinfo=timezone.utc).timestamp())])[0]  # noqa: E731
+    assert out["days"] == [[noon(1), "used", 0.9, 0], [noon(2), "snow", None, 0], [noon(3), "used", 1.0, 2],
+                           [noon(4), "used", None, 0]]
+    table = {"version": db.VERSION, "columns": db.COLUMNS, "rows": rows}
+    assert db.day_rows(SITE, table, noon(3))["rows"] == day3
+    assert db.day_rows(SITE, table, noon(3) + 40 * 86400)["rows"] == []

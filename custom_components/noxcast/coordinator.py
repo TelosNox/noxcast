@@ -63,6 +63,7 @@ from .sources import (
 from .sources import SourceError, async_ensemble, async_open_meteo, async_power_factors, async_previous_runs
 
 _LOGGER = logging.getLogger(__name__)
+DAY_TABLE_SECONDS = 600
 
 __all__ = ["ArrayConfig", "ConsumerConfig", "NoxcastConfigEntry", "NoxcastCoordinator", "NoxcastData"]
 
@@ -175,6 +176,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.pv_backtest: dict | None = None         # last result of backtest.run; never read by the forecast
         self._backtest_task: asyncio.Task | None = None
         self._hours_lock = asyncio.Lock()             # async_hour_tables: one export or download at a time
+        # the last hour table of the day view: (array, monotonic time, table); one array only, it holds MBs
+        self._day_table: tuple[str, float, dict] | None = None
         self.model_compare: dict | None = None       # last successful weather model comparison (hindcast.run)
         # the running or last failed comparison: {"running", "done", "total", "error", "limited"}
         self.compare_state: dict = {"running": False, "done": 0, "total": 0, "error": None, "limited": False}
@@ -709,6 +712,21 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 return {sid: databasis.hour_table(self.site, arr, learned[sid], history, soc_full, exclusions)
                         for sid, arr in arrays.items()}
             return await self.hass.async_add_executor_job(tables)
+
+    async def async_day(self, sid: str, noon: float) -> dict | None:
+        """The hour table rows of one day for the panel's day view; None without that array. The whole table is
+        kept for a few minutes, so clicking through the calendar does not fetch the history again for each day."""
+        cached = self._day_table
+        if cached and cached[0] == sid and time.monotonic() - cached[1] < DAY_TABLE_SECONDS:
+            table = cached[2]
+        else:
+            self._day_table = None
+            tables = await self.async_hour_tables(sid)
+            if sid not in tables:
+                return None
+            table = tables[sid]
+            self._day_table = (sid, time.monotonic(), table)
+        return await self.hass.async_add_executor_job(databasis.day_rows, self.site, table, noon)
 
     async def _async_forecast_error(self) -> None:
         """Renew the forecast error sensor's figures; they change only when the nightly run adds actuals."""

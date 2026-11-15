@@ -439,7 +439,18 @@ not types of their own. Independent devices are systems of their own, side by si
   above).
 - Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,
   micro-inverter). An hour whose maximum reaches 95 % of it is at the limit (`limited` in the archive; the band
-  skips it, the forecast error does not, since forecast and measurement are both capped). In learning it is a
+  skips it, the forecast error does not, since forecast and measurement are both capped). For learning
+  (`learning.floor_hours`) a peak of a minute is not enough, the light at a cloud edge passes the limit for that
+  long and the limit cuts little. An hour stays as measured when its
+  mean stayed below 80 % of the limit (an hour near it was spent at it) and reached 90 % of free modules
+  (geometry, default efficiency, no learned shade) under the satellite sky: what the limit cut would be missing
+  from the mean. Below that, a cut and shade look alike and the hour stays a lower bound, which is true either
+  way. The learned model is no reference here, its shade would confirm itself. On the maintainer's history (500 W
+  per input, the backtest's config with limits) the lower bounds fell from 101 to 39 hours (balcony) and from 252 to
+  138 (roof); hold-out hour error / bias roof 12.7 % / -2.9 % -> 12.2 % / -1.6 %, balcony 12.7 % / +0.3 % ->
+  12.7 % / +0.5 %. The 5-minute means are no better judge: passing clouds cut within each 5 minutes without
+  bringing their mean to the limit, and gaps hide the periods at it. The default efficiency, not the learned one,
+  stands for free modules: the learned one comes from these hours and would confirm itself. Otherwise it is a
   lower bound ("at least this much", `floors` in `model.learn`). Dropping it would select hours on their
   measured value: with a strong limit only clouded and shaded "clear" hours stay (E1, #248: efficiency -4 to
   -90 points, hold-out worse in 3 of 4 cases); keeping it as measured bends efficiency and midday shade low

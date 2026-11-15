@@ -46,7 +46,7 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
     reasons = ln.hour_reasons(site, arr, history, soc_full, exclusions)
     power = ln.scaled_sum(history.power, arr.sensors, history.factors)
     samples, steady, floors = ln.array_samples(arr, history, soc_full, exclusions,
-                                               skip=ln.left_out(site, arr, history).hours)
+                                               skip=ln.left_out(site, arr, history).hours, site=site)
     checked = {row[0]: (row[7], row[8]) for row in
                ac.hour_table(site, geo, learned, samples, history.satellite_ghi, history.air_temp, steady,
                              floors)["rows"]}

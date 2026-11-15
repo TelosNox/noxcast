@@ -7,7 +7,8 @@ JSON. To compare two model versions, run this script from both checkouts on the 
         --satellite data/satellite.json --temperature data/temperature.json --archive data/archive.json
 
 --config      as config.example.json: location (with timezone), arrays and curtailment; per array optionally
-              id (the array id used in the archive), heating, temp_coeff (per K), valid_since (ISO date) and
+              id (the array id used in the archive), heating, temp_coeff (per K), valid_since (ISO date),
+              limits ({sensor: fixed limit in W}, e.g. the inputs of an inverter) and
               extra ([{tilt, azimuth, peak_w}]; peak_w of the array is that of its first plane).
 --statistics  recorder/statistics_during_period answer: {sensor: [{start (ms), mean, min, max}]}, power in W.
 --satellite   Open-Meteo archive answer (or its "hourly" block) with shortwave_radiation; optional.
@@ -74,7 +75,9 @@ def _array(cfg: dict, tz: ZoneInfo) -> tuple[str, ln.ArrayConfig]:
     since = cfg.get("valid_since")
     valid_since = datetime.combine(date.fromisoformat(since), datetime.min.time(), tz).timestamp() if since else None
     sid = cfg.get("id", cfg["name"])
-    return sid, ln.ArrayConfig(sid, cfg["name"], tuple(cfg["sensors"]), geometry, valid_since, cfg.get("temp_coeff"))
+    limits = tuple((s, float(w)) for s, w in sorted((cfg.get("limits") or {}).items()))
+    return sid, ln.ArrayConfig(sid, cfg["name"], tuple(cfg["sensors"]), geometry, valid_since, cfg.get("temp_coeff"),
+                               limits)
 
 
 def _cell(s: dict) -> str:

@@ -177,7 +177,13 @@ def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     keys = {a["key"]: a for a in out["anomalies"]}
     assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
     assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
-        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": {"day": [], "cat": [], "ratio": [], "battery": []}}
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": {"day": [], "cat": [], "ratio": [], "input": [], "battery": []}}
+
+
+def test_input_spread_follows_the_sky():
+    assert db.input_spread(0.0) == db.INPUT_SPREAD[0][1] and db.input_spread(1.0) == db.INPUT_SPREAD[-1][1]
+    assert db.input_spread(0.45) == (0.07 + 0.065) / 2
+    assert all(db.input_spread(a) >= db.input_spread(b) for a, b in [(0.1, 0.3), (0.3, 0.6), (0.6, 0.9)])
 
 
 def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
@@ -187,9 +193,12 @@ def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
     day3[3:5] = [_row(r[0], "left_out", "battery_full") for r in day3[3:5]]        # two noon hours battery full
     rows += day3
     rows += _hours(4, status="used", clear=10.0, model=10.0)                        # too dull to compare
+    rows += _hours(5, status="used", power=350.0, clear=2000.0)                     # 70 % under a dull sky (25 %)
     out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
-    assert out["days"] == {"day": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
-                           "cat": ["used", "snow", "used", "used"], "ratio": [0.9, None, 1.0, None], "battery": [0, 0, 2, 0]}
+    assert out["days"] == {"day": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"],
+                           "cat": ["used", "snow", "used", "used", "used"], "ratio": [0.9, None, 1.0, None, 0.7],
+                           # 90 % under a bright sky is more than the satellite causes, 70 % under a dull one is not
+                           "input": [False, False, True, False, True], "battery": [0, 0, 2, 0, 0]}
     table = {"version": db.VERSION, "columns": db.COLUMNS, "rows": rows}
     assert db.day_rows(SITE, table, date(2026, 6, 3))["rows"] == day3
     assert db.day_rows(SITE, table, date(2026, 7, 3))["rows"] == []

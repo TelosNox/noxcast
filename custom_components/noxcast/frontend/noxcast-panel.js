@@ -107,10 +107,10 @@ const TEXT = {
       basisCat: { used: "verwendet", lower_bound: "begrenzt", battery: "Akku voll", snow: "Schnee", no_output: "kein Ertrag", excluded: "ausgeschlossen", other: "sonstiges" },
       basisOk: "Keine Auffälligkeiten.",
       basisHelp: "Gewichtet nach der Energie bei klarem Himmel: Eine ausgelassene Mittagsstunde im Juni kostet das Lernen viel mehr als eine Randstunde im Dezember. Begrenzt: an einer Leistungsgrenze, Akku lädt mit voller Leistung oder PV zurückgehalten; die echte Leistung war mindestens so hoch, das Lernen nutzt die Stunde nur als „mindestens so viel“. Neu berechnet bei jedem nächtlichen Lernen; die einzelnen Stunden stehen im CSV-Export.",
-      calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Grau: kein Vergleich (dunkler Tag, kein Satellitenwert oder überwiegend begrenzt); nur umrandet: keine Messung.",
+      calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Blass: eine Abweichung, die der Fehler des Satelliten bei diesem Himmel allein verursachen kann; bei Bewölkung ist er oft ein Viertel daneben, bei klarem Himmel nur wenige Prozent. Erst kräftige Farben sagen etwas über Modell oder Konfiguration. Grau: kein Vergleich (dunkler Tag, kein Satellitenwert oder überwiegend begrenzt); nur umrandet: keine Messung.",
       calOpen: "Ein Klick auf einen Tag zeigt seine Stunden.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "kein Vergleich" },
-      calBattery: "einzelne Stunden Akku voll",
+      calBattery: "einzelne Stunden Akku voll", calInput: "blass: erklärt der Satellit allein",
       dayTitle: "Stunden am {d}", dayLoading: "Lade die Stunden …", dayFailed: "Die Stunden konnten nicht geladen werden ({e}).",
       dayActual: "gemessen", dayModel: "Modell", dayBound: "Obergrenze bei klarem Himmel", dayHint: "Ein Klick auf eine Stunde zeigt, wie das Modell zustande kommt.",
       daySum: "Gemessen {a}, Modell {m} an den verwendeten Stunden mit Satellitenwert, wie im Kalender.", dayNoModel: "Keine verwendete Stunde mit Satellitenwert: kein Vergleich mit dem Modell.",
@@ -202,10 +202,10 @@ const TEXT = {
       basisCat: { used: "used", lower_bound: "capped", battery: "battery full", snow: "snow", no_output: "no output", excluded: "excluded", other: "other" },
       basisOk: "Nothing stands out.",
       basisHelp: "Weighted by clear-sky energy: a June noon hour left out costs learning far more than a December edge hour. Capped: at a power limit, battery charging at full power or PV held back; the real output was at least as high, and learning uses the hour only as “at least this much”. Renewed by every nightly learning run; the single hours are in the CSV export.",
-      calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Grey: no comparison (a dull day, no satellite value or mostly capped); outline only: no measurement.",
+      calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Pale: a deviation that the satellite's error alone can cause under that day's sky; under clouds it is often a quarter off, under a clear sky only a few percent. Only strong colours say something about model or configuration. Grey: no comparison (a dull day, no satellite value or mostly capped); outline only: no measurement.",
       calOpen: "Click a day to see its hours.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "no comparison" },
-      calBattery: "single hours battery full",
+      calBattery: "single hours battery full", calInput: "pale: the satellite alone explains it",
       dayTitle: "Hours on {d}", dayLoading: "Loading the hours …", dayFailed: "The hours could not be loaded ({e}).",
       dayActual: "measured", dayModel: "model", dayBound: "clear-sky bound", dayHint: "Click an hour to see how the model comes about.",
       daySum: "Measured {a}, model {m} in the used hours with a satellite value, as in the calendar.", dayNoModel: "No used hour with a satellite value: no comparison with the model.",
@@ -1044,16 +1044,21 @@ class NoxcastPanel extends HTMLElement {
     days.day.forEach((day, i) => {
       const [y, m, dd] = day.split("-").map(Number), key = `${y}-${m}`;
       if (!months.has(key)) months.set(key, { y, m: m - 1, cells: {} });
-      months.get(key).cells[dd] = { day, cat: days.cat[i], ratio: days.ratio[i], battery: days.battery[i] };
+      months.get(key).cells[dd] = { day, cat: days.cat[i], ratio: days.ratio[i], input: !!(days.input || [])[i], battery: days.battery[i] };
     });
     const open = this._bday && this._bday.id === arr.id ? this._bday.day : null;
     const cell = (d) => {
       if (!d) return '<i class="empty"></i>';
       let style = "", cls = "";
       if (d.cat !== "used") { style = `--c:${COLORS[d.cat] || COLORS.other}`; cls = "left"; }
-      else if (d.ratio != null) style = `background:${DEV.find(([hi]) => d.ratio < hi)[1]}`;
+      else if (d.ratio != null) {
+        const col = DEV.find(([hi]) => d.ratio < hi)[1];
+        // pale: only the fill, so that the battery dot and the selection keep their strength; the outline keeps it
+        // apart from the grey of "no comparison" on a light theme
+        style = d.input ? `background:color-mix(in srgb, ${col} 40%, transparent);outline:1px solid ${col};outline-offset:-1px` : `background:${col}`;
+      }
       const label = this._dayDate(d.day) + " · " + (d.cat !== "used" ? c.basisCat[d.cat] || d.cat
-        : d.ratio == null ? c.calDev.none : `${Math.round(d.ratio * 100)} %`) + (d.battery ? ` · ${c.calBattery} (${d.battery})` : "");
+        : d.ratio == null ? c.calDev.none : `${Math.round(d.ratio * 100)} %${d.input ? ` · ${c.calInput}` : ""}`) + (d.battery ? ` · ${c.calBattery} (${d.battery})` : "");
       return `<i class="${cls}${d.battery && d.cat === "used" ? " bat" : ""}${open === d.day ? " sel" : ""}" style="${style}" title="${esc(label)}"
         ${admin ? `data-action="bday" data-id="${esc(arr.id)}" data-day="${d.day}" role="button" tabindex="0" aria-label="${esc(label)}"` : ""}></i>`;
     };
@@ -1062,7 +1067,7 @@ class NoxcastPanel extends HTMLElement {
       return `<span class="muted small">${this._t.months[m]} ${String(y).slice(2)}</span><div class="crow">${Array.from({ length: 31 }, (_, i) => i < n ? cell(cells[i + 1]) : '<i class="void"></i>').join("")}</div>`;
     }).join("");
     const legend = DEV.map(([, col, k]) => `<span><b style="background:${col}"></b>${c.calDev[k]}</span>`).join("")
-      + `<span><b class="none"></b>${c.calDev.none}</span><span><b class="dot"></b>${c.calBattery}</span>`;
+      + `<span><b class="none"></b>${c.calDev.none}</span><span><b class="input"></b>${c.calInput}</span><span><b class="dot"></b>${c.calBattery}</span>`;
     return `<h4>${c.calTitle}</h4><div class="cal">${rows}</div><div class="blegend">${legend}</div>
       <p class="help">${c.calHelp}${admin ? ` ${c.calOpen}` : ""}</p>${open != null ? this._dayView(COLORS) : ""}`;
   }
@@ -1671,6 +1676,7 @@ class NoxcastPanel extends HTMLElement {
       .crow i { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--divider-color, #ddd); position: relative; max-height: 16px; }
       .crow i.void { background: none; } .crow i.empty { background: none; outline: 1px solid var(--divider-color, #ddd); outline-offset: -1px; }
       .crow i.left { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 4px); outline: 1px solid var(--c); outline-offset: -1px; }
+      .blegend b.input { background: color-mix(in srgb, #1D9E75 40%, transparent); outline: 1px solid #1D9E75; outline-offset: -1px; }
       .crow i.bat::after { content: ""; position: absolute; right: 1px; top: 1px; width: 4px; height: 4px; border-radius: 50%; background: #EF9F27; }
       .crow i[data-action] { cursor: pointer; } .crow i.sel { box-shadow: 0 0 0 2px var(--primary-text-color); }
       .blegend b.none { background: var(--divider-color, #ddd); } .blegend b.dot { background: #EF9F27; border-radius: 50%; width: 6px; height: 6px; }

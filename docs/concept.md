@@ -601,6 +601,29 @@ not types of their own. Independent devices are systems of their own, side by si
     import, can be inverted) import and export are measured instead of derived, and a missing
     house load follows from the balance PV + import − battery charge + discharge. Without a house-load sensor only PV into the battery and the
     rest are shown; without house load and batteries the use side is left out.
+  - **Calendar of the data basis** (`databasis._calendar`): per day actual against the model on the satellite
+    irradiance over the used hours. A user cannot tell from the bare percentage whether a day points at the model or
+    the configuration, at too little data, or at the input. The satellite's error grows with the clouds, so each
+    day is measured against the spread the input alone causes under its sky (model against the learned clear sky);
+    within two spreads the cell is pale. The spread was measured on the maintainer's two arrays of different
+    orientation (169 days with both, export until 2026-11-13): an error of the input moves both alike on the same
+    day, one of an array's model or configuration does not, so their covariance is the input's part.
+
+    | Sky | Days | Spread balcony / roof | Shared (input) |
+    |---|---|---|---|
+    | 0.09 | 10 | 36 % / 23 % | 27 % |
+    | 0.25 | 11 | 20 % / 23 % | 21 % |
+    | 0.38 | 25 | 11 % / 10 % | 7 % |
+    | 0.52 | 24 | 10 % / 8 % | 6.5 % |
+    | 0.67 | 40 | 6 % / 8 % | 3.5 % |
+    | 0.80 | 59 | 4 % / 4 % | 2 % |
+
+    Under a dull sky (< 0.3) the two arrays correlate at 0.92 and 16 of the 18 days off by more than 20 % went the
+    same way on both; under a bright one (> 0.6) at 0.16, with 5 % each: what is left there is the arrays' own
+    model error. The direction changes from day to day (median ratio 1.0), which a shared part of the model (the
+    diffuse split, say) would not do. One installation so far; the points (`INPUT_SPREAD`) may move with other
+    users' data. Strong colours remain for deviations beyond the input: configuration or data, to be told apart
+    next.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (the mean used for the forecast, each averaged model on its own);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

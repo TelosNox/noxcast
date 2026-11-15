@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from collections.abc import Collection
 from datetime import date, datetime, timezone
 
@@ -118,6 +119,13 @@ CALENDAR_DAYS = 365         # the calendar shows the year before the last day; o
 DAY_LEFT = 0.5              # a day counts as left out when more than this share of its clear-sky energy was
 CALENDAR_MIN_H = 0.2        # a day's deviation needs a model day of this many hours at peak power: below it the
                             # ratio of two small numbers says nothing
+# How far the satellite irradiance alone moves a day's ratio, by the day's sky (model against the learned clear sky
+# over its used hours): (sky, spread of log(actual/model)). Measured as the part two arrays of different
+# orientation share on the same days (their covariance), since an error of the input moves both alike and an error
+# of an array's model or configuration does not (docs/concept.md, Calendar). Between the points linear, beyond
+# them the nearest. One installation so far; other users' data may move the points.
+INPUT_SPREAD = ((0.1, 0.27), (0.25, 0.21), (0.4, 0.07), (0.5, 0.065), (0.65, 0.035), (0.8, 0.02))
+INPUT_SIGMAS = 2.0          # a deviation within this many spreads is what the satellite alone may cause
 
 
 def category(status: str, reasons: str) -> str | None:
@@ -170,11 +178,13 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
     day: the solar day as ISO date (a date, not its noon: the time of solar noon would give the longitude). cat:
     "used" when learning kept most of the day's clear-sky energy (as sample or lower bound), else the category that
     took most of it. ratio: actual against model over the used hours with a satellite value, None for a left-out
-    day, a dull one (CALENDAR_MIN_H) or one mostly at a lower bound. battery: lit hours left out as "battery full",
-    so a day that learning used can still show that its noon was missing.
+    day, a dull one (CALENDAR_MIN_H) or one mostly at a lower bound. input: the ratio lies within what the
+    satellite's error alone causes under that day's sky (input_spread), so it says nothing about model or
+    configuration. battery: lit hours left out as "battery full", so a day that learning used can still show that
+    its noon was missing.
     """
     lit = LIT_SHARE * peak_w
-    out: dict[str, list] = {"day": [], "cat": [], "ratio": [], "battery": []}
+    out: dict[str, list] = {"day": [], "cat": [], "ratio": [], "input": [], "battery": []}
     last = max(days, default=0)
     for d in sorted(d for d in days if d > last - CALENDAR_DAYS):
         rs = days[d]
@@ -185,17 +195,31 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
         kept = energy.get("used", 0.0) + energy.get("lower_bound", 0.0)
         cat = "used" if total <= 0 or kept >= (1 - DAY_LEFT) * total else max(
             (k for k in energy if k not in ("used", "lower_bound")), key=lambda k: energy[k])
-        ratio = None
+        ratio, explained = None, False
         if cat == "used":
             used = [r for r in rs if r["cat"] == "used" and r["model_w"] is not None]
             model = sum(r["model_w"] for r in used)
             if peak_w > 0 and model >= CALENDAR_MIN_H * peak_w:
-                ratio = round(sum(r["power_w"] for r in used) / model, 2)
+                actual = sum(r["power_w"] for r in used)
+                ratio = round(actual / model, 2)
+                clear = sum(r["clear_w"] or 0.0 for r in used)
+                explained = (actual > 0 and clear > 0
+                             and abs(math.log(actual / model)) <= INPUT_SIGMAS * input_spread(model / clear))
         battery = sum(1 for r in rs if r["cat"] == "battery" and (r["clear_w"] or 0) >= lit)
         for key, value in (("day", solar_date(d)), ("cat", cat),
-                           ("ratio", ratio), ("battery", battery)):
+                           ("ratio", ratio), ("input", explained), ("battery", battery)):
             out[key].append(value)
     return out
+
+
+def input_spread(sky: float) -> float:
+    """The spread of log(actual/model) that the satellite irradiance alone causes on a day with this sky (INPUT_SPREAD)."""
+    if sky <= INPUT_SPREAD[0][0]:
+        return INPUT_SPREAD[0][1]
+    for (s0, v0), (s1, v1) in zip(INPUT_SPREAD, INPUT_SPREAD[1:]):
+        if sky <= s1:
+            return v0 + (v1 - v0) * (sky - s0) / (s1 - s0)
+    return INPUT_SPREAD[-1][1]
 
 
 def day_rows(site: Site, table: dict, day: date) -> dict:

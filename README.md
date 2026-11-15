@@ -168,7 +168,9 @@ For the dashboard: *Add card* → *Noxcast*.
   snow, bright days below 70 % of the model that no filter explains, and snow periods that only the limit of 7 days
   after the last snowfall ended, although bright hours would have shown free modules. Renewed by every nightly learning run.
   A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
-  of the reason the day was left out; admins click a day to see its hours as measured, model and clear-sky bound lines with
+  of the reason the day was left out; a day is pale when the satellite's error alone can explain its deviation under
+  that day's sky (under clouds often a quarter, under a clear sky a few percent), so only strong colours point at the
+  model or the configuration; admins click a day to see its hours as measured, model and clear-sky bound lines with
   the left-out and capped hours shaded, and an hour to see how the model comes about (clear sky, clouds, shade, reflection,
   direction, temperature).
 - **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an

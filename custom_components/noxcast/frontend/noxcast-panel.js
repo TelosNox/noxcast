@@ -98,6 +98,8 @@ const TEXT = {
       badge: "Geometrie prüfen",
       plTitle: "Passt die Konfiguration?", maxPower: "Höchste Stundenleistung", ofPeak: "von {p} Wp", effLearnedTile: "Wirkungsgrad",
       plOk: "Messwerte und Konfiguration passen zusammen.",
+      deadDays: "Nicht ins Lernen eingeflossen: {n} Tage, an denen die Gruppe fast nichts geliefert hat (weniger als 2 % eines klaren Tages: ausgefallen, ganz unter Schnee oder zu dunkel, als dass der Wechselrichter anläuft), zuletzt am {d}. Lag kein Ausfall vor, war es ein sehr dunkler Tag; die Gruppe verliert dadurch nichts.",
+      snowDays: "Nicht ins Lernen eingeflossen: Stunden an {n} Tagen nach Schneefall, bis die Module wieder frei waren, getaut hat oder eine Woche vorbei war, zuletzt am {d}. Schnee auf den Modulen sähe sonst wie Schatten aus.",
       plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Die Lernstunden einzeln stehen im Diagnose-Download der Integration.",
       hint: {
         peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt aller Module) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
@@ -167,6 +169,8 @@ const TEXT = {
       badge: "Check geometry",
       plTitle: "Does the configuration fit?", maxPower: "Highest hourly power", ofPeak: "of {p} Wp", effLearnedTile: "Efficiency",
       plOk: "Measurements and configuration fit together.",
+      deadDays: "Left out of learning: {n} days on which the array delivered almost nothing (less than 2 % of a clear day: off, fully under snow or too dark for the inverter to start), last on {d}. If nothing was off, it was a very dark day; the array loses nothing by it.",
+      snowDays: "Left out of learning: hours on {n} days after snowfall, until the modules were free again, it thawed or a week had passed, last on {d}. Snow on the modules would otherwise look like shade.",
       plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. The single learning hours are in the integration's diagnostics download.",
       hint: {
         peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
@@ -943,7 +947,10 @@ class NoxcastPanel extends HTMLElement {
       <div class="tile ${hints.includes("peak") ? "warn" : ""}"><span class="muted small">${c.maxPower}</span><b>${max == null ? "–" : `${Math.round(max).toLocaleString(this._lang)} W`}</b><span class="muted small">${sub}</span></div>
       <div class="tile ${hints.includes("high") ? "warn" : ""}"><span class="muted small">${c.effLearnedTile}</span><b>${pct(la.efficiency)}</b></div></div>`;
     const notes = hints.length ? hints.map((h) => `<p class="note warn">${c.hint[h] || h}</p>`).join("") : `<p class="note">${c.plOk}</p>`;
-    return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}<p class="help">${c.plHelp}</p></section>`;
+    const day = (ts) => new Date(ts * 1000).toLocaleDateString(this._lang);
+    const left = [["deadDays", la.dead_days], ["snowDays", la.snow_days]].filter(([, days]) => (days || []).length)
+      .map(([key, days]) => `<p class="note">${c[key].replace("{n}", days.length).replace("{d}", day(days[days.length - 1]))}</p>`).join("");
+    return `<section class="card pad"><h3>${c.plTitle}</h3>${tiles}${notes}${left}<p class="help">${c.plHelp}</p></section>`;
   }
 
   _effDirections(la) {

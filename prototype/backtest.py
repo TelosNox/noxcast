@@ -11,7 +11,8 @@ JSON. To compare two model versions, run this script from both checkouts on the 
               extra ([{tilt, azimuth, peak_w}]; peak_w of the array is that of its first plane).
 --statistics  recorder/statistics_during_period answer: {sensor: [{start (ms), mean, min, max}]}, power in W.
 --satellite   Open-Meteo archive answer (or its "hourly" block) with shortwave_radiation; optional.
---temperature Open-Meteo archive answer (or its "hourly" block) with temperature_2m; optional.
+--temperature Open-Meteo archive answer (or its "hourly" block) with temperature_2m and optionally snowfall
+              (cm, for the snow filter); optional.
 --archive     the day-ahead archive, as stored ({"days": ...}) or plain; optional.
 --fine        the 5-minute archive, as stored (.storage/noxcast.<entry id>.fine) or plain {"days": ...}; optional.
               Adds "fine_holdout": would learning from it be better? Takes much longer than the rest.
@@ -51,6 +52,14 @@ def _hourly(path: str | None, name: str) -> dict[float, float]:
     data = data.get("hourly", data)
     return {datetime.fromisoformat(t).replace(tzinfo=timezone.utc).timestamp(): v
             for t, v in zip(data["time"], data[name]) if v is not None}
+
+
+def _snowfall(path: str | None) -> dict[float, float]:
+    """The temperature archive's snowfall (cm), if it was fetched with it; else nothing."""
+    if not path:
+        return {}
+    data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    return _hourly(path, "snowfall") if "snowfall" in data.get("hourly", data) else {}
 
 
 def _statistics(raw: dict[str, list[dict]], kind: str) -> dict[str, dict[float, float | None]]:
@@ -113,8 +122,9 @@ def main() -> None:
     satellite = {t - 3600: max(v, 0.0) for t, v in _hourly(args.satellite, "shortwave_radiation").items()}
     instant = _hourly(args.temperature, "temperature_2m")
     air = {t: (v + instant[t + 3600]) / 2 for t, v in instant.items() if t + 3600 in instant}
+    snowfall = {t - 3600: max(v, 0.0) for t, v in _snowfall(args.temperature).items()}
     history = ln.PvHistory(_statistics(raw, "mean"), _statistics(raw, "min"), _statistics(raw, "max"), {},
-                           ln.highest(socs), air or None, satellite or None)
+                           ln.highest(socs), air or None, satellite or None, snowfall=snowfall or None)
     last = max(t for s in arrays.values() for sensor in s.sensors for t in history.power.get(sensor, {}))
     now = datetime.fromisoformat(args.now).timestamp() if args.now else last + 3600
     soc_full = float(curtailment.get("soc_full_pct", 95))

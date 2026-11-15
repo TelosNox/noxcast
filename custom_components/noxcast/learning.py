@@ -8,7 +8,7 @@ odd ones. Without it everything available is used, as in production.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, tzinfo
 
@@ -21,8 +21,9 @@ from . import load as lf
 from . import plan as pl
 from .model import (
     EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, clearsky_profile, clearsky_weather, learn, measured_forecast,
-    steady_hours, usable_samples,
+    snow_hours, solar_day, steady_hours, usable_samples,
 )
+from .model import dead_days as model_dead_days
 from .installation import Installation
 from .solar import Site
 from .const import Series
@@ -96,6 +97,7 @@ class PvHistory:
     # per array the hour starts known only by an hourly mean in which a battery of its systems may have charged at
     # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
+    snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
 
 
 @dataclass(frozen=True)
@@ -177,7 +179,8 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
-                     air or None, satellite or None, history.full, history.charge, history.held, history.unsure)
+                     air or None, satellite or None, history.full, history.charge, history.held, history.unsure,
+                     history.snowfall)
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
@@ -201,15 +204,42 @@ def floor_hours(arr: ArrayConfig, history: PvHistory) -> set[float]:
     return out
 
 
+@dataclass(frozen=True)
+class LeftOut:
+    """What learning leaves out of an array because it says nothing about shade or efficiency."""
+
+    dead: list[int]              # solar days with almost no output (model.dead_days)
+    snow: set[float]             # hour starts that snow may have covered (model.snow_hours)
+    hours: frozenset[float]      # the hour starts of both
+
+
+def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = HOUR) -> LeftOut:
+    """Days without output and hours under snow of one array, from its whole history."""
+    summed = scaled_sum(history.power, arr.sensors, history.factors)
+    dead = model_dead_days(site, arr.geometry, summed, valid_since=arr.valid_since, period=period)
+    snow = snow_hours(site, arr.geometry, summed, history.snowfall, history.air_temp, history.satellite_ghi, period,
+                      arr.valid_since)
+    wanted = set(dead)
+    hours = {t - t % HOUR for t in summed if solar_day(site, t) in wanted} if dead else set()
+    return LeftOut(dead, snow, frozenset(hours | snow))
+
+
+def noons(site: Site, days: Collection[int]) -> list[float]:
+    """The UTC time of solar noon of solar days, oldest first: a moment the panel can show as the day."""
+    return [round(d * 86400 + 43200 - site.longitude * 240.0) for d in sorted(days)]
+
+
 def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
-                  keep: Keep | None = None) -> tuple[list[tuple[float, float]], set[float], set[float]]:
+                  keep: Keep | None = None, skip: frozenset[float] = frozenset()
+                  ) -> tuple[list[tuple[float, float]], set[float], set[float]]:
     """An array's usable (period start, mean W) samples, its steady hours and its hours at a fixed limit: what
-    learning sees."""
+    learning sees. skip: hour starts left out besides (left_out)."""
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
     samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
                              valid_since=arr.valid_since,
-                             full=history.full.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset()))
+                             full=history.full.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset())
+                             | skip)
     if keep is not None:
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
@@ -228,7 +258,8 @@ def learning_hours(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str
     for sid, arr in arrays.items():
         if sid not in learned:
             continue
-        samples, steady, floors = array_samples(arr, history, soc_full, exclusions)
+        samples, steady, floors = array_samples(arr, history, soc_full, exclusions,
+                                                skip=left_out(site, arr, history).hours)
         out[sid] = ac.hour_table(site, arr.geometry, learned[sid], samples, history.satellite_ghi, history.air_temp,
                                  steady, floors)
     return out
@@ -244,13 +275,19 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     if missing:
         _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
                         arr.name, ", ".join(missing))
-    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep)
+    out = left_out(site, arr, history, period)
+    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep, out.hours)
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
                    datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
                    limit_w=arr.limit_w)
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
+    result.dead_days = noons(site, out.dead)
+    result.snow_days = noons(site, {solar_day(site, t) for t in out.snow})
+    if out.dead or out.snow:
+        _LOGGER.info("%s: left out of learning: %d days with almost no output (outage, snow or too dark), %d hours "
+                     "that snow may have covered", arr.name, len(out.dead), len(out.snow))
     if result.efficiency_source == "typical":
         _LOGGER.warning("%s: the hours below the power limit do not show the efficiency, the typical %.0f %% is "
                         "used – if this stays, check peak power and power sensor units", arr.name,

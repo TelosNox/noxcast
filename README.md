@@ -33,7 +33,7 @@ roof.
 | **Explanation** | Per hour from clear sky through clouds, shade, reflection, direction and heat to the forecast. No black box: physics first, learned values second, a statistical correction last. |
 | **Range** | P10–P90 from your own archive of past forecasts. It shifts the clouds, so it never goes above a clear sky. |
 | **Accuracy** | Every day-ahead forecast is archived and compared with what happened. With the satellite filter (an option), each day's error is split into weather part and model part. |
-| **Data quality** | Hours with a full battery, excluded periods or outages are left out of learning. A power limit of an input, a micro-inverter or a system without battery caps the forecast. |
+| **Data quality** | Hours with a full battery, excluded periods, outages and snow on the modules are left out of learning. A power limit of an input, a micro-inverter or a system without battery caps the forecast. |
 | **Mounting** | Several orientations on one input (east + west, vertical balcony modules) as one array. |
 | **Weather** | Open-Meteo, ICON and ECMWF IFS averaged hour by hour. No account, no API key, free for private use. |
 | **Privacy** | Runs in Home Assistant. Only your coordinates go to Open-Meteo. |
@@ -156,7 +156,9 @@ For the dashboard: *Add card* → *Noxcast*.
 - **Shading map mostly grey:** not enough clear hours yet. It fills over the weeks.
 - **Forecast too high on days the battery was full:** enter the battery with its system (or its state of charge in
   the main entry), then call the service `noxcast.relearn`.
-- **Days with maintenance or an outage:** leave them out with `noxcast.exclude_period`.
+- **Days with maintenance or an outage:** a day on which an array delivered almost nothing is left out on its own
+  (*Does the configuration fit?* lists them). A partial outage or maintenance: leave it out with
+  `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
 
@@ -473,7 +475,9 @@ temperature turn this irradiance into the clear-sky power of the array.
 ### Learning (nightly, from long-term statistics)
 
 - **Data filters:** hours with a full battery that may curtail the array (see *Battery*), excluded periods, outages
-  and incomplete hours are left out. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
+  and incomplete hours are left out. So are days on which an array delivered less than 2 % of a clear day (off,
+  fully under snow or too dark for the inverter), and, with *Air temperature from archive*, the hours after a snowfall of
+  at least 1 cm until the array delivers again, it thawed or a week has passed. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.
   Hours at a *Power limit* count as "at least this much": the modules could have delivered more. Taken as measured,
   they would make efficiency and midday shade look too low; left out, only the clouded and shaded ones of the sunny
   hours would remain. Sun positions where most clear hours were at the limit show no shade on the map (marked *at

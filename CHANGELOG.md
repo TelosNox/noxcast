@@ -23,6 +23,16 @@ breaking changes.
   nothing is removed.
 
 ### Fixed
+- Days on which a PV array delivered almost nothing (less than 2 % of a clear day) no longer count in learning:
+  an inverter that was off, modules fully under snow or a day too dark for the inverter to start. Before, learning
+  read such a day as shade and a darker sky, unless you excluded it by hand. *Learned* → the array → *Does the
+  configuration fit?* lists how many days were left out and the last one. Learning may change from the next
+  nightly run on.
+- Snow on the modules no longer counts as shade in learning. With *Air temperature from archive* (on by default),
+  Noxcast also fetches the snowfall at your location, and after a snowfall of at least 1 cm it leaves the hours out
+  until the array delivers again, it has thawed or a week has passed. The same place in the panel lists those days.
+  The thresholds are physical assumptions not yet checked on installations with snowy winters; if the list looks
+  wrong for yours, please report it.
 - A single reading of the battery power sensor above the *Max charge power* (a few seconds are enough, common with
   sensors computed from several others) made the whole hour count as "the battery charged at its maximum", so
   learning read the PV of that hour only as "at least this much". Shade that falls in such hours could vanish from

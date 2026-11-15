@@ -96,7 +96,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, models)), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
-         patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}):
+         patch("custom_components.noxcast.coordinator.async_archive_weather", return_value=({}, {})):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         assert result["type"] is FlowResultType.FORM
         result = await hass.config_entries.flow.async_configure(
@@ -232,7 +232,7 @@ async def test_options_test_archive_on_save(hass: HomeAssistant) -> None:
         with patch("custom_components.noxcast.config_flow.async_open_meteo", return_value=(weather, both)), \
              patch("custom_components.noxcast.config_flow.async_archive_temperature", return_value={1.0: 12.0}), \
              patch("custom_components.noxcast.config_flow.async_archive_irradiance", return_value={1.0: 500.0}), \
-             patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}), \
+             patch("custom_components.noxcast.coordinator.async_archive_weather", return_value=({}, {})), \
              patch("custom_components.noxcast.coordinator.async_archive_irradiance", return_value={}):
             done = await hass.config_entries.options.async_configure(flow["flow_id"], options)
             await hass.async_block_till_done()
@@ -680,6 +680,9 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     async def fake_archive(series, *args):
         return {t: v for t, v in series.items() if args[-3].timestamp() <= t < args[-2].timestamp()}
 
+    async def fake_weather(series, *args):
+        return await fake_archive(series, *args), {}
+
     weather, alt = [], {"icon_seamless": [], "ecmwf_ifs": []}
     for i in range(9 * 24):
         t = local(2026, 6, 9, 0, 0).timestamp() + i * 3600
@@ -737,8 +740,8 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, alt)), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
-         patch("custom_components.noxcast.coordinator.async_archive_temperature",
-               side_effect=functools.partial(fake_archive, temp)), \
+         patch("custom_components.noxcast.coordinator.async_archive_weather",
+               side_effect=functools.partial(fake_weather, temp)), \
          patch("custom_components.noxcast.coordinator.async_archive_irradiance",
                side_effect=functools.partial(fake_archive, ghi)), \
          patch.object(NoxcastCoordinator, "_async_started"), \
@@ -811,7 +814,7 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})), \
          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
-         patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}):
+         patch("custom_components.noxcast.coordinator.async_archive_weather", return_value=({}, {})):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         entry = result["result"]
@@ -893,7 +896,7 @@ async def test_weather_model_comparison_waits_only_after_success(hass: HomeAssis
 
     for sensor in ARRAY["power_sensors"]:
         hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
-    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})),          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors),          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats),          patch("custom_components.noxcast.coordinator.async_archive_temperature", return_value={}) as archive,          patch("custom_components.noxcast.coordinator.async_previous_runs", side_effect=previous_runs),          patch("custom_components.noxcast.coordinator.COMPARE_PAUSE", 0):
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})),          patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors),          patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats),          patch("custom_components.noxcast.coordinator.async_archive_weather", return_value=({}, {})) as archive,          patch("custom_components.noxcast.coordinator.async_previous_runs", side_effect=previous_runs),          patch("custom_components.noxcast.coordinator.COMPARE_PAUSE", 0):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         entry = result["result"]

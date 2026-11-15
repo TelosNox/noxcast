@@ -473,10 +473,28 @@ not types of their own. Independent devices are systems of their own, side by si
     0.03 or at the limit. Not identifiable, and said here rather than hidden: the efficiency at high sun with a
     strong limit, the direction factor in bins that are mostly at the limit (they keep 1), and shade that never
     pushes the power below the limit (it costs only on hazy days).
-- Snow: zero output under clear sky and frost. Not built yet (#282): such hours enter learning today.
-- Outages: hours without statistics (a sensor unavailable the whole hour, or one of the array's sensors missing)
-  are left out. A sensor unavailable for part of an hour still enters with the recorder's mean; all-zero days are
-  not left out yet (#282), only through a manual exclusion.
+- Days without output (`model.dead_days`): a solar day (solar midnight to solar midnight, no time zone needed) on
+  which an array delivered at most 2 % of its clear-sky energy is left out, from its first production on. The clear
+  sky is pure physics (default efficiency, no learned shade), so a model that already took such days for shade
+  cannot hide them. It catches an inverter that was off, modules fully under snow and days too dark for the
+  inverter to start; the last say nothing either. On the exported history (one installation, 337 days) 11 days
+  fell below it: six with 0 kWh under a sky the reanalysis put at 24-81 % of clear (outages, one full snow cover),
+  the rest days with a reanalysis sky of 4-13 %. The darkest day with a bright sky and deep winter shade gave
+  3.7 %. Learning and the backtest leave the same days out; the panel lists them (*Does the configuration fit?*).
+  A synthetic outage of 22 sunny days (July, September) bent the sky view by -0.03 / -0.06 and 16 roof cells by
+  more than 0.03 without the filter; with it, the learned model equals the one with the days excluded by hand.
+  Not caught: an outage of part of a day, or of one of several modules on a shared sensor.
+- Snow (`model.snow_hours`): a window opens with the first hour of snow on a solar day with at least 1 cm of
+  snowfall at the site (reanalysis archive, fetched with the temperature) and closes with the first of: an hour
+  in which the array gives half of what free modules give under the measured sky (satellite clearness at least
+  0.5; without satellite, under the clear sky), 24 degree hours above 0 °C after the last snow, 7 days after the
+  last snow. The hours in it are left out. Real shade can only delay the end, never hide the snow; a longer full
+  cover is a day without output. These thresholds are physical assumptions, not fitted: the installation behind
+  the defaults hardly sees snow. They are to be checked on installations with winters (the panel lists the snow
+  days per array). The correction of today's forecast is unchanged: it works per array on its own clearness, so a
+  covered array lowers only its own coming hours, which is what it will deliver.
+- Outages of a sensor: hours without statistics (a sensor unavailable the whole hour, or one of the array's
+  sensors missing) are left out. A sensor unavailable for part of an hour still enters with the recorder's mean.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
   its mean (passing clouds, peaks cut at the inverter limit, restarts, telemetry dropouts) are
   left out of efficiency, direction factor, reflection and the clear-hour median of the shading
@@ -1005,7 +1023,8 @@ lower bounds in learning, suggestion from flat maxima), curtailment per system (
 following without battery, the household feed-in limit), the accuracy archive of 400 days and the backtest
 scorecard. The open work is tracked in GitHub issues:
 
-1. **Snow and outage filter in learning** (#282): the filters promised under Data filters.
+1. **Snow filter on real winters** (#282): days without output and the snow window are built; the snow thresholds
+   are still to be checked on installations with snow.
 2. **Light model** (#249): C1 and C2 were falsified on real data; next is C3, the bound as the brightest plausible
    sky, then C5-C8.
 3. **Installation model, rest** (#250): battery forecast per independent system, the surplus at the feed-in limit

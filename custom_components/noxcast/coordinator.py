@@ -57,7 +57,7 @@ from .learning import ArrayConfig, ConsumerConfig
 from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour
 from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
-    async_archive_irradiance, async_archive_temperature, async_hourly_statistics,
+    async_archive_irradiance, async_archive_weather, async_hourly_statistics,
 )
 from .sources import SourceError, async_ensemble, async_open_meteo, async_power_factors, async_previous_runs
 
@@ -382,14 +382,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _option(self, key: str, default=None):
         return self.config_entry.options.get(key, default)
 
-    async def _async_archives(self, start: datetime, end: datetime) -> tuple[dict | None, dict | None]:
-        """Optional history archives; a failure only disables that refinement."""
+    async def _async_archives(self, start: datetime, end: datetime) -> tuple[dict | None, dict | None, dict | None]:
+        """Optional history archives (temperature, satellite, snowfall); a failure only disables that refinement."""
         lat, lon, key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
         self.archive_errors = {}
-        temp = sat = None
+        temp = sat = snow = None
         if self._option(CONF_ARCHIVE_TEMPERATURE, True):
             try:
-                temp = await async_archive_temperature(
+                temp, snow = await async_archive_weather(
                     self.hass, self._option(CONF_ARCHIVE_URL) or DEFAULT_ARCHIVE_URL, lat, lon, start, end, key)
             except Exception as err:  # noqa: BLE001
                 self.archive_errors["temperature"] = str(err) or type(err).__name__
@@ -402,7 +402,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             except Exception as err:  # noqa: BLE001
                 self.archive_errors["satellite"] = str(err) or type(err).__name__
                 _LOGGER.warning("Satellite archive unavailable, learning without clear-hour filter: %s", err)
-        return temp, sat
+        return temp, sat, snow or None
 
     def _store_data(self) -> dict:
         today = self._today
@@ -662,7 +662,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         days = dict(self.fine)
         fine = inst.charge_power(own, await self.hass.async_add_executor_job(
             lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
-        air_temp, satellite_ghi = await self._async_archives(start, now) if archives else (None, None)
+        air_temp, satellite_ghi, snowfall = await self._async_archives(start, now) if archives else (None, None, None)
         full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
         at_charge_max = {sid: installation.charge_hours(sid, charging, fine) for sid in self.arrays}
         charge = {sid: frozenset(hours) for sid, (hours, _) in at_charge_max.items()}
@@ -670,7 +670,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
-                               air_temp, satellite_ghi, full, charge, held, unsure)
+                               air_temp, satellite_ghi, full, charge, held, unsure, snowfall)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 

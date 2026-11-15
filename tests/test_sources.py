@@ -147,3 +147,18 @@ async def test_ensemble_runs_per_model(hass: HomeAssistant, aioclient_mock) -> N
     assert runs["icon_seamless"][first] == [300, 200]
     assert runs["ecmwf_ifs025"][first] == [500, 0]  # negative irradiance is clipped, a missing value left out
     assert runs["ecmwf_ifs025"][first - 3600] == [0]
+
+
+async def test_archive_weather_reads_temperature_and_snowfall_in_one_request(hass: HomeAssistant, aioclient_mock) -> None:
+    url = "https://archive.example.test/v1/archive"
+    times = [T.format(h)[:16] for h in range(3)]
+    aioclient_mock.get(url, json={"hourly": {"time": times, "temperature_2m": [-2, 0, 2], "snowfall": [0, 1.4, None]}})
+    day = datetime(2026, 10, 24, tzinfo=timezone.utc)
+    temp, snow = await sources.async_archive_weather(hass, url, 12.345, 6.789, day, day)
+    hour = day.timestamp()
+    assert temp == {hour: -1.0, hour + 3600: 1.0}                         # the middle of the hour
+    assert snow == {hour - 3600: 0.0, hour: 1.4}                          # the sum of the hour before its label
+    assert aioclient_mock.mock_calls[0][1].query["hourly"] == "temperature_2m,snowfall"
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(url, json={"hourly": {"time": times, "temperature_2m": [-2, 0, 2]}})
+    assert (await sources.async_archive_weather(hass, url, 12.345, 6.789, day, day))[1] == {}

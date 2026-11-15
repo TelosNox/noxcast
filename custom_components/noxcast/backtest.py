@@ -79,12 +79,16 @@ def _not_enough(reason: str, days: int = 0, needed: int = 0) -> dict:
     return {"status": NOT_ENOUGH, "reason": reason, "days": days, "needed": needed}
 
 
-def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]]) -> Series:
+def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
+           site: Site | None = None) -> Series:
     """The array's hours learning would use, with the mean power (W = Wh per hour). An hour at a battery's charge
-    ceiling, or one a system following the load may have held back, is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing."""
+    ceiling, or one a system following the load may have held back, is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing.
+    site: given, days without output and hours under snow are left out too, as in learning (ln.left_out)."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     full = (history.full.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
             | history.held.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset()))
+    if site is not None:
+        full |= ln.left_out(site, arr, history).hours
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
                                valid_since=arr.valid_since, full=full))
 
@@ -115,7 +119,7 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
     """
     known = {sid: arr for sid, arr in arrays.items() if sid in learned}
     geometries = {sid: arr.geometry for sid, arr in known.items()}
-    hours_of = {sid: usable(arr, history, soc_full, exclusions) for sid, arr in known.items()}
+    hours_of = {sid: usable(arr, history, soc_full, exclusions, site) for sid, arr in known.items()}
     bare = {sid: without_map(learned[sid]) for sid in known}
     runs: dict[str, dict[str, Pairs]] = {sid: {"then": {}, "now": {}, "baseline": {}} for sid in known}
     for day in fc_archive.days(archive):
@@ -214,7 +218,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     tests: dict[str, Series] = {}
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
-        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions, site).items()
                       if t in sat and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]
@@ -281,7 +285,7 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
         covered[sid] = {day_of(t) for t in ln.scaled_sum(fine.power, arr.sensors, {})}
-        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions, site).items()
                       if t in sat and day_of(t) in covered[sid] and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]

@@ -166,6 +166,10 @@ For the dashboard: *Add card* → *Noxcast*.
   and points at anomalies with their most telling day: "battery full" while the array delivered what the model
   expects, clearly above the learned model's clear-sky output, days without output under a bright sky and without
   snow, and bright days below 70 % of the model that no filter explains. Renewed by every nightly learning run.
+  A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
+  of the reason the day was left out; admins click a day to see its hours as actual, model and clear-sky lines with
+  the left-out hours shaded, and an hour to see how the model comes about (clear sky, clouds, shade, reflection,
+  direction, temperature).
 - **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an
   array as CSV (*Hours as CSV*, for admins), times in UTC. `status` is `used`, `lower_bound` (`at_limit`,
   `charging_max`, `held_back`: the real output was at least as high) or `left_out`, and `reasons` names all reasons:

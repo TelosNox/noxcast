@@ -1133,7 +1133,7 @@ class NoxcastPanel extends HTMLElement {
     const signed = (v) => `${v < 0 ? "−" : "+"}${num(Math.abs(Math.round(v)))}`;
     const parts = [this._hourLabel(r), `${c.dayActual} ${w(r.power_w)}`];
     if (r.model_w != null) {
-      const steps = ["clouds", "shade", "reflection", "direction", "heat"].filter((k) => r[`${k}_w`]).map((k) => `${c.dayStep[k]} ${signed(r[`${k}_w`])}`);
+      const steps = ["clouds", "shade", "reflection", "direction", "heat"].filter((k) => Math.round(r[`${k}_w`] || 0)).map((k) => `${c.dayStep[k]} ${signed(r[`${k}_w`])}`);
       parts.push(`${c.dayModel} ${w(r.model_w)} = ${c.dayStep.clear} ${num(Math.round(r.clear_w))}${steps.length ? ` ${steps.join(" ")}` : ""}`);
     } else if (r.clear_w != null) parts.push(`${c.dayStep.clear} ${w(r.clear_w)}`);
     if (r.kt != null) parts.push(c.dayKt.replace("{v}", `${Math.round(r.kt * 100)} %`));

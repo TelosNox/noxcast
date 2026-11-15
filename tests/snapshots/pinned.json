@@ -6373,7 +6373,9 @@
      "hints": [],
      "facade": null,
      "limit_cells": [],
-     "efficiency_source": "learned"
+     "efficiency_source": "learned",
+     "dead_days": [],
+     "snow_days": []
     },
     "S": {
      "__": "LearnedArray",
@@ -6591,7 +6593,9 @@
      "hints": [],
      "facade": null,
      "limit_cells": [],
-     "efficiency_source": "learned"
+     "efficiency_source": "learned",
+     "dead_days": [],
+     "snow_days": []
     }
    },
    "band": {
@@ -7025,7 +7029,9 @@
        "hints": [],
        "facade": null,
        "limit_cells": [],
-       "efficiency_source": "learned"
+       "efficiency_source": "learned",
+       "dead_days": [],
+       "snow_days": []
       }
      },
      "S": {
@@ -7245,7 +7251,9 @@
        "hints": [],
        "facade": null,
        "limit_cells": [],
-       "efficiency_source": "learned"
+       "efficiency_source": "learned",
+       "dead_days": [],
+       "snow_days": []
       }
      }
     },
@@ -16600,7 +16608,9 @@
      "hints": "= previous",
      "facade": "= previous",
      "limit_cells": "= previous",
-     "efficiency_source": "= previous"
+     "efficiency_source": "= previous",
+     "dead_days": "= previous",
+     "snow_days": "= previous"
     },
     "S": {
      "__": "= previous",
@@ -16650,7 +16660,9 @@
      "hints": "= previous",
      "facade": "= previous",
      "limit_cells": "= previous",
-     "efficiency_source": "= previous"
+     "efficiency_source": "= previous",
+     "dead_days": "= previous",
+     "snow_days": "= previous"
     }
    },
    "band": "= previous",
@@ -16819,7 +16831,9 @@
        "hints": "= previous",
        "facade": "= previous",
        "limit_cells": "= previous",
-       "efficiency_source": "= previous"
+       "efficiency_source": "= previous",
+       "dead_days": "= previous",
+       "snow_days": "= previous"
       }
      },
      "S": {
@@ -16871,7 +16885,9 @@
        "hints": "= previous",
        "facade": "= previous",
        "limit_cells": "= previous",
-       "efficiency_source": "= previous"
+       "efficiency_source": "= previous",
+       "dead_days": "= previous",
+       "snow_days": "= previous"
       }
      }
     },
@@ -23729,7 +23745,9 @@
        "hints": [],
        "facade": null,
        "limit_cells": [],
-       "efficiency_source": "learned"
+       "efficiency_source": "learned",
+       "dead_days": [],
+       "snow_days": []
       },
       "facade_cells": {},
       "last_learning": "2026-06-10T12:30:00+00:00"
@@ -23956,7 +23974,9 @@
        "hints": [],
        "facade": null,
        "limit_cells": [],
-       "efficiency_source": "learned"
+       "efficiency_source": "learned",
+       "dead_days": [],
+       "snow_days": []
       },
       "facade_cells": {},
       "last_learning": "2026-06-10T12:30:00+00:00"
@@ -36359,7 +36379,9 @@
        "hints": "= previous",
        "facade": "= previous",
        "limit_cells": "= previous",
-       "efficiency_source": "= previous"
+       "efficiency_source": "= previous",
+       "dead_days": "= previous",
+       "snow_days": "= previous"
       },
       "facade_cells": "= previous",
       "last_learning": "2026-06-11T08:30:00+00:00"
@@ -36418,7 +36440,9 @@
        "hints": "= previous",
        "facade": "= previous",
        "limit_cells": "= previous",
-       "efficiency_source": "= previous"
+       "efficiency_source": "= previous",
+       "dead_days": "= previous",
+       "snow_days": "= previous"
       },
       "facade_cells": "= previous",
       "last_learning": "2026-06-11T08:30:00+00:00"

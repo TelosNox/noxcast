@@ -268,12 +268,26 @@ async def _async_archive(hass: HomeAssistant, url: str, params: dict, api_key: s
 async def async_archive_temperature(hass: HomeAssistant, url: str, latitude: float, longitude: float,
                                     start: datetime, end: datetime, api_key: str | None = None) -> Series:
     """Air temperature (°C) at the middle of each hour, keyed by hour start (reanalysis archive)."""
-    data = await _async_archive(hass, url, {
-        "latitude": latitude, "longitude": longitude, "start_date": f"{start:%Y-%m-%d}",
-        "end_date": f"{end:%Y-%m-%d}", "hourly": "temperature_2m"}, api_key)
-    instant = {ts: v for ts, v in zip(map(_parse_utc, data["time"]), map(_number, data["temperature_2m"]))
-               if ts is not None and v is not None}
-    return _mid_hour(instant)
+    return (await async_archive_weather(hass, url, latitude, longitude, start, end, api_key))[0]
+
+
+async def async_archive_weather(hass: HomeAssistant, url: str, latitude: float, longitude: float,
+                                start: datetime, end: datetime, api_key: str | None = None) -> tuple[Series, Series]:
+    """(air temperature in °C at the middle of each hour, snowfall in cm in the hour), both keyed by hour start
+    (reanalysis archive, one request). An archive without snowfall gives an empty second series; one that refuses
+    the request for it is asked once more for the temperature alone, which learning needs more."""
+    params = {"latitude": latitude, "longitude": longitude, "start_date": f"{start:%Y-%m-%d}",
+              "end_date": f"{end:%Y-%m-%d}"}
+    try:
+        data = await _async_archive(hass, url, {**params, "hourly": "temperature_2m,snowfall"}, api_key)
+    except SourceError:
+        data = await _async_archive(hass, url, {**params, "hourly": "temperature_2m"}, api_key)
+    times = list(map(_parse_utc, data["time"]))
+    instant = {ts: v for ts, v in zip(times, map(_number, data["temperature_2m"])) if ts is not None and v is not None}
+    # snowfall is the sum of the preceding hour, like irradiance
+    snow = {ts - 3600: max(v, 0.0) for ts, v in zip(times, map(_number, data.get("snowfall") or []))
+            if ts is not None and v is not None}
+    return _mid_hour(instant), snow
 
 
 async def async_archive_irradiance(hass: HomeAssistant, url: str, model: str, latitude: float, longitude: float,

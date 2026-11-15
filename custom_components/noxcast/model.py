@@ -50,6 +50,7 @@ minimum number of hours stays the same observed time (see _periods).
 """
 from __future__ import annotations
 
+import bisect
 import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
@@ -203,6 +204,11 @@ class LearnedArray:
     limit_cells: list[str] = field(default_factory=list)
     # learned | typical: hours at a power limit hid the efficiency, or the few hours below it gave an implausible one
     efficiency_source: str = "learned"
+    # days left out of learning because the array delivered almost nothing (dead_days), as the UTC time of their
+    # solar noon, oldest first: an outage, snow or a very dark day
+    dead_days: list[float] = field(default_factory=list)
+    # days with hours left out because snow may have covered the array (snow_hours), the same way
+    snow_days: list[float] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)
@@ -452,6 +458,131 @@ def clearsky_hour(site: Site, geo: ArrayGeometry, start: float, sky_view: float 
 
 # ---------------------------------------------------------------------------- learning
 
+# A day on which an array delivered at most this share of its clear-sky energy was off, under snow or too dark for
+# the inverter to start: it says nothing about shade or efficiency. On the exported history (one installation,
+# 337 days) only such days fell below it; the darkest day with a bright sky and deep winter shade gave 3.7 %.
+DEAD_DAY_SHARE = 0.02
+# Clear-sky energy a day needs before it can count, in hours at peak power: near the polar night nothing is told.
+DEAD_DAY_MIN_CLEAR_H = 0.5
+
+
+def solar_day(site: Site, t: float) -> int:
+    """The day number of a moment by local solar time: a day runs from solar midnight to solar midnight, so its
+    daylight never splits, and no time zone is needed."""
+    return int((t + site.longitude * 240.0) // 86400)
+
+
+def first_use(power: Series, valid_since: float | None = None) -> float | None:
+    """The first period learning uses: the array's first production (before it, it was not installed yet), not
+    before valid_since; None while it never produced."""
+    producing = [t for t, p in power.items() if p is not None and p > 5]
+    return max(min(producing), valid_since or 0) if producing else None
+
+
+def dead_days(site: Site, geo: ArrayGeometry, power: Series, *, valid_since: float | None = None,
+              period: float = HOUR) -> list[int]:
+    """Solar days (solar_day) on which the array delivered at most DEAD_DAY_SHARE of its clear-sky energy.
+
+    power: the array's mean power (W) per period. The clear sky is pure physics (default efficiency, no learned
+    shade), so a learned model that already took such days for shade cannot hide them. Days before the array first
+    produced, or before valid_since, are not counted: they are the time before commissioning, not an outage.
+    """
+    start = first_use(power, valid_since)
+    if start is None:
+        return []
+    periods = sorted(t for t, p in power.items() if p is not None and t >= start)
+    sky = [w for t in periods if (w := clearsky_weather(site, t, period=period)).ghi > 0]
+    clear = forecast(site, geo, LearnedArray(), sky, period)
+    days: dict[int, list[float]] = {}
+    for t in periods:
+        row = days.setdefault(solar_day(site, t), [0.0, 0.0])
+        row[0] += max(power[t], 0.0)
+        row[1] += clear.get(t, 0.0)
+    # forecast gives energy per period (Wh), power is a mean (W): compare like with like
+    scale = period / HOUR
+    minimum = DEAD_DAY_MIN_CLEAR_H * geo.peak_w
+    return sorted(d for d, (actual, sky) in days.items()
+                  if sky >= minimum and actual * scale <= DEAD_DAY_SHARE * sky)
+
+
+# Snow on the modules. Nothing here was fitted to data (the installation behind the defaults hardly sees snow); these
+# are physical assumptions to be checked on installations with winters, which the panel's list of left-out days serves.
+SNOW_START_CM = 1.0              # snowfall of a solar day at the site from which modules may be covered; a dusting
+                                 # slides off or melts in the first sun
+SNOW_RECOVER_SHARE = 0.5         # an hour at this share of what free modules give under the measured sky: uncovered
+SNOW_RECOVER_KT = 0.5            # ... in an hour this clear (satellite clearness), else the share says nothing
+SNOW_THAW_KH = 24.0              # degree hours above 0 °C after the last snowfall that melt it off a tilted module
+SNOW_MAX_DAYS = 7.0              # longest window; a longer full cover delivers nothing and counts as a dead day
+
+
+def snow_hours(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
+               satellite_ghi: Series | None = None, valid_since: float | None = None) -> set[float]:
+    """Hour starts in which snow may have covered the array: left out of learning, since shade and efficiency would
+    take the missing light for their own.
+
+    power: mean W per period of any length; it is judged per hour. snowfall: cm per hour at the site
+    (reanalysis archive), keyed by hour start. A window opens with the first hour
+    of snow on a solar day with at least SNOW_START_CM and closes with the first of: an hour of the array at
+    SNOW_RECOVER_SHARE of free modules (the physics model with the default efficiency, no shade) under a sky of at
+    least SNOW_RECOVER_KT, from the satellite or, without one, under the clear sky; SNOW_THAW_KH degree hours above
+    0 °C after the last snow; SNOW_MAX_DAYS. Only snow on such a day counts as the last snow: the many traces of a
+    reanalysis would otherwise renew the window all winter. Shade the array really has can only delay the end, never hide snow.
+    The hour that ends a window is kept; hours before first_use are not counted. Without a snowfall archive nothing
+    is left out.
+    """
+    start = first_use(power, valid_since)
+    if not snowfall or start is None:
+        return set()
+    daily: dict[int, float] = {}
+    for t, cm in snowfall.items():
+        if cm:
+            daily[solar_day(site, t)] = daily.get(solar_day(site, t), 0.0) + cm
+    starts = sorted(t for t, cm in snowfall.items() if cm and daily[solar_day(site, t)] >= SNOW_START_CM)
+    if not starts:
+        return set()
+    hourly: dict[float, list[float]] = {}
+    for t, p in power.items():
+        if p is not None:
+            hourly.setdefault(t - t % HOUR, []).append(p)
+    # the model only for hours a window can reach (each new snow extends it by at most SNOW_MAX_DAYS)
+    reach = SNOW_MAX_DAYS * 86400
+    snowy = starts
+    begin = max(starts[0], start - start % HOUR)
+    hours = [t for t in sorted(hourly) if t >= begin and (k := bisect.bisect_right(snowy, t))
+             and t < snowy[k - 1] + reach]
+    clear_sky = {t: clearsky_weather(site, t).ghi for t in hours}
+    sky = [WeatherHour(t, satellite_ghi[t] if satellite_ghi and t in satellite_ghi else clear_sky[t], None, None,
+                       (air_temp or {}).get(t)) for t in hours]
+    free = forecast(site, geo, LearnedArray(), sky)
+    out: set[float] = set()
+    pending = iter(starts)
+    nxt = next(pending, None)
+    while nxt is not None:
+        t = last_snow = nxt
+        warmth = 0.0
+        while t < last_snow + SNOW_MAX_DAYS * 86400:
+            if snowfall.get(t) and daily[solar_day(site, t)] >= SNOW_START_CM:
+                last_snow, warmth = t, 0.0
+            else:
+                warmth += max((air_temp or {}).get(t, 0.0), 0.0)
+            if t > last_snow and warmth >= SNOW_THAW_KH:
+                break
+            if t in free:
+                kt = 1.0
+                if satellite_ghi and t in satellite_ghi:
+                    kt = satellite_ghi[t] / clear_sky[t] if clear_sky[t] > 0 else 0.0
+                expected = free.get(t, 0.0)
+                if (kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
+                        and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected):
+                    break
+                if expected > 0:
+                    out.add(t)
+            t += HOUR
+        while nxt is not None and nxt <= t:
+            nxt = next(pending, None)
+    return out
+
+
 def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
                    exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
                    full: Collection[float] = frozenset()) -> list[tuple[float, float]]:
@@ -460,10 +591,9 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
     full: hour starts in which a battery of the array's systems was full (installation.full_hours); a period
     in such an hour is left out like one with the household's state of charge at soc_full.
     """
-    producing = [t for t, p in power.items() if p is not None and p > 5]
-    if not producing:
+    start = first_use(power, valid_since)
+    if start is None:
         return []
-    start = max(min(producing), valid_since or 0)
     out = []
     for t, p in sorted(power.items()):
         if p is None or t < start or p < 0:

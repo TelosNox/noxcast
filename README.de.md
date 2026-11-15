@@ -33,7 +33,7 @@ deinem Verlauf, was auf deinem Dach anders ist.
 | **Erklärung** | Je Stunde vom klaren Himmel über Wolken, Schatten, Reflexion, Richtung und Wärme bis zur Prognose. Keine Blackbox: zuerst Physik, dann gelernte Werte, zuletzt eine statistische Korrektur. |
 | **Bandbreite** | P10–P90 aus deinem eigenen Archiv vergangener Prognosen. Es verschiebt die Wolken und liegt deshalb nie über klarem Himmel. |
 | **Genauigkeit** | Jede Vortagsprognose wird archiviert und mit dem verglichen, was passiert ist. Mit dem Satellitenfilter (eine Option) wird der Fehler jedes Tages in Wetteranteil und Modellanteil aufgeteilt. |
-| **Datenqualität** | Stunden mit vollem Akku, ausgeschlossenen Zeiträumen oder Ausfällen bleiben beim Lernen außen vor. Eine Leistungsgrenze eines Eingangs, Mikrowechselrichters oder Systems ohne Akku deckelt die Prognose. |
+| **Datenqualität** | Stunden mit vollem Akku, ausgeschlossenen Zeiträumen, Ausfällen und Schnee auf den Modulen bleiben beim Lernen außen vor. Eine Leistungsgrenze eines Eingangs, Mikrowechselrichters oder Systems ohne Akku deckelt die Prognose. |
 | **Montage** | Mehrere Ausrichtungen an einem Eingang (Ost + West, senkrechte Balkonmodule) als eine PV-Gruppe. |
 | **Wetter** | Open-Meteo, ICON und ECMWF IFS stundenweise gemittelt. Kein Konto, kein API-Schlüssel, kostenlos für private Nutzung. |
 | **Datenschutz** | Läuft in Home Assistant. Nur deine Koordinaten gehen an Open-Meteo. |
@@ -157,7 +157,9 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - **Schattenkarte größtenteils grau:** noch zu wenige klare Stunden. Sie füllt sich über die Wochen.
 - **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen (oder seinen Ladezustand im
   Haupteintrag), dann den Dienst `noxcast.relearn` aufrufen.
-- **Tage mit Wartung oder Ausfall:** mit `noxcast.exclude_period` ausschließen.
+- **Tage mit Wartung oder Ausfall:** Ein Tag, an dem eine PV-Gruppe fast nichts geliefert hat, bleibt von selbst
+  außen vor (*Passt die Konfiguration?* zeigt, wie viele und den letzten). Einen teilweisen Ausfall oder eine Wartung mit
+  `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
 
@@ -482,7 +484,9 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 ### Lernen (nachts, aus der Langzeitstatistik)
 
 - **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
-  außen vor. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
+  außen vor. Ebenso Tage, an denen eine PV-Gruppe höchstens 2 % eines klaren Tages geliefert hat (ausgefallen,
+  ganz unter Schnee oder zu dunkel für den Wechselrichter), und mit dem Archiv (*Lufttemperatur aus Archiv*) die Stunden nach mindestens
+  1 cm Schneefall, bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und
   Reflexion. Stunden an einer *Leistungsgrenze* zählen als „mindestens so viel“: Die Module hätten mehr liefern
   können. Als Messwert genommen, ließen sie Wirkungsgrad und Mittagsschatten zu niedrig erscheinen; ohne sie blieben
   von den sonnigen Stunden nur die bewölkten und verschatteten übrig. Sonnenstände, an denen die meisten klaren

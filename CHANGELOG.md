@@ -13,7 +13,9 @@ breaking changes.
   at anomalies with their most telling day: "battery full" although the array delivered what the model expects,
   clearly more often than in the hours learning used (the threshold or the system assignment may be wrong), clearly
   above the learned model's clear-sky output (orientation, peak power or sensor unit), days without output under a
-  bright sky and without snow (an outage), and bright days below 70 % of the model that no filter explains. The CSV
+  bright sky and without snow (an outage), bright days below 70 % of the model that no filter explains, and snow
+  windows that neither thaw nor modules delivering again closed before the 7-day limit (the array may never look
+  free again, for example under shade, and learning then loses a week after every snowfall). The CSV
   export gains the column `bound_w`, that clear-sky output without the shading map. Renewed by every nightly
   learning run; it does not change learning or the forecast.
 - *Data basis* gains a calendar of the last year: one cell per day, coloured by output against the model, or hatched

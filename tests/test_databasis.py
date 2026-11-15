@@ -156,6 +156,14 @@ def test_days_stored_as_noon_times_load_as_dates():
     assert db.dated(SITE, out).dead_days == ["2026-06-26"]               # already dates: unchanged
 
 
+def test_a_snow_window_closed_only_at_its_longest_is_an_anomaly():
+    table = {"columns": db.COLUMNS, "rows": []}
+    assert db.summary(SITE, table, 1000.0)["anomalies"] == []
+    end = datetime(2026, 1, 9, 0, tzinfo=timezone.utc).timestamp()       # the window's first hour after the cap
+    out = db.summary(SITE, table, 1000.0, [end - 20 * 86400, end])
+    assert out["anomalies"] == [{"key": "snow_cap", "count": 2, "value": None, "day": "2026-01-08"}]
+
+
 def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     rows = []
     for d in range(1, 4):                         # covered under a bright sky after snowfall: snow, not an outage

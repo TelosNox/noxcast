@@ -625,7 +625,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         for sid, la in learned.items():
             arr = self.arrays[sid]
             table = databasis.hour_table(self.site, arr, la, history, soc_full, exclusions)
-            la.basis = databasis.summary(self.site, table, arr.geometry.peak_w)
+            la.basis = databasis.summary(self.site, table, arr.geometry.peak_w,
+                                         ln.left_out(self.site, arr, history).snow_capped)
 
     async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
         """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""

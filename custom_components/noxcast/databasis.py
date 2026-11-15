@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Collection
 from datetime import date, datetime, timezone
 
 from . import arraycheck as ac
@@ -130,11 +131,12 @@ def category(status: str, reasons: str) -> str | None:
     return next((cat for cat, keys in _LEFT if names & keys), "other")
 
 
-def summary(site: Site, table: dict, peak_w: float) -> dict:
+def summary(site: Site, table: dict, peak_w: float, snow_capped: Collection[float] = ()) -> dict:
     """What learning saw, for the panel: shares of the clear-sky energy per category (whole history and per month,
     UTC) and the anomalies, each with a count, a value and its most telling day (a solar day as ISO date).
 
     Weighted by clear_w, not by hours: a June noon left out costs learning far more than a December edge hour.
+    snow_capped: ends of the snow windows that closed only at their longest (learning.LeftOut).
     """
     cols = table["columns"]
     rows = [dict(zip(cols, r)) for r in table["rows"]]
@@ -158,7 +160,7 @@ def summary(site: Site, table: dict, peak_w: float) -> dict:
 
     return {"version": SUMMARY_VERSION, "hours": sum(len(v) for v in days.values()), "shares": shares(energy),
             "months": {m: shares(e) for m, e in sorted(months.items())},
-            "anomalies": _anomalies(site, days, peak_w) if peak_w > 0 else [],
+            "anomalies": (_anomalies(site, days, peak_w) if peak_w > 0 else []) + _snow_capped(site, snow_capped),
             "days": _calendar(site, days, peak_w)}
 
 
@@ -220,6 +222,16 @@ def dated(site: Site, learned: LearnedArray) -> LearnedArray:
 
 def _solar_day(site: Site, iso: str) -> int:
     return solar_day(site, datetime.fromisoformat(iso).timestamp())
+
+
+def _snow_capped(site: Site, ends: Collection[float]) -> list[dict]:
+    """Snow windows that neither thaw nor an hour of free modules closed: either snow lay that long, or the rule
+    that sees the modules free again does not fire on this array (shade, a weak inverter) and every snowfall costs
+    learning a week. The day is the last one of the latest such window."""
+    if not ends:
+        return []
+    return [{"key": "snow_cap", "count": len(ends), "value": None,
+             "day": solar_date(solar_day(site, max(ends) - 3600))}]
 
 
 def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[dict]:

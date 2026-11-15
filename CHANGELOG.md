@@ -9,6 +9,10 @@ breaking changes.
 
 ### Changed
 
+- The calendar of the *Data basis* shows a day pale when the satellite's error alone can explain its deviation from
+  the model under that day's sky: under clouds the satellite is often a quarter off, under a clear sky only a few
+  percent. Only strong colours now point at the model or the configuration. The pale days appear after the next
+  nightly learning run.
 - *Data basis* calls the hours in which the PV could not deliver everything *capped* instead of *lower bound*: at a
   power limit, with the battery charging at full power or with PV held back. The CSV export keeps its status
   `lower_bound`.

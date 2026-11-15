@@ -169,6 +169,9 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
   erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
   gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
+  blass ist ein Tag, dessen Abweichung der Fehler des Satelliten bei diesem Himmel allein erklären kann (bei
+  Bewölkung oft ein Viertel, bei klarem Himmel wenige Prozent), sodass nur kräftige Farben auf Modell oder
+  Konfiguration hinweisen;
   Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und Obergrenze bei klarem Himmel mit den
   ausgelassenen und begrenzten Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,
   Wolken, Schatten, Reflexion, Richtung, Temperatur).

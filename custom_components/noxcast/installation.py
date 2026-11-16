@@ -7,15 +7,20 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
   hours at it are lower bounds in learning. That holds for an input (MPPT, micro-inverter) and for the output limit
   of a system without a battery, alone or shared by its subsystems.
 - A battery's full state is a state, no cap: the hours it may have cut are left out of learning instead. Which
-  batteries count for an array follows from where they sit (stores_of).
+  batteries count for an array follows from where they sit (Reach): the battery of its own system takes its PV
+  first; batteries of systems under the same control take what reaches them over AC. The PV is curtailed only when
+  the own battery takes no more and none of the others does either, or when the own system's output limit keeps
+  the rest from reaching them (blocked).
 - A battery charging at its maximum power takes no more either, where the rest cannot go out
   (systems.charge_curtails): a ceiling of output plus charge power. The hour delivered at least what was measured,
-  so it is a lower bound in learning like a fixed limit (charge_hours). Leaving it out instead would select on the
+  so it is a lower bound in learning like a fixed limit (battery_hours). Leaving it out instead would select on the
   measured PV itself, dropping the bright hours and bending the learned efficiency down (#248, E1). The charge power
   is read from means, never from a period's maximum: a power sensor, above all one computed from several others,
   shows spikes of a second far above what the battery can take, and one of them would turn the whole hour into a
   lower bound. Where the 5-minute means are kept (fine.py) they decide; older hours have only their hourly mean,
-  which says less, so an hour in between is left out (charge_hours).
+  which says less, so an hour in between is left out (battery_hours). Charging at its maximum holds back none
+  of the own PV where the own arrays' fixed limits together stay at or below that maximum: what it charges beyond
+  them came from elsewhere.
 """
 from __future__ import annotations
 
@@ -84,6 +89,65 @@ class Store:
 
 
 @dataclass(frozen=True)
+class Reach:
+    """The batteries that take an array's PV before it is curtailed (chain of ceilings).
+
+    own: the battery of the array's own system, which takes its PV first. others: those of systems under the same
+    control, which take what reaches them over AC. own_charge: charging at its maximum can hold back own PV: the
+    own arrays' fixed limits together exceed that maximum, or are not all known. overflow: the own system's output
+    limit is below what its arrays can give (or that is not known), so a blocked own battery curtails whatever the
+    others could still take.
+    """
+
+    own: tuple[Store, ...] = ()
+    others: tuple[Store, ...] = ()
+    own_charge: bool = True
+    overflow: bool = False
+
+
+Hours = set[float]
+
+
+def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_max: Mapping[Store, Hours],
+            unsure: Mapping[Store, Hours]) -> tuple[Hours, Hours, Hours]:
+    """(full, at its maximum, unsure) period starts in which the array's PV may have been curtailed, from each
+    battery's own periods; disjoint, the first wins.
+
+    A battery is blocked when full or charging at its maximum. The own battery has to be blocked (an array without
+    one sends everything onwards); then, unless the own system's output limit holds the rest back (overflow), every
+    other battery too. Such a period counts as full when a full battery took part, which learning leaves out;
+    otherwise as at its maximum, a lower bound. Where only an unsure charge period completes the block, it is
+    unsure. old: the household's old setting, whose full batteries count for every array.
+    """
+    def union(stores: Iterable[Store], *of: Mapping[Store, Hours]) -> Hours:
+        return set().union(*(m.get(s, set()) for s in stores for m in of))
+
+    def every(stores: tuple[Store, ...], *of: Mapping[Store, Hours]) -> Hours:
+        return set.intersection(*(union((s,), *of) for s in stores))
+
+    out_full: Hours = set()
+    out_max: Hours = set()
+    out_unsure: Hours = set()
+    if reach.own or reach.others:
+        own_full = union(reach.own, full)
+        own_max = union(reach.own, at_max) - own_full if reach.own_charge else set()
+        own_unsure = union(reach.own, unsure) - own_full - own_max if reach.own_charge else set()
+        if reach.others and not (reach.own and reach.overflow):
+            sure = every(reach.others, full, at_max)
+            maybe = every(reach.others, full, at_max, unsure)
+            if reach.own:
+                sure &= own_full | own_max
+                maybe &= own_full | own_max | own_unsure
+            out_full = sure & (own_full | union(reach.others, full))
+            out_max = sure - out_full
+            out_unsure = maybe - sure
+        else:
+            out_full, out_max, out_unsure = own_full, own_max, own_unsure
+    out_full |= union(old, full)
+    return out_full, out_max - out_full, out_unsure - out_full - out_max
+
+
+@dataclass(frozen=True)
 class Cap:
     """A fixed limit on the summed output of arrays: a system with an output limit and no battery below it."""
 
@@ -102,7 +166,7 @@ class House:
 class Installation:
     house: House = field(default_factory=House)
     inputs: Mapping[str, Input] = field(default_factory=dict)                # by sensor
-    stores: Mapping[str, tuple[Store, ...]] = field(default_factory=dict)    # array -> batteries of its systems
+    reach: Mapping[str, Reach] = field(default_factory=dict)                 # array -> batteries that take its PV
     caps: tuple[Cap, ...] = ()
     # array -> grid power (W, export negative) below which its system may have held PV back: HELD_IMPORT_W for
     # one that follows the load without a battery, limit_threshold under the household's feed-in limit
@@ -119,10 +183,18 @@ class Installation:
     def inputs_of(self, array: str) -> list[Input]:
         return [i for i in self.inputs.values() if i.array == array]
 
+    def old_stores(self) -> tuple[Store, ...]:
+        return tuple(Store(s, self.house.soc_full_pct) for s in self.house.soc_sensors)
+
     def stores_of(self, array: str) -> tuple[Store, ...]:
-        """The batteries whose full state may curtail the array: the old household setting and its systems'."""
-        old = tuple(Store(s, self.house.soc_full_pct) for s in self.house.soc_sensors)
-        return tuple(dict.fromkeys(old + tuple(self.stores.get(array, ()))))
+        """The batteries whose state may curtail the array: the old household setting and its systems'."""
+        r = self.reach.get(array, Reach())
+        return tuple(dict.fromkeys(self.old_stores() + r.own + r.others))
+
+    def blocked(self, array: str, full: Mapping[Store, Hours], at_max: Mapping[Store, Hours],
+                unsure: Mapping[Store, Hours] | None = None) -> tuple[Hours, Hours, Hours]:
+        """blocked() for the array."""
+        return blocked(self.reach.get(array, Reach()), self.old_stores(), full, at_max, unsure or {})
 
     def soc_sensors(self) -> list[str]:
         """Every state-of-charge sensor that may curtail some array."""
@@ -130,41 +202,27 @@ class Installation:
 
     def chargers(self) -> list[Charger]:
         """Every battery power sensor whose maximum may curtail some array."""
-        return sorted({st.charger for group in self.stores.values() for st in group if st.charger},
+        return sorted({st.charger for r in self.reach.values() for st in r.own + r.others if st.charger},
                       key=lambda c: c.sensor)
 
-    def full_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]]) -> set[float]:
-        """Period starts in which a battery that may curtail the array was full; soc: sensor -> highest % per
-        period."""
-        return {t for s in self.stores_of(array) for t, v in soc.get(s.sensor, {}).items()
-                if v is not None and v >= s.full_pct}
+    def battery_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]],
+                      hourly: Mapping[str, Mapping[float, float]], fine: Mapping[str, Mapping[float, float]]
+                      ) -> tuple[Hours, Hours, Hours]:
+        """(full, at its maximum, unsure) hour starts in which the array's PV may have been curtailed (blocked):
+        learning leaves out the first and the last, and counts the second as delivering at least what was measured.
 
-    def charge_hours(self, array: str, hourly: Mapping[str, Mapping[float, float]],
-                     fine: Mapping[str, Mapping[float, float]]) -> tuple[set[float], set[float]]:
-        """(hour starts, unsure hour starts) in which a battery that may curtail the array charged at its maximum
-        power: the array delivered at least what was measured in the first, the second are left out of learning.
-
-        hourly, fine: power sensor -> mean charge power per hour, per 5-minute period, W (charge_power). An hour
-        with kept 5-minute means counts when one of them is at the maximum (Charger.at_max); one without is judged
-        by its hourly mean (HOUR_AT_MAX, HOUR_UNSURE).
+        soc: sensor -> highest % per hour. hourly, fine: power sensor -> mean charge power per hour, per 5-minute
+        period, W (charge_power). An hour with kept 5-minute means counts as at the maximum when one of them is
+        (Charger.at_max); one without is judged by its hourly mean (HOUR_AT_MAX, HOUR_UNSURE).
         """
-        at_max: set[float] = set()
-        unsure: set[float] = set()
+        full: dict[Store, Hours] = {}
+        at_max: dict[Store, Hours] = {}
+        unsure: dict[Store, Hours] = {}
         for s in self.stores_of(array):
-            if s.charger is None:
-                continue
-            c = s.charger
-            periods = fine.get(c.sensor, {})
-            known = {t - t % HOUR for t in periods}
-            at_max |= {t - t % HOUR for t, w in periods.items() if c.at_max(w)}
-            for t, w in hourly.get(c.sensor, {}).items():
-                if t in known:
-                    continue
-                if w >= HOUR_AT_MAX * c.max_w:
-                    at_max.add(t)
-                elif w >= HOUR_UNSURE * c.max_w:
-                    unsure.add(t)
-        return at_max, unsure - at_max
+            full[s] = {t for t, v in soc.get(s.sensor, {}).items() if v is not None and v >= s.full_pct}
+            if s.charger is not None:
+                at_max[s], unsure[s] = _charge_hours(s.charger, hourly, fine)
+        return self.blocked(array, full, at_max, unsure)
 
     def array_limit(self, array: str) -> float | None:
         """The fixed limit of an array's measured sum: the sum of its sensors' limits, if every sensor has one,
@@ -193,6 +251,23 @@ class Installation:
         return {a: w for a in {i.array for i in self.inputs.values()} if (w := self.array_limit(a)) is not None}
 
 
+def _charge_hours(c: Charger, hourly: Mapping[str, Mapping[float, float]],
+                  fine: Mapping[str, Mapping[float, float]]) -> tuple[Hours, Hours]:
+    """(hour starts at its maximum, unsure hour starts) of one battery (Installation.battery_hours)."""
+    periods = fine.get(c.sensor, {})
+    known = {t - t % HOUR for t in periods}
+    at_max = {t - t % HOUR for t, w in periods.items() if c.at_max(w)}
+    unsure: Hours = set()
+    for t, w in hourly.get(c.sensor, {}).items():
+        if t in known:
+            continue
+        if w >= HOUR_AT_MAX * c.max_w:
+            at_max.add(t)
+        elif w >= HOUR_UNSURE * c.max_w:
+            unsure.add(t)
+    return at_max, unsure - at_max
+
+
 def charge_power(chargers: Iterable[Charger], values: Mapping[str, Mapping[float, float | None]],
                  factors: Mapping[str, float]) -> dict[str, dict[float, float]]:
     """Power sensor -> mean charge power per period in W (charging positive, also for an inverted sensor), from the
@@ -204,14 +279,16 @@ def charge_power(chargers: Iterable[Charger], values: Mapping[str, Mapping[float
     return out
 
 
-def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], feed_in_mode: str,
-            soc_full: float, max_soc: Mapping[str, float]) -> dict[str, tuple[Store, ...]]:
-    """Array -> the batteries that may curtail it (systems.curtailed_arrays).
+def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], soc_full: float,
+           max_soc: Mapping[str, float], ceilings: Mapping[str, float | None]) -> dict[str, Reach]:
+    """Array -> the batteries that take its PV (systems.curtailed_arrays); ceilings: array -> the sum of its
+    sensors' fixed limits, None where one is not known.
 
     A battery counts as full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is
     lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
     """
-    out: dict[str, list[Store]] = {}
+    own: dict[str, tuple[Store, str]] = {}
+    others: dict[str, list[Store]] = {}
     for sid, arrays in sy.curtailed_arrays(systems).items():
         d = batteries.get(systems[sid].battery or "")
         if not d or not d.get(CONF_SOC_SENSOR):
@@ -223,8 +300,24 @@ def _stores(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[st
                                                                             d.get(CONF_MAX_SOC) or 100))
                                               - FULL_TOLERANCE), charger)
         for a in arrays:
-            out.setdefault(a, []).append(store)
-    return {a: tuple(dict.fromkeys(s)) for a, s in out.items()}
+            if a in systems[sid].arrays:
+                own[a] = (store, sid)
+            else:
+                others.setdefault(a, []).append(store)
+    out: dict[str, Reach] = {}
+    for a in set(own) | set(others):
+        if a not in own:
+            out[a] = Reach((), tuple(dict.fromkeys(others[a])))
+            continue
+        store, sid = own[a]
+        rest = tuple(s for s in dict.fromkeys(others.get(a, ())) if s != store)
+        parts = [ceilings.get(x) for x in systems[sid].arrays]
+        ceiling = sum(p for p in parts if p is not None) if parts and None not in parts else None
+        limit = systems[sid].get(CONF_OUTPUT_LIMIT)
+        out[a] = Reach((store,), rest,
+                       own_charge=store.charger is None or ceiling is None or ceiling > store.charger.max_w,
+                       overflow=bool(limit) and (ceiling is None or ceiling > float(limit)))
+    return out
 
 
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
@@ -260,8 +353,12 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
             w = limits.get(s)
             inputs[s] = Input(s, array, float(w) if w is not None and w > 0 else None)
     systems = systems or {}
+    ceilings: dict[str, float | None] = {}
+    for array in arrays:
+        group = [i.limit_w for i in inputs.values() if i.array == array]
+        ceilings[array] = sum(w for w in group if w is not None) if group and None not in group else None
     return Installation(House(tuple(soc_sensors), float(soc_full_pct)), inputs,
-                        _stores(systems, batteries or {}, feed_in_mode, float(soc_full_pct), max_soc or {}),
+                        _reach(systems, batteries or {}, float(soc_full_pct), max_soc or {}, ceilings),
                         _caps(systems, arrays), _held(systems, export_limit))
 
 

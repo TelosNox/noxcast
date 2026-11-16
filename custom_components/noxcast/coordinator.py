@@ -318,7 +318,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_record_fine(self) -> None:
         """Keep yesterday's (and any missed day's) 5-minute means per power sensor while the statistics exist: the
         PV sensors, and the power sensors of the batteries whose charge maximum may curtail PV
-        (installation.charge_hours)."""
+        (installation.battery_hours)."""
         today = dt_util.now().date()
         pv_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         chargers = sorted({c.sensor for c in self._installation_now().chargers()} - set(pv_ids))
@@ -693,10 +693,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         fine = inst.charge_power(own, await self.hass.async_add_executor_job(
             lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
         air_temp, satellite_ghi, snowfall = await self._async_archives(start, now, record) if archives else (None, None, None)
-        full = {sid: frozenset(installation.full_hours(sid, soc)) for sid in self.arrays}
-        at_charge_max = {sid: installation.charge_hours(sid, charging, fine) for sid in self.arrays}
-        charge = {sid: frozenset(hours) for sid, (hours, _) in at_charge_max.items()}
-        unsure = {sid: frozenset(hours) for sid, (_, hours) in at_charge_max.items() if hours}
+        blocked = {sid: installation.battery_hours(sid, soc, charging, fine) for sid in self.arrays}
+        full = {sid: frozenset(f) for sid, (f, _, _) in blocked.items()}
+        charge = {sid: frozenset(m) for sid, (_, m, _) in blocked.items()}
+        unsure = {sid: frozenset(u) for sid, (_, _, u) in blocked.items() if u}
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
@@ -1256,7 +1256,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_curtailed(self, day_start: float, now: float) -> dict[str, set[float]]:
         """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full or charged at
-        its maximum power (see forecasting.curtailed_hours and installation.stores_of)."""
+        its maximum power where no other battery took more (see forecasting.curtailed_hours and
+        installation.blocked)."""
         installation = self._installation_now()
         soc_ids = installation.soc_sensors()
         held = await self._async_held_today(installation, day_start, now)
@@ -1278,20 +1279,20 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception as err:  # noqa: BLE001 – the live state still covers the running hour
             _LOGGER.debug("Today's state of charge statistics unavailable: %s", err)
             hourly, recent = {}, {}
-        hours: dict[tuple[str, float], set[float]] = {}
+        full: dict[inst.Store, set[float]] = {}
+        at_max: dict[inst.Store, set[float]] = {}
         out: dict[str, set[float]] = {}
         for sid in self.arrays:
-            out[sid] = set()
             for s in installation.stores_of(sid):
-                if (s.sensor, s.full_pct) not in hours:
-                    hours[(s.sensor, s.full_pct)] = fc.curtailed_hours(
+                if s not in full:
+                    full[s] = fc.curtailed_hours(
                         {s.sensor: hourly.get(s.sensor) or {}}, {s.sensor: recent.get(s.sensor) or {}},
                         [live[s.sensor]] if s.sensor in live else [], s.full_pct, now)
-                out[sid] |= hours[(s.sensor, s.full_pct)]
-                if s.charger:
-                    out[sid] |= {t - t % 3600 for t, w in charging.get(s.charger.sensor, {}).items()
+                if s.charger and s not in at_max:
+                    at_max[s] = {t - t % 3600 for t, w in charging.get(s.charger.sensor, {}).items()
                                  if s.charger.at_max(w)}
-            out[sid] |= held.get(sid, set())
+            hours_full, hours_max, _ = installation.blocked(sid, full, at_max)
+            out[sid] = hours_full | hours_max | held.get(sid, set())
         return out
 
     async def _async_held_today(self, installation: inst.Installation, day_start: float, now: float

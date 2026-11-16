@@ -186,10 +186,18 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     # the old household setting still counts for every array
     old = inst.build(arrays, {}, ["soc.x"], 95, systems, BATTERIES, "free")
     assert inst.Store("soc.x", 95.0) in old.stores_of("roof") and old.soc_sensors() == ["soc.a", "soc.u", "soc.x"]
-    soc = {"soc.u": {0.0: 96.0, 3600.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 80.0}}
-    assert free.full_hours("south", soc) == {0.0, 3600.0} and free.full_hours("roof", soc) == set()
-    cut = ct.cuts(free, ct.Observed({"pv.s": ct.Stat(300), "pv.r": ct.Stat(300)}, soc={"soc.a": 90.0}))
-    assert cut["south"].reason is ct.Reason.BATTERY_FULL and cut["south"].node == "soc.a" and "roof" not in cut
+    # the Ultra's PV goes into its own battery first, then over AC to the AC Pro: only both full curtail it
+    soc = {"soc.u": {0.0: 96.0, 3600.0: 96.0, 7200.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 89.0}}
+    assert free.battery_hours("south", soc, {}, {})[0] == {3600.0}
+    assert free.battery_hours("roof", soc, {}, {}) == (set(), set(), set())
+    assert ct.cuts(free, ct.Observed({"pv.s": ct.Stat(300)}, soc={"soc.a": 90.0})) == {}
+    cut = ct.cuts(free, ct.Observed({"pv.s": ct.Stat(300), "pv.r": ct.Stat(300)}, soc={"soc.a": 90.0, "soc.u": 97.0}))
+    assert cut["south"].reason is ct.Reason.BATTERY_FULL and cut["south"].node == "soc.u" and "roof" not in cut
+    # an output limit below what the Ultra's PV can give keeps the rest from the AC Pro: its own full battery
+    # curtails it alone
+    capped = {**STREAM, "u": ("system", "Ultra", {**STREAM["u"][2], "output_limit_w": 400})}
+    narrow = inst.build(arrays, {"pv.s": 600}, [], 95, sy.systems_of(capped), BATTERIES, "free")
+    assert narrow.battery_hours("south", soc, {}, {})[0] == {0.0, 3600.0}
 
 
 def test_output_limit_without_battery_is_a_fixed_limit():
@@ -263,13 +271,19 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     built = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {}, [], 95, systems, batteries, "free")
     assert [c.sensor for c in built.chargers()] == ["p.a", "p.u"]
     # an inverted sensor reads charging as negative; kW to W
-    means = inst.charge_power(built.chargers(), {"p.u": {0.0: 0.9, 3600.0: 0.5}, "p.a": {7200.0: -0.45}},
+    means = inst.charge_power(built.chargers(), {"p.u": {0.0: 0.9, 3600.0: 0.9}, "p.a": {0.0: -0.45, 7200.0: -0.45}},
                               {"p.u": 1000.0, "p.a": 1000.0})
-    assert means == {"p.u": {0.0: 900.0, 3600.0: 500.0}, "p.a": {7200.0: 450.0}}
-    assert built.charge_hours("south", means, {}) == ({0.0, 7200.0}, set())
-    assert built.charge_hours("roof", means, {}) == (set(), set())
-    cut = ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0}))
-    assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and cut["south"].fixed
+    assert means == {"p.u": {0.0: 900.0, 3600.0: 900.0}, "p.a": {0.0: 450.0, 7200.0: 450.0}}
+    # both at their maximum: nothing takes more; the Ultra alone at it sends the rest to the AC Pro
+    assert built.battery_hours("south", {}, means, {}) == (set(), {0.0}, set())
+    assert built.battery_hours("roof", {}, means, {}) == (set(), set(), set())
+    assert ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0})) == {}
+    cut = ct.cuts(built, ct.Observed({"pv.s": ct.Stat(900)}, charging={"p.u": 990.0, "p.a": 490.0}))
+    assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and cut["south"].fixed and cut["south"].node == "p.u"
+    # its own PV cannot reach the maximum (600 W of inputs, 1000 W of charge power): what it charges beyond that
+    # comes from elsewhere, so it holds none of the own PV back
+    small = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {"pv.s": 600}, [], 95, systems, batteries, "free")
+    assert small.battery_hours("south", {}, means, {}) == (set(), set(), set())
     # learning keeps the hour as a lower bound instead of leaving it out
     arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
     history = ln.PvHistory({"pv.s": {0.0: 900.0, 3600.0: 400.0}}, {}, {}, {}, {}, charge={"south": frozenset({0.0})})
@@ -287,19 +301,20 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
 
 
 def test_the_charge_maximum_is_read_from_means_not_from_spikes():
-    power = {**STREAM, "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u",
-                                                          "battery_power": "p.u", "max_charge_w": 1000})}
+    power = {**{k: v for k, v in STREAM.items() if k not in ("a", "ba")},
+             "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "soc.u",
+                                                 "battery_power": "p.u", "max_charge_w": 1000})}
     systems = sy.systems_of(power)
     batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
     built = inst.build({"south": ["pv.s"]}, {}, [], 95, systems, batteries, "free")
     h = 3600.0
     # hours known only by their mean: from 85 % at the maximum, from 70 % unsure, below free
     hourly = {"p.u": {0.0: 860.0, h: 750.0, 2 * h: 690.0, 3 * h: 400.0}}
-    assert built.charge_hours("south", hourly, {}) == ({0.0}, {h})
+    assert built.battery_hours("south", {}, hourly, {}) == (set(), {0.0}, {h})
     # with kept 5-minute means they decide: one period at the maximum makes the hour a lower bound, whatever the
     # hourly mean; an hour whose periods all stay below is free even with a high mean
     fine = {"p.u": {3 * h + 600: 960.0, 3 * h + 900: 300.0, 0.0: 900.0, 300.0: 900.0}}
-    assert built.charge_hours("south", hourly, fine) == ({3 * h}, {h})
+    assert built.battery_hours("south", {}, hourly, fine) == (set(), {3 * h}, {h})
     # learning leaves an unsure hour out, as one with a full battery; the backtest too
     arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
     history = ln.PvHistory({"pv.s": {0.0: 900.0, h: 400.0, 2 * h: 500.0}}, {}, {}, {}, {},
@@ -454,3 +469,37 @@ def test_hours_with_the_export_at_the_feed_in_limit_count_as_at_least():
     assert built.held_hours("bal", low) == {3600.0, 7200.0, 10800.0}
     plain = inst.build({"roof": ["pv.r"]}, {}, [], 95, systems, {}, "limited")
     assert plain.held_hours("roof", low) == set() and "roof" not in plain.held
+
+
+def test_two_balancing_devices_curtail_only_when_neither_battery_takes_more():
+    # two PV devices with a battery each under one control, each with two 500 W inputs, 1050 W of charge power
+    # and an 800 W output
+    subs = {"p": ("system", "Pair", {"name": "Pair", "template": "coupled", "regulation": "load", "balance": True}),
+            "x": ("system", "X", {"name": "X", "template": "pv_battery", "parent": "p", "output_limit_w": 800,
+                                  "charges_from": "own_pv"}),
+            "y": ("system", "Y", {"name": "Y", "template": "pv_battery", "parent": "p", "output_limit_w": 800,
+                                  "charges_from": "own_pv"}),
+            "ax": ("array", "AX", {"system": "x"}), "ay": ("array", "AY", {"system": "y"}),
+            "bx": ("battery", "BX", {"system": "x", "soc_sensor": "soc.x", "battery_power": "p.x", "max_charge_w": 1050}),
+            "by": ("battery", "BY", {"system": "y", "soc_sensor": "soc.y", "battery_power": "p.y", "max_charge_w": 1050})}
+    batteries = {k: v[2] for k, v in subs.items() if v[0] == "battery"}
+    arrays = {"ax": ["pv.x1", "pv.x2"], "ay": ["pv.y1", "pv.y2"]}
+    limits = {s: 500 for group in arrays.values() for s in group}
+    built = inst.build(arrays, limits, [], 95, sy.systems_of(subs), batteries, "none")
+    h = 3600.0
+    # Y charges at its maximum, partly from X's PV; X's battery has room: neither array is curtailed, whatever the
+    # other battery does, since 1000 W of PV never fill 1050 W of charge power
+    charging = {"p.y": {0.0: 1040.0}, "p.x": {0.0: 70.0, h: 1040.0}}
+    assert built.battery_hours("ax", {}, charging, {}) == (set(), set(), set())
+    assert built.battery_hours("ay", {}, charging, {}) == (set(), set(), set())
+    # X full: its 1000 W of PV get only 800 W out, so it may be curtailed even while Y has room; Y is not
+    soc = {"soc.x": {h: 98.0}}
+    assert built.battery_hours("ax", soc, {}, {})[0] == {h}
+    assert built.battery_hours("ay", soc, {}, {})[0] == set()
+    # with room for all of it on the way out, X full still sends everything to Y: only both full curtail
+    wide = {**subs, "x": ("system", "X", {**subs["x"][2], "output_limit_w": 1200})}
+    open_ = inst.build(arrays, limits, [], 95, sy.systems_of(wide), batteries, "none")
+    assert open_.battery_hours("ax", soc, {}, {})[0] == set()
+    assert open_.battery_hours("ax", {**soc, "soc.y": {h: 99.0}}, {}, {})[0] == {h}
+    # X full while Y charges at its maximum: nothing takes more, and a full battery took part
+    assert open_.battery_hours("ax", soc, {"p.y": {h: 1040.0}}, {}) == ({h}, set(), set())

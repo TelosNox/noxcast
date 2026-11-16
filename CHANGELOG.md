@@ -7,6 +7,15 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+
+- Several devices with a battery each under one system no longer count an hour as *capped* or *battery full* as
+  soon as one of the batteries is full or charges at full power. Their PV is curtailed only when its own battery takes
+  no more and the other batteries take nothing more either, or when the device's output limit keeps the rest from
+  reaching them. A battery whose charge power is at least what its own modules can deliver (from the input limits)
+  no longer caps them by charging at full power. Learning keeps more bright hours; this takes effect with the next
+  nightly learning run.
+
 ## [0.5.0b5] - 2026-11-16
 
 ### Added

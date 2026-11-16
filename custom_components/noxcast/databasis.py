@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import io
 import math
+import statistics
 from collections.abc import Collection
 from datetime import date, datetime, timezone
 
@@ -125,7 +126,16 @@ CALENDAR_MIN_H = 0.2        # a day's deviation needs a model day of this many h
 # of an array's model or configuration does not (docs/concept.md, Calendar). Between the points linear, beyond
 # them the nearest. One installation so far; other users' data may move the points.
 INPUT_SPREAD = ((0.1, 0.27), (0.25, 0.21), (0.4, 0.07), (0.5, 0.065), (0.65, 0.035), (0.8, 0.02))
-INPUT_SIGMAS = 2.0          # a deviation within this many spreads is what the satellite alone may cause
+INPUT_SIGMAS = 2.0          # a deviation within this many spreads is what satellite and model noise may cause
+# What an array's own model scatters from day to day besides the input (the shade map's resolution, temperature,
+# soiling): estimated from its bright days, where the satellite is nearly exact, as the robust spread of the
+# difference between one bright day and the next (divided by √2), with the input's part taken out. Differences of
+# neighbours leave out what drifts slowly: a steady offset or a seasonal course, the marks of a configuration that
+# does not fit, keep their colour instead of widening the band they are judged by.
+MODEL_SKY = 0.6             # a bright day: the model gives at least this share of the learned clear sky
+MODEL_DAYS = 20             # bright days the estimate needs; with fewer, MODEL_SPREAD
+MODEL_SPREAD = 0.04         # spread of a bright day's log ratio on the maintainer's arrays (4 % / 5 %)
+MODEL_SPREAD_MAX = 0.06     # however noisy the array: beyond it, it is no noise but something to look at
 
 
 def category(status: str, reasons: str) -> str | None:
@@ -179,13 +189,15 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
     "used" when learning kept most of the day's clear-sky energy (as sample or lower bound), else the category that
     took most of it. ratio: actual against model over the used hours with a satellite value, None for a left-out
     day, a dull one (CALENDAR_MIN_H) or one mostly at a lower bound. input: the ratio lies within what the
-    satellite's error alone causes under that day's sky (input_spread), so it says nothing about model or
-    configuration. battery: lit hours left out as "battery full", so a day that learning used can still show that
+    satellite's error under that day's sky (input_spread) and the array's own day-to-day noise (model_spread) cause
+    together, so it says nothing about model or configuration; band: that width in log terms, the usual range
+    being exp(-band) to exp(band) of the model. battery: lit hours left out as "battery full", so a day that learning used can still show that
     its noon was missing.
     """
     lit = LIT_SHARE * peak_w
-    out: dict[str, list] = {"day": [], "cat": [], "ratio": [], "input": [], "battery": []}
+    out: dict[str, list] = {"day": [], "cat": [], "ratio": [], "input": [], "band": [], "battery": []}
     last = max(days, default=0)
+    rows = []
     for d in sorted(d for d in days if d > last - CALENDAR_DAYS):
         rs = days[d]
         energy: dict[str, float] = {}
@@ -195,7 +207,7 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
         kept = energy.get("used", 0.0) + energy.get("lower_bound", 0.0)
         cat = "used" if total <= 0 or kept >= (1 - DAY_LEFT) * total else max(
             (k for k in energy if k not in ("used", "lower_bound")), key=lambda k: energy[k])
-        ratio, explained = None, False
+        ratio, dev, sky = None, None, None
         if cat == "used":
             used = [r for r in rs if r["cat"] == "used" and r["model_w"] is not None]
             model = sum(r["model_w"] for r in used)
@@ -203,13 +215,31 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
                 actual = sum(r["power_w"] for r in used)
                 ratio = round(actual / model, 2)
                 clear = sum(r["clear_w"] or 0.0 for r in used)
-                explained = (actual > 0 and clear > 0
-                             and abs(math.log(actual / model)) <= INPUT_SIGMAS * input_spread(model / clear))
+                if actual > 0 and clear > 0:
+                    dev, sky = math.log(actual / model), model / clear
         battery = sum(1 for r in rs if r["cat"] == "battery" and (r["clear_w"] or 0) >= lit)
-        for key, value in (("day", solar_date(d)), ("cat", cat),
-                           ("ratio", ratio), ("input", explained), ("battery", battery)):
+        rows.append((d, cat, ratio, dev, sky, battery))
+    noise = model_spread([(dev, sky) for _, _, _, dev, sky, _ in rows if dev is not None])
+    for d, cat, ratio, dev, sky, battery in rows:
+        band = INPUT_SIGMAS * math.hypot(input_spread(sky), noise) if dev is not None else None
+        for key, value in (("day", solar_date(d)), ("cat", cat), ("ratio", ratio),
+                           ("input", dev is not None and abs(dev) <= band),
+                           ("band", round(band, 3) if band is not None else None), ("battery", battery)):
             out[key].append(value)
     return out
+
+
+def model_spread(days: list[tuple[float, float]]) -> float:
+    """An array's own day-to-day spread of log(actual/model) besides the input, from its (log ratio, sky) days in
+    date order (MODEL_SKY, MODEL_DAYS, MODEL_SPREAD_MAX)."""
+    bright = [(dev, sky) for dev, sky in days if sky >= MODEL_SKY]
+    if len(bright) < MODEL_DAYS:
+        return MODEL_SPREAD
+    steps = [b[0] - a[0] for a, b in zip(bright, bright[1:])]
+    mid = statistics.median(steps)
+    spread = 1.4826 * statistics.median(abs(s - mid) for s in steps) / math.sqrt(2)
+    own = spread ** 2 - statistics.mean(input_spread(sky) ** 2 for _, sky in bright)
+    return min(math.sqrt(max(own, 0.0)), MODEL_SPREAD_MAX)
 
 
 def input_spread(sky: float) -> float:

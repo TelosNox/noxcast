@@ -622,8 +622,26 @@ not types of their own. Independent devices are systems of their own, side by si
     same way on both; under a bright one (> 0.6) at 0.16, with 5 % each: what is left there is the arrays' own
     model error. The direction changes from day to day (median ratio 1.0), which a shared part of the model (the
     diffuse split, say) would not do. One installation so far; the points (`INPUT_SPREAD`) may move with other
-    users' data. Strong colours remain for deviations beyond the input: configuration or data, to be told apart
-    next.
+    users' data.
+
+    The input alone left 21 % (balcony) and 29 % (roof) of the days strong, most of them bright days at 92-96 % or
+    104-109 %: the array's own model scatters too (shade map resolution, temperature, soiling), about 4-5 % on a
+    bright day. So the band adds it (`model_spread`): the robust spread (1.4826 × MAD) of the difference between
+    one bright day (sky >= 0.6) and the next, divided by √2, minus the input's part there; at least 20 bright days
+    (else 4 %), at most 6 %. Differences of neighbours leave out what drifts slowly: a steady offset or a seasonal
+    course (a tilt that does not fit gives summer above and winter below the model) would otherwise widen the band
+    it is judged by. Satellite and model add as independent errors (root of the sum of squares), two of them make
+    the band, symmetric in log terms: the tooltip names it as a range, from 95-105 % (balcony) or 92-108 % (roof)
+    on a clear day to 58-172 % on a very dull one. With it 18 % (balcony) and 16 % (roof) of the days stay strong,
+    against 21 % and 29 % with the input alone. The balcony's bright days drift a few percent below the model in
+    June and July; that course stays visible, an estimate around the median took it for noise (12 % strong).
+
+    A per-hour version of the same question misleads: binned by the satellite's clearness, both arrays looked 7-13 %
+    above the model in partly cloudy hours (0.45-0.75) in every month, which looked like a diffuse split that
+    misses broken clouds. Binned by the *other* array's PV clearness (the same sky, free of the satellite's noise
+    and of the array's own outcome) it is gone: balcony ±0 %, roof +3 % as in all its classes. A noisy predictor as
+    the key gives regression to the mean (errors in variables). Judge model bias by sky class only with a key
+    that is independent of the error.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (the mean used for the forecast, each averaged model on its own);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

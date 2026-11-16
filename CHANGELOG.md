@@ -9,10 +9,11 @@ breaking changes.
 
 ### Changed
 
-- The calendar of the *Data basis* shows a day pale when the satellite's error alone can explain its deviation from
-  the model under that day's sky: under clouds the satellite is often a quarter off, under a clear sky only a few
-  percent. Only strong colours now point at the model or the configuration. The pale days appear after the next
-  nightly learning run.
+- The calendar of the *Data basis* shows a day pale when its deviation from the model stays within the usual range:
+  what the satellite's error under that day's sky (under clouds often a quarter, under a clear sky a few percent)
+  and the array's ordinary day-to-day model noise cause together. The tooltip names the range of the day. Only
+  strong colours now point at the model or the configuration. The pale days appear after the next nightly learning
+  run.
 - *Data basis* calls the hours in which the PV could not deliver everything *capped* instead of *lower bound*: at a
   power limit, with the battery charging at full power or with PV held back. The CSV export keeps its status
   `lower_bound`.

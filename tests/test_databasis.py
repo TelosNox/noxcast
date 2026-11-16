@@ -177,7 +177,7 @@ def test_snow_cover_is_not_an_outage_and_known_limits_and_the_bound():
     keys = {a["key"]: a for a in out["anomalies"]}
     assert set(keys) == {"above_clear"} and keys["above_clear"]["count"] == 16
     assert db.summary(SITE, {"columns": db.COLUMNS, "rows": []}, 1000.0) == {
-        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": {"day": [], "cat": [], "ratio": [], "input": [], "battery": []}}
+        "version": db.SUMMARY_VERSION, "hours": 0, "shares": {}, "months": {}, "anomalies": [], "days": {"day": [], "cat": [], "ratio": [], "input": [], "band": [], "battery": []}}
 
 
 def test_input_spread_follows_the_sky():
@@ -186,8 +186,20 @@ def test_input_spread_follows_the_sky():
     assert all(db.input_spread(a) >= db.input_spread(b) for a, b in [(0.1, 0.3), (0.3, 0.6), (0.6, 0.9)])
 
 
+def test_model_spread_from_the_bright_days():
+    assert db.model_spread([(0.0, 0.8)] * 5) == db.MODEL_SPREAD                    # too few bright days
+    calm = [((-1) ** k * 0.005, 0.8) for k in range(31)]                            # within the input's 2 %
+    assert db.model_spread(calm) == 0.0
+    # a seasonal course (a tilt that does not fit) is no noise: it keeps its colour instead of widening the band
+    drift = [(-0.1 + 0.2 * k / 39, 0.8) for k in range(40)] + [(-1.0, 0.1)] * 30   # dull days do not count
+    assert db.model_spread(drift) == 0.0
+    noisy = [((-1) ** k * 0.025, 0.8) for k in range(31)]                           # day to day ±2.5 %
+    assert abs(db.model_spread(noisy) - (1.4826 ** 2 * 0.05 ** 2 / 2 - 0.02 ** 2) ** 0.5) < 1e-9
+    assert db.model_spread([((-1) ** k * 0.3, 0.8) for k in range(31)]) == db.MODEL_SPREAD_MAX
+
+
 def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
-    rows = _hours(1, status="used", power=450.0)                                   # 90 % of the model
+    rows = _hours(1, status="used", power=425.0)                                   # 85 % of the model
     rows += _hours(2, status="left_out", reasons="no_output snow", power=0.0)      # left out: snow first
     day3 = _hours(3, status="used")
     day3[3:5] = [_row(r[0], "left_out", "battery_full") for r in day3[3:5]]        # two noon hours battery full
@@ -196,9 +208,11 @@ def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
     rows += _hours(5, status="used", power=350.0, clear=2000.0)                     # 70 % under a dull sky (25 %)
     out = db.summary(SITE, {"columns": db.COLUMNS, "rows": rows}, 1000.0)
     assert out["days"] == {"day": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"],
-                           "cat": ["used", "snow", "used", "used", "used"], "ratio": [0.9, None, 1.0, None, 0.7],
-                           # 90 % under a bright sky is more than the satellite causes, 70 % under a dull one is not
-                           "input": [False, False, True, False, True], "battery": [0, 0, 2, 0, 0]}
+                           "cat": ["used", "snow", "used", "used", "used"], "ratio": [0.85, None, 1.0, None, 0.7],
+                           # 85 % under a bright sky is more than satellite and model noise cause, 70 % under a dull
+                           # one is not (too few bright days: the default noise)
+                           "input": [False, False, True, False, True], "band": [0.113, None, 0.113, None, 0.428],
+                           "battery": [0, 0, 2, 0, 0]}
     table = {"version": db.VERSION, "columns": db.COLUMNS, "rows": rows}
     assert db.day_rows(SITE, table, date(2026, 6, 3))["rows"] == day3
     assert db.day_rows(SITE, table, date(2026, 7, 3))["rows"] == []

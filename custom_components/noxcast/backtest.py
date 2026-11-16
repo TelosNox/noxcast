@@ -349,6 +349,29 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
             "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit)}
 
 
+# Unlearned days' hour error this far above the learned days' (relative): the model still memorises chance where
+# it has seen too little, so a strong day may come from missing data. Not fitted: on the maintainer's arrays, after
+# eight and nine months, the two lie within 1 %.
+LEARNING_GAP = 0.1
+
+
+def data_verdict(result: dict | None) -> dict | None:
+    """Whether an array's data basis suffices, from its hold-out result: {"status": "learning" | "settled" |
+    "too_few", "unseen", "seen" (hour errors) or "days", "needed"}. None without a hold-out (no satellite archive,
+    or before the first nightly run)."""
+    if not result:
+        return None
+    if result.get("status") != "ok":
+        if result.get("reason") == NO_SATELLITE:
+            return None
+        return {"status": "too_few", "days": result.get("days", 0), "needed": result.get("needed", 0)}
+    unseen, seen = result["holdout"]["hour_error"], result["in_sample"]["hour_error"]
+    if unseen is None or seen is None:
+        return None
+    learning = seen > 0 and unseen > (1 + LEARNING_GAP) * seen
+    return {"status": "learning" if learning else "settled", "unseen": unseen, "seen": seen}
+
+
 def valid(result: dict | None) -> dict | None:
     """A stored result if it has the current form; an older one is dropped until the next run."""
     return result if isinstance(result, dict) and result.get("version") == VERSION else None

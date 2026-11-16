@@ -167,6 +167,9 @@ For the dashboard: *Add card* → *Noxcast*.
   expects, clearly above the learned model's clear-sky output, days without output under a bright sky and without
   snow, bright days below 70 % of the model that no filter explains, and snow periods that only the limit of 7 days
   after the last snowfall ended, although bright hours would have shown free modules. Renewed by every nightly learning run.
+  With the satellite archive it also says whether the data basis suffices: when the nightly backtest finds the
+  hourly error on days the model has not learned more than 10 % above that on learned days, the model is still
+  learning, and strong days in the calendar may come from missing data.
   A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
   of the reason the day was left out; a day is pale when its deviation stays within the usual range: what the
   satellite's error under that day's sky (under clouds often a quarter, under a clear sky a few percent) and the

@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+
+- *Data basis* says whether the data basis suffices: with the satellite archive, the nightly backtest compares the
+  hourly error on days the model has not learned with that on learned days. More than 10 % apart, the model is
+  still learning, and strong days in the calendar may come from missing data; otherwise they do not.
+
 ### Changed
 
 - The calendar of the *Data basis* shows a day pale when its deviation from the model stays within the usual range:

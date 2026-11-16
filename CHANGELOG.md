@@ -21,6 +21,8 @@ breaking changes.
   and the array's ordinary day-to-day model noise cause together. The tooltip names the range of the day. Only
   strong colours now point at the model or the configuration. The pale days appear after the next nightly learning
   run.
+- The waterfall of today no longer shows a *Latest forecast* bar after *Newer weather*; the chain goes straight on
+  to the measured hours and the expectation.
 - *Data basis* calls the hours in which the PV could not deliver everything *capped* instead of *lower bound*: at a
   power limit, with the battery charging at full power or with PV held back. The CSV export keeps its status
   `lower_bound`.

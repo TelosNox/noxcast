@@ -503,3 +503,21 @@ def test_two_balancing_devices_curtail_only_when_neither_battery_takes_more():
     assert open_.battery_hours("ax", {**soc, "soc.y": {h: 99.0}}, {}, {})[0] == {h}
     # X full while Y charges at its maximum: nothing takes more, and a full battery took part
     assert open_.battery_hours("ax", soc, {"p.y": {h: 1040.0}}, {}) == ({h}, set(), set())
+
+
+def test_another_battery_without_a_known_charge_power_leaves_the_hour_out():
+    subs = {"p": ("system", "Pair", {"name": "Pair", "template": "coupled", "regulation": "load", "balance": True}),
+            "x": ("system", "X", {"name": "X", "template": "pv_battery", "parent": "p", "charges_from": "own_pv"}),
+            "y": ("system", "Y", {"name": "Y", "template": "ac_battery", "parent": "p", "charges_from": "house"}),
+            "ax": ("array", "AX", {"system": "x"}),
+            "bx": ("battery", "BX", {"system": "x", "soc_sensor": "soc.x", "battery_power": "p.x", "max_charge_w": 1000}),
+            "by": ("battery", "BY", {"system": "y", "soc_sensor": "soc.y"})}
+    batteries = {k: v[2] for k, v in subs.items() if v[0] == "battery"}
+    built = inst.build({"ax": ["pv.x"]}, {}, [], 95, sy.systems_of(subs), batteries, "none")
+    h = 3600.0
+    # X at its maximum; Y may be at its own, nobody knows: left out, neither exact nor a lower bound
+    assert built.battery_hours("ax", {}, {"p.x": {0.0: 990.0}}, {}) == (set(), set(), {0.0})
+    # Y full: nothing takes more, and a full battery took part
+    assert built.battery_hours("ax", {"soc.y": {h: 99.0}}, {"p.x": {h: 990.0}}, {}) == ({h}, set(), set())
+    # X with room: free, whatever Y does
+    assert built.battery_hours("ax", {"soc.y": {h: 99.0}}, {"p.x": {h: 100.0}}, {}) == (set(), set(), set())

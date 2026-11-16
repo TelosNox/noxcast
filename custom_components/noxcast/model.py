@@ -631,8 +631,9 @@ def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float 
                    full: Collection[float] = frozenset()) -> list[tuple[float, float]]:
     """Filter hourly mean power (W) for learning: commissioning, validity, curtailment, exclusions.
 
-    full: hour starts in which a battery of the array's systems was full (installation.battery_hours); a period
-    in such an hour is left out like one with the household's state of charge at soc_full.
+    full: hour starts in which no battery that takes the array's PV took more and one was full
+    (installation.battery_hours); a period in such an hour is left out like one with the household's state of
+    charge at soc_full.
     """
     reasons = sample_reasons(power, soc=soc, soc_full=soc_full, exclusions=exclusions, valid_since=valid_since,
                              left={"full": full} if full else {})

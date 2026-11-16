@@ -13,8 +13,9 @@ breaking changes.
   soon as one of the batteries is full or charges at full power. Their PV is curtailed only when its own battery takes
   no more and the other batteries take nothing more either, or when the device's output limit keeps the rest from
   reaching them. A battery whose charge power is at least what its own modules can deliver (from the input limits)
-  no longer caps them by charging at full power. Learning keeps more bright hours; this takes effect with the next
-  nightly learning run.
+  no longer caps them by charging at full power. Today's hours follow the new rule at once; learning keeps more
+  bright hours from the next nightly learning run. Where another battery's charge power is not configured, such an
+  hour is left out of learning, since that battery may have been charging at full power.
 
 ## [0.5.0b5] - 2026-11-16
 

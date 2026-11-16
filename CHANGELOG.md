@@ -7,10 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b5] - 2026-11-16
+
 ### Added
 
 - *Data basis* says whether there is enough data for the days shown: with the satellite archive, the nightly
-  backtest compares the hourly error on days the model has not learned with that on learned days. More than 10 %
+  backtest compares the hourly error on days the model has not learned with that on learned days. More than 10 % above
   apart, there are still too few days per sun position, and strong days in the calendar may come from missing data;
   otherwise they do not.
 

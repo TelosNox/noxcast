@@ -32862,7 +32862,8 @@
       "arrays": [{"id": "EW", "name": "EastWest", "peak_w": 3600.0}, {"id": "S", "name": "South", "peak_w": 3000.0}],
       "computed_at": null,
       "replay": null,
-      "holdout": null
+      "holdout": null,
+      "verdicts": {}
      }
     ]
    },
@@ -37627,6 +37628,10 @@
          }
         }
        }
+      },
+      "verdicts": {
+       "EW": {"status": "settled", "unseen": 0.0437, "seen": 0.0434},
+       "S": {"status": "settled", "unseen": 0.0078, "seen": 0.0077}
       }
      }
     ]

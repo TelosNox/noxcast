@@ -4,9 +4,9 @@ cuts() decides per array and period, from the modules outwards; the first reason
 
 1. input: a sensor of the array reached its fixed limit (period maximum at least 95 % of it) -> fixed limit.
 2. system: the arrays of a system without a battery reached its output limit together -> fixed limit.
-3. battery: a battery that may curtail the array (installation.stores_of) reached "full" -> possibly curtailed
-   (a state); or it charged at its maximum power where the rest could not go out -> possibly at a ceiling, the
-   hour delivered at least what was measured.
+3. battery: no battery that takes the array's PV took more (installation.blocked), and one of them was full ->
+   possibly curtailed (a state); or they charged at their maximum power where the rest could not go out ->
+   possibly at a ceiling, the hour delivered at least what was measured.
 
 A fixed limit says the hour delivered at least so much; a state says the hour shows nothing about the sun.
 Both are flagged in the archive. Learning still uses hours at a fixed limit: leaving them out selects the
@@ -87,17 +87,18 @@ def cuts(inst: Installation, obs: Observed) -> dict[str, Cut]:
                     if i.sensor in obs.pv and at_limit(obs.pv[i.sensor].peak, i.limit_w)), None)
         cap = next((c for c in inst.caps if array in c.arrays
                     and at_limit(_sum(inst, c.arrays, {s: v.peak for s, v in obs.pv.items()}), c.limit_w)), None)
-        full = next((s for s in inst.stores_of(array) if obs.soc.get(s.sensor, -1.0) >= s.full_pct), None)
-        charging = next((s for s in inst.stores_of(array)
-                         if s.charger and s.charger.at_max(obs.charging.get(s.charger.sensor))), None)
+        stores = inst.stores_of(array)
+        full = [s for s in stores if obs.soc.get(s.sensor, -1.0) >= s.full_pct]
+        charging = [s for s in stores if s.charger and s.charger.at_max(obs.charging.get(s.charger.sensor))]
+        by_full, by_max, _ = inst.blocked(array, {s: {0.0} for s in full}, {s: {0.0} for s in charging})
         if hit is not None:
             out[array] = Cut(Reason.INPUT_LIMIT, Level.INPUT, hit.sensor, True, True)
         elif cap is not None:
             out[array] = Cut(Reason.OUTPUT_LIMIT, Level.SYSTEM, cap.system, True, True)
-        elif full is not None:
-            out[array] = Cut(Reason.BATTERY_FULL, Level.HOUSE, full.sensor, False, False)
-        elif charging is not None and charging.charger is not None:
-            out[array] = Cut(Reason.CHARGE_LIMIT, Level.HOUSE, charging.charger.sensor, True, False)
+        elif by_full:
+            out[array] = Cut(Reason.BATTERY_FULL, Level.HOUSE, full[0].sensor, False, False)
+        elif by_max and charging[0].charger is not None:
+            out[array] = Cut(Reason.CHARGE_LIMIT, Level.HOUSE, charging[0].charger.sensor, True, False)
     return out
 
 

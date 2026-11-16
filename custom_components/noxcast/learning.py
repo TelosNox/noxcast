@@ -87,15 +87,17 @@ class PvHistory:
     soc: Series                                          # highest state of charge of the household's batteries (%)
     air_temp: Series | None = None                       # temperature archive (°C, middle of the hour)
     satellite_ghi: Series | None = None                  # satellite archive (W/m²)
-    # per array the hour starts in which a battery of its systems was full (installation.full_hours)
+    # per array the hour starts in which no battery that takes its PV took more and one of them was full
+    # (installation.battery_hours)
     full: dict[str, frozenset[float]] = field(default_factory=dict)
-    # per array the hour starts in which a battery of its systems charged at its maximum (installation.charge_hours)
+    # per array the hour starts in which the batteries that take its PV charged at their maximum or were full
+    # (installation.battery_hours)
     charge: dict[str, frozenset[float]] = field(default_factory=dict)
     # per array the hour starts in which its system may have held PV back for a low load or at the household's
     # feed-in limit (installation.held_hours)
     held: dict[str, frozenset[float]] = field(default_factory=dict)
-    # per array the hour starts known only by an hourly mean in which a battery of its systems may have charged at
-    # its maximum for a part of the hour: left out of learning like a full battery (installation.charge_hours)
+    # per array the hour starts known only by an hourly mean in which the batteries that take its PV may have been
+    # at their maximum for a part of the hour: left out of learning like a full battery (installation.battery_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
     snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
     # left_out per (array, period), computed once: learning, backtest and hold-out of a night ask for it again

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from conftest import load
 
 archive = load("archive")
+backtest = load("backtest")
 bt = load("battery")
 explain = load("explain")
 fc = load("forecasting")
@@ -321,8 +322,21 @@ def test_backtest_entry():
     assert e["arrays"][0]["id"] == "roof" and e["computed_at"] == A and "seconds" not in e
     assert set(e["replay"]["arrays"]) == {"roof"} and e["replay"]["total"]["now"] == METRIC     # a removed array is not shown
     assert e["holdout"]["arrays"]["roof"]["needed"] == 28
+    assert e["verdicts"] == {"roof": {"status": "too_few", "days": 12, "needed": 28}}
     empty = views.backtest_entry(arrays(), None)                 # before the first run
     assert empty["replay"] is None and empty["holdout"] is None and empty["computed_at"] is None
+    assert empty["verdicts"] == {}
+
+
+def test_data_verdict():
+    ok = lambda unseen, seen: {"status": "ok", "holdout": {**METRIC, "hour_error": unseen},          # noqa: E731
+                               "in_sample": {**METRIC, "hour_error": seen}, "baseline": METRIC}
+    assert backtest.data_verdict(ok(0.126, 0.125))["status"] == "settled"
+    assert backtest.data_verdict(ok(0.16, 0.125)) == {"status": "learning", "unseen": 0.16, "seen": 0.125}
+    assert backtest.data_verdict({"status": "not_enough_data", "reason": "no_satellite"}) is None
+    assert backtest.data_verdict(None) is None
+    assert backtest.data_verdict(ok(None, 0.1)) is None and backtest.data_verdict(ok(0.1, 0.0))["status"] == "settled"
+    assert backtest.data_verdict({"status": "not_enough_data", "reason": "few_days", "days": 9, "needed": 28})["status"] == "too_few"
 
 
 def test_payloads_hold_no_positional_tuples():

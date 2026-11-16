@@ -110,7 +110,7 @@ const TEXT = {
       calTitle: "Kalender", calHelp: "Ein Feld pro Tag: Farbe nach Ertrag gegen Modell an den verwendeten Stunden; schraffiert, wenn der Tag überwiegend ausgelassen wurde, in der Farbe des Grunds; Punkt: einzelne Stunden „Akku voll“. Blass: eine Abweichung im üblichen Rahmen, also was der Fehler des Satelliten bei diesem Himmel (bei Bewölkung oft ein Viertel, bei klarem Himmel wenige Prozent) und das gewöhnliche Rauschen des Modells dieser Gruppe von Tag zu Tag zusammen verursachen. Erst kräftige Farben sagen etwas über Modell oder Konfiguration. Grau: kein Vergleich (dunkler Tag, kein Satellitenwert oder überwiegend begrenzt); nur umrandet: keine Messung.",
       calOpen: "Ein Klick auf einen Tag zeigt seine Stunden.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "kein Vergleich" },
-      calBattery: "einzelne Stunden Akku voll", calInput: "blass: im üblichen Rahmen", calPale: "blass", calBand: "üblich {lo}–{hi} %",
+      calBattery: "einzelne Stunden Akku voll", calInput: "blass: im üblichen Rahmen", calPale: "blass", calBand: "üblich {lo}–{hi} %", dataSettled: "Genug Daten für die gezeigten Tage: Auf Tagen, die das Modell nicht gelernt hat, liegt der Stundenfehler mit {u} kaum über dem auf gelernten Tagen ({s}). Kräftige Tage im Kalender kommen also nicht von zu wenigen Daten.", dataLearning: "Noch zu wenige Tage je Sonnenstand: Auf Tagen, die das Modell nicht gelernt hat, liegt der Stundenfehler bei {u}, auf gelernten bei {s}; es merkt sich noch Zufälle. Kräftige Tage im Kalender können noch von fehlenden Daten kommen; das wird mit jeder Woche weniger.", dataFew: "Ob genug Daten da sind, zeigt die nächtliche Rückrechnung, sobald beide Hälften ihrer Tage genug helle Stunden haben.", dataCover: "Schattenkarte zu {c} gefüllt.",
       dayTitle: "Stunden am {d}", dayLoading: "Lade die Stunden …", dayFailed: "Die Stunden konnten nicht geladen werden ({e}).",
       dayActual: "gemessen", dayModel: "Modell", dayBound: "Obergrenze bei klarem Himmel", dayHint: "Ein Klick auf eine Stunde zeigt, wie das Modell zustande kommt.",
       daySum: "Gemessen {a}, Modell {m} an den verwendeten Stunden mit Satellitenwert, wie im Kalender.", dayNoModel: "Keine verwendete Stunde mit Satellitenwert: kein Vergleich mit dem Modell.",
@@ -205,7 +205,7 @@ const TEXT = {
       calTitle: "Calendar", calHelp: "One cell per day: colour by output against the model in the used hours; hatched when most of the day was left out, in the colour of the reason; dot: single “battery full” hours. Pale: a deviation within the usual range, what the satellite's error under that day's sky (under clouds often a quarter, under a clear sky a few percent) and this array's ordinary day-to-day model noise cause together. Only strong colours say something about model or configuration. Grey: no comparison (a dull day, no satellite value or mostly capped); outline only: no measurement.",
       calOpen: "Click a day to see its hours.",
       calDev: { low: "< 70 %", lowish: "70–90 %", ok: "90–110 %", highish: "110–130 %", high: "> 130 %", none: "no comparison" },
-      calBattery: "single hours battery full", calInput: "pale: within the usual range", calPale: "pale", calBand: "usual {lo}–{hi} %",
+      calBattery: "single hours battery full", calInput: "pale: within the usual range", calPale: "pale", calBand: "usual {lo}–{hi} %", dataSettled: "Enough data for the days shown: on days the model has not learned, the hourly error of {u} is hardly above that on learned days ({s}). So strong days in the calendar do not come from too little data.", dataLearning: "Still too few days per sun position: on days the model has not learned, the hourly error is {u}, on learned days {s}; it still memorises chance. Strong days in the calendar may still come from missing data; that shrinks every week.", dataFew: "Whether there is enough data shows in the nightly backtest once both halves of its days have enough bright hours.", dataCover: "The shading map is {c} filled.",
       dayTitle: "Hours on {d}", dayLoading: "Loading the hours …", dayFailed: "The hours could not be loaded ({e}).",
       dayActual: "measured", dayModel: "model", dayBound: "clear-sky bound", dayHint: "Click an hour to see how the model comes about.",
       daySum: "Measured {a}, model {m} in the used hours with a satellite value, as in the calendar.", dayNoModel: "No used hour with a satellite value: no comparison with the model.",
@@ -498,6 +498,10 @@ class NoxcastPanel extends HTMLElement {
         this._data = data;
         this._cache = {};
         this._error = null;
+        // the backtest's verdict on the data basis only adds a note: asked beside, never waited for
+        ask(this._hass, { type: "noxcast/backtest" }).then((bt) => {
+          if (bt && bt.v === WS_SCHEMA) { this._bt = bt; this._render(); }
+        }).catch(() => {});
         if (this._state.doy === null) this._state.doy = dayOfYear(new Date());
       }
     } catch (err) {
@@ -1032,7 +1036,19 @@ class NoxcastPanel extends HTMLElement {
     return `<section class="card pad"><h3>${c.basisTitle}</h3><p class="muted small">${c.basisSub}</p>
       <div class="bbar">${segs(b.shares)}</div><div class="blegend">${legend}</div>
       ${months ? `<p class="muted small">${c.basisMonths}</p><div class="bmonths">${months}</div>` : ""}
-      ${notes}<p class="help">${c.basisHelp}</p>${this._calendar(arr, b.days, COLORS)}</section>`;
+      ${notes}${this._verdict(arr, la)}<p class="help">${c.basisHelp}</p>${this._calendar(arr, b.days, COLORS)}</section>`;
+  }
+
+  // does the data basis suffice? From the backtest: unlearned against learned days (backtest.data_verdict)
+  _verdict(arr, la) {
+    // every entry's arrays are listed: their verdicts too
+    const v = Object.assign({}, ...((this._bt || {}).entries || []).map((e) => e.verdicts || {}))[arr.id], c = this._t.checks;
+    if (!v) return "";
+    const pc = (x) => `${(x * 100).toLocaleString(this._lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+    const cover = la.coverage ? ` ${c.dataCover.replace("{c}", `${Math.round(la.coverage * 100)} %`)}` : "";
+    if (v.status === "too_few") return `<p class="note">${c.dataFew}</p>`;
+    const text = (v.status === "learning" ? c.dataLearning : c.dataSettled).replace("{u}", pc(v.unseen)).replace("{s}", pc(v.seen));
+    return `<p class="note${v.status === "learning" ? " warn" : ""}">${text}${cover}</p>`;
   }
 
   _calendar(arr, days, COLORS) {

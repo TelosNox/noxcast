@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from . import archive as fc_archive
+from . import backtest
 from . import battery as bt
 from . import explain
 from . import plan as pl
@@ -229,8 +230,12 @@ def backtest_entry(arrays: dict, result: dict | None) -> dict:
     def part(name: str) -> dict | None:
         p = (result or {}).get(name)
         return {"total": p["total"], "arrays": {sid: r for sid, r in p["arrays"].items() if sid in arrays}} if p else None
+    hold = part("holdout")
+    # per array: does the data basis suffice? (backtest.data_verdict) for the panel's data basis
+    verdicts = {sid: v for sid, r in ((hold or {}).get("arrays") or {}).items()
+                if (v := backtest.data_verdict(r)) is not None}
     return {"arrays": array_names(arrays), "computed_at": (result or {}).get("computed_at"),
-            "replay": part("replay"), "holdout": part("holdout")}
+            "replay": part("replay"), "holdout": hold, "verdicts": verdicts}
 
 
 # ---------------------------------------------------------------- noxcast/weather_models

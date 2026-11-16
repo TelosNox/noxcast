@@ -167,7 +167,11 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
   obwohl die Gruppe lieferte, was das Modell erwartet, deutlich über dem, was das gelernte Modell bei klarem Himmel
   zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
-  erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
+  erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen.
+  Mit dem Satellitenarchiv sagt sie auch, ob genug Daten für die gezeigten Tage da sind: Findet die nächtliche
+  Rückrechnung den Stundenfehler auf Tagen, die das Modell nicht gelernt hat, um mehr als 10 % über dem auf gelernten
+  Tagen, gibt es noch zu wenige Tage je Sonnenstand, und kräftige Tage im Kalender können von fehlenden Daten
+  kommen; sonst nicht. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
   gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
   blass ist ein Tag, dessen Abweichung im üblichen Rahmen bleibt: was der Fehler des Satelliten bei diesem Himmel
   (bei Bewölkung oft ein Viertel, bei klarem Himmel wenige Prozent) und das gewöhnliche Rauschen des Modells der

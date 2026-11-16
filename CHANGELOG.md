@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b6] - 2026-11-17
+
 ### Fixed
 
 - Several devices with a battery each under one system no longer count an hour as *capped* or *battery full* as

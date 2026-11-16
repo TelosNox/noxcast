@@ -116,8 +116,9 @@ def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_
     A battery is blocked when full or charging at its maximum. The own battery has to be blocked (an array without
     one sends everything onwards); then, unless the own system's output limit holds the rest back (overflow), every
     other battery too. Such a period counts as full when a full battery took part, which learning leaves out;
-    otherwise as at its maximum, a lower bound. Where only an unsure charge period completes the block, it is
-    unsure. old: the household's old setting, whose full batteries count for every array.
+    otherwise as at its maximum, a lower bound. Where only an unsure charge period, or another battery whose charge
+    power is not known, completes the block, it is unsure. old: the household's old setting, whose full batteries
+    count for every array.
     """
     def union(stores: Iterable[Store], *of: Mapping[Store, Hours]) -> Hours:
         return set().union(*(m.get(s, set()) for s in stores for m in of))
@@ -134,7 +135,11 @@ def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_
         own_unsure = union(reach.own, unsure) - own_full - own_max if reach.own_charge else set()
         if reach.others and not (reach.own and reach.overflow):
             sure = every(reach.others, full, at_max)
-            maybe = every(reach.others, full, at_max, unsure)
+            # a battery without a known charge power may have been at its maximum whenever the others were
+            # blocked: such a period is left out rather than counted as exact
+            anyone = union(reach.own + reach.others, full, at_max, unsure)
+            maybe = set.intersection(*(union((s,), full, at_max, unsure) if s.charger else anyone
+                                       for s in reach.others))
             if reach.own:
                 sure &= own_full | own_max
                 maybe &= own_full | own_max | own_unsure

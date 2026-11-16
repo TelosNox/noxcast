@@ -674,7 +674,7 @@ class NoxcastDay extends HTMLElement {
       const fc = arrays.map((a) => at("forecast", a));
       if (from === "morning" && fc.every((v) => v !== undefined)) {
         const latest = fc.reduce((a, v) => a + v, 0);
-        if (Math.abs(latest - level) >= 1) items.push(["weather", latest - level, "step"], ["latest", latest, "total"]);
+        if (Math.abs(latest - level) >= 1) items.push(["weather", latest - level, "step"]);
         level = latest;
       }
       if (h + HOUR > now) {
@@ -709,7 +709,8 @@ class NoxcastDay extends HTMLElement {
       if (a.steps_from !== "morning") continue;
       weather += this._sum(series(a, "forecast")) - Object.values(a.steps || {}).reduce((s, st) => s + (st.result || 0), 0);
     }
-    if (Math.abs(weather) >= 50) items.push(["weather", weather, "step"], ["latest", level + weather, "total"]);
+    // no subtotal after newer weather: a whole day by the model alone is a number nobody meets or acts on
+    if (Math.abs(weather) >= 50) items.push(["weather", weather, "step"]);
     level += weather;
     let corr = 0;
     for (const a of arrays) {

@@ -128,13 +128,14 @@ CALENDAR_MIN_H = 0.2        # a day's deviation needs a model day of this many h
 INPUT_SPREAD = ((0.1, 0.27), (0.25, 0.21), (0.4, 0.07), (0.5, 0.065), (0.65, 0.035), (0.8, 0.02))
 INPUT_SIGMAS = 2.0          # a deviation within this many spreads is what satellite and model noise may cause
 # What an array's own model scatters from day to day besides the input (the shade map's resolution, temperature,
-# soiling): estimated from its bright days, where the satellite is nearly exact, as their robust spread around
-# their median with the input's part taken out. The median itself stays out, so a steady offset (a configuration
-# that does not fit) keeps its colour.
+# soiling): estimated from its bright days, where the satellite is nearly exact, as the robust spread of the
+# difference between one bright day and the next (divided by √2), with the input's part taken out. Differences of
+# neighbours leave out what drifts slowly: a steady offset or a seasonal course, the marks of a configuration that
+# does not fit, keep their colour instead of widening the band they are judged by.
 MODEL_SKY = 0.6             # a bright day: the model gives at least this share of the learned clear sky
 MODEL_DAYS = 20             # bright days the estimate needs; with fewer, MODEL_SPREAD
 MODEL_SPREAD = 0.04         # spread of a bright day's log ratio on the maintainer's arrays (4 % / 5 %)
-MODEL_SPREAD_MAX = 0.08     # however noisy the array: beyond it, it is no noise but something to look at
+MODEL_SPREAD_MAX = 0.06     # however noisy the array: beyond it, it is no noise but something to look at
 
 
 def category(status: str, reasons: str) -> str | None:
@@ -189,8 +190,8 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
     took most of it. ratio: actual against model over the used hours with a satellite value, None for a left-out
     day, a dull one (CALENDAR_MIN_H) or one mostly at a lower bound. input: the ratio lies within what the
     satellite's error under that day's sky (input_spread) and the array's own day-to-day noise (model_spread) cause
-    together, so it says nothing about model or configuration; band: that width as a share (0.12 = ±12 %, in log
-    terms). battery: lit hours left out as "battery full", so a day that learning used can still show that
+    together, so it says nothing about model or configuration; band: that width in log terms, the usual range
+    being exp(-band) to exp(band) of the model. battery: lit hours left out as "battery full", so a day that learning used can still show that
     its noon was missing.
     """
     lit = LIT_SHARE * peak_w
@@ -223,19 +224,20 @@ def _calendar(site: Site, days: dict[int, list[dict]], peak_w: float) -> dict[st
         band = INPUT_SIGMAS * math.hypot(input_spread(sky), noise) if dev is not None else None
         for key, value in (("day", solar_date(d)), ("cat", cat), ("ratio", ratio),
                            ("input", dev is not None and abs(dev) <= band),
-                           ("band", round(math.expm1(band), 2) if band is not None else None), ("battery", battery)):
+                           ("band", round(band, 3) if band is not None else None), ("battery", battery)):
             out[key].append(value)
     return out
 
 
 def model_spread(days: list[tuple[float, float]]) -> float:
-    """An array's own day-to-day spread of log(actual/model) besides the input, from its (log ratio, sky) days
-    (MODEL_SKY, MODEL_DAYS, MODEL_SPREAD_MAX)."""
+    """An array's own day-to-day spread of log(actual/model) besides the input, from its (log ratio, sky) days in
+    date order (MODEL_SKY, MODEL_DAYS, MODEL_SPREAD_MAX)."""
     bright = [(dev, sky) for dev, sky in days if sky >= MODEL_SKY]
     if len(bright) < MODEL_DAYS:
         return MODEL_SPREAD
-    mid = statistics.median(dev for dev, _ in bright)
-    spread = 1.4826 * statistics.median(abs(dev - mid) for dev, _ in bright)
+    steps = [b[0] - a[0] for a, b in zip(bright, bright[1:])]
+    mid = statistics.median(steps)
+    spread = 1.4826 * statistics.median(abs(s - mid) for s in steps) / math.sqrt(2)
     own = spread ** 2 - statistics.mean(input_spread(sky) ** 2 for _, sky in bright)
     return min(math.sqrt(max(own, 0.0)), MODEL_SPREAD_MAX)
 

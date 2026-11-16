@@ -626,12 +626,15 @@ not types of their own. Independent devices are systems of their own, side by si
 
     The input alone left 21 % (balcony) and 29 % (roof) of the days strong, most of them bright days at 92-96 % or
     104-109 %: the array's own model scatters too (shade map resolution, temperature, soiling), about 4-5 % on a
-    bright day. So the band adds it (`model_spread`): the robust spread (1.4826 × MAD) of the log ratio over the
-    bright days (sky >= 0.6, at least 20, else 4 %), around their median, minus the input's part there, at most
-    8 %. Satellite and model add as independent errors (root of the sum of squares), two of them make the band.
-    Around the median, not around 1: a steady offset, the mark of a configuration that does not fit, keeps its
-    colour. With it 12 % of the days stay strong on both arrays, the band runs from ±7 % (clear) to ±73 % (very
-    dull) and the tooltip names it.
+    bright day. So the band adds it (`model_spread`): the robust spread (1.4826 × MAD) of the difference between
+    one bright day (sky >= 0.6) and the next, divided by √2, minus the input's part there; at least 20 bright days
+    (else 4 %), at most 6 %. Differences of neighbours leave out what drifts slowly: a steady offset or a seasonal
+    course (a tilt that does not fit gives summer above and winter below the model) would otherwise widen the band
+    it is judged by. Satellite and model add as independent errors (root of the sum of squares), two of them make
+    the band, symmetric in log terms: the tooltip names it as a range, from 95-105 % (balcony) or 92-108 % (roof)
+    on a clear day to 58-172 % on a very dull one. With it 18 % (balcony) and 16 % (roof) of the days stay strong,
+    against 21 % and 29 % with the input alone. The balcony's bright days drift a few percent below the model in
+    June and July; that course stays visible, an estimate around the median took it for noise (12 % strong).
 
     A per-hour version of the same question misleads: binned by the satellite's clearness, both arrays looked 7-13 %
     above the model in partly cloudy hours (0.45-0.75) in every month, which looked like a diffuse split that

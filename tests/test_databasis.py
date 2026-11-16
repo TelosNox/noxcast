@@ -188,11 +188,14 @@ def test_input_spread_follows_the_sky():
 
 def test_model_spread_from_the_bright_days():
     assert db.model_spread([(0.0, 0.8)] * 5) == db.MODEL_SPREAD                    # too few bright days
-    calm = [((-1) ** k * 0.01, 0.8) for k in range(30)]                             # within the input's 2 %
+    calm = [((-1) ** k * 0.005, 0.8) for k in range(31)]                            # within the input's 2 %
     assert db.model_spread(calm) == 0.0
-    offset = [(0.2 + (-1) ** k * 0.05, 0.8) for k in range(30)] + [(-1.0, 0.1)] * 30   # dull days do not count
-    assert abs(db.model_spread(offset) - (1.4826 ** 2 * 0.05 ** 2 - 0.02 ** 2) ** 0.5) < 1e-9   # around the median
-    assert db.model_spread([((-1) ** k * 0.3, 0.8) for k in range(30)]) == db.MODEL_SPREAD_MAX
+    # a seasonal course (a tilt that does not fit) is no noise: it keeps its colour instead of widening the band
+    drift = [(-0.1 + 0.2 * k / 39, 0.8) for k in range(40)] + [(-1.0, 0.1)] * 30   # dull days do not count
+    assert db.model_spread(drift) == 0.0
+    noisy = [((-1) ** k * 0.025, 0.8) for k in range(31)]                           # day to day ±2.5 %
+    assert abs(db.model_spread(noisy) - (1.4826 ** 2 * 0.05 ** 2 / 2 - 0.02 ** 2) ** 0.5) < 1e-9
+    assert db.model_spread([((-1) ** k * 0.3, 0.8) for k in range(31)]) == db.MODEL_SPREAD_MAX
 
 
 def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
@@ -208,7 +211,7 @@ def test_calendar_colours_a_day_by_its_deviation_or_its_main_reason():
                            "cat": ["used", "snow", "used", "used", "used"], "ratio": [0.85, None, 1.0, None, 0.7],
                            # 85 % under a bright sky is more than satellite and model noise cause, 70 % under a dull
                            # one is not (too few bright days: the default noise)
-                           "input": [False, False, True, False, True], "band": [0.12, None, 0.12, None, 0.53],
+                           "input": [False, False, True, False, True], "band": [0.113, None, 0.113, None, 0.428],
                            "battery": [0, 0, 2, 0, 0]}
     table = {"version": db.VERSION, "columns": db.COLUMNS, "rows": rows}
     assert db.day_rows(SITE, table, date(2026, 6, 3))["rows"] == day3

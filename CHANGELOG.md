@@ -9,9 +9,10 @@ breaking changes.
 
 ### Added
 
-- *Data basis* says whether the data basis suffices: with the satellite archive, the nightly backtest compares the
-  hourly error on days the model has not learned with that on learned days. More than 10 % apart, the model is
-  still learning, and strong days in the calendar may come from missing data; otherwise they do not.
+- *Data basis* says whether there is enough data for the days shown: with the satellite archive, the nightly
+  backtest compares the hourly error on days the model has not learned with that on learned days. More than 10 %
+  apart, there are still too few days per sun position, and strong days in the calendar may come from missing data;
+  otherwise they do not.
 
 ### Changed
 

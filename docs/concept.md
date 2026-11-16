@@ -647,7 +647,11 @@ not types of their own. Independent devices are systems of their own, side by si
     hourly error on days the model has not learned against that on its learned half. More than 10 % apart
     (`LEARNING_GAP`, not fitted) means the model still memorises chance, and the panel says strong days may come
     from missing data; else that they do not. On the maintainer's arrays after eight and nine months the two lie
-    within 1 % (balcony 12.65 / 12.65 %, roof 12.15 / 12.09 %). Shown with the share of sun positions learned.
+    within 1 % (balcony 12.65 / 12.65 %, roof 12.15 / 12.09 %). Shown with the filling of the shading map. Both
+    halves learn from half the days, so the verdict is cautious against the full model; and since the halves
+    alternate day by day, it speaks for the sun positions already seen (the days the calendar shows), not for a
+    coming season. Its word differs from the learning stage of the status box (shade map coverage): that one says
+    how much of the sky is known, this one whether what is known is known well enough.
   - **Forecast accuracy** (`noxcast/accuracy`, from the day-ahead archive): daily error and bias over
     14 / 30 / 90 days, per array or in total, per weather source (the mean used for the forecast, each averaged model on its own);
     forecast against actual per day, a calendar coloured by error, the hourly course of a chosen day

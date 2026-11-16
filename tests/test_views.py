@@ -335,6 +335,8 @@ def test_data_verdict():
     assert backtest.data_verdict(ok(0.16, 0.125)) == {"status": "learning", "unseen": 0.16, "seen": 0.125}
     assert backtest.data_verdict({"status": "not_enough_data", "reason": "no_satellite"}) is None
     assert backtest.data_verdict(None) is None
+    assert backtest.data_verdict(ok(None, 0.1)) is None and backtest.data_verdict(ok(0.1, 0.0))["status"] == "settled"
+    assert backtest.data_verdict({"status": "not_enough_data", "reason": "few_days", "days": 9, "needed": 28})["status"] == "too_few"
 
 
 def test_payloads_hold_no_positional_tuples():

@@ -5,7 +5,7 @@ add up, limits and efficiencies are weighted by capacity, power limits add up.
 
 Energy flow per hour (Wh, for the part of the hour from now on):
   surplus = PV - load. A surplus charges the battery up to the upper limit and the charge power;
-  what does not fit is "lost" (fed in or curtailed, depending on the system). A deficit
+  what does not fit is "lost" for the battery: fed in or curtailed (see Feed-in below). A deficit
   discharges down to the lower limit plus reserve and the discharge power; the rest comes from
   the grid. Losses: the round-trip efficiency is split evenly into charging and discharging.
 
@@ -18,6 +18,13 @@ Shared cap (coupled systems, e.g. two devices behind one 800 W limit): the subsy
 limit deliver together at most that much, their batteries and their PV, also the PV of subsystems without a
 battery. What their PV delivers above it can only charge the batteries; what is left for the batteries to deliver
 is the shared cap minus that PV.
+
+Feed-in: of the surplus that does not fit, PV above an output cap is curtailed (it cannot reach the house, so not
+the grid either). The rest goes into the grid where the feed-in rule allows it: the household's rule (free, a limit
+in W, zero export), or a system's own deviation (always feeds in, never feeds in). One storage has no surplus per
+system, so the rest is split by each system's share of the hour's PV. What systems that feed in anyway export counts
+against the household's limit, since the inverters that hold it measure at the grid connection; under zero export
+they cannot take it back.
 """
 from __future__ import annotations
 
@@ -54,6 +61,66 @@ class Limits:
     """Per hour start (Wh of the full hour): PV that cannot reach the house, and what the batteries may deliver."""
     capped: dict[float, float] = field(default_factory=dict)       # PV above the output caps: battery or curtailed
     discharge: dict[float, float] = field(default_factory=dict)    # discharge limit of all batteries; empty = none
+
+
+@dataclass(frozen=True)
+class FeedIn:
+    """What of the surplus that does not fit may go into the grid (see Feed-in above).
+
+    limit_w: the household's feed-in limit, None = free, 0 = zero export. free / never: per hour start, the share of
+    the PV from systems that feed in regardless of the household's rule and from those that never feed in; the rest
+    follows the household's rule. The default feeds everything in.
+    """
+    limit_w: float | None = None
+    free: dict[float, float] = field(default_factory=dict)
+    never: dict[float, float] = field(default_factory=dict)
+
+    def fed_in(self, t: float, wh: float, share: float) -> float:
+        """Wh of `wh` surplus (without capped PV) fed in, in an hour of which `share` is simulated."""
+        free, never = self.free.get(t, 0.0), self.never.get(t, 0.0)
+        rule = max(1.0 - free - never, 0.0) * wh
+        room = math.inf if self.limit_w is None else self.limit_w * share
+        return free * wh + min(rule, max(room - free * wh, 0.0))
+
+
+def feed_in(limit_w: float | None, free: tuple[str, ...], never: tuple[str, ...],
+            pv_arrays: dict[str, Series], hours: list[float],
+            ceilings: list[tuple[tuple[str, ...], float]] = ()) -> FeedIn:
+    """The feed-in rule with each hour's PV shares of the systems that deviate from it (arrays by subentry id).
+
+    ceilings: output limits (arrays, W); the shares count the PV that gets past them, since what is above is
+    curtailed before it could be fed in (see output_ceilings).
+    """
+    shares: tuple[dict[float, float], dict[float, float]] = ({}, {})
+    if free or never:
+        for t in hours:
+            pv = {a: s.get(t, 0.0) for a, s in pv_arrays.items()}
+            for arrays, w in ceilings:
+                over = sum(pv.get(a, 0.0) for a in arrays)
+                if over > w:
+                    for a in arrays:
+                        if a in pv:
+                            pv[a] *= w / over
+            total = sum(pv.values())
+            if total <= 0:
+                continue
+            for out, arrays in zip(shares, (free, never)):
+                if part := sum(pv.get(a, 0.0) for a in arrays):
+                    out[t] = part / total
+    return FeedIn(limit_w, *shares)
+
+
+def output_ceilings(batteries: list[Battery]) -> list[tuple[tuple[str, ...], float]]:
+    """The output limits over PV arrays known from the batteries: each one's own, then each shared one (arrays of
+    its subsystems with and without a battery)."""
+    out = [(b.arrays, b.output_w) for b in batteries if b.output_w and b.arrays]
+    groups: dict[str, tuple[float, set[str]]] = {}
+    for b in batteries:
+        if b.shared:
+            limit, arrays = groups.setdefault(b.shared[0], (b.shared[1], set(b.shared[2])))
+            arrays.update(b.arrays)
+    out += [(tuple(sorted(arrays)), limit) for limit, arrays in groups.values() if arrays]
+    return out
 
 
 def limits(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[float]) -> Limits:
@@ -121,12 +188,14 @@ class Simulation:
     empties: list[float] = field(default_factory=list)                  # every hour's time at the lower limit with load left
     lost_from: float | None = None        # first hour with surplus that does not fit
     lost_wh: float = 0.0                  # surplus that does not fit (fed in or curtailed)
+    fed_in_wh: float = 0.0                # of that, fed into the grid
+    curtailed_wh: float = 0.0             # of that, curtailed: above the feed-in limit, zero export or an output cap
     charged_wh: float = 0.0               # surplus taken by the battery (before losses)
     grid_wh: float = 0.0                  # load not covered by PV or battery
     surplus_wh: float = 0.0               # PV above load
     max_soc: float = 0.0
     max_soc_at: float | None = None
-    hours: dict[float, dict] = field(default_factory=dict)              # per hour: surplus, battery, lost, grid, soc
+    hours: dict[float, dict] = field(default_factory=dict)              # per hour: surplus, battery, lost, grid, soc, fed_in, curtailed
 
     def soc_at(self, ts: float) -> float | None:
         """State of charge at a time, linear between the simulated points."""
@@ -141,13 +210,15 @@ class Simulation:
 
 
 def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
-             caps: Limits | None = None, held_wh: float = 0.0) -> Simulation:
+             caps: Limits | None = None, held_wh: float = 0.0, grid: FeedIn | None = None) -> Simulation:
     """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour).
 
     caps: the output caps (see limits); pv is all PV, the capped part goes to the battery only.
     held_wh: room below the upper limit the batteries will not use (see held_back).
+    grid: what of the surplus that does not fit is fed in (see FeedIn); None feeds everything in.
     """
     caps = caps or Limits()
+    grid = grid or FeedIn()
     sim = Simulation()
     cap = battery.capacity_wh
     e = (battery.soc if battery.soc is not None else battery.min_soc) * cap
@@ -166,7 +237,7 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
         capped = caps.capped.get(t, 0.0) * share                   # PV above an output cap: battery only
         net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share - capped
         surplus = max(net, 0.0) + capped
-        hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "grid": 0.0}
+        hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "grid": 0.0, "fed_in": 0.0, "curtailed": 0.0}
         if surplus > 0:
             sim.surplus_wh += surplus
             room = max(e_max - e, 0.0) / eta                       # surplus the battery can still take
@@ -178,9 +249,13 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
                 sim.full_at = start + (take / surplus) * (min(t + H, end) - start)
             if lost > 0.5 and sim.lost_from is None:
                 sim.lost_from = start
+            # the battery takes capped PV first, since nothing else can; what it leaves of it is curtailed
+            fed = grid.fed_in(t, max(lost - max(capped - take, 0.0), 0.0), share)
             sim.charged_wh += take
             sim.lost_wh += lost
-            hour.update(battery=round(take, 1), lost=round(lost, 1))
+            sim.fed_in_wh += fed
+            sim.curtailed_wh += lost - fed
+            hour.update(battery=round(take, 1), lost=round(lost, 1), fed_in=round(fed, 1), curtailed=round(lost - fed, 1))
         if net < 0:                                                # capped PV may charge while the house draws
             need = -net
             avail = max(e - e_min, 0.0) * eta                      # load the battery can still cover
@@ -236,12 +311,15 @@ def lost_when_full(sim: Simulation, max_soc: float) -> dict[float, float]:
 
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
-                   pv_arrays: dict[str, Series] | None = None) -> dict | None:
+                   pv_arrays: dict[str, Series] | None = None,
+                   rule: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
     the time full with PV at P10 and at P90, and the surplus lost per hour with a full battery at P90. None without batteries or load forecast.
     pv_arrays: PV per array, for batteries with an output cap behind an array.
+    rule: the feed-in rule (limit in W or None for free, arrays of systems that always and that never feed in);
+    None feeds everything in.
     """
     if not batteries or load is None:
         return None
@@ -257,8 +335,10 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     # a level near the limit only says "it stops here" while it has surplus to take, not after a discharge
     hour = now - now % H
     held = held_back(batteries) if pv.get(hour, 0.0) > load.get(hour, math.inf) else 0.0
-    sim = simulate(storage, pv, load, now, start, caps, held)
-    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held}
+    grid = feed_in(*rule, pv_arrays, hours, output_ceilings(batteries)) if rule else FeedIn()
+    sim = simulate(storage, pv, load, now, start, caps, held, grid)
+    out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held,
+           "feed_in": grid}
     if band_hours:
         # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
         sims = []
@@ -267,7 +347,8 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             # each array scaled like the total, so the caps see the weak and the strong case too
             scale = {t: variant[t] / pv[t] for t in band_hours if pv.get(t)}
             arrays = {a: {t: v * scale.get(t, 1.0) for t, v in s.items()} for a, s in pv_arrays.items()}
-            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours), held))
+            # every array scaled alike keeps the systems' shares of the PV, so the same feed-in split holds
+            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours), held, grid))
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
                                       for s in sims],
                        "full_at": [s.full_at for s in sims],

@@ -8,7 +8,7 @@ const BAT_TEXT = {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     noBattery: "Kein Akku eingerichtet. In der Noxcast-Konfiguration einen Akku hinzufügen.",
     noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf.",
-    socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", grid: "Netzbezug",
+    socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", fedIn: "davon eingespeist", curtailed: "davon abgeregelt", grid: "Netzbezug",
     until: "bis Ladebeginn morgen", never: "–",
     whatIf: "Was wäre, wenn …", capacity: "Akkukapazität", consumer: "Zusätzlicher Verbraucher", power: "Leistung",
     duration: "Dauer", start: "Start", reset: "Zurücksetzen", now: "jetzt", base: "Wie geplant", variant: "Variante",
@@ -16,7 +16,7 @@ const BAT_TEXT = {
     socBase: "Ladestand wie geplant", socEnd: "Im Akku morgen 24 Uhr",
     review: "Rückblick", reviewHelp: "Tiefster und höchster Ladestand je Tag aus der Langzeitstatistik der Ladestand-Sensoren. Voll = obere Grenze erreicht, leer = untere Grenze plus Reserve erreicht.",
     daysFull: "Tage voll", daysEmpty: "Tage leer", noStats: "Noch keine Statistik für die Ladestand-Sensoren.",
-    help: "Alle Akkus zählen als ein Speicher. Überschuss ohne Platz wird eingespeist oder abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
+    help: "Alle Akkus zählen als ein Speicher. Überschuss ohne Platz wird eingespeist, soweit die Einspeisevorgabe es erlaubt (bis zur Einspeisegrenze; Systeme mit eigener Abweichung nach ihrem Anteil an der PV), der Rest und PV über einer Ausgangsgrenze werden abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
     horizon: "(bis morgen 24 Uhr)", kwh: "kWh", h: "h", today: "heute", tomorrow: "morgen",
     pred: "Vorhersage und Wirklichkeit", predFull: "Voll: Abweichung", predEmpty: "Leer für die Nacht: Abweichung", predHit: "Voll ja/nein getroffen",
     predHitEmpty: "Nacht getroffen", notCharged: "nicht geladen", holds: "hält",
@@ -28,7 +28,7 @@ const BAT_TEXT = {
     outdated: "Noxcast was updated – please reload the page",
     noBattery: "No battery set up. Add a battery in the Noxcast configuration.",
     noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run.",
-    socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", grid: "From grid",
+    socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", fedIn: "of that fed in", curtailed: "of that curtailed", grid: "From grid",
     until: "until tomorrow's charge start", never: "–",
     whatIf: "What if …", capacity: "Battery capacity", consumer: "Additional consumer", power: "Power",
     duration: "Duration", start: "Start", reset: "Reset", now: "now", base: "As planned", variant: "Variant",
@@ -36,7 +36,7 @@ const BAT_TEXT = {
     socBase: "State of charge as planned", socEnd: "In the battery tomorrow midnight",
     review: "Review", reviewHelp: "Lowest and highest state of charge per day from the long-term statistics of the state of charge sensors. Full = upper limit reached, empty = lower limit plus reserve reached.",
     daysFull: "days full", daysEmpty: "days empty", noStats: "No statistics for the state of charge sensors yet.",
-    help: "All batteries count as one storage. Surplus without room is fed in or curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
+    help: "All batteries count as one storage. Surplus without room is fed in as far as the feed-in rule allows (up to the feed-in limit; systems with a deviation of their own by their share of the PV); the rest and PV above an output limit are curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
     horizon: "(until tomorrow midnight)", kwh: "kWh", h: "h", today: "today", tomorrow: "tomorrow",
     pred: "Prediction and reality", predFull: "Full: deviation", predEmpty: "Empty for the night: deviation", predHit: "Full yes/no right",
     predHitEmpty: "Night right", notCharged: "not charged", holds: "lasts",
@@ -48,13 +48,20 @@ const BAT_TEXT = {
 
 const H = 3600;
 
+// what of the surplus without room (capped PV left out) is fed in, as battery.FeedIn.fed_in
+function fedIn(feed, t, wh, share) {
+  const h = feed.hours.get(t) || [0, 0], free = h[0] * wh, rule = Math.max(1 - h[0] - h[1], 0) * wh;
+  const room = feed.limit_w === null || feed.limit_w === undefined ? Infinity : feed.limit_w * share;
+  return free + Math.min(rule, Math.max(room - free, 0));
+}
+
 // state of charge simulation, same rules as battery.simulate
-function simulate(st, hours, now, end) {
+function simulate(st, hours, now, end, feed) {
   const cap = st.capacity_wh, eta = Math.sqrt(Math.max(0.01, Math.min(1, st.efficiency)));
   let e = (st.soc ?? st.min) * cap;
   // held_wh: room of batteries that stopped just below their limit (battery.held_back); an added battery keeps its own
   const eMax = Math.max(st.max * cap - (st.held_wh || 0), 0), eMin = st.min * cap;
-  const r = { points: [[now, e / cap]], full: null, empty: null, lost: 0, grid: 0 };
+  const r = { points: [[now, e / cap]], full: null, empty: null, lost: 0, fed: 0, grid: 0 };
   // capped: PV above an inverter's output limit, only the battery can take it; discharge: limit of the hour (null = none)
   for (const [t, pv, load, capped, discharge] of hours) {
     if (t + H <= now || t >= end) continue;
@@ -66,6 +73,8 @@ function simulate(st, hours, now, end) {
       e += take * eta;
       if (take < surplus && room <= limit && r.full === null) r.full = start + (take / surplus) * (stop - start);
       r.lost += surplus - take;
+      // the battery takes capped PV first; what it leaves of it is curtailed
+      r.fed += fedIn(feed, t, Math.max(surplus - take - Math.max(over - take, 0), 0), share);
     }
     if (net < 0) {
       const power = discharge === undefined ? st.max_discharge_w : discharge;
@@ -147,7 +156,13 @@ class NoxcastBattery extends HTMLElement {
       const overlap = Math.max(0, Math.min(ts + H, b) - Math.max(ts, a)) / H;
       return [ts, pv, load + v.power * overlap, capped, discharge];
     });
-    return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, hours, this._data.now, this._end(e)), hours };
+    return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, hours, this._data.now, this._end(e), this._feed(e)), hours };
+  }
+
+  // the feed-in rule of the payload: limit in W (null = free), hour -> [share always, share never feeding in]
+  _feed(e) {
+    const f = e.feed_in || {};
+    return { limit_w: f.limit_w ?? null, hours: new Map(f.hours ? tsRows(f.hours, "free", "never").map(([t, a, b]) => [t, [a, b]]) : []) };
   }
 
   // the variant runs to the end of the forecast (tomorrow midnight), so a consumer can be placed in tomorrow's surplus
@@ -155,7 +170,7 @@ class NoxcastBattery extends HTMLElement {
 
   _results(e) {
     const t = this._t, now = this._data.now;
-    const base = simulate(e.storage, tsRows(e.hours, "pv", "load", "capped", "discharge"), now, this._end(e)), { sim, hours } = this._variant(e);
+    const base = simulate(e.storage, tsRows(e.hours, "pv", "load", "capped", "discharge"), now, this._end(e), this._feed(e)), { sim, hours } = this._variant(e);
     const v = this._v, energy = v.power * v.minutes / 60;
     const extra = sim.grid - base.grid;
     const row = (label, a, b, fmt, goodIfLower) => {
@@ -167,7 +182,8 @@ class NoxcastBattery extends HTMLElement {
     const kwh = (wh) => `${this._kwh(wh)} ${t.kwh}`, last = (r) => r.points[r.points.length - 1][1];
     const table = `<table><thead><tr><th></th><th class="num">${t.base}</th><th class="num">${t.variant}</th></tr></thead><tbody>
       ${timeRow(t.fullAt, base.full, sim.full)}${timeRow(t.emptyAt, base.empty, sim.empty)}
-      ${row(t.lost, base.lost, sim.lost, kwh, true)}${row(t.grid, base.grid, sim.grid, kwh, true)}
+      ${row(t.lost, base.lost, sim.lost, kwh, true)}${row(t.fedIn, base.fed, sim.fed, kwh, false)}
+      ${row(t.curtailed, base.lost - base.fed, sim.lost - sim.fed, kwh, true)}${row(t.grid, base.grid, sim.grid, kwh, true)}
       ${row(t.socEnd, last(base) * e.storage.capacity_wh, last(sim) * v.capacity_wh, kwh, false)}
       ${energy > 0 ? `<tr><td>${t.share}</td><td></td><td class="num"><b>${Math.round(Math.max(0, Math.min(1, 1 - extra / energy)) * 100)} %</b></td></tr>` : ""}
     </tbody></table>`;
@@ -181,6 +197,7 @@ class NoxcastBattery extends HTMLElement {
       [t.fullAt, e.sim.full ? this._when(e.sim.full) : t.never],
       [t.emptyAt, e.sim.empty ? this._when(e.sim.empty) : t.never],
       [t.lost, `${this._kwh(e.sim.lost_wh)} ${t.kwh}`],
+      ...(e.sim.fed_in_wh !== undefined ? [[t.fedIn, `${this._kwh(e.sim.fed_in_wh)} ${t.kwh}`], [t.curtailed, `${this._kwh(e.sim.curtailed_wh)} ${t.kwh}`]] : []),
       [t.grid, `${this._kwh(e.sim.grid_wh)} ${t.kwh}`],
     ].map(([k, val]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${val}</span></div>`).join("");
     const lastStart = Math.max(now, this._end(e) - 900);

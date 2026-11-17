@@ -225,7 +225,7 @@ counts:
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |
-| Feed-in rule, feed-in limit | What the household may feed in, as the grid operator requires it or you want it: free, at most a power in W, at most a share of the PV peak power in %, or zero export (nothing, ever; surplus with full batteries counts as unused). Every system follows this rule unless it names a deviation. With a limit and the *Grid power* sensor, hours in which the household's export reached the limit (within 5 %, at least 100 W) count as "at least this much" in learning, since the PV may have been held back; a share in % counts of the peak power of all PV arrays. A fixed cap set on the inverter itself (such as 60 % of the modules) does not show at the grid connection: enter it as the system's *Output limit* |
+| Feed-in rule, feed-in limit | What the household may feed in, as the grid operator requires it or you want it: free, at most a power in W, at most a share of the PV peak power in %, or zero export (nothing, ever; surplus with full batteries counts as unused). Every system follows this rule unless it names a deviation. The battery forecast feeds surplus without room in up to the limit and counts the rest as curtailed. With a limit and the *Grid power* sensor, hours in which the household's export reached the limit (within 5 %, at least 100 W) count as "at least this much" in learning, since the PV may have been held back; a share in % counts of the peak power of all PV arrays. A fixed cap set on the inverter itself (such as 60 % of the modules) does not show at the grid connection: enter it as the system's *Output limit* |
 | Forecast days | 2–7, today included (default 3) |
 
 ### 2. Systems (how the modules reach the house)
@@ -443,7 +443,7 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1); the
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
 `consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
-today**, **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
+today** (attributes `fed_in` and `curtailed`: what of it goes into the grid and what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
 charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
@@ -602,11 +602,15 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 ### Battery simulation and planning
 
 - Hour by hour from now until tomorrow's charge start (first hour with PV above load): surplus
-  charges up to the upper limit and the charge power, the rest is lost (or fed in); a deficit
+  charges up to the upper limit and the charge power, the rest is lost for the battery; a deficit
   discharges down to min SOC + reserve, the rest comes from the grid. Losses by where the battery sits.
 - With an output limit on its system, a battery delivers at most the limit minus what the system's arrays
   deliver in that hour, and their PV above the limit goes into the battery or is curtailed. Subsystems under a
   shared limit: their PV and batteries together deliver at most the limit.
+- Surplus without room goes into the grid as far as the feed-in rule allows: up to the household's feed-in limit,
+  nothing under zero export; the rest is curtailed, as is PV above an output limit. A system with a deviation of its
+  own (always or never feeds in) counts with its share of the hour's PV, since all batteries are one storage; what
+  it feeds in anyway counts against the household's limit.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

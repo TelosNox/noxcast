@@ -190,3 +190,50 @@ def test_caps_reach_past_the_charge_start():
     load = {h * H: 100.0 for h in range(10, 40)}
     out = bt.day_simulation([b], pv, load, None, 10 * H, 24 * H, {"a": pv})
     assert out["charge_start"] == 36 * H and out["limits"].capped[36 * H] == 200
+
+
+def test_surplus_without_room_is_fed_in_up_to_the_feed_in_limit():
+    # a full battery: 1000 Wh surplus per hour, nothing fits; the second hour is simulated from its half on
+    b = bt.Battery(1000, 1.0, efficiency=1.0)
+    pv, load_ = flat(1400, [10, 11]), flat(400, [10, 11])
+
+    def run(grid):
+        return bt.simulate(b, pv, load_, 10 * H, 11.5 * H, grid=grid)
+    free = run(None)                                               # free feed-in: everything goes into the grid
+    assert free.lost_wh == free.fed_in_wh == 1500 and free.curtailed_wh == 0
+    assert free.hours[10 * H] == {"surplus": 1000, "battery": 0, "lost": 1000, "grid": 0, "fed_in": 1000,
+                                       "curtailed": 0, "soc": 1.0}
+    zero = run(bt.FeedIn(0.0))                                     # zero export: everything is curtailed
+    assert zero.fed_in_wh == 0 and zero.curtailed_wh == zero.lost_wh == 1500
+    limited = run(bt.FeedIn(600.0))                                # 600 W: 600 Wh, then 300 Wh of the half hour
+    assert limited.fed_in_wh == 900 and limited.curtailed_wh == 600 and limited.lost_wh == 1500
+    assert limited.hours[11 * H]["fed_in"] == 300 and limited.hours[11 * H]["curtailed"] == 200
+    # a system that never feeds in (40 % of the PV) and one that always does (20 %): the latter counts against the
+    # limit, which the inverters following it hold at the grid connection
+    mixed = run(bt.FeedIn(300.0, {10 * H: 0.2}, {10 * H: 0.4}))
+    assert mixed.hours[10 * H]["fed_in"] == 300 and mixed.hours[10 * H]["curtailed"] == 700
+    under_zero = run(bt.FeedIn(0.0, {10 * H: 0.2}, {10 * H: 0.4}))   # it feeds in anyway, the others hold zero
+    assert under_zero.hours[10 * H]["fed_in"] == 200
+    free_rule = run(bt.FeedIn(None, {}, {10 * H: 0.4}))
+    assert free_rule.hours[10 * H]["fed_in"] == 600 and free_rule.hours[11 * H]["fed_in"] == 500
+
+
+def test_capped_pv_without_room_is_curtailed_not_fed_in():
+    # 1000 Wh above an 800 W output limit: the battery takes 300 Wh of it, 700 Wh cannot reach house or grid
+    b = bt.Battery(1000, 0.7, efficiency=1.0, output_w=800, arrays=("balcony",))
+    pv = {12 * H: 1800.0}
+    caps = bt.limits([b], {"balcony": pv}, [12 * H])
+    sim = bt.simulate(bt.combine([b]), pv, {12 * H: 300.0}, 12 * H, 13 * H, caps)
+    assert sim.charged_wh == 300 and sim.lost_wh == 1200
+    assert sim.fed_in_wh == 500 and sim.curtailed_wh == 700        # the 500 Wh above the load go out, freely
+
+
+def test_feed_in_shares_come_from_the_arrays():
+    pv = {"roof": {10 * H: 3000.0, 11 * H: 0.0}, "balcony": {10 * H: 1000.0}, "stream": {10 * H: 1000.0}}
+    rule = bt.feed_in(800.0, ("balcony",), ("stream",), pv, [10 * H, 11 * H])
+    assert rule == bt.FeedIn(800.0, {10 * H: 0.2}, {10 * H: 0.2})
+    assert bt.feed_in(None, (), (), pv, [10 * H]) == bt.FeedIn()
+    out = bt.day_simulation([bt.Battery(1000, 1.0, efficiency=1.0)], {10 * H: 5000.0}, {10 * H: 1000.0}, None,
+                            10 * H, 11 * H, pv, (0.0, ("balcony",), ("stream",)))
+    assert out["feed_in"] == bt.FeedIn(0.0, {10 * H: 0.2}, {10 * H: 0.2})
+    assert out["sim"].fed_in_wh == 800 and out["sim"].curtailed_wh == 3200

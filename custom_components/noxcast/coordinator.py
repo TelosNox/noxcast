@@ -160,8 +160,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.day_types: dict = {}                    # local date -> day type from the day-type entity
         self.consumers = consumer_configs(entry)
         self.batteries = {sid: dict(sub.data) for sid, sub in store.parts(entry).items() if sub.subentry_type == SUBENTRY_BATTERY}
-        self.systems = sy.systems_of({sid: (sub.subentry_type, sub.title, dict(sub.data))
-                                      for sid, sub in store.parts(entry).items()})
+        subs = {sid: (sub.subentry_type, sub.title, dict(sub.data)) for sid, sub in store.parts(entry).items()}
+        self.systems = sy.systems_of(subs)
+        self.feed_in = sy.feed_in_rule(entry.data, self.systems, subs)   # what the battery forecast may feed in
         # array id -> the subentry that stores it (its system of the top level): its device and entities belong there
         self.homes = {sid: sub.home for sid, sub in store.parts(entry).items()}
         self.load_profile: lf.Profile | None = None
@@ -1409,7 +1410,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             {w.start: w.temp for w in weather})
         runs = [r for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE and (r := self.run_profile(sid))]
         await self.hass.async_add_executor_job(
-            fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end)
+            fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end, self.feed_in)
         self._log_battery(result.battery, local_now, now)
 
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}

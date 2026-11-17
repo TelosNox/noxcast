@@ -312,8 +312,11 @@ def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Prof
 
 
 def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[bt.Battery],
-            runs: list[pl.RunProfile], now: float, day_end: float) -> None:
-    """Band, battery simulation and plan of flexible consumers, set on result (needs its PV and load)."""
+            runs: list[pl.RunProfile], now: float, day_end: float,
+            feed_in: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None) -> None:
+    """Band, battery simulation and plan of flexible consumers, set on result (needs its PV and load).
+
+    feed_in: the feed-in rule for the battery simulation (systems.feed_in_rule); None feeds everything in."""
     total = dict(result.forecast.get(TOTAL, {}))
     total.update(result.expected.get(TOTAL, {}))          # today: actual so far and the corrected rest
     if result.capped:
@@ -327,7 +330,7 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
     load_hours = result.load.hours if result.load is not None else None
     arrays = {sid: {**hours, **result.expected.get(sid, {})} for sid, hours in result.arrays.items()}
     result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end,
-                                       arrays)
+                                       arrays, feed_in)
     if result.load is None or not runs:
         result.plan = {}
         return

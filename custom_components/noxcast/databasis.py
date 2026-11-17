@@ -110,8 +110,8 @@ MATCH_DAYS = 3              # ... on at least this many days (two such hours eac
 MATCH_SHARE = 0.3           # ... for at least this share of the "battery full" hours with a model,
 MATCH_OVER_USED = 1.5       # ... and this many times the share of used hours that match as closely
 ABOVE_BOUND = 1.15          # power above this many times the clear-sky bound of the learned model
-ABOVE_HOURS = 5             # ... in at least this many hours and
-ABOVE_SHARE = 0.01          # ... this share of the lit counted hours: a rare hour of cloud enhancement is no sign
+ABOVE_HOURS = 5             # ... in at least this many steady hours and
+ABOVE_SHARE = 0.01          # ... this share of the lit steady hours: a rare hour of cloud enhancement is no sign
 BRIGHT_KT = 0.5             # a day without output (and no snow) under a sky this clear: an outage
 DAY_RATIO = 0.7             # a used day at less than this share of the model, which no filter explains
 DAY_MIN_H = 2.0             # ... with a model day of at least this many hours at peak power: bright days only, on
@@ -312,8 +312,11 @@ def _anomalies(site: Site, days: dict[int, list[dict]], peak_w: float) -> list[d
         out.append({"key": "battery_matches", "count": len(good), "value": round(share, 2),
                     "used": round(used_share, 2), "day": solar_date(max(good, key=lambda d: (good[d], d)))})
 
+    # only steady hours: a wrong peak power, unit or orientation shows under a calm sky too, while under broken cloud
+    # a module with the sun beside or behind it gets light from sunlit clouds that the isotropic sky does not hold
+    # (up to 1.8 times the bound on a real balcony), which is physics and no configuration error
     counted = [(r, d) for d, rs in days.items() for r in rs
-               if r["cat"] in ("used", "lower_bound") and (r["bound_w"] or 0) >= lit]
+               if r["cat"] in ("used", "lower_bound") and r["steady"] and (r["bound_w"] or 0) >= lit]
     above = [(r["power_w"] / r["bound_w"], d) for r, d in counted if r["power_w"] > ABOVE_BOUND * r["bound_w"]]
     if len(above) >= max(ABOVE_HOURS, ABOVE_SHARE * len(counted)):
         ratio, d = max(above)

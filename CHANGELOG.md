@@ -12,9 +12,15 @@ breaking changes.
 - The main entry no longer has its own list of battery state-of-charge sensors. A battery counts only where it is
   entered with its system, and then only for the PV arrays it can curtail. The update drops each sensor that such a
   battery already has; for any other, a repair asks you to enter its battery with its system and the PV arrays it
-  charges. Until you do, hours in
-  which that battery was full count in learning again. Learning may change slightly after the update: arrays that
-  battery cannot curtail now also learn from the hours in which it was full.
+  charges. Until you do, hours in which that battery was full count in learning again. Learning may change slightly
+  after the update: arrays that battery cannot curtail now also learn from the hours in which it was full.
+
+### Fixed
+
+- *Data basis* no longer warns that an array delivered clearly more than the learned model allows under a clear sky
+  when this happens only under broken cloud. A module with the sun beside or behind it then gets light from sunlit
+  clouds, which is real and no configuration error; on a balcony this reached 1.8 times the bound. The check now
+  counts only hours under a calm sky, where a wrong peak power, sensor unit or orientation still shows.
 
 ## [0.5.0b6] - 2026-11-17
 

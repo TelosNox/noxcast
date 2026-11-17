@@ -165,8 +165,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - **Was hat das Lernen gesehen?** *Gelernt* → *Datenbasis* zeigt pro Gruppe, wofür die Tagesstunden verwendet
   wurden (verwendet, begrenzt, Akku voll, Schnee, kein Ertrag, ausgeschlossen), gewichtet nach der Energie bei
   klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
-  obwohl die Gruppe lieferte, was das Modell erwartet, deutlich über dem, was das gelernte Modell bei klarem Himmel
-  zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
+  obwohl die Gruppe lieferte, was das Modell erwartet, bei ruhigem Himmel deutlich über dem, was das gelernte Modell bei
+  klarem Himmel zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
   erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen.
   Mit dem Satellitenarchiv sagt sie auch, ob genug Daten für die gezeigten Tage da sind: Findet die nächtliche
   Rückrechnung den Stundenfehler auf Tagen, die das Modell nicht gelernt hat, um mehr als 10 % über dem auf gelernten

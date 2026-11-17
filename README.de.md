@@ -228,7 +228,7 @@ Ebene, die engere zählt:
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist). Ein System mit *Eigenverbrauch* ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog (unter 100 W), zählen beim Lernen als „mindestens so viel“, weil das Gerät PV zurückgehalten haben kann |
-| Einspeisevorgabe, Einspeisegrenze | Was der Haushalt einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst: frei, höchstens eine Leistung in W, höchstens ein Anteil der PV-Leistung in % oder Nulleinspeisung (nie etwas; Überschuss bei vollen Akkus zählt als ungenutzt). Jedes System folgt dieser Vorgabe, außer es nennt eine Abweichung. Mit einer Grenze und dem Sensor *Netzleistung* zählen Stunden, in denen die Einspeisung des Haushalts die Grenze erreichte, (bis auf 5 %, mindestens 100 W) beim Lernen als „mindestens so viel“, weil die PV zurückgehalten worden sein kann; ein Anteil in % zählt von der Leistung aller PV-Gruppen. Eine feste Grenze am Wechselrichter selbst (etwa 60 % der Module) zeigt sich nicht am Netzanschluss: Sie gehört als *Ausgangsgrenze* ins System |
+| Einspeisevorgabe, Einspeisegrenze | Was der Haushalt einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst: frei, höchstens eine Leistung in W, höchstens ein Anteil der PV-Leistung in % oder Nulleinspeisung (nie etwas; Überschuss bei vollen Akkus zählt als ungenutzt). Jedes System folgt dieser Vorgabe, außer es nennt eine Abweichung. Die Akkuprognose speist Überschuss ohne Platz bis zur Grenze ein und zählt den Rest als abgeregelt. Mit einer Grenze und dem Sensor *Netzleistung* zählen Stunden, in denen die Einspeisung des Haushalts die Grenze erreichte, (bis auf 5 %, mindestens 100 W) beim Lernen als „mindestens so viel“, weil die PV zurückgehalten worden sein kann; ein Anteil in % zählt von der Leistung aller PV-Gruppen. Eine feste Grenze am Wechselrichter selbst (etwa 60 % der Module) zeigt sich nicht am Netzanschluss: Sie gehört als *Ausgangsgrenze* ins System |
 | Prognosetage | 2–7, heute eingeschlossen (Standard 3) |
 
 ### 2. Systeme (wie die Module zum Haus kommen)
@@ -450,7 +450,8 @@ Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1); 
 `p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
-`backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute**, **Akku voll um**, **Akku höchster
+`backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
+`fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
 Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,
 `pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt oder keiner
@@ -614,11 +615,16 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 ### Akku-Simulation und Planung
 
 - Stunde für Stunde von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
-  oberen Grenze und zur Ladeleistung, der Rest geht verloren (oder wird eingespeist); ein Defizit entlädt bis
+  oberen Grenze und zur Ladeleistung, der Rest geht dem Akku verloren; ein Defizit entlädt bis
   Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste danach, wo der Akku sitzt.
 - Mit Ausgangsgrenze am System liefert ein Akku höchstens die Grenze minus das, was die PV-Gruppen des Systems in der
   Stunde liefern, und deren PV über der Grenze geht in den Akku oder wird abgeregelt. Teilsysteme unter einer
   gemeinsamen Grenze: Ihre PV und Akkus geben zusammen höchstens die Grenze ab.
+- Überschuss ohne Platz geht ins Netz, soweit die Einspeisevorgabe es erlaubt: bis zur Einspeisegrenze des Haushalts,
+  bei Nulleinspeisung nichts; der Rest wird abgeregelt, ebenso PV über einer Ausgangsgrenze. Ein System mit eigener
+  Abweichung (speist immer oder nie ein) zählt mit seinem Anteil an der PV der Stunde, da alle Akkus ein Speicher
+  sind; was es ohnehin einspeist, zählt gegen die Grenze des Haushalts. Die Grenze gilt für die mittlere Leistung
+  der Stunde: Kurze Spitzen darüber zählen nicht als abgeregelt.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

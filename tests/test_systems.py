@@ -298,3 +298,27 @@ def test_a_system_follows_the_household_rule_unless_it_deviates():
     # the roof feeds in anyway: its own deviation, not under the limit
     assert sy.export_limited_arrays(house, sy.systems_of({**peaks, "roof": ("array", "Roof", {"system": "r"})})) \
         == ("south",)
+
+
+def test_feed_in_rule_for_the_battery_forecast():
+    subs = {"r": ("system", "Roof", {"name": "Roof", "template": "inverter", "own_feed_in": "export"}),
+            "s": ("system", "Stream", {"name": "Stream", "template": "coupled", "own_feed_in": "never"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "s"}),
+            "h": ("system", "House", {"name": "House", "template": "inverter"}),
+            "roof": ("array", "Roof", {"system": "r", "peak_power": 5000}),
+            "ultra": ("array", "Ultra", {"system": "u", "peak_power": 1000}),
+            "garage": ("array", "Garage", {"system": "h", "peak_power": 4000})}
+    systems = sy.systems_of(subs)
+    assert sy.feed_in_rule({"feed_in_mode": "none"}, systems, subs) == (0.0, ("roof",), ("ultra",))
+    assert sy.feed_in_rule({"feed_in_mode": "free"}, systems, subs)[0] is None
+    assert sy.feed_in_rule({"feed_in_mode": "limited", "feed_in_limit_w": 800}, systems, subs)[0] == 800
+    assert sy.feed_in_rule({"feed_in_mode": "percent", "feed_in_limit_pct": 60}, systems, subs)[0] == 6000
+    assert sy.feed_in_rule({"feed_in_mode": "percent"}, systems, subs)[0] is None   # not set: nothing held back
+    # with a battery the limit counts in its forecast, without the grid sensor too; not for a system deviating
+    house = {"feed_in_mode": "limited", "feed_in_limit_w": 800}
+    status = {(e["node"], e["setting"]): e["status"] for e in sy.effects(house, systems, subs)}
+    assert status[("house", "feed_in")] == sy.NOT_YET
+    with_battery = {**subs, "bh": ("battery", "House battery", {"system": "h"})}
+    status = {(e["node"], e["setting"]): e["status"]
+              for e in sy.effects(house, sy.systems_of(with_battery), with_battery)}
+    assert status[("house", "feed_in")] == status[("h", "feed_in_rule")] == sy.SIMPLIFIED

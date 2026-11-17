@@ -22,7 +22,7 @@ const OV_TEXT = {
     bestToday: "Bestes Fenster heute", bestTomorrow: "Bestes Fenster morgen", pv: "PV", noWindow: "keines",
     loadRest: "Hausverbrauch bis Tagesende", loadRestSub: "Prognose ab dieser Stunde",
     battery: "Akku", socNow: "jetzt {p}", socMax: "erwartet max. {p}", fullAt: "Voll um", notFull: "heute nicht voll",
-    lost: "Verlorener Überschuss heute", emptyAt: "Leer um", notEmpty: "nicht vor der nächsten Ladung", tomorrow: "morgen",
+    lost: "Verlorener Überschuss heute", lostSplit: "{f} kWh eingespeist, {c} kWh abgeregelt", emptyAt: "Leer um", notEmpty: "nicht vor der nächsten Ladung", tomorrow: "morgen",
     days: "Nächste Tage", lDayFc: "Prognose", lDayBand: "Spanne", lDayClear: "klarer Himmel", todayShort: "Heute",
     yesterday: "Gestern", yFc: "Prognose", yAct: "Ist", deviation: "Ist gegenüber Prognose", tooHigh: "Prognose zu hoch", tooLow: "Prognose zu niedrig",
     curtailed: "{n} h Akku voll, Ist evtl. abgeregelt", recent: "Letzte {n} Tage", recentSub: "{d} vollständige Tage",
@@ -46,7 +46,7 @@ const OV_TEXT = {
     bestToday: "Best window today", bestTomorrow: "Best window tomorrow", pv: "PV", noWindow: "none",
     loadRest: "House load until the end of the day", loadRestSub: "forecast from this hour on",
     battery: "Battery", socNow: "now {p}", socMax: "expected max. {p}", fullAt: "Full at", notFull: "not full today",
-    lost: "Surplus lost today", emptyAt: "Empty at", notEmpty: "not before the next charge", tomorrow: "tomorrow",
+    lost: "Surplus lost today", lostSplit: "{f} kWh fed in, {c} kWh curtailed", emptyAt: "Empty at", notEmpty: "not before the next charge", tomorrow: "tomorrow",
     days: "Next days", lDayFc: "Forecast", lDayBand: "Range", lDayClear: "clear sky", todayShort: "Today",
     yesterday: "Yesterday", yFc: "Forecast", yAct: "Actual", deviation: "Actual against forecast", tooHigh: "forecast too high", tooLow: "forecast too low",
     curtailed: "{n} h battery full, actual possibly curtailed", recent: "Last {n} days", recentSub: "{d} complete days",
@@ -351,9 +351,12 @@ class NoxcastOverview extends HTMLElement {
     if (mark && mark.style.left !== left) { mark.style.left = left; mark.hidden = max === null; }
     this._text("s-socmax-t", max === null ? "" : fill(t.socMax, { p: `${num(max * 100, this._lang)} %` }));
     const when = (ts) => (ts >= d.day_end ? `${t.tomorrow} ${this._hm(ts)}` : this._hm(ts));
+    // what of the surplus without room goes into the grid and what is curtailed (feed-in rule, output limits)
+    const split = b.fed_in_today !== undefined && b.lost_today >= 50 ? `<br><span class="small">${fill(t.lostSplit,
+      { f: kwh(b.fed_in_today, this._lang), c: kwh(Math.max(b.lost_today - b.fed_in_today, 0), this._lang) })}</span>` : "";
     this._set("s-battery", `<div class="rows">
       <div class="row"><span class="muted">${t.fullAt}</span><span>${b.full ? when(b.full) : `<span class="muted">${t.notFull}</span>`}</span></div>
-      <div class="row"><span class="muted">${t.lost}</span><span>${kwh(b.lost_today, this._lang)} kWh</span></div>
+      <div class="row"><span class="muted">${t.lost}${split}</span><span>${kwh(b.lost_today, this._lang)} kWh</span></div>
       <div class="row"><span class="muted">${t.emptyAt}</span><span>${b.empty ? when(b.empty) : `<span class="muted">${t.notEmpty}</span>`}</span></div></div>`);
   }
 

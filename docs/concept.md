@@ -988,6 +988,10 @@ above load), not until midnight, so "battery empty at" is part of the result:
   hour the battery may deliver the limit minus the array's PV, and PV above the limit can only charge
   the battery (or is curtailed), even while the house draws from the grid. All batteries stay one
   storage; the caps of the systems add up per hour. One battery per array, so no PV counts twice.
+- Feed-in: surplus without room goes into the grid up to the household's feed-in limit (none under zero
+  export, compared with the hour's mean power); the rest is curtailed, as is PV above an output limit. Systems with
+  an own deviation (always or never feed in) count by their share of the hour's PV after the output limits, since
+  one storage has no surplus per system; what they feed in anyway counts against the household's limit.
 - Round-trip efficiency by coupling: DC-coupled batteries lose little (default about 95 %),
   AC-coupled ones more (about 90 %); configurable. Inverter losses are already inside the
   measured PV and house load and are not counted again.
@@ -1096,8 +1100,7 @@ scorecard. The open work is tracked in GitHub issues:
    are still to be checked on installations with snow.
 2. **Light model** (#249): C1 and C2 were falsified on real data; next is C3, the bound as the brightest plausible
    sky, then C5-C8.
-3. **Installation model, rest** (#250): battery forecast per independent system, the surplus at the feed-in limit
-   split into fed in and lost, shared limits per phase, fixed power, balancing.
+3. **Installation model, rest** (#250): battery forecast per independent system, shared limits per phase, fixed power, balancing.
 4. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
    and the state of charge for 48 h, band coverage, shading map uncertainty, 15-minute steps.
 5. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from

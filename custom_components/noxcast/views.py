@@ -155,6 +155,8 @@ def today_totals(data, consumers: dict, days: int, today: date, day_start: Calla
             "points": columns(((t, round(f, 4)) for t, f in sim.points), "soc"),
             "full": sim.full_at, "empty": sim.empty_at,
             "lost_today": round(sum(h["lost"] for t, h in sim.hours.items() if t < b["day_end"]), 1),
+            # of that, fed into the grid (the rest is curtailed)
+            "fed_in_today": round(sum(h.get("fed_in", 0.0) for t, h in sim.hours.items() if t < b["day_end"]), 1),
             "charge_start": b["charge_start"], "max": storage.max_soc, "min": storage.min_soc,
             # surplus lost with a full battery per hour (Wh), expected and with PV at P90: the card's warning
             "lost": columns(((t, full.get(t, 0.0), p90.get(t, 0.0)) for t in sorted(set(full) | set(p90))), "wh", "p90"),
@@ -379,6 +381,7 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
         load = data.load.hours
         hours = sorted(t for t in load if t + 3600 > now)
         caps = b.get("limits") or bt.Limits()       # output caps: PV that only the battery can take, discharge limit per hour
+        grid = b.get("feed_in") or bt.FeedIn()
         out.update({
             "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
@@ -390,7 +393,13 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
                              "pv", "load", "capped", "discharge"),
             "day_end": b["day_end"], "charge_start": b["charge_start"],
             "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
-                    "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh)},
+                    "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh),
+                    "fed_in_wh": round(sim.fed_in_wh), "curtailed_wh": round(sim.curtailed_wh)},
+            # what of the surplus without room goes into the grid (battery.FeedIn): the limit in W (None = free),
+            # and per hour the PV shares of systems that always and that never feed in
+            "feed_in": {"limit_w": grid.limit_w,
+                        "hours": columns(((t, round(grid.free.get(t, 0.0), 4), round(grid.never.get(t, 0.0), 4))
+                                          for t in hours if t in grid.free or t in grid.never), "free", "never")},
         })
     return out
 

@@ -7,6 +7,21 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+
+- The battery forecast splits the surplus that does not fit into the battery into what goes into the grid and what
+  is curtailed. It feeds in up to the household's feed-in limit, nothing under zero export, and follows a system's own
+  deviation (always or never feeds in) by that system's share of the PV; PV above an output limit is curtailed. The
+  sensors *Surplus rest of today* and *Surplus lost today* have the new attributes `fed_in` and `curtailed`, the
+  overview shows the split below the lost surplus, and *Battery & surplus* shows it for the plan and the what-if
+  variant. The value of *Surplus lost today* stays all surplus without room. The limit is compared with the hour's
+  mean power, so short peaks above it are not counted as curtailed.
+
+### Changed
+
+- The *Installation* tab marks a feed-in limit as counted (simplified) where a battery is set up, since the battery
+  forecast now feeds in up to it.
+
 ### Fixed
 
 - *Data basis* no longer warns that an array delivered clearly more than the learned model allows under a clear sky

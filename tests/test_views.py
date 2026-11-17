@@ -78,7 +78,7 @@ def test_today_arrays_and_totals():
     assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == {"t": [], "wh": []}
     assert out[1]["tomorrow_wh"] == 0
     sim = bt.Simulation(points=[(A + 12 * H, 0.512345)], full_at=A + 14 * H,
-                        hours={A + 11 * H: {"lost": 0.0, "soc": 0.7}, A + 12 * H: {"lost": 10.04, "soc": 0.89},
+                        hours={A + 11 * H: {"lost": 0.0, "soc": 0.7}, A + 12 * H: {"lost": 10.04, "fed_in": 4.02, "soc": 0.89},
                                A + 30 * H: {"lost": 99.0, "soc": 0.5}})     # 30: above the charge power, not full
     d.battery = {"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1), "day_end": A + 86400, "charge_start": A + 32 * H,
                  "band": {"lost_p90": {A + 11 * H: 20.04, A + 12 * H: 30.0}}}
@@ -90,7 +90,7 @@ def test_today_arrays_and_totals():
     assert totals["load"] == {"t": [A + 12 * H], "wh": [456.8]}
     assert totals["band"] == {"t": [A + 12 * H], "p10": [250.0], "p90": [350.1]}
     assert totals["battery"] == {"points": {"t": [A + 12 * H], "soc": [0.5123]}, "full": A + 14 * H, "empty": None, "lost_today": 10.0,
-                                 "charge_start": A + 32 * H, "max": 0.9, "min": 0.1,
+                                 "fed_in_today": 4.0, "charge_start": A + 32 * H, "max": 0.9, "min": 0.1,
                                  # only hours with surplus lost by a full battery, expected or with PV at P90
                                  "lost": {"t": [A + 11 * H, A + 12 * H], "wh": [0.0, 10.04], "p90": [20.04, 30.0]}}
     assert totals["plan"] == [{"name": "Washer", "now": 0.123, "start": 1.0, "end": 2.0, "pv": 0.5},
@@ -186,7 +186,8 @@ def test_battery_entry_and_reviews():
              battery={"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000), "day_end": A + 86400,
                       "charge_start": A + 32 * H})
     out = views.battery_entry(batteries, {}, d, A + 11.5 * H)
-    assert list(out) == ["batteries", "storage", "hours", "day_end", "charge_start", "sim"]
+    assert list(out) == ["batteries", "storage", "hours", "day_end", "charge_start", "sim", "feed_in"]
+    assert out["feed_in"] == {"limit_w": None, "hours": {"t": [], "free": [], "never": []}}   # no rule: all fed in
     assert out["hours"] == {"t": [A + 11 * H, A + 12 * H, A + 13 * H], "pv": [320.0, 310.0, 400.0],
                             "load": [100.0, 200.1, 300.0], "capped": [0.0, 0.0, 0.0], "discharge": [None, None, None]}
     # with an inverter output limit: PV above it per hour and what the batteries may deliver
@@ -199,7 +200,12 @@ def test_battery_entry_and_reviews():
     d.battery["limits"] = bt.Limits()
     assert views.battery_entry(batteries, {}, d, A + 11.5 * H)["hours"]["discharge"] == [1500, 1500, 1500]
     d.battery["storage"] = bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000)
-    assert out["sim"] == {"full": A + 14 * H, "empty": None, "lost_wh": 11, "grid_wh": 1, "charged_wh": 100}
+    assert out["sim"] == {"full": A + 14 * H, "empty": None, "lost_wh": 11, "grid_wh": 1, "charged_wh": 100,
+                          "fed_in_wh": 0, "curtailed_wh": 0}
+    # the feed-in rule: the household's limit, and the shares of systems that deviate, only in the hours ahead
+    d.battery["feed_in"] = bt.FeedIn(800.0, {A + 10 * H: 0.5, A + 12 * H: 0.25}, {A + 13 * H: 0.123456})
+    assert views.battery_entry(batteries, {}, d, A + 11.5 * H)["feed_in"] == {
+        "limit_w": 800.0, "hours": {"t": [A + 12 * H, A + 13 * H], "free": [0.25, 0.0], "never": [0.0, 0.1235]}}
     assert out["storage"]["max_charge_w"] == 2000 and out["storage"]["max_discharge_w"] is None
     assert out["storage"]["held_wh"] == 0.0                       # the room batteries near their limit do not use
     stats = {"sensor.soc": [{"start": A, "min": 20.0, "max": 60.0}, {"start": datetime.fromtimestamp(A + H, timezone.utc),

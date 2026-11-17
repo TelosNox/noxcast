@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b7] - 2026-11-17
+
 ### Breaking
 
 - The main entry no longer has its own list of battery state-of-charge sensors. A battery counts only where it is

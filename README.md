@@ -164,7 +164,7 @@ For the dashboard: *Add card* → *Noxcast*.
 - **What did learning see?** *Learned* → *Data basis* shows per array what the daylight hours were used for
   (used, capped, battery full, snow, no output, excluded), weighted by clear-sky energy, overall and per month,
   and points at anomalies with their most telling day: "battery full" while the array delivered what the model
-  expects, clearly above the learned model's clear-sky output, days without output under a bright sky and without
+  expects, clearly above the learned model's clear-sky output under a calm sky, days without output under a bright sky and without
   snow, bright days below 70 % of the model that no filter explains, and snow periods that only the limit of 7 days
   after the last snowfall ended, although bright hours would have shown free modules. Renewed by every nightly learning run.
   With the satellite archive it also says whether there is enough data for the days shown: when the nightly

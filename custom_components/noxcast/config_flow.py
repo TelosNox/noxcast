@@ -21,7 +21,7 @@ from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
     WEATHER_MODEL_OPTIONS,
-    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_SOC_FULL, CONF_SOC_SENSORS,
+    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_SOC_FULL, CONF_UNENTERED_SOC,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
@@ -48,15 +48,11 @@ MAIN_SECTIONS = ("feed_in_limit",)
 
 
 def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
-    """The household. The battery sensors here leave full-battery hours out of learning for every array; they stay
-    until the systems' own batteries take that over (a later computation step). The limit of the feed-in rule is
-    rare: its section opens where one is set."""
+    """The household. The limit of the feed-in rule is rare: its section opens where one is set."""
     box = selector.NumberSelectorMode.BOX
     limited = defaults.get(CONF_FEED_IN_MODE) in ("limited", "percent") or any(
         defaults.get(k) for k in (CONF_FEED_IN_LIMIT, CONF_FEED_IN_PCT))
     return vol.Schema({
-        vol.Optional(CONF_SOC_SENSORS, default=defaults.get(CONF_SOC_SENSORS, [])):
-            selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
         vol.Required(CONF_SOC_FULL, default=defaults.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)):
             selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")),
         vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
@@ -244,10 +240,6 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
     for key in (CONF_HOUSE_LOAD, CONF_GRID):
         if user_input.get(key) and (err := _power_sensor_error(flow.hass, user_input[key])):
             return {key: err}
-    for entity_id in user_input.get(CONF_SOC_SENSORS) or []:
-        state = flow.hass.states.get(entity_id)
-        if state is None or state.attributes.get("unit_of_measurement") != "%":
-            return {CONF_SOC_SENSORS: "soc_unit"}
     # the limit sits in a section: its problem is shown on top of the form
     if user_input.get(CONF_FEED_IN_MODE) == "limited" and not user_input.get(CONF_FEED_IN_LIMIT):
         return {"base": "feed_in_limit_needed"}
@@ -258,10 +250,10 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 7              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+    MINOR_VERSION = 8              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
                                    # 1.4: discontinued ICON models replaced, 1.5: systems, 1.6: one entry per
-                                   # system with its parts inside, 1.7: feed-in deviation per system
-                                   # (migrations in __init__)
+                                   # system with its parts inside, 1.7: feed-in deviation per system,
+                                   # 1.8: the household's old state-of-charge sensors gone (migrations in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -282,7 +274,9 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
             errors = await _validate_main(self, user_input)
             if not errors:
                 # the update listener reloads; reloading here as well is an error from Home Assistant 2026.12
-                return self.async_update_and_abort(entry, data=user_input)
+                # the sensors the migration could not give a battery stay while the repair about them holds
+                kept = {k: entry.data[k] for k in (CONF_UNENTERED_SOC,) if k in entry.data}
+                return self.async_update_and_abort(entry, data={**user_input, **kept})
         return self.async_show_form(step_id="reconfigure", data_schema=_main_schema(user_input or dict(entry.data)),
                                     errors=errors, description_placeholders={"concept": _concepts(self.hass, "blocks")})
 

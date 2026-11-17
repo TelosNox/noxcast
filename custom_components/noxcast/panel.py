@@ -22,7 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
 from . import concepts, databasis, flowchart, store, systems, views
-from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, CONF_SOC_SENSORS, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
+from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveCo
     entries = []
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         c = entry.runtime_data
-        roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers, c.batteries,
+        roles = views.sensor_roles(c.arrays, c.house_load, c.consumers, c.batteries,
                                    _battery_names(entry))
         ids = sorted({e for e, _, _ in roles})
         try:
@@ -536,7 +536,7 @@ async def ws_overview(hass: HomeAssistant, connection: websocket_api.ActiveConne
     entry = entries[0]
     c = entry.runtime_data
     now = dt_util.utcnow()
-    roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers, c.batteries,
+    roles = views.sensor_roles(c.arrays, c.house_load, c.consumers, c.batteries,
                                _battery_names(entry))
     sensors = [(e, role, owner, (s.state if (s := hass.states.get(e)) else None)) for e, role, owner in roles]
     status = views.learning_status(c.arrays, c.learned, c.last_learning, c.last_learning_seconds, c.last_learning_error,

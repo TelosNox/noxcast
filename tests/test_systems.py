@@ -32,7 +32,7 @@ def test_migration_keeps_what_was_computed():
             "ac": ("battery", "Home battery", {"soc_sensor": "sensor.soc2", "capacity": 5, "coupling": "ac",
                                                "output_limit_w": 800})}
     data, changes = sy.migrate({"feed_in": True, "soc_sensors": ["sensor.soc"]}, subs, _ids(), "Batteries")
-    assert data == {"feed_in_mode": "free", "soc_sensors": ["sensor.soc"]}       # the old setting stays
+    assert data == {"feed_in_mode": "free", "soc_sensors": ["sensor.soc"]}       # the old setting stays until 1.8
     after = _apply(subs, changes)
     systems = sy.systems_of(after)
     # two batteries were one storage: now subsystems of a system that balances them
@@ -62,6 +62,25 @@ def test_migration_of_a_lone_dc_battery_asks_for_its_arrays():
     after = _apply(subs, changes)
     assert not any(s.children for s in sy.systems_of(after).values())   # one battery: no parent
     assert sy.battery_without_pv(after) == ["dc"]
+
+
+def test_the_old_soc_sensors_go_and_those_without_a_battery_wait_for_one():
+    roof = ("array", "Roof", {**ROOF[2], "system": "s"})
+    subs = {"s": ("system", "Roof", {"name": "Roof", "template": "pv_battery"}), "roof": roof,
+            "b": ("battery", "Home battery", {"system": "s", "soc_sensor": "sensor.soc", "capacity": 5})}
+    data = sy.drop_old_soc({"feed_in_mode": "free", "soc_sensors": ["sensor.soc", "sensor.other"]}, subs)
+    assert data == {"feed_in_mode": "free", "unentered_soc_sensors": ["sensor.other"]}
+    assert sy.unentered_soc(data, subs) == ["sensor.other"]
+    # a battery in a system without PV curtails nothing: its sensor still waits
+    lone = {**subs, "t": ("system", "Shed", {"name": "Shed", "template": "pv_battery"}),
+            "c": ("battery", "Shed battery", {"system": "t", "soc_sensor": "sensor.other", "capacity": 2})}
+    assert sy.unentered_soc(data, lone) == ["sensor.other"]
+    # entered with the PV it charges: nothing is left to ask for
+    later = {**lone, "shed": ("array", "Shed", {"name": "Shed", "power_sensors": ["sensor.shed_pv"], "system": "t"})}
+    assert sy.unentered_soc(data, later) == []
+    # every sensor has its battery, or there were none: the setting just goes
+    assert sy.drop_old_soc({"soc_sensors": ["sensor.soc"], "soc_full_pct": 95}, subs) == {"soc_full_pct": 95}
+    assert sy.drop_old_soc({"soc_full_pct": 95}, subs) == {"soc_full_pct": 95}
 
 
 def test_ac_battery_with_its_array_keeps_its_efficiency():

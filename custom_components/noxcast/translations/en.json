@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: battery sensors for learning, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: when a battery counts as full, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
         "data": {
-          "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
           "day_type_entity": "Day type",
@@ -15,7 +14,6 @@
           "feed_in_mode": "Feed-in rule"
         },
         "data_description": {
-          "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered.",
           "soc_full_pct": "State of charge from which curtailment is assumed.",
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
@@ -43,7 +41,6 @@
         "title": "Noxcast",
         "description": "The household: house load, grid and feed-in rule. Systems, PV arrays and batteries are added on the integration page.\n\n{concept}",
         "data": {
-          "soc_sensors": "Battery state of charge sensors",
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
           "day_type_entity": "Day type",
@@ -58,8 +55,7 @@
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one. A system with Self-consumption and no battery needs it: hours in which the household imported little or nothing at times count as \"at least this much\" in learning.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
           "forecast_days": "Days the forecast covers, today included (2 to 7). Further ahead the weather forecast says little about the yield.",
-          "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation.",
-          "soc_sensors": "Hours in which one of these batteries is full are left out of learning for every PV array, because output may be curtailed. A battery entered with its system already does this for the PV arrays it can curtail; this setting is only needed for batteries that are not entered."
+          "feed_in_mode": "What the household may feed into the grid, as the grid operator requires it or you want it. Free: everything. At most a power or a share of the PV peak power: the limit below. Zero export: nothing, ever. Every system follows this rule unless its settings name a deviation."
         },
         "sections": {
           "feed_in_limit": {
@@ -78,7 +74,6 @@
       }
     },
     "error": {
-      "soc_unit": "Battery sensors must report their state of charge in %.",
       "sensor_missing": "The selected sensor does not exist.",
       "sensor_unit": "Power sensors must report W or kW.",
       "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
@@ -724,6 +719,10 @@
     "battery_without_pv": {
       "title": "Which PV arrays charge the battery {name}?",
       "description": "The battery **{name}** sits before the output of a device with PV (system **{system}**), but no PV array belongs to that system, so Noxcast cannot tell which arrays charge it. After the update this happens to a battery whose former settings did not name its PV array.\n\nOpen the PV arrays behind this device under Settings → Devices & services → Noxcast and choose the system **{system}**. If the battery has its own inverter at the house grid instead, change the system to the template *Battery at the house grid*. Until then Noxcast computes as before."
+    },
+    "unentered_soc": {
+      "title": "Enter the battery of these state-of-charge sensors",
+      "description": "Noxcast no longer has a list of battery state-of-charge sensors of its own. A battery now belongs to its system, and while it is full only the PV arrays it can curtail are left out of learning. After the update, these sensors belong to no battery that can curtail a PV array: **{sensors}**.\n\nUnder Settings → Devices & services → Noxcast, add the battery to the system it sits in, with this sensor as its state of charge, and make sure the PV arrays it charges belong to that system. This notice then goes away by itself. Until then, hours in which this battery was full count in learning as if the PV had not been curtailed. If the sensor belongs to no battery that can curtail PV, ignore this notice."
     }
   }
 }

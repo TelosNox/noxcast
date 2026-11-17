@@ -15,7 +15,7 @@ const INST_TEXT = {
     help: "Jede Angabe wird gespeichert, auch wenn Noxcast sie noch nicht verrechnet. Spätere Versionen rechnen sie genauer, ohne dass du etwas neu eintragen musst.",
     templates: { inverter: "Wechselrichter ohne Akku", pv_battery: "PV mit Akku in einem Gerät", ac_battery: "Akku am Hausnetz",
       coupled: "Gekoppelte Systeme" },
-    settings: { feed_in: "Einspeisevorgabe", old_soc: "Akku-Ladestände, die das Lernen aller PV-Gruppen auslassen",
+    settings: { feed_in: "Einspeisevorgabe",
       one_storage: "Akkus werden als ein Speicher simuliert", output_limit: "Ausgangsgrenze",
       limit_per_phase: "Grenze gilt pro Phase", phase: "Phase", regulation: "Regelung", fixed_power: "Feste Leistung",
       feed_in_rule: "Einspeisung", charges_from: "Akku lädt aus", balance: "Akkus gleichen sich aus",
@@ -43,7 +43,7 @@ const INST_TEXT = {
     help: "Every setting is stored, even where Noxcast does not compute it yet. Later versions compute it more precisely without you entering anything again.",
     templates: { inverter: "Inverter without battery", pv_battery: "PV with battery in one device", ac_battery: "Battery at the house grid",
       coupled: "Coupled systems" },
-    settings: { feed_in: "Feed-in rule", old_soc: "Battery states of charge that leave learning out for all PV arrays",
+    settings: { feed_in: "Feed-in rule",
       one_storage: "Batteries are simulated as one storage", output_limit: "Output limit",
       limit_per_phase: "Limit holds per phase", phase: "Phase", regulation: "Regulation", fixed_power: "Fixed power",
       feed_in_rule: "Feed-in", charges_from: "Battery charges from", balance: "Batteries balance each other",
@@ -164,7 +164,6 @@ class NoxcastInstallation extends HTMLElement {
     if (["feed_in", "feed_in_rule"].includes(setting) && typeof v === "number") return `≤ ${this._w(v)}`;
     if (v && typeof v === "object" && "pct" in v)
       return `≤ ${Number(v.pct).toLocaleString(this._lang)} %${v.w ? ` (${this._w(v.w)})` : ""}`;
-    if (setting === "old_soc") return String(v);
     return t[v] || esc(String(v));
   }
 

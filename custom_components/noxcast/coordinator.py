@@ -25,7 +25,7 @@ from .const import (
     TOTAL,
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, CONF_WEATHER_MODELS, DEFAULT_WEATHER_MODELS,
-    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SOC_SENSORS, CONF_SENSOR_LIMITS,
+    WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SOC_FULL, CONF_SENSOR_LIMITS,
     CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
@@ -129,8 +129,7 @@ def installation_of(entry: ConfigEntry, max_soc: dict[str, float] | None = None)
     systems = sy.systems_of(subs)
     limit_w = sy.feed_in_limit_w(entry.data, subs)
     batteries = {sid: dict(sub.data) for sid, sub in store.parts(entry).items() if sub.subentry_type == SUBENTRY_BATTERY}
-    return inst.build(arrays, limits, entry.data.get(CONF_SOC_SENSORS) or [],
-                      float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
+    return inst.build(arrays, limits, float(entry.data.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)), systems, batteries,
                       entry.data.get(CONF_FEED_IN_MODE, "none"), max_soc,
                       (sy.export_limited_arrays(entry.data, systems), limit_w) if limit_w else None)
 
@@ -681,10 +680,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # hourly minimum and maximum tell steady hours from hours with passing clouds or dropouts
         power_min = await async_hourly_statistics(self.hass, sensor_ids, start, "min")
         power_max = await async_hourly_statistics(self.hass, sensor_ids, start, "max")
-        household = list(options.get(CONF_SOC_SENSORS) or [])
         installation = self._installation_now()
-        soc = await async_hourly_statistics(self.hass, sorted(set(household) | set(installation.soc_sensors())),
-                                            start, "max")
+        soc = await async_hourly_statistics(self.hass, installation.soc_sensors(), start, "max")
         charging = await self._async_charge_means(installation, start)
         # the kept 5-minute means are in W already: charge_power only turns the sign of an inverted sensor. A
         # battery sensor that is also a PV sensor is kept with the PV's periods only: its hours go by the hourly mean
@@ -700,7 +697,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         unsure = {sid: frozenset(u) for sid, (_, _, u) in blocked.items() if u}
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
-        history = ln.PvHistory(power, power_min, power_max, factors, ln.highest({s: soc.get(s, {}) for s in household}),
+        history = ln.PvHistory(power, power_min, power_max, factors, {},
                                air_temp, satellite_ghi, full, charge, held, unsure, snowfall)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]

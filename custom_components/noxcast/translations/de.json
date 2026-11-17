@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Akku-Sensoren fürs Lernen, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: ab wann ein Akku als voll gilt, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
         "data": {
-          "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
           "day_type_entity": "Tagestyp",
@@ -15,7 +14,6 @@
           "feed_in_mode": "Einspeisevorgabe"
         },
         "data_description": {
-          "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind.",
           "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
@@ -43,7 +41,6 @@
         "title": "Noxcast",
         "description": "Der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du auf der Seite der Integration hinzu.\n\n{concept}",
         "data": {
-          "soc_sensors": "Akku-Ladezustand",
           "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
           "day_type_entity": "Tagestyp",
@@ -58,8 +55,7 @@
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
           "forecast_days": "Wie viele Tage die Prognose abdeckt, heute eingeschlossen (2 bis 7). Weiter voraus sagt die Wettervorhersage wenig über den Ertrag.",
-          "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung.",
-          "soc_sensors": "Stunden, in denen einer dieser Akkus voll ist, werden beim Lernen aller PV-Gruppen ausgelassen, weil dann abgeregelt sein kann. Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind."
+          "feed_in_mode": "Was der Haushalt ins Netz einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst. Frei: alles. Höchstens eine Leistung oder ein Anteil der PV-Leistung: die Grenze darunter. Nulleinspeisung: nie etwas. Jedes System folgt dieser Vorgabe, außer seine Einstellungen nennen eine Abweichung."
         },
         "sections": {
           "feed_in_limit": {
@@ -78,7 +74,6 @@
       }
     },
     "error": {
-      "soc_unit": "Akku-Sensoren müssen den Ladezustand in % liefern.",
       "sensor_missing": "Der gewählte Sensor existiert nicht.",
       "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
       "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
@@ -724,6 +719,10 @@
     "battery_without_pv": {
       "title": "Welche PV-Gruppen laden den Akku {name}?",
       "description": "Der Akku **{name}** sitzt vor dem Ausgang eines Geräts mit PV (System **{system}**), aber zu diesem System gehört keine PV-Gruppe, daher weiß Noxcast nicht, welche PV-Gruppen ihn laden. Nach dem Update betrifft das einen Akku, dessen bisherige Einstellungen keine PV-Gruppe nannten.\n\nÖffne unter Einstellungen → Geräte & Dienste → Noxcast die PV-Gruppen hinter diesem Gerät und wähle das System **{system}**. Hat der Akku stattdessen einen eigenen Wechselrichter am Hausnetz, stelle das System auf die Vorlage *Akku am Hausnetz* um. Bis dahin rechnet Noxcast wie bisher."
+    },
+    "unentered_soc": {
+      "title": "Akku zu diesen Ladestand-Sensoren eintragen",
+      "description": "Noxcast hat keine eigene Liste von Akku-Ladestand-Sensoren mehr. Ein Akku gehört jetzt zu seinem System, und solange er voll ist, werden nur die PV-Gruppen beim Lernen ausgelassen, die er abregeln kann. Nach dem Update gehören diese Sensoren zu keinem Akku, der eine PV-Gruppe abregeln kann: **{sensors}**.\n\nTrage unter Einstellungen → Geräte & Dienste → Noxcast den Akku im System ein, in dem er sitzt, mit diesem Sensor als Ladestand, und achte darauf, dass die PV-Gruppen, die er lädt, zu diesem System gehören. Dieser Hinweis verschwindet dann von selbst. Bis dahin zählen Stunden, in denen dieser Akku voll war, beim Lernen, als wäre die PV nicht abgeregelt worden. Gehört der Sensor zu keinem Akku, der PV abregeln kann, ignoriere diesen Hinweis."
     }
   }
 }

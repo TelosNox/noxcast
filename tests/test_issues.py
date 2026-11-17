@@ -14,15 +14,16 @@ from custom_components.noxcast.const import DOMAIN
 
 
 def _entry(arrays=None, learned=None, ok=True, soc=None, grid=None, batteries=None, limits=None, sensor_limits=None,
-           systems=None):
+           systems=None, data=None):
     arrays = arrays or {}
     systems = systems or {}
+    batteries = {**(batteries or {}), **{f"soc{i}": {"soc_sensor": s} for i, s in enumerate(soc or [])}}
     c = SimpleNamespace(arrays=arrays, learned=learned or {}, last_update_success=ok, house_load=None,
                         consumers={}, batteries=batteries or {}, grid=grid, systems=systems,
                         installation=installation.build({sid: a.sensors for sid, a in arrays.items()}, sensor_limits,
                                                         systems=systems),
                         limits=limits or {"detected": {}, "dismissed": {}})
-    return SimpleNamespace(runtime_data=c, data={"soc_sensors": soc or []}, subentries={}, entry_id="e1")
+    return SimpleNamespace(runtime_data=c, data=data or {}, subentries={}, entry_id="e1")
 
 
 def _ids(hass: HomeAssistant) -> set[str]:
@@ -58,6 +59,14 @@ async def test_issues_follow_their_conditions(hass: HomeAssistant) -> None:
     entry = _entry(arrays={"r": ROOF}, learned={"r": SimpleNamespace(hints=["direction", "season"])})
     issues.async_update_issues(hass, entry)
     assert _ids(hass) == set()
+
+
+async def test_an_old_soc_sensor_without_a_battery_asks_for_one(hass: HomeAssistant) -> None:
+    entry = _entry(data={"unentered_soc_sensors": ["sensor.old"]})
+    issues.async_update_issues(hass, entry)
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issues.UNENTERED_SOC)
+    assert issue.translation_key == "unentered_soc" and issue.translation_placeholders == {"sensors": "sensor.old"}
+    assert not issue.is_fixable
 
 
 async def test_an_ignored_issue_stays_ignored_while_it_holds(hass: HomeAssistant) -> None:

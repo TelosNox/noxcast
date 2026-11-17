@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- The main entry no longer has its own list of battery state-of-charge sensors. A battery counts only where it is
+  entered with its system, and then only for the PV arrays it can curtail. The update drops each sensor that such a
+  battery already has; for any other, a repair asks you to enter its battery with its system and the PV arrays it
+  charges. Until you do, hours in which that battery was full count in learning again. Learning may change slightly
+  after the update: arrays that battery cannot curtail now also learn from the hours in which it was full.
+
 ### Added
 
 - The battery forecast splits the surplus that does not fit into the battery into what goes into the grid and what

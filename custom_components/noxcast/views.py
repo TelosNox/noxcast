@@ -302,11 +302,10 @@ def model_summary(m, kind: str) -> dict | None:
 
 # ---------------------------------------------------------------- noxcast/diagnostics
 
-def sensor_roles(arrays: dict, soc_sensors: list[str] | None, house_load: str | None, consumers: dict,
-                 batteries: dict[str, dict], battery_names: dict[str, str]) -> list[tuple[str, str, str]]:
+def sensor_roles(arrays: dict, house_load: str | None, consumers: dict, batteries: dict[str, dict],
+                 battery_names: dict[str, str]) -> list[tuple[str, str, str]]:
     """(entity, role, owner) for every sensor Noxcast reads."""
     roles = [(s, "pv", arr.name) for arr in arrays.values() for s in arr.sensors]
-    roles += [(s, "curtailment_soc", "Noxcast") for s in soc_sensors or []]
     if house_load:
         roles.append((house_load, "house_load", "Noxcast"))
     for c in consumers.values():

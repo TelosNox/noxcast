@@ -585,7 +585,7 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
                 effective == "none" and batteries_below
                 # the limit counts for its PV in learning, and for its battery in the forecast of what is fed in
                 or effective in ("limited", "percent") and (counts and any(x.arrays for x in below)
-                                                            or splits and batteries_below)
+                                                            or splits)
             ) else NOT_YET
             if own:
                 add(sid, "feed_in_rule", status, behaviour(systems, sid, CONF_OWN_FEED_IN), sub)

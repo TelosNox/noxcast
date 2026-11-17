@@ -233,6 +233,12 @@ def test_feed_in_shares_come_from_the_arrays():
     rule = bt.feed_in(800.0, ("balcony",), ("stream",), pv, [10 * H, 11 * H])
     assert rule == bt.FeedIn(800.0, {10 * H: 0.2}, {10 * H: 0.2})
     assert bt.feed_in(None, (), (), pv, [10 * H]) == bt.FeedIn()
+    # the balcony behind a 500 W output limit: only what gets past it counts (500 of 4500 Wh)
+    capped = bt.feed_in(0.0, ("balcony",), (), pv, [10 * H], [(("balcony",), 500.0)])
+    assert abs(capped.free[10 * H] - 500 / 4500) < 1e-9
+    shared = bt.Battery(1000, 0.5, arrays=("balcony",), shared=("p", 1500.0, ("stream",)))
+    assert bt.output_ceilings([shared, bt.Battery(1000, 0.5, output_w=800, arrays=("roof",))]) == [
+        (("roof",), 800), (("balcony", "stream"), 1500.0)]
     out = bt.day_simulation([bt.Battery(1000, 1.0, efficiency=1.0)], {10 * H: 5000.0}, {10 * H: 1000.0}, None,
                             10 * H, 11 * H, pv, (0.0, ("balcony",), ("stream",)))
     assert out["feed_in"] == bt.FeedIn(0.0, {10 * H: 0.2}, {10 * H: 0.2})

@@ -84,18 +84,43 @@ class FeedIn:
 
 
 def feed_in(limit_w: float | None, free: tuple[str, ...], never: tuple[str, ...],
-            pv_arrays: dict[str, Series], hours: list[float]) -> FeedIn:
-    """The feed-in rule with each hour's PV shares of the systems that deviate from it (arrays by subentry id)."""
+            pv_arrays: dict[str, Series], hours: list[float],
+            ceilings: list[tuple[tuple[str, ...], float]] = ()) -> FeedIn:
+    """The feed-in rule with each hour's PV shares of the systems that deviate from it (arrays by subentry id).
+
+    ceilings: output limits (arrays, W); the shares count the PV that gets past them, since what is above is
+    curtailed before it could be fed in (see output_ceilings).
+    """
     shares: tuple[dict[float, float], dict[float, float]] = ({}, {})
     if free or never:
         for t in hours:
-            total = sum(s.get(t, 0.0) for s in pv_arrays.values())
+            pv = {a: s.get(t, 0.0) for a, s in pv_arrays.items()}
+            for arrays, w in ceilings:
+                over = sum(pv.get(a, 0.0) for a in arrays)
+                if over > w:
+                    for a in arrays:
+                        if a in pv:
+                            pv[a] *= w / over
+            total = sum(pv.values())
             if total <= 0:
                 continue
             for out, arrays in zip(shares, (free, never)):
-                if part := sum(pv_arrays.get(a, {}).get(t, 0.0) for a in arrays):
+                if part := sum(pv.get(a, 0.0) for a in arrays):
                     out[t] = part / total
     return FeedIn(limit_w, *shares)
+
+
+def output_ceilings(batteries: list[Battery]) -> list[tuple[tuple[str, ...], float]]:
+    """The output limits over PV arrays known from the batteries: each one's own, then each shared one (arrays of
+    its subsystems with and without a battery)."""
+    out = [(b.arrays, b.output_w) for b in batteries if b.output_w and b.arrays]
+    groups: dict[str, tuple[float, set[str]]] = {}
+    for b in batteries:
+        if b.shared:
+            limit, arrays = groups.setdefault(b.shared[0], (b.shared[1], set(b.shared[2])))
+            arrays.update(b.arrays)
+    out += [(tuple(sorted(arrays)), limit) for limit, arrays in groups.values() if arrays]
+    return out
 
 
 def limits(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[float]) -> Limits:
@@ -310,7 +335,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     # a level near the limit only says "it stops here" while it has surplus to take, not after a discharge
     hour = now - now % H
     held = held_back(batteries) if pv.get(hour, 0.0) > load.get(hour, math.inf) else 0.0
-    grid = feed_in(*rule, pv_arrays, hours) if rule else FeedIn()
+    grid = feed_in(*rule, pv_arrays, hours, output_ceilings(batteries)) if rule else FeedIn()
     sim = simulate(storage, pv, load, now, start, caps, held, grid)
     out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held,
            "feed_in": grid}

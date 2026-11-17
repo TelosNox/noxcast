@@ -443,7 +443,8 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1); the
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
 `consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
-today** (attributes `fed_in` and `curtailed`: what of it goes into the grid and what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
+today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
+what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
 charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
@@ -610,7 +611,8 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 - Surplus without room goes into the grid as far as the feed-in rule allows: up to the household's feed-in limit,
   nothing under zero export; the rest is curtailed, as is PV above an output limit. A system with a deviation of its
   own (always or never feeds in) counts with its share of the hour's PV, since all batteries are one storage; what
-  it feeds in anyway counts against the household's limit.
+  it feeds in anyway counts against the household's limit. The limit is compared with the hour's mean power: short
+  peaks above it do not count as curtailed.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

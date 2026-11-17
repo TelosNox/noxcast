@@ -450,8 +450,8 @@ Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1); 
 `p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
-`backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (Attribute `fed_in` und
-`curtailed`: was davon ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
+`backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
+`fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
 Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,
 `pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt oder keiner
@@ -623,7 +623,8 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 - Überschuss ohne Platz geht ins Netz, soweit die Einspeisevorgabe es erlaubt: bis zur Einspeisegrenze des Haushalts,
   bei Nulleinspeisung nichts; der Rest wird abgeregelt, ebenso PV über einer Ausgangsgrenze. Ein System mit eigener
   Abweichung (speist immer oder nie ein) zählt mit seinem Anteil an der PV der Stunde, da alle Akkus ein Speicher
-  sind; was es ohnehin einspeist, zählt gegen die Grenze des Haushalts.
+  sind; was es ohnehin einspeist, zählt gegen die Grenze des Haushalts. Die Grenze gilt für die mittlere Leistung
+  der Stunde: Kurze Spitzen darüber zählen nicht als abgeregelt.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

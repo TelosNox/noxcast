@@ -22,6 +22,13 @@ breaking changes.
 - The *Installation* tab marks a feed-in limit as counted (simplified) where a battery is set up, since the battery
   forecast now feeds in up to it.
 
+### Fixed
+
+- *Data basis* no longer warns that an array delivered clearly more than the learned model allows under a clear sky
+  when this happens only under broken cloud. A module with the sun beside or behind it then gets light from sunlit
+  clouds, which is real and no configuration error; on a balcony this reached 1.8 times the bound. The check now
+  counts only hours under a calm sky, where a wrong peak power, sensor unit or orientation still shows.
+
 ## [0.5.0b6] - 2026-11-17
 
 ### Fixed

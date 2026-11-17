@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from . import plateau as pt
 from . import systems as sy
 from . import store, views
-from .const import CONF_BATTERY_POWER, CONF_OUTPUT_LIMIT, CONF_SOC_SENSORS, DOMAIN
+from .const import CONF_BATTERY_POWER, CONF_OUTPUT_LIMIT, DOMAIN
 from .coordinator import NoxcastConfigEntry
 
 NO_ARRAYS = "no_arrays"
@@ -22,6 +22,7 @@ ARRAY_CHECK = "array_check_"          # + subentry id
 LIMIT_SUGGESTION = "limit_suggestion_"  # + subentry id; fixable (repairs.py)
 SYSTEM_LIMIT_SUGGESTION = "system_limit_suggestion_"  # + system id; fixable (repairs.py)
 BATTERY_WITHOUT_PV = "battery_without_pv_"  # + battery subentry id
+UNENTERED_SOC = "unentered_soc"       # old state-of-charge sensors no battery has (systems.drop_old_soc)
 # only the hints that are configuration errors for sure, as the panel's "Check" badge: direction and season
 # can come from shade as well, so they stay in the panel and the diagnostics
 CERTAIN_HINTS = {"peak", "high"}
@@ -100,8 +101,7 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
         out[NO_ARRAYS] = (ir.IssueSeverity.WARNING, {})
     # before Home Assistant has started, entities of other integrations may still be on their way
     if hass.is_running:
-        roles = views.sensor_roles(c.arrays, entry.data.get(CONF_SOC_SENSORS), c.house_load, c.consumers,
-                                   c.batteries, _battery_names(entry))
+        roles = views.sensor_roles(c.arrays, c.house_load, c.consumers, c.batteries, _battery_names(entry))
         # the card's grid and battery power sensors are no inputs of the forecast, so sensor_roles leaves them out
         shown = [c.grid] + [d.get(CONF_BATTERY_POWER) for d in c.batteries.values()]
         ids = {entity_id for entity_id, _, _ in roles} | {e for e in shown if e}
@@ -122,6 +122,10 @@ def wanted_issues(hass: HomeAssistant, entry: NoxcastConfigEntry) -> dict[str, t
         system = c.systems.get(subs[sid][2].get("system") or "")
         out[BATTERY_WITHOUT_PV + sid] = (ir.IssueSeverity.WARNING, {"name": subs[sid][1],
                                                                     "system": system.name if system else ""})
+    # the household's old battery sensors left every array out of learning while full; the update dropped those no
+    # battery had, so the hours their battery curtails count in learning until it is entered with its system
+    if unentered := sy.unentered_soc(entry.data, subs):
+        out[UNENTERED_SOC] = (ir.IssueSeverity.WARNING, {"sensors": ", ".join(unentered)})
     for sid, suggested in limit_suggestions(entry).items():
         arr = c.arrays[sid]
         out[LIMIT_SUGGESTION + sid] = (ir.IssueSeverity.WARNING,

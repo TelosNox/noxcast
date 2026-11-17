@@ -32,7 +32,7 @@ def test_migration_keeps_what_was_computed():
             "ac": ("battery", "Home battery", {"soc_sensor": "sensor.soc2", "capacity": 5, "coupling": "ac",
                                                "output_limit_w": 800})}
     data, changes = sy.migrate({"feed_in": True, "soc_sensors": ["sensor.soc"]}, subs, _ids(), "Batteries")
-    assert data == {"feed_in_mode": "free", "soc_sensors": ["sensor.soc"]}       # the old setting stays
+    assert data == {"feed_in_mode": "free", "soc_sensors": ["sensor.soc"]}       # the old setting stays until 1.8
     after = _apply(subs, changes)
     systems = sy.systems_of(after)
     # two batteries were one storage: now subsystems of a system that balances them
@@ -62,6 +62,19 @@ def test_migration_of_a_lone_dc_battery_asks_for_its_arrays():
     after = _apply(subs, changes)
     assert not any(s.children for s in sy.systems_of(after).values())   # one battery: no parent
     assert sy.battery_without_pv(after) == ["dc"]
+
+
+def test_the_old_soc_sensors_go_and_those_without_a_battery_wait_for_one():
+    subs = {"roof": ROOF, "b": ("battery", "Home battery", {"soc_sensor": "sensor.soc", "capacity": 5})}
+    data = sy.drop_old_soc({"feed_in_mode": "free", "soc_sensors": ["sensor.soc", "sensor.other"]}, subs)
+    assert data == {"feed_in_mode": "free", "unentered_soc_sensors": ["sensor.other"]}
+    assert sy.unentered_soc(data, subs) == ["sensor.other"]
+    # entered with a battery later: nothing is left to ask for
+    later = {**subs, "c": ("battery", "Shed battery", {"soc_sensor": "sensor.other", "capacity": 2})}
+    assert sy.unentered_soc(data, later) == []
+    # every sensor has its battery, or there were none: the setting just goes
+    assert sy.drop_old_soc({"soc_sensors": ["sensor.soc"], "soc_full_pct": 95}, subs) == {"soc_full_pct": 95}
+    assert sy.drop_old_soc({"soc_full_pct": 95}, subs) == {"soc_full_pct": 95}
 
 
 def test_ac_battery_with_its_array_keeps_its_efficiency():

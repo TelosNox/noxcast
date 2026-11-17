@@ -8,8 +8,9 @@ type Series = dict[float, float]
 TOTAL = None                             # key of the sum of all arrays in the series per array of NoxcastData
 
 # main entry
-CONF_SOC_SENSORS = "soc_sensors"
-CONF_SOC_FULL = "soc_full_pct"
+CONF_SOC_SENSORS = "soc_sensors"       # until 1.8: batteries whose full state left every array out of learning
+CONF_UNENTERED_SOC = "unentered_soc_sensors"  # from 1.8: those of them no battery had (a repair asks for the battery)
+CONF_SOC_FULL = "soc_full_pct"            # from what % a battery counts as full (unless its upper limit is lower)
 DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)

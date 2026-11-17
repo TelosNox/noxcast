@@ -155,8 +155,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   ist die Spitzenleistung zu niedrig, der Azimut gespiegelt (Ost und West vertauscht) oder ein Sensor fehlt in der
   PV-Gruppe. *Gelerntes* → die PV-Gruppe → *Passt die Konfiguration?* sagt, was zu prüfen ist.
 - **Schattenkarte größtenteils grau:** noch zu wenige klare Stunden. Sie füllt sich über die Wochen.
-- **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen (oder seinen Ladezustand im
-  Haupteintrag), dann den Dienst `noxcast.relearn` aufrufen.
+- **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen, dann den Dienst
+  `noxcast.relearn` aufrufen.
 - **Tage mit Wartung oder Ausfall:** Ein Tag, an dem eine PV-Gruppe fast nichts geliefert hat, bleibt von selbst
   außen vor (*Passt die Konfiguration?* zeigt, wie viele und den letzten). Einen teilweisen Ausfall oder eine Wartung mit
   `noxcast.exclude_period` ausschließen.
@@ -182,7 +182,7 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer
   Gruppe als CSV (*Stunden als CSV*, für Administratoren), Zeiten in UTC. `status` ist `used` (verwendet),
   `lower_bound` (angezeigt als *begrenzt*: `at_limit`, `charging_max`, `held_back`; die echte Leistung war mindestens so hoch) oder `left_out`
-  (ausgelassen), und `reasons` nennt alle Gründe: `before_use` (vor Inbetriebnahme), `soc_full` (Akku des Haushalts),
+  (ausgelassen), und `reasons` nennt alle Gründe: `before_use` (vor Inbetriebnahme),
   `battery_full` (ein Akku der Systeme der Gruppe), `maybe_charging`, `no_output` (kein Ertrag), `snow` (Schnee),
   `excluded` (ausgeschlossen), `negative`. Mit dem Satellitenarchiv (Optionen) enthält die Datei auch das Modell mit
   der gemessenen Strahlung, zerlegt in klaren Himmel, Wolken, Schatten, Reflexion, Richtung und Wärme. Öffne sie in
@@ -223,8 +223,7 @@ Ebene, die engere zählt:
 
 | Feld | Bedeutung |
 |---|---|
-| Akku-Ladezustand | Stunden, in denen einer dieser Akkus voll ist, bleiben beim Lernen für alle PV-Gruppen außen vor, und die Korrektur der heutigen Prognose liest sie nicht als Wolken (die Leistung kann abgeregelt sein). Ein Akku, der mit seinem System eingetragen ist, tut das schon für die PV-Gruppen, die er abregeln kann; diese Einstellung braucht es nur für Akkus, die nicht eingetragen sind |
-| Akku gilt als voll ab | Ladezustand, ab dem das gilt (Standard 95 %); an deine Ladegrenze anpassen |
+| Akku gilt als voll ab | Ladezustand, ab dem ein mit seinem System eingetragener Akku als voll gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist). Ein System mit *Eigenverbrauch* ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog (unter 100 W), zählen beim Lernen als „mindestens so viel“, weil das Gerät PV zurückgehalten haben kann |

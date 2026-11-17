@@ -29,8 +29,8 @@ from typing import Any
 from .const import (
     CONF_GRID, CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
-    CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSORS, CONF_SYSTEM,
-    CONF_TEMPLATE, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
+    CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSOR, CONF_SOC_SENSORS, CONF_SYSTEM,
+    CONF_TEMPLATE, CONF_UNENTERED_SOC, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
 )
 
 type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -> (type, title, data)
@@ -244,6 +244,27 @@ def feed_in_rules(household: Mapping[str, Any], subs: Subs) -> Changes:
     return changes
 
 
+def drop_old_soc(data: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
+    """1.8: the main entry without its old state-of-charge sensors, which left every array out of learning while
+    one of their batteries was full. A battery entered with its system does that for the arrays it can curtail, so
+    a sensor one of them has needs nothing more; the others are kept as unentered, and a repair asks for their
+    battery (unentered_soc)."""
+    left = [s for s in data.get(CONF_SOC_SENSORS) or [] if s not in _entered_soc(subs)]
+    out = _without(data, CONF_SOC_SENSORS)
+    if left:
+        out[CONF_UNENTERED_SOC] = left
+    return out
+
+
+def unentered_soc(data: Mapping[str, Any], subs: Subs) -> list[str]:
+    """The old state-of-charge sensors (drop_old_soc) that still no battery has."""
+    return [s for s in data.get(CONF_UNENTERED_SOC) or [] if s not in _entered_soc(subs)]
+
+
+def _entered_soc(subs: Subs) -> set[str]:
+    return {d[CONF_SOC_SENSOR] for _, d in _of(subs, SUBENTRY_BATTERY).values() if d.get(CONF_SOC_SENSOR)}
+
+
 def migrate(data: Mapping[str, Any], subs: Subs, new_id: Callable[[], str], batteries_title: str
             ) -> tuple[dict[str, Any], Changes]:
     """The configuration before 1.5 as systems, computing as before.
@@ -256,7 +277,7 @@ def migrate(data: Mapping[str, Any], subs: Subs, new_id: Callable[[], str], batt
       balances them.
     - Every other array gets a system "inverter without battery" of its own. Sensor limits stay on the array:
       with one sensor per micro-inverter, a system limit would be wrong.
-    - The global state-of-charge sensors of the main entry stay as they are (the old setting).
+    - The global state-of-charge sensors of the main entry stay as they are (until 1.8, drop_old_soc).
     """
     out = {k: v for k, v in data.items() if k != CONF_FEED_IN}
     out.setdefault(CONF_FEED_IN_MODE, "free" if data.get(CONF_FEED_IN) else "none")
@@ -526,8 +547,6 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
     add("house", "feed_in", (SIMPLIFIED if counts else NOT_YET) if limited else EXACT, _rule_value(household, subs))
     if limited and limit_w and export_limited_arrays(household, systems):
         add("house", "limit_learning", SIMPLIFIED if grid else NOT_YET, round(limit_w) if grid else None)
-    if household.get(CONF_SOC_SENSORS):
-        add("house", "old_soc", EXACT, len(household[CONF_SOC_SENSORS]))
     # every battery is simulated in one storage: exact only where they all balance in one system
     with_battery = [s for s in systems.values() if s.battery]
     if len(with_battery) > 1:
@@ -638,7 +657,6 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
     return {
         "feed_in": household.get(CONF_FEED_IN_MODE, "none"), "feed_in_limit_w": household.get(CONF_FEED_IN_LIMIT),
         "feed_in_limit_pct": household.get(CONF_FEED_IN_PCT),
-        "old_soc": len(household.get(CONF_SOC_SENSORS) or []),
         "systems": [node(sid) for sid in top],
         "effects": effects(household, systems, subs),
         # per array, battery and system: where it sits and where it can go ("" = a system on its own)

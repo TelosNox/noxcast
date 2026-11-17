@@ -143,9 +143,9 @@ def test_load_entry_and_model_summaries():
 def test_sensor_roles_rows_and_diagnostics():
     consumers = {"dw": SimpleNamespace(name="DW", sensor=None, energy="sensor.dw", remaining="sensor.rem", elapsed=None)}
     batteries = {"b1": {"soc_sensor": "sensor.soc", "max_soc_entity": "number.max"}, "b2": {"soc_sensor": "sensor.soc2"}}
-    roles = views.sensor_roles(arrays(), ["sensor.soc"], "sensor.house", consumers, batteries, {"b1": "Big"})
+    roles = views.sensor_roles(arrays(), "sensor.house", consumers, batteries, {"b1": "Big"})
     assert roles == [("sensor.pv1", "pv", "Roof"), ("sensor.pv2", "pv", "Roof"), ("sensor.pv3", "pv", "Wall"),
-                     ("sensor.soc", "curtailment_soc", "Noxcast"), ("sensor.house", "house_load", "Noxcast"),
+                     ("sensor.house", "house_load", "Noxcast"),
                      ("sensor.dw", "consumer_energy", "DW"), ("sensor.rem", "remaining_time", "DW"),
                      ("sensor.soc", "battery_soc", "Big"), ("number.max", "battery_max", "Big"),
                      ("sensor.soc2", "battery_soc", "")]

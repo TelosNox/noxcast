@@ -16,7 +16,7 @@ const DIAG_TEXT = {
     checkArray: "Passt nicht zur Konfiguration – unter „Gelerntes“ an der Gruppe prüfen",
     ago: "vor", min: "min", h: "h", never: "noch nie", refresh: "Aktualisieren",
     help: "Abdeckung = Anteil der Stunden der letzten {days} Tage mit Langzeitstatistik. Unter 90 % lernt Noxcast mit Lücken; ohne Statistik (state_class fehlt) gar nicht.",
-    roles: { pv: "PV-Leistung", curtailment_soc: "Ladestand (Abregelung)", house_load: "Hausverbrauch", consumer_power: "Verbraucher Leistung",
+    roles: { pv: "PV-Leistung", house_load: "Hausverbrauch", consumer_power: "Verbraucher Leistung",
       consumer_energy: "Verbraucher Energie", remaining_time: "Restlaufzeit", elapsed_time: "Laufzeit", battery_soc: "Akku Ladestand",
       battery_max: "Akku Ladegrenze", battery_min: "Akku Entladegrenze" },
     issues: { missing: "existiert nicht", unavailable: "ist nicht verfügbar", noStats: "hat keine Langzeitstatistik (state_class fehlt?)",
@@ -36,7 +36,7 @@ const DIAG_TEXT = {
     checkArray: "Does not fit the configuration – check the array under “Learned”",
     ago: "", min: "min ago", h: "h ago", never: "never", refresh: "Refresh",
     help: "Coverage = share of the hours of the last {days} days with long-term statistics. Below 90 % Noxcast learns with gaps; without statistics (missing state_class) not at all.",
-    roles: { pv: "PV power", curtailment_soc: "State of charge (curtailment)", house_load: "House load", consumer_power: "Consumer power",
+    roles: { pv: "PV power", house_load: "House load", consumer_power: "Consumer power",
       consumer_energy: "Consumer energy", remaining_time: "Remaining time", elapsed_time: "Elapsed time", battery_soc: "Battery level",
       battery_max: "Battery upper limit", battery_min: "Battery lower limit" },
     issues: { missing: "does not exist", unavailable: "is unavailable", noStats: "has no long-term statistics (missing state_class?)",
@@ -46,7 +46,7 @@ const DIAG_TEXT = {
   },
 };
 
-const STAT_ROLES = new Set(["pv", "curtailment_soc", "house_load", "consumer_power", "consumer_energy", "battery_soc"]);
+const STAT_ROLES = new Set(["pv", "house_load", "consumer_power", "consumer_energy", "battery_soc"]);
 
 class NoxcastDiagnostics extends HTMLElement {
   constructor() {

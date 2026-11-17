@@ -293,7 +293,7 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     assert dict(entry.data) == {"soc_full_pct": 95, "feed_in_mode": "none"}
     assert dict(entry.options) == {"satellite": False}
 
@@ -309,7 +309,7 @@ async def test_migration_replaces_discontinued_icon_models(hass: HomeAssistant) 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})) as fetch:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 7 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
+    assert entry.minor_version == 8 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
     assert fetch.call_args.args[-1] == ["icon_seamless", "ecmwf_ifs"]
 
 
@@ -721,7 +721,7 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
                       "remaining_time": "sensor.dw_remaining", "elapsed_time": "sensor.dw_elapsed"}),
         ("consumer", {"name": "Heat pump", "power_sensor": "sensor.hp", "timing": "fixed", "kind": "regulated"}),
         ("consumer", {"name": "TV", "power_sensor": "sensor.tv", "timing": "fixed", "kind": "session"}),
-        ("battery", {"soc_sensor": "sensor.soc", "capacity": 5, "max_soc": 100, "min_soc": 10, "reserve": 5,
+        ("battery", {"soc_sensor": "sensor.soc", "array": "S", "capacity": 5, "max_soc": 100, "min_soc": 10, "reserve": 5,
                      "coupling": "dc", "max_charge_w": 2000, "max_discharge_w": 1500}),
         ("battery", {"soc_sensor": "sensor.soc2", "capacity": 2, "max_soc_entity": "sensor.max_soc", "min_soc": 20,
                      "coupling": "ac", "efficiency": 88})))]
@@ -1001,7 +1001,8 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     hass.states.async_set("sensor.soc", "50", {"unit_of_measurement": "%"})
     hass.states.async_set("sensor.soc2", "40", {"unit_of_measurement": "%"})
     entry = MockConfigEntry(
-        domain=DOMAIN, version=1, minor_version=4, unique_id=DOMAIN, title="Noxcast", data={"feed_in": True},
+        domain=DOMAIN, version=1, minor_version=4, unique_id=DOMAIN, title="Noxcast",
+        data={"feed_in": True, "soc_sensors": ["sensor.soc", "sensor.shed"]},
         subentries_data=[config_entries.ConfigSubentryData(data=d, subentry_type=kind, title=d["name"], unique_id=None,
                                                            subentry_id=sid) for sid, kind, d in (
             ("roof", "array", ARRAY),
@@ -1022,7 +1023,7 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 7 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
+    assert entry.minor_version == 8 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
     kept = er.async_get(hass).async_get(legacy.entity_id)
     assert kept is not None and kept.id == legacy.id and kept.config_subentry_id in entry.subentries
     assert dr.async_get(hass).async_get(device.id).config_subentry_id == kept.config_subentry_id
@@ -1036,6 +1037,10 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     # the cellar battery charges before an output, but no array is known for it: a repair asks
     assert ir.async_get(hass).async_get_issue(DOMAIN, "battery_without_pv_b2") is not None
     assert ir.async_get(hass).async_get_issue(DOMAIN, "battery_without_pv_b1") is None
+    # 1.8: the household's old battery sensors go; one that no battery has waits for its battery
+    assert "soc_sensors" not in entry.data and entry.data["unentered_soc_sensors"] == ["sensor.shed"]
+    old = ir.async_get(hass).async_get_issue(DOMAIN, "unentered_soc")
+    assert old is not None and old.translation_placeholders == {"sensors": "sensor.shed"}
 
     client = await hass_ws_client(hass)
     await client.send_json_auto_id({"type": "noxcast/installation"})
@@ -1130,6 +1135,10 @@ async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogC
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         entry = result["result"]
         await hass.async_block_till_done()
+        assert "soc_sensors" not in entry.data                  # a new entry has no old battery sensors
+        # an old sensor the migration found no battery for stays while its repair holds
+        hass.config_entries.async_update_entry(entry, data={**entry.data, "unentered_soc_sensors": ["sensor.shed"]})
+        await hass.async_block_till_done()
 
         reload = hass.config_entries.async_reload
         with patch.object(hass.config_entries, "async_reload", wraps=reload) as reloads:
@@ -1139,7 +1148,7 @@ async def test_reconfigure_reloads_once(hass: HomeAssistant, caplog: pytest.LogC
             await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
-    assert entry.data["forecast_days"] == 4
+    assert entry.data["forecast_days"] == 4 and entry.data["unentered_soc_sensors"] == ["sensor.shed"]
     assert entry.state is config_entries.ConfigEntryState.LOADED
     assert reloads.call_count == 1
     assert "update listener" not in caplog.text

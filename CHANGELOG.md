@@ -7,6 +7,14 @@ breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- The main entry no longer has its own list of battery state-of-charge sensors. A battery counts only where it is
+  entered with its system, and then only for the PV arrays it can curtail. The update drops each sensor that a
+  battery already has; for any other, a repair asks you to enter its battery with its system. Until you do, hours in
+  which that battery was full count in learning again. Learning may change slightly after the update: arrays that
+  battery cannot curtail now also learn from the hours in which it was full.
+
 ## [0.5.0b6] - 2026-11-17
 
 ### Fixed

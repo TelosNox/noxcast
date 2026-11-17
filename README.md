@@ -154,8 +154,8 @@ For the dashboard: *Add card* → *Noxcast*.
   the peak power is too low, the azimuth is mirrored (east and west swapped), or a sensor is missing from the
   array. *Learned* → the array → *Does the configuration fit?* says what to check.
 - **Shading map mostly grey:** not enough clear hours yet. It fills over the weeks.
-- **Forecast too high on days the battery was full:** enter the battery with its system (or its state of charge in
-  the main entry), then call the service `noxcast.relearn`.
+- **Forecast too high on days the battery was full:** enter the battery with its system, then call the service
+  `noxcast.relearn`.
 - **Days with maintenance or an outage:** a day on which an array delivered almost nothing is left out on its own
   (*Does the configuration fit?* shows how many and the last one). A partial outage or maintenance: leave it out with
   `noxcast.exclude_period`.
@@ -181,7 +181,7 @@ For the dashboard: *Add card* → *Noxcast*.
 - **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an
   array as CSV (*Hours as CSV*, for admins), times in UTC. `status` is `used`, `lower_bound` (shown as *capped*: `at_limit`,
   `charging_max`, `held_back`; the real output was at least as high) or `left_out`, and `reasons` names all reasons:
-  `before_use`, `soc_full` (household battery), `battery_full` (a battery of the array's systems), `maybe_charging`,
+  `before_use`, `battery_full` (a battery of the array's systems), `maybe_charging`,
   `no_output`, `snow`, `excluded`, `negative`. With the satellite archive (options) the file also holds the model on
   the measured irradiance, split into clear sky, clouds, shade, reflection, direction and heat. Open it in a
   spreadsheet, or attach it to an issue.
@@ -220,8 +220,7 @@ counts:
 
 | Field | Meaning |
 |---|---|
-| Battery state of charge sensors | Hours in which one of these batteries is full are left out of learning for every array, and the correction of today's forecast does not read them as clouds (output may be curtailed). A battery entered with its system already does this for the arrays it can curtail; this setting is only needed for batteries that are not entered |
-| Battery considered full at | SOC from which that applies (default 95 %); match your charge limit |
+| Battery considered full at | SOC from which a battery entered with its system counts as full (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |

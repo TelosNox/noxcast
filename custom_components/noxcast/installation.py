@@ -108,7 +108,7 @@ class Reach:
 Hours = set[float]
 
 
-def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_max: Mapping[Store, Hours],
+def blocked(reach: Reach, full: Mapping[Store, Hours], at_max: Mapping[Store, Hours],
             unsure: Mapping[Store, Hours]) -> tuple[Hours, Hours, Hours]:
     """(full, at its maximum, unsure) period starts in which the array's PV may have been curtailed, from each
     battery's own periods; disjoint, the first wins.
@@ -117,8 +117,7 @@ def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_
     one sends everything onwards); then, unless the own system's output limit holds the rest back (overflow), every
     other battery too. Such a period counts as full when a full battery took part, which learning leaves out;
     otherwise as at its maximum, a lower bound. Where only an unsure charge period, or another battery whose charge
-    power is not known, completes the block, it is unsure. old: the household's old setting, whose full batteries
-    count for every array.
+    power is not known, completes the block, it is unsure.
     """
     def union(stores: Iterable[Store], *of: Mapping[Store, Hours]) -> Hours:
         return set().union(*(m.get(s, set()) for s in stores for m in of))
@@ -148,7 +147,6 @@ def blocked(reach: Reach, old: Iterable[Store], full: Mapping[Store, Hours], at_
             out_unsure = maybe - sure
         else:
             out_full, out_max, out_unsure = own_full, own_max, own_unsure
-    out_full |= union(old, full)
     return out_full, out_max - out_full, out_unsure - out_full - out_max
 
 
@@ -162,14 +160,7 @@ class Cap:
 
 
 @dataclass(frozen=True)
-class House:
-    soc_sensors: tuple[str, ...] = ()    # batteries whose full state may curtail every array (the old setting)
-    soc_full_pct: float = 95.0
-
-
-@dataclass(frozen=True)
 class Installation:
-    house: House = field(default_factory=House)
     inputs: Mapping[str, Input] = field(default_factory=dict)                # by sensor
     reach: Mapping[str, Reach] = field(default_factory=dict)                 # array -> batteries that take its PV
     caps: tuple[Cap, ...] = ()
@@ -188,18 +179,15 @@ class Installation:
     def inputs_of(self, array: str) -> list[Input]:
         return [i for i in self.inputs.values() if i.array == array]
 
-    def old_stores(self) -> tuple[Store, ...]:
-        return tuple(Store(s, self.house.soc_full_pct) for s in self.house.soc_sensors)
-
     def stores_of(self, array: str) -> tuple[Store, ...]:
-        """The batteries whose state may curtail the array: the old household setting and its systems'."""
+        """The batteries whose state may curtail the array: those of its systems."""
         r = self.reach.get(array, Reach())
-        return tuple(dict.fromkeys(self.old_stores() + r.own + r.others))
+        return tuple(dict.fromkeys(r.own + r.others))
 
     def blocked(self, array: str, full: Mapping[Store, Hours], at_max: Mapping[Store, Hours],
                 unsure: Mapping[Store, Hours] | None = None) -> tuple[Hours, Hours, Hours]:
         """blocked() for the array."""
-        return blocked(self.reach.get(array, Reach()), self.old_stores(), full, at_max, unsure or {})
+        return blocked(self.reach.get(array, Reach()), full, at_max, unsure or {})
 
     def soc_sensors(self) -> list[str]:
         """Every state-of-charge sensor that may curtail some array."""
@@ -344,7 +332,7 @@ def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap,
 
 
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
-          soc_sensors: Iterable[str] = (), soc_full_pct: float = 95.0,
+          soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
           feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None,
           export_limit: tuple[Iterable[str], float] | None = None) -> Installation:
@@ -362,7 +350,7 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
     for array in arrays:
         group = [i.limit_w for i in inputs.values() if i.array == array]
         ceilings[array] = sum(w for w in group if w is not None) if group and None not in group else None
-    return Installation(House(tuple(soc_sensors), float(soc_full_pct)), inputs,
+    return Installation(inputs,
                         _reach(systems, batteries or {}, float(soc_full_pct), max_soc or {}, ceilings),
                         _caps(systems, arrays), _held(systems, export_limit))
 

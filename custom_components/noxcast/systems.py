@@ -247,8 +247,9 @@ def feed_in_rules(household: Mapping[str, Any], subs: Subs) -> Changes:
 def drop_old_soc(data: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
     """1.8: the main entry without its old state-of-charge sensors, which left every array out of learning while
     one of their batteries was full. A battery entered with its system does that for the arrays it can curtail, so
-    a sensor one of them has needs nothing more; the others are kept as unentered, and a repair asks for their
-    battery (unentered_soc)."""
+    a sensor of one that curtails some array needs nothing more; the others are kept as unentered, and a repair asks
+    for their battery (unentered_soc). A battery that curtails no array (battery_without_pv) does not count: its
+    full hours would go into learning without a notice."""
     left = [s for s in data.get(CONF_SOC_SENSORS) or [] if s not in _entered_soc(subs)]
     out = _without(data, CONF_SOC_SENSORS)
     if left:
@@ -262,7 +263,11 @@ def unentered_soc(data: Mapping[str, Any], subs: Subs) -> list[str]:
 
 
 def _entered_soc(subs: Subs) -> set[str]:
-    return {d[CONF_SOC_SENSOR] for _, d in _of(subs, SUBENTRY_BATTERY).values() if d.get(CONF_SOC_SENSOR)}
+    """The state-of-charge sensors of batteries that may curtail some array."""
+    batteries = _of(subs, SUBENTRY_BATTERY)
+    systems = systems_of(subs)
+    return {batteries[b][1][CONF_SOC_SENSOR] for sid, arrays in curtailed_arrays(systems).items()
+            if arrays and (b := systems[sid].battery) in batteries and batteries[b][1].get(CONF_SOC_SENSOR)}
 
 
 def migrate(data: Mapping[str, Any], subs: Subs, new_id: Callable[[], str], batteries_title: str

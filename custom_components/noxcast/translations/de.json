@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Akku-Sensoren fürs Lernen, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: ab wann ein Akku als voll gilt, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
         "data": {
           "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
@@ -722,7 +722,7 @@
     },
     "unentered_soc": {
       "title": "Akku zu diesen Ladestand-Sensoren eintragen",
-      "description": "Noxcast hat keine eigene Liste von Akku-Ladestand-Sensoren mehr. Ein Akku gehört jetzt zu seinem System, und solange er voll ist, werden nur die PV-Gruppen beim Lernen ausgelassen, die er abregeln kann. Nach dem Update hat kein Akku diese Sensoren: **{sensors}**.\n\nTrage unter Einstellungen → Geräte & Dienste → Noxcast den Akku im System ein, in dem er sitzt, mit diesem Sensor als Ladestand. Dieser Hinweis verschwindet dann von selbst. Bis dahin zählen Stunden, in denen dieser Akku voll war, beim Lernen, als wäre die PV nicht abgeregelt worden. Gehört der Sensor zu keinem Akku, der PV abregeln kann, ignoriere diesen Hinweis."
+      "description": "Noxcast hat keine eigene Liste von Akku-Ladestand-Sensoren mehr. Ein Akku gehört jetzt zu seinem System, und solange er voll ist, werden nur die PV-Gruppen beim Lernen ausgelassen, die er abregeln kann. Nach dem Update gehören diese Sensoren zu keinem Akku, der eine PV-Gruppe abregeln kann: **{sensors}**.\n\nTrage unter Einstellungen → Geräte & Dienste → Noxcast den Akku im System ein, in dem er sitzt, mit diesem Sensor als Ladestand, und achte darauf, dass die PV-Gruppen, die er lädt, zu diesem System gehören. Dieser Hinweis verschwindet dann von selbst. Bis dahin zählen Stunden, in denen dieser Akku voll war, beim Lernen, als wäre die PV nicht abgeregelt worden. Gehört der Sensor zu keinem Akku, der PV abregeln kann, ignoriere diesen Hinweis."
     }
   }
 }

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: battery sensors for learning, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: when a battery counts as full, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
         "data": {
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
@@ -722,7 +722,7 @@
     },
     "unentered_soc": {
       "title": "Enter the battery of these state-of-charge sensors",
-      "description": "Noxcast no longer has a list of battery state-of-charge sensors of its own. A battery now belongs to its system, and while it is full only the PV arrays it can curtail are left out of learning. After the update, no battery has these sensors: **{sensors}**.\n\nUnder Settings → Devices & services → Noxcast, add the battery to the system it sits in, with this sensor as its state of charge. This notice then goes away by itself. Until then, hours in which this battery was full count in learning as if the PV had not been curtailed. If the sensor belongs to no battery that can curtail PV, ignore this notice."
+      "description": "Noxcast no longer has a list of battery state-of-charge sensors of its own. A battery now belongs to its system, and while it is full only the PV arrays it can curtail are left out of learning. After the update, these sensors belong to no battery that can curtail a PV array: **{sensors}**.\n\nUnder Settings → Devices & services → Noxcast, add the battery to the system it sits in, with this sensor as its state of charge, and make sure the PV arrays it charges belong to that system. This notice then goes away by itself. Until then, hours in which this battery was full count in learning as if the PV had not been curtailed. If the sensor belongs to no battery that can curtail PV, ignore this notice."
     }
   }
 }

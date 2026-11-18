@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0b8] - 2026-11-18
+
 ### Changed
 
 - Learning keeps its own copy of the temperature, snowfall and satellite archives and fetches only the new hours and

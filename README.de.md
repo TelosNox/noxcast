@@ -597,6 +597,12 @@ zeigen Teilschatten. Nur Zeiten, in denen die Sonne vor den Modulen steht, in ga
 etwa 0,5 MB je Sensor, egal wie lange Noxcast läuft. Für die Prognose noch nicht genutzt; der Diagnose-Download zeigt,
 wie weit es reicht (`fine_archive`).
 
+Auch Lufttemperatur, Schneefall und Satellitenstrahlung vergangener Stunden werden aufbewahrt. Jede Nacht holt Noxcast
+nur die neuen Stunden und die letzten zwei Wochen noch einmal, die die Archive noch korrigieren. Eine andere
+Archiv-URL, ein anderes Satellitenmodell oder ein anderer Standort holt die ganze Historie neu. Ist ein eingeschaltetes
+Archiv nicht erreichbar, fällt der nächtliche Lernlauf aus: Die bisher gelernten Werte bleiben, und die Übersicht
+zeigt den Grund.
+
 ### Lastprognose
 
 load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher + laufende flexible

@@ -35,6 +35,7 @@ from .const import (
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
+from . import archivecache as ac
 from . import store
 from . import backtest as pv_backtest
 from . import band as bd
@@ -63,6 +64,12 @@ from .sources import (
 from .sources import SourceError, async_ensemble, async_open_meteo, async_power_factors, async_previous_runs
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ArchiveUnavailable(Exception):
+    """An archive learning is set up with could not be fetched; learning keeps its previous state."""
+
+
 DAY_TABLE_SECONDS = 600
 
 __all__ = ["ArrayConfig", "ConsumerConfig", "NoxcastConfigEntry", "NoxcastCoordinator", "NoxcastData"]
@@ -205,6 +212,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # separate file: larger and written less often than the learned state
         self._archive_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.archive")
         self.forecast_archive: dict = {}
+        # local copy of the temperature, snowfall and satellite archives (archivecache.py); only refreshed per night
+        self._weather_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.weather_archive")
+        self.weather_archive: dict = {}
         # 5-minute means per power sensor for sharper shading later (fine.py); bounded to three years
         self._fine_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.fine")
         self.fine: dict = {}
@@ -288,6 +298,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Noxcast 5-minute archive could not be read; starting a new one", exc_info=True)
             self.fine = {}
+        try:
+            self.weather_archive = dict(await self._weather_store.async_load() or {})
+        except Exception:  # noqa: BLE001 – it is only a copy, fetched anew
+            _LOGGER.warning("Noxcast weather archive copy could not be read; fetching it anew", exc_info=True)
+            self.weather_archive = {}
         if self.band is None and self.forecast_archive and self.learned:     # stored in an older form
             self.band = await self.hass.async_add_executor_job(self._learn_band)
         await self._async_forecast_error()
@@ -394,31 +409,56 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     async def _async_archives(self, start: datetime, end: datetime, record: bool = True
                               ) -> tuple[dict | None, dict | None, dict | None]:
-        """Optional history archives (temperature, satellite, snowfall); a failure only disables that refinement.
+        """The enabled history archives (temperature, satellite, snowfall) from the local copy, refreshed by fetching
+        only the hours it lacks (archivecache.py).
 
-        record: the errors become archive_errors, the errors of the last learning run (panel, sensor attribute); an
-        export fetches with False and leaves them alone."""
-        lat, lon, key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
+        record: a learning run. A failed fetch raises ArchiveUnavailable once something has been learned: learning
+        without an archive it was set up with would quietly learn something else (efficiency absorbing the
+        temperature, no clear-hour filter), so the previous learned state stays and the failure shows. The errors become archive_errors (panel, sensor
+        attribute). With False (export, day view) the copy stands in for a failed fetch and archive_errors stay."""
+        lat, lon, api_key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
         errors: dict[str, str] = {}
         if record:
             self.archive_errors = errors
         temp = sat = snow = None
         if self._option(CONF_ARCHIVE_TEMPERATURE, True):
-            try:
-                temp, snow = await async_archive_weather(
-                    self.hass, self._option(CONF_ARCHIVE_URL) or DEFAULT_ARCHIVE_URL, lat, lon, start, end, key)
-            except Exception as err:  # noqa: BLE001
-                errors["temperature"] = str(err) or type(err).__name__
-                _LOGGER.warning("Temperature archive unavailable, learning without temperature: %s", err)
+            url = self._option(CONF_ARCHIVE_URL) or DEFAULT_ARCHIVE_URL
+            entry = await self._async_archive_copy(
+                "weather", [url, lat, lon], start, end, errors,
+                lambda a, b: async_archive_weather(self.hass, url, lat, lon, a, b, api_key), ("temperature", "snowfall"))
+            temp, snow = ac.series(entry, "temperature") or None, ac.series(entry, "snowfall") or None
         if self._option(CONF_SATELLITE, False):
-            try:
-                sat = await async_archive_irradiance(
-                    self.hass, self._option(CONF_SATELLITE_URL) or DEFAULT_SATELLITE_URL,
-                    self._option(CONF_SATELLITE_MODEL) or DEFAULT_SATELLITE_MODEL, lat, lon, start, end, key)
-            except Exception as err:  # noqa: BLE001
-                errors["satellite"] = str(err) or type(err).__name__
-                _LOGGER.warning("Satellite archive unavailable, learning without clear-hour filter: %s", err)
-        return temp, sat, snow or None
+            url = self._option(CONF_SATELLITE_URL) or DEFAULT_SATELLITE_URL
+            model = self._option(CONF_SATELLITE_MODEL) or DEFAULT_SATELLITE_MODEL
+            entry = await self._async_archive_copy(
+                "satellite", [url, model, lat, lon], start, end, errors,
+                lambda a, b: async_archive_irradiance(self.hass, url, model, lat, lon, a, b, api_key), ("ghi",))
+            sat = ac.series(entry, "ghi") or None
+        if temp is not None or sat is not None or errors:
+            self._weather_store.async_delay_save(lambda: self.weather_archive, 10)
+        # nothing learned yet (a new installation): no state to keep, a forecast without the archive is better than none
+        if errors and record and self.learned:
+            raise ArchiveUnavailable("; ".join(f"{name} archive unavailable ({err})" for name, err in errors.items())
+                                     + " – learning skipped, the previous learned values stay")
+        return temp, sat, snow
+
+    async def _async_archive_copy(self, kind: str, key: list, start: datetime, end: datetime, errors: dict[str, str],
+                                  fetch, names: tuple[str, ...]) -> dict | None:
+        """The copy of one archive, brought up to date where possible; on a failure the error goes into errors under
+        the name the panel shows (temperature, satellite) and the copy stays as it was."""
+        entry = self.weather_archive.get(kind)
+        since = ac.fetch_from(entry, key, start.timestamp())
+        try:
+            answer = await fetch(dt_util.utc_from_timestamp(since), end)
+        except Exception as err:  # noqa: BLE001
+            label = "temperature" if kind == "weather" else kind
+            errors[label] = str(err) or type(err).__name__
+            _LOGGER.warning("Noxcast %s archive unavailable: %s", label, err)
+            return entry if entry and entry.get("key") == key else None
+        values = answer if isinstance(answer, tuple) else (answer,)
+        entry = ac.merged(entry, key, dict(zip(names, values)), since, start.timestamp())
+        self.weather_archive[kind] = entry
+        return entry
 
     def _store_data(self) -> dict:
         today = self._today
@@ -471,6 +511,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             start = time.monotonic()
             try:
                 inputs = await self._async_learn()
+            except ArchiveUnavailable as err:        # the archive's outage, logged already: no traceback
+                self.last_learning_error = str(err)
+                _LOGGER.warning("Noxcast learning skipped: %s", err)
+                return False
             except Exception as err:  # noqa: BLE001
                 self.last_learning_error = str(err) or type(err).__name__
                 _LOGGER.exception("Noxcast learning failed; keeping the previous learned state")

@@ -330,7 +330,8 @@ would mostly fit learned shade or direction factor. The panel lists the configur
 For one plane the fit minimises the spread (interquartile range over median) of measured to modelled power on a
 coarse and a fine grid; the confidence comes from how much the spread drops and from the number of hours, so a
 flat array, where the azimuth barely matters, gets no hint. The panel shows it as the hint of a deviation (none,
-weak, clear), not as a confidence: a low value means the configured geometry fits, not that the check is unsure. It is never applied automatically, since the shading
+weak, clear), not as a confidence: none means the measurements give no reason to change the configured geometry.
+It is never applied automatically, since the shading
 map depends on the geometry.
 
 **Compatibility.** An array without further orientations is computed exactly as before (bit for

@@ -1261,7 +1261,7 @@ class NoxcastPanel extends HTMLElement {
         <div class="tile"><span class="muted small">${c.configured}</span><b>${deg(arr.tilt, arr.azimuth)}</b></div>
         <div class="tile ${g.deviates ? "warn" : "ok"}"><span class="muted small">${c.bestFit}</span><b>${deg(g.tilt, g.azimuth)}</b></div>
         <div class="tile"><span class="muted small">${c.spread}</span><b>${pct(g.spread)}</b><span class="muted small">${c.configured}: ${pct(g.spread_configured)}</span></div>
-        <div class="tile"><span class="muted small">${c.evidenceTitle}</span><b>${c.evidence[evidence]}</b><span class="muted small">${improved}${g.hours} ${c.hours}</span></div>
+        <div class="tile"><span class="muted small">${c.evidenceTitle}</span><b>${c.evidence[evidence] || ""}</b><span class="muted small">${improved}${g.hours} ${c.hours}</span></div>
       </div></div>
       <p class="${g.deviates ? "note warn" : "note"}">${g.deviates ? c.geoHint : c.geoOk}</p><p class="help">${c.geoHelp}</p></section>`;
   }

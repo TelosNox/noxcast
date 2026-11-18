@@ -1249,7 +1249,6 @@ async def test_rare_settings_sit_in_sections_and_are_stored_flat(hass: HomeAssis
 
 
 async def test_an_archive_outage_skips_learning_and_later_runs_fetch_only_new_hours(hass: HomeAssistant) -> None:
-    from custom_components.noxcast.sources import SourceError
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
     weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
 

@@ -51,3 +51,11 @@ def test_gaps_survive_the_packing():
     entry = ac.merged(None, KEY, {"ghi": values}, T0, T0)
     assert ac.series(entry, "ghi") == values
     assert ac.series(entry, "missing") == {} and ac.series(None, "ghi") == {}
+
+
+def test_an_answer_without_a_series_keeps_what_was_there():
+    # the archive asked again for the temperature alone: the snowfall of the refreshed days must not vanish
+    entry = ac.merged(None, KEY, {"temperature": _hours(T0, T0 + 30 * DAY), "snowfall": {T0 + 28 * DAY: 2.0}}, T0, T0)
+    since = ac.fetch_from(entry, KEY, T0)
+    entry = ac.merged(entry, KEY, {"temperature": _hours(since, T0 + 31 * DAY), "snowfall": {}}, since, T0)
+    assert ac.series(entry, "snowfall") == {T0 + 28 * DAY: 2.0}

@@ -412,9 +412,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """The enabled history archives (temperature, satellite, snowfall) from the local copy, refreshed by fetching
         only the hours it lacks (archivecache.py).
 
-        record: a learning run. A failed fetch raises ArchiveUnavailable: learning without an archive it was set up
-        with would quietly learn something else (efficiency absorbing the temperature, no clear-hour filter), so the
-        previous learned state stays and the failure shows. The errors become archive_errors (panel, sensor
+        record: a learning run. A failed fetch raises ArchiveUnavailable once something has been learned: learning
+        without an archive it was set up with would quietly learn something else (efficiency absorbing the
+        temperature, no clear-hour filter), so the previous learned state stays and the failure shows. The errors become archive_errors (panel, sensor
         attribute). With False (export, day view) the copy stands in for a failed fetch and archive_errors stay."""
         lat, lon, api_key = self.site.latitude, self.site.longitude, self._option(CONF_API_KEY) or None
         errors: dict[str, str] = {}
@@ -436,7 +436,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             sat = ac.series(entry, "ghi") or None
         if temp is not None or sat is not None or errors:
             self._weather_store.async_delay_save(lambda: self.weather_archive, 10)
-        if errors and record:
+        # nothing learned yet (a new installation): no state to keep, a forecast without the archive is better than none
+        if errors and record and self.learned:
             raise ArchiveUnavailable("; ".join(f"{name} archive unavailable ({err})" for name, err in errors.items())
                                      + " – learning skipped, the previous learned values stay")
         return temp, sat, snow

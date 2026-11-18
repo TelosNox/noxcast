@@ -13,13 +13,14 @@ breaking changes.
   the last two weeks each night instead of the whole history. Changing the archive URL, satellite model or location
   fetches the whole history again.
 - If the temperature or satellite archive cannot be reached, the learning run is skipped and the previous learned
-  values stay; the overview shows the failed run. Before, Noxcast learned without that archive, which set the
+  values stay; the overview shows the failed run, and the action *Relearn* reports an error. Only the very first
+  learning run of a new installation goes ahead without the archive. Before, Noxcast learned without that archive, which set the
   temperature coefficient to 0 %/K, raised the efficiency and could flag the geometry after a single failed night.
 
 ### Fixed
 
-- A temperature coefficient from the datasheet is always shown and used as entered, also when no temperature history
-  is available.
+- A temperature coefficient from the datasheet is always shown and used as entered. Before, it showed 0 %/K after a
+  learning run without temperature history.
 
 ## [0.5.0b7] - 2026-11-17
 

@@ -3,7 +3,8 @@
 Air temperature, snowfall and satellite irradiance of past hours hardly change, yet learning used to fetch the whole
 history from Open-Meteo every night, and a single failed answer took the temperature from every hour. Noxcast keeps
 what it fetched and asks only for the hours after the copy plus the last REFRESH_DAYS days: the archives fill their
-latest days from preliminary data first (ERA5T, near-real-time satellite) and replace it later.
+latest days from preliminary data first and correct most of it within days. Later revisions (final ERA5 after
+months) are too small for learning to notice and reach the copy only when it is fetched whole again.
 
 A copy belongs to the source it was fetched from: another archive, satellite model or location gives other values
 for the same hours, so a changed key fetches the whole history again. Each series is stored as one hourly list from
@@ -45,8 +46,10 @@ def merged(entry: dict | None, key: list, fetched: dict[str, Series], fetch_star
     keep = entry if entry and entry.get("key") == key and fetch_start > start else None
     out: dict = {"key": key, "since": start, "series": {}}
     for name in set(fetched) | set((keep or {}).get("series") or {}):
-        values = {t: v for t, v in series(keep, name).items() if start <= t < fetch_start}
-        values.update({t: v for t, v in (fetched.get(name) or {}).items() if t >= start})
+        new = fetched.get(name) or {}
+        # an answer without this series (an archive asked again for the temperature alone) keeps what was there
+        values = {t: v for t, v in series(keep, name).items() if start <= t and (t < fetch_start or not new)}
+        values.update({t: v for t, v in new.items() if t >= start})
         out["series"][name] = _packed(values)
     return out
 

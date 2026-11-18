@@ -585,6 +585,11 @@ moment show partial shade. Only periods with the sun in front of the modules, in
 at most three years: about 0.5 MB per sensor, however long Noxcast runs. Not used for the forecast
 yet; the diagnostics download shows how far it reaches (`fine_archive`).
 
+Air temperature, snowfall and satellite irradiance of past hours are kept as well. Each night Noxcast fetches only the
+new hours and the last two weeks again, which the archives still correct. Another archive URL, satellite model or
+location fetches the whole history anew. If an archive that is switched on cannot be reached, the nightly learning run
+is skipped: the previous learned values stay, and the overview shows why.
+
 ### Load forecast
 
 load(h) = base profile × correction + fixed consumers + regulated consumers + running flexible ones

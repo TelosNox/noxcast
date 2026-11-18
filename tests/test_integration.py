@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.noxcast import diagnostics, model, plan, solar
 from custom_components.noxcast.const import DOMAIN, WS_SCHEMA_VERSION
+from custom_components.noxcast.sources import SourceError
 
 import snapshot
 
@@ -886,7 +887,6 @@ async def test_nightly_backtest_runs_on_its_own(hass: HomeAssistant, hass_ws_cli
 async def test_weather_model_comparison_waits_only_after_success(hass: HomeAssistant, hass_ws_client) -> None:
     """A run asks once per model, skips a model Open-Meteo refuses, stops at the request limit, and only a usable
     result starts the waiting time."""
-    from custom_components.noxcast.sources import SourceError
 
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
     weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
@@ -1246,3 +1246,51 @@ async def test_rare_settings_sit_in_sections_and_are_stored_flat(hass: HomeAssis
         await hass.async_block_till_done()
     stream = next(d for d in parts_of(hass, entry, "system").values() if d["name"] == "Stream")
     assert stream["fixed_power_w"] == 300 and stream["own_feed_in"] == "export" and "deviation" not in stream
+
+
+async def test_an_archive_outage_skips_learning_and_later_runs_fetch_only_new_hours(hass: HomeAssistant) -> None:
+    from custom_components.noxcast.sources import SourceError
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
+
+    async def fake_stats(_hass, ids, _start, kind, period="hour"):
+        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
+
+    async def fake_factors(_hass, ids):
+        return {i: 1.0 for i in ids}
+
+    asked = []
+
+    async def fake_weather(*args):
+        asked.append(args[-3])
+        a, b = args[-3].timestamp(), args[-2].timestamp()
+        return {t: 15.0 for t in range(int(a - a % 3600), int(b), 3600)}, {}
+
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    models = {"icon_seamless": weather, "ecmwf_ifs": weather}
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, models)), \
+         patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
+         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
+         patch("custom_components.noxcast.coordinator.async_archive_weather", side_effect=fake_weather) as archive:
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        entry = (await hass.config_entries.flow.async_configure(result["flow_id"], {}))["result"]
+        await hass.async_block_till_done()
+        await system_flow(hass, entry, *INVERTER, "add_array", ARRAY)
+        c = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert await c.async_learn()
+        learned = dict(c.learned)
+        assert all(la.temp_source != "none" for la in learned.values())
+
+        archive.side_effect = SourceError("archive answered 500")
+        assert not await c.async_learn()
+        assert c.learned == learned                                  # nothing relearned without temperature
+        assert "temperature archive unavailable" in c.last_learning_error and "temperature" in c.archive_errors
+
+        archive.side_effect = fake_weather
+        asked.clear()
+        assert await c.async_learn()
+        assert c.last_learning_error is None and c.archive_errors == {}
+        # only the latest days again, not the two years of history
+        assert dt_util.utcnow() - asked[0] < timedelta(days=16)
+        await hass.async_block_till_done()

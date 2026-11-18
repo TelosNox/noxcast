@@ -835,7 +835,9 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         temp_source = "learned" if temp_learned else "default"
     else:
         temp_coeff, temp_learned, temp_source = DEFAULT_TEMP_COEFF, False, "default"
-    if not temp_rows:                                    # no temperature history: efficiency absorbs it
+    # no temperature history (archive switched off): the efficiency absorbs the heat. A datasheet value stays as
+    # configured anyway: it is a property of the module, and the forecast applies it to the forecast temperature.
+    if not temp_rows and datasheet_temp_coeff is None:
         temp_coeff, temp_source = 0.0, "none"
 
     def f_temp(r) -> float:

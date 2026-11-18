@@ -89,7 +89,7 @@ const TEXT = {
       effTitle: "Wirkungsgrad je Monat", effHelp: "Aus klaren, unverschatteten Stunden des jeweiligen Monats. Langsamer Rückgang deutet auf Alterung, ein Einbruch auf Verschmutzung oder Schnee; ein Jahresgang eher auf Modellfehler bei tiefer Sonne.",
       effLearned: "gelernt", hours: "Std.", noEff: "Noch zu wenige klare Stunden je Monat.",
       geoTitle: "Geometrie-Check", configured: "Eingetragen", bestFit: "Passt am besten", spread: "Streuung",
-      confidence: { high: "hoch", medium: "mittel", low: "gering" }, trust: "Vertrauen",
+      evidence: { high: "deutlich", medium: "schwach", low: "keiner" }, evidenceTitle: "Hinweis auf Abweichung", lessSpread: "Streuung",
       geoOk: "Neigung und Ausrichtung passen zu den Messwerten.",
       geoHint: "Die Messwerte passen besser zu einer anderen Geometrie. Bitte Neigung und Ausrichtung prüfen; übernommen wird nichts automatisch, weil die Schattenkarte mit der eingetragenen Geometrie gelernt wurde.",
       geoNone: "Braucht den Satellitenfilter und mindestens 60 klare Stunden, in denen die Schattenkarte die Sonnenposition als frei kennt, davon mindestens 15 auf jeder Seite der Modulausrichtung.",
@@ -184,7 +184,7 @@ const TEXT = {
       effTitle: "Efficiency per month", effHelp: "From clear unshaded hours of each month. A slow decline points at ageing, a dip at soiling or snow; a yearly swing rather at model errors at low sun.",
       effLearned: "learned", hours: "h", noEff: "Not enough clear hours per month yet.",
       geoTitle: "Geometry check", configured: "Configured", bestFit: "Fits best", spread: "Spread",
-      confidence: { high: "high", medium: "medium", low: "low" }, trust: "Confidence",
+      evidence: { high: "clear", medium: "weak", low: "none" }, evidenceTitle: "Hint of a deviation", lessSpread: "spread",
       geoOk: "Tilt and azimuth fit the measurements.",
       geoHint: "The measurements fit another geometry better. Please check tilt and azimuth; nothing is applied automatically, since the shading map was learned with the configured geometry.",
       geoNone: "Needs the satellite filter and at least 60 clear hours whose sun position the shading map knows as free, at least 15 of them on each side of the modules' direction.",
@@ -1247,6 +1247,10 @@ class NoxcastPanel extends HTMLElement {
     if (!g) return `<section class="card pad"><h3>${c.geoTitle}</h3><p class="muted">${c.geoNone}</p><p class="help">${c.geoHelp}</p></section>`;
     const pct = (v) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: 1 })} %`;
     const deg = (tilt, az) => `${Math.round(tilt)}° / ${Math.round(az)}°`;
+    // how sure a deviation is, not how sure the configured geometry is: a best fit within a few degrees is no
+    // deviation however much it lowers the spread, so the level follows `deviates` like the tile colour does
+    const evidence = g.deviates ? g.confidence : "low";
+    const improved = g.improvement > 0.0005 ? `−${pct(g.improvement)} ${c.lessSpread} · ` : "";
     // compass: configured direction thin, best fit in the brand gradient
     const arrow = (az, cls) => { const r = (az - 90) * Math.PI / 180; return `<line x1="50" y1="50" x2="${(50 + 38 * Math.cos(r)).toFixed(1)}" y2="${(50 + 38 * Math.sin(r)).toFixed(1)}" class="${cls}"></line>`; };
     const compass = `<svg viewBox="0 0 100 100" class="compass"><defs><linearGradient id="nx-geo" x1="0" x2="1"><stop offset="0" stop-color="#F5A524"></stop><stop offset="1" stop-color="#8B5CF6"></stop></linearGradient></defs>
@@ -1256,8 +1260,8 @@ class NoxcastPanel extends HTMLElement {
       <div class="geo">${compass}<div class="tiles2">
         <div class="tile"><span class="muted small">${c.configured}</span><b>${deg(arr.tilt, arr.azimuth)}</b></div>
         <div class="tile ${g.deviates ? "warn" : "ok"}"><span class="muted small">${c.bestFit}</span><b>${deg(g.tilt, g.azimuth)}</b></div>
-        <div class="tile"><span class="muted small">${c.spread}</span><b>${pct(g.spread)}</b><span class="muted small">${pct(g.spread_configured)}</span></div>
-        <div class="tile"><span class="muted small">${c.trust}</span><b>${c.confidence[g.confidence] || g.confidence}</b><span class="muted small">${g.hours} ${c.hours}</span></div>
+        <div class="tile"><span class="muted small">${c.spread}</span><b>${pct(g.spread)}</b><span class="muted small">${c.configured}: ${pct(g.spread_configured)}</span></div>
+        <div class="tile"><span class="muted small">${c.evidenceTitle}</span><b>${c.evidence[evidence] || ""}</b><span class="muted small">${improved}${g.hours} ${c.hours}</span></div>
       </div></div>
       <p class="${g.deviates ? "note warn" : "note"}">${g.deviates ? c.geoHint : c.geoOk}</p><p class="help">${c.geoHelp}</p></section>`;
   }

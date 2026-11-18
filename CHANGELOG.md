@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The geometry check no longer shows a "Confidence" of low, medium or high, which read like a verdict on
+  the configured tilt and azimuth. It now shows the "Hint of a deviation": none, weak or clear, with how much the
+  best fit lowers the spread. "None" means the measurements give no reason to change the configured geometry.
+
 ## [0.5.0b8] - 2026-11-18
 
 ### Changed

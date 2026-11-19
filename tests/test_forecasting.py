@@ -141,3 +141,35 @@ def test_load_forecast_counts_running_consumers():
     out = fc.load("house", consumers, profile, None, {}, {}, {}, None, {"w": lf.Run(1200.0, 30.0)}, timezone.utc,
                   timezone.utc, now, now + 6 * 3600, DAY_START)
     assert out.consumers["w"][now] == 600.0                      # half an hour of 1200 W
+
+
+def test_quarter_hours_add_up_to_the_hour_and_follow_its_shape():
+    # six 10-minute sub-steps: the second and fifth span two steps and count half in each
+    q = fc.quarter_hours({0.0: 600.0, 3600.0: 80.0, 7200.0: 0.0}, {0.0: [1, 2, 3, 3, 2, 1], 3600.0: [0] * 6}.get)
+    assert [round(q[t], 6) for t in (0.0, 900.0, 1800.0, 2700.0)] == [100.0, 200.0, 200.0, 100.0]
+    assert [q[t] for t in (3600.0, 4500.0, 5400.0, 6300.0)] == [20.0] * 4       # no shape: spread evenly
+    assert [q[t] for t in (7200.0, 8100.0, 9000.0, 9900.0)] == [0.0] * 4
+
+
+def test_the_forecast_in_quarter_hours_adds_up_to_every_published_hour():
+    result, _, _ = run(10, actual={"a": {DAY_START + 8 * 3600: 300.0}})
+    for name in ("forecast", "morning", "expected"):
+        for sid, hours in getattr(result, name).items():
+            quarters = result.quarters[name][sid]
+            assert len(quarters) == 4 * len(hours)
+            for t, wh in hours.items():
+                assert abs(sum(quarters[t + i * 900] for i in range(4)) - wh) < 1e-6
+    # the sun rises within an hour: its first quarter gets less than its last
+    first = min(t for t, wh in result.forecast["a"].items() if wh > 0)
+    assert result.quarters["forecast"]["a"][first] < result.quarters["forecast"]["a"][first + 2700]
+
+
+def test_every_quarter_of_an_hour_gets_the_hour_s_clearness():
+    # the weather is an hourly mean: darker clouds lower every quarter alike, and the sunrise does not move
+    def shares(k):
+        days = [model.WeatherHour(w.start, w.ghi * k, temp=w.temp) for w in weather()]
+        result, _, _ = fc.pv(SITE, ARRAYS, {}, days, {}, fc.Today(), {}, {}, DAY, DAY, DAY_START, DAY_END)
+        hours, quarters = result.forecast["b"], result.quarters["forecast"]["b"]
+        return {t: quarters[t] / hours[t - t % 3600] for t in quarters if hours[t - t % 3600] > 1}
+    bright, dark = shares(1.0), shares(0.3)
+    assert bright.keys() == dark.keys() and all(abs(bright[t] - dark[t]) < 1e-9 for t in bright)

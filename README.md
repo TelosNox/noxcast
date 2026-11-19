@@ -78,7 +78,7 @@ A day card with power now and the course of the day, and a weather card with the
 
 | Part | What you get |
 |---|---|
-| PV forecast | Per array and in total: today, tomorrow, day after (up to 7 days), hourly, with a P10–P90 band; offered as solar forecast in the energy dashboard |
+| PV forecast | Per array and in total: today, tomorrow, day after (up to 7 days), hourly and in 15-minute steps, with a P10–P90 band; offered as solar forecast in the energy dashboard |
 | Today | Forecast fixed at 06:00, expected day (measured + corrected rest), remaining energy |
 | Learning | Efficiency, shading map, horizon line, reflection, direction factor, sky view, temperature loss |
 | Weather | Open-Meteo, also as a weather entity for the dashboard |
@@ -437,8 +437,8 @@ from Noxcast's own weather – the same that drives the forecast.
 | Last learning run, forecast error (30 days) | ✓ | | Error per array and per weather model as attributes |
 | Weather | ✓ | | Current hour, hourly and daily forecast for 7 days |
 
-Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1); the total sensors also
-`p10` / `p90`. The total is offered as solar forecast in the energy dashboard.
+Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and `quarter_hourly` (the same in
+15-minute steps, which add up to each hour); the total sensors also `p10` / `p90`. The total is offered as solar forecast in the energy dashboard.
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
 `consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
@@ -456,7 +456,10 @@ share from surplus and no more than 5 points less than the best window still to 
 Noxcast publishes its forecast in its own attributes, not in the format of another project. Each tool gets it through
 its own way in: a setting, a template sensor or a REST command. The entity IDs below are those of an English setup;
 the IDs follow the language Home Assistant had when Noxcast was added, so copy yours from the entity's settings.
-The hourly values are kWh per hour, which is the same number as the mean power in kW.
+The hourly values are kWh per hour, which is the same number as the mean power in kW; the values of
+`quarter_hourly` are kWh per 15 minutes, a quarter of the mean power in kW. The weather forecast comes in hours, so
+each 15-minute step gets its hour's cloudiness and follows the course of the sun within the hour (and stays under a
+power limit); clouds that come and go within the hour are not in it.
 
 ### EVCC
 
@@ -477,7 +480,7 @@ EVCC reads hourly values from it.
 
 Predbat reads forecasts in the form of the Solcast integration: an attribute `detailedForecast` with half-hourly
 entries (`period_start`, `pv_estimate` in kW), the day total in kWh as state. A template sensor per day builds it
-from the `hourly` attribute, each hour as two half hours of the same power:
+from the `quarter_hourly` attribute, each half hour from its two quarter hours:
 
 ```yaml
 template:
@@ -489,10 +492,11 @@ template:
         attributes:
           detailedForecast: >
             {% set ns = namespace(out=[]) %}
-            {% for start, kw in (state_attr('sensor.noxcast_expected_today', 'hourly') or {}).items() %}
-              {% set t = as_datetime(start) %}
-              {% set ns.out = ns.out + [{'period_start': t.isoformat(), 'pv_estimate': kw},
-                                        {'period_start': (t + timedelta(minutes=30)).isoformat(), 'pv_estimate': kw}] %}
+            {% set q = state_attr('sensor.noxcast_expected_today', 'quarter_hourly') or {} %}
+            {% set starts = q | list %}
+            {% for i in range(0, starts | count - 1, 2) %}
+              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(),
+                                         'pv_estimate': ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3)}] %}
             {% endfor %}
             {{ ns.out }}
 ```
@@ -513,7 +517,9 @@ uses the central forecast for its weak and strong case. Predbat simulates the ba
 ### EMHASS
 
 EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and holds each value until the
-next one in its own time steps. A REST command builds it from the `hourly` attributes of PV and load; `sensor.battery_soc` stands for your
+next one in its own time steps. A REST command builds it from the `quarter_hourly` attributes of PV and the `hourly`
+attributes of the load (set EMHASS to a 15-minute time step, since with a longer one it takes only the value at the
+start of each step); `sensor.battery_soc` stands for your
 battery's state of charge in %:
 
 ```yaml
@@ -523,18 +529,20 @@ rest_command:
     method: POST
     content_type: application/json
     payload: >
-      {%- macro watts(sensors) -%}
+      {%- macro watts(sensors, attribute, per_hour) -%}
         {%- set ns = namespace(items=[]) -%}
         {%- for s in sensors -%}
-          {%- for t, kwh in (state_attr(s, 'hourly') or {}).items() -%}
-            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * 1000) | round(0)] -%}
+          {%- for t, kwh in (state_attr(s, attribute) or {}).items() -%}
+            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * per_hour * 1000) | round(0)] -%}
           {%- endfor -%}
         {%- endfor -%}
         {{ '{' ~ ns.items | join(', ') ~ '}' }}
       {%- endmacro -%}
       {"prediction_horizon": 48,
-       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
-       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow']) }},
+       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow'],
+                                     'quarter_hourly', 4) }},
+       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow'],
+                                       'hourly', 1) }},
        "soc_init": {{ states('sensor.battery_soc') | float / 100 }}}
 ```
 

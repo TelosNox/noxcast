@@ -151,6 +151,13 @@ def cap_hour(wh: float, limit: float, profile: list[float] | None) -> float:
 
 def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] | None], own: Mapping[str, float],
               shared: Iterable[tuple[tuple[str, ...], float]]) -> dict[str, float]:
+    """cap_group_steps without the sub-steps."""
+    return cap_group_steps(hours, profile, own, shared)[0]
+
+
+def cap_group_steps(hours: Mapping[str, float], profile: Callable[[str], list[float] | None],
+                    own: Mapping[str, float], shared: Iterable[tuple[tuple[str, ...], float]]
+                    ) -> tuple[dict[str, float], dict[str, list[float]]]:
     """One hour of several arrays under their fixed limits: own (array -> W) caps an array alone, shared
     (arrays, W) the sum of those arrays.
 
@@ -158,12 +165,13 @@ def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] |
     Every array follows its own profile scaled to its value (as cap_hour), is capped by its own limit, and where
     a shared limit is exceeded at a sub-step, each of its arrays gives up the same share of its power there. An
     array without a usable profile counts with its hourly mean at every sub-step. Without a shared limit this is
-    cap_hour for each array.
+    cap_hour for each array. Returns the capped hours and, for each array the cap changed, its power at the
+    sub-steps (their mean is its capped value), so a finer split of the hour stays under the limit.
     """
     out = dict(hours)
     live = [a for a, wh in hours.items() if wh > 0]
     if not live:
-        return out
+        return out, {}
     steps: dict[str, list[float] | None] = {}
     for a in live:
         p = profile(a)
@@ -192,7 +200,29 @@ def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] |
                 changed.update(group)
     for a in changed:
         out[a] = sum(power[a]) / n
-    return out
+    return out, {a: power[a] for a in changed}
+
+
+def fill_steps(wh: float, profile: list[float], limit: float) -> list[float]:
+    """Power at the sub-steps of an hour whose energy (Wh = mean W) is known, e.g. measured, under a limit (W).
+
+    The sub-steps follow the profile scaled so that their mean is wh, flat at the limit where the scaled profile
+    would pass it: the shape of an hour the limit clipped. An hour above what the limit allows stays at the limit.
+    """
+    n = len(profile)
+    if wh <= 0 or not n or max(profile) <= 0:
+        return [max(wh, 0.0)] * n
+
+    def mean(k: float) -> float:
+        return sum(min(k * p, limit) for p in profile) / n
+
+    lo, hi = 0.0, wh / (sum(profile) / n)          # without the limit hi gives the mean wh; clipping only lowers it
+    while mean(hi) < wh and hi < 1e12:
+        lo, hi = hi, hi * 2
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if mean(mid) < wh else (lo, mid)
+    return [min(hi * p, limit) for p in profile]
 
 
 def cap(series: Series, limit: float, profile: Callable[[float], list[float] | None]) -> Series:

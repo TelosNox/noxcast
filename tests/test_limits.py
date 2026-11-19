@@ -522,3 +522,26 @@ def test_another_battery_without_a_known_charge_power_leaves_the_hour_out():
     assert built.battery_hours("ax", {"soc.y": {h: 99.0}}, {"p.x": {h: 990.0}}, {}) == ({h}, set(), set())
     # X with room: free, whatever Y does
     assert built.battery_hours("ax", {"soc.y": {h: 99.0}}, {"p.x": {h: 100.0}}, {}) == (set(), set(), set())
+
+
+def test_quarter_hours_of_a_capped_hour_stay_under_the_limit():
+    for installation, members, limit in ((LIMITED, ("a",), 400.0), (SHARED_INST, ("a", "b"), 900.0)):
+        capped, _, _ = run(10, installation)
+        for name in ("forecast", "morning", "expected"):
+            quarters = capped.quarters[name]
+            for t, wh in getattr(capped, name)["a"].items():
+                assert abs(sum(quarters["a"][t + i * 900] for i in range(4)) - wh) < 1e-6
+            for t in quarters["a"]:
+                assert sum(quarters[sid][t] for sid in members) <= limit / 4 + 1e-6
+
+
+def test_measured_hours_at_the_limit_stay_under_it_in_quarter_hours():
+    t = DAY_START + 11 * 3600
+    for installation, actual, members, limit in ((LIMITED, {"a": {t: 400.0}}, ("a",), 400.0),
+                                                 (SHARED_INST, {"a": {t: 600.0}, "b": {t: 300.0}}, ("a", "b"), 900.0)):
+        capped, _, _ = run(14, installation, actual)
+        quarters = capped.quarters["expected"]
+        assert capped.expected["a"][t] == actual["a"][t]
+        assert abs(sum(quarters["a"][t + i * 900] for i in range(4)) - actual["a"][t]) < 1e-6
+        for i in range(4):
+            assert sum(quarters[sid][t + i * 900] for sid in members) <= limit / 4 + 1e-6

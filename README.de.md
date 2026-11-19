@@ -79,7 +79,7 @@ Eine Tageskarte mit der Leistung jetzt und dem Verlauf des Tages und eine Wetter
 
 | Teil | Was du bekommst |
 |---|---|
-| PV-Prognose | Je PV-Gruppe und gesamt: heute, morgen, übermorgen (bis 7 Tage), stündlich, mit P10–P90-Band; als Solarprognose im Energie-Dashboard angeboten |
+| PV-Prognose | Je PV-Gruppe und gesamt: heute, morgen, übermorgen (bis 7 Tage), stündlich und in 15-Minuten-Schritten, mit P10–P90-Band; als Solarprognose im Energie-Dashboard angeboten |
 | Heute | Prognose um 06:00 fixiert, Erwartung des Tages (gemessen + korrigierter Rest), Restenergie |
 | Lernen | Wirkungsgrad, Schattenkarte, Horizontlinie, Reflexion, Richtungsfaktor, Himmelssicht, Temperaturverlust |
 | Wetter | Open-Meteo, auch als Wetter-Entität fürs Dashboard |
@@ -445,8 +445,8 @@ Geräte **Noxcast (gesamt)** und **Noxcast *PV-Gruppe***:
 | Letzter Lernlauf, Prognosefehler (30 Tage) | ✓ | | Fehler je PV-Gruppe und je Wettermodell als Attribute |
 | Wetter | ✓ | | Aktuelle Stunde, stündliche und tägliche Vorhersage für 7 Tage |
 
-Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1); die Gesamtsensoren zusätzlich
-`p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
+Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1) und `quarter_hourly` (dasselbe in
+15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
 `backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
@@ -466,7 +466,10 @@ Noxcast veröffentlicht seine Prognose in eigenen Attributen, nicht im Format ei
 bekommt sie über seinen eigenen Weg: eine Einstellung, einen Template-Sensor oder einen REST-Befehl. Die Entitäts-IDs
 unten sind die einer englischen Einrichtung; die IDs folgen der Sprache, die Home Assistant beim Hinzufügen von
 Noxcast hatte, also kopiere deine aus den Einstellungen der Entität. Die Stundenwerte sind kWh pro Stunde, also
-dieselbe Zahl wie die mittlere Leistung in kW.
+dieselbe Zahl wie die mittlere Leistung in kW; die Werte von `quarter_hourly` sind kWh pro 15 Minuten, ein Viertel
+der mittleren Leistung in kW. Die Wettervorhersage kommt in Stunden, deshalb bekommt jeder 15-Minuten-Schritt die
+Bewölkung seiner Stunde und folgt dem Lauf der Sonne innerhalb der Stunde (und bleibt unter einer Leistungsgrenze);
+Wolken, die innerhalb der Stunde kommen und gehen, stecken nicht darin.
 
 ### EVCC
 
@@ -487,7 +490,7 @@ EVCC liest daraus Stundenwerte.
 
 Predbat liest Prognosen in der Form der Solcast-Integration: ein Attribut `detailedForecast` mit halbstündlichen
 Einträgen (`period_start`, `pv_estimate` in kW), die Tagessumme in kWh als Zustand. Ein Template-Sensor je Tag baut
-das aus dem Attribut `hourly`, jede Stunde als zwei halbe Stunden mit derselben Leistung:
+das aus dem Attribut `quarter_hourly`, jede halbe Stunde aus ihren zwei Viertelstunden:
 
 ```yaml
 template:
@@ -499,10 +502,11 @@ template:
         attributes:
           detailedForecast: >
             {% set ns = namespace(out=[]) %}
-            {% for start, kw in (state_attr('sensor.noxcast_expected_today', 'hourly') or {}).items() %}
-              {% set t = as_datetime(start) %}
-              {% set ns.out = ns.out + [{'period_start': t.isoformat(), 'pv_estimate': kw},
-                                        {'period_start': (t + timedelta(minutes=30)).isoformat(), 'pv_estimate': kw}] %}
+            {% set q = state_attr('sensor.noxcast_expected_today', 'quarter_hourly') or {} %}
+            {% set starts = q | list %}
+            {% for i in range(0, starts | count - 1, 2) %}
+              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(),
+                                         'pv_estimate': ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3)}] %}
             {% endfor %}
             {{ ns.out }}
 ```
@@ -523,7 +527,9 @@ Predbat nimmt dann die mittlere Prognose für seinen schwachen und starken Fall.
 ### EMHASS
 
 EMHASS nimmt Prognosen als Zuordnung von Zeit zu W, mit der Zeitzone im Schlüssel, und hält in seinen eigenen
-Zeitschritten jeden Wert bis zum nächsten. Ein REST-Befehl baut sie aus den Attributen `hourly` von PV und Last; `sensor.battery_soc` steht für
+Zeitschritten jeden Wert bis zum nächsten. Ein REST-Befehl baut sie aus den Attributen `quarter_hourly` der PV und
+`hourly` der Last (stell EMHASS auf einen Zeitschritt von 15 Minuten, denn mit einem längeren nimmt es nur den Wert
+am Anfang jedes Schritts); `sensor.battery_soc` steht für
 den Ladestand deines Akkus in %:
 
 ```yaml
@@ -533,18 +539,20 @@ rest_command:
     method: POST
     content_type: application/json
     payload: >
-      {%- macro watts(sensors) -%}
+      {%- macro watts(sensors, attribute, per_hour) -%}
         {%- set ns = namespace(items=[]) -%}
         {%- for s in sensors -%}
-          {%- for t, kwh in (state_attr(s, 'hourly') or {}).items() -%}
-            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * 1000) | round(0)] -%}
+          {%- for t, kwh in (state_attr(s, attribute) or {}).items() -%}
+            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * per_hour * 1000) | round(0)] -%}
           {%- endfor -%}
         {%- endfor -%}
         {{ '{' ~ ns.items | join(', ') ~ '}' }}
       {%- endmacro -%}
       {"prediction_horizon": 48,
-       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
-       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow']) }},
+       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow'],
+                                     'quarter_hourly', 4) }},
+       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow'],
+                                       'hourly', 1) }},
        "soc_init": {{ states('sensor.battery_soc') | float / 100 }}}
 ```
 

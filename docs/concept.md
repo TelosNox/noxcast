@@ -523,7 +523,14 @@ not types of their own. Independent devices are systems of their own, side by si
 
 ## Outputs
 
-- Per array and total, 15-minute and hourly resolution, today / tomorrow / day after.
+- Per array and total, 15-minute and hourly resolution, today / tomorrow / day after. The weather comes in hours, so
+  the 15-minute steps split each published hour (`forecasting.quarter_hours`) by the clear-sky output of the learned
+  model at the hour's 10-minute sub-steps (a sub-step that spans two steps counts half in each): every step has the
+  hour's clearness, and none passes the clear sky unless the hour does. Where a fixed limit capped the hour, the
+  capped sub-steps of `curtailment.cap_group_steps` are the shape; a measured hour at a limit is filled flat at the
+  limit (`curtailment.fill_steps`). The steps add up to the hour and stay under the limit. The model's own sub-steps
+  under the hourly mean weather were the first idea and do not work as a shape: at sunrise the first sub-step above
+  the horizon gets the whole hour's beam, and a quarter came out at twice its clear-sky value.
 - Remaining energy today, peak time, P10 / P50 / P90. The band is empirical (`band.py`): from the
   day-ahead archive, the shift in clearness per day and per hour, (actual - forecast) / clear-sky
   output of the current learned model, grouped by the clearness of the forecast (overcast below
@@ -1104,6 +1111,7 @@ scorecard. The open work is tracked in GitHub issues:
    sky, then C5-C8.
 3. **Installation model, rest** (#250): battery forecast per independent system, shared limits per phase, fixed power, balancing.
 4. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
-   and the state of charge for 48 h, band coverage, shading map uncertainty, 15-minute steps.
+   and the state of charge for 48 h, band coverage, shading map uncertainty, 15-minute steps (built: the first
+   three and the last).
 5. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.

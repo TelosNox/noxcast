@@ -6,6 +6,8 @@ result. What one update hands to the next (today's hours, the morning fix, held 
 """
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 
@@ -58,6 +60,8 @@ class NoxcastData:
     uncapped: dict[str, dict[str | None, Series]] = field(default_factory=dict)
     # per limited array: hour start -> clear-sky power at the sub-steps, the shape the cap follows
     profiles: dict[str, dict[float, list[float]]] = field(default_factory=dict, repr=False)
+    # forecast, morning and expected in 15-minute steps (Wh per step), by the same keys; see quarter_hours
+    quarters: dict[str, dict[str | None, Series]] = field(default_factory=dict, repr=False)
 
     @property
     def capped(self) -> set[str]:
@@ -159,6 +163,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     today = Today(dict(before.hours), dict(before.morning), before.morning_fixed, dict(before.held),
                   dict(before.morning_steps), dict(before.morning_late))
     alt: dict[str, dict[str, Series]] = {m: {} for m in models}
+    capped_shapes: dict[str, dict[str, dict[float, list[float]]]] = {}
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id, LearnedArray())
         fresh = forecast(site, arr.geometry, la, weather)
@@ -220,11 +225,55 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
         result.effects[sub_id] = day_effects(site, arr.geometry, learned.get(sub_id), weather, day,
                                              result.expected[sub_id], day_start, day_end, clear_weather,
                                              today.held[sub_id], cut)
+    profiles: dict[str, dict[float, list[float]]] = {}
+
+    def profile(sid: str, t: float) -> list[float]:
+        """Clear-sky power at the hour's sub-steps: the shape of the cap and of the 15-minute steps."""
+        hours = profiles.setdefault(sid, {})
+        if t not in hours:
+            hours[t] = clearsky_profile(site, arrays[sid].geometry, learned.get(sid, LearnedArray()), t,
+                                        temps.get(t), SUBSTEPS)
+        return hours[t]
+
     if inst is not None:
-        _cap(result, alt, site, arrays, learned, inst, temps, actual, ts_now)
-    for series in (result.forecast, result.morning, result.expected, result.clear, *result.uncapped.values()):
+        capped_shapes = _cap(result, alt, profile, arrays, inst, actual, ts_now)
+    for name in ("forecast", "morning", "expected"):
+        series = getattr(result, name)
+        capped = capped_shapes.get(name, {})
+        result.quarters[name] = {
+            sid: quarter_hours(series[sid], lambda t, sid=sid, capped=capped: (
+                capped.get(sid, {}).get(t) or profile(sid, t)))
+            for sid in arrays if sid in series}
+    for series in (result.forecast, result.morning, result.expected, result.clear, *result.uncapped.values(),
+                   *result.quarters.values()):
         series[TOTAL] = _total(series)
     return result, today, alt
+
+
+def quarter_hours(hours: Series, shape: Callable[[float], list[float] | None], parts: int = 4) -> Series:
+    """Each hour's energy (Wh) split into equal steps, keyed by step start; the steps add up to the hour.
+
+    shape(hour start): power at the hour's equal sub-steps, which the split follows; a sub-step that spans two
+    steps counts half in each (10-minute sub-steps in 15-minute steps). Without a shape, or with only zeros,
+    the hour is spread evenly. The weather is an hourly mean, so pv() passes the clear-sky shape (or, at a fixed
+    limit, the capped sub-steps): every step gets the hour's clearness, and none passes the clear sky unless the
+    hour does. The model's own sub-steps under the hourly mean weather do not follow the sun: at sunrise the first
+    sub-step above the horizon gets the whole hour's beam.
+    """
+    out: Series = {}
+    step = 3600 / parts
+    for t, wh in hours.items():
+        p = shape(t) or []
+        n = len(p)
+        weights = [0.0] * parts
+        for i, w in enumerate(p):
+            lo, hi = i / n, (i + 1) / n
+            for j in range(int(lo * parts), min(parts, math.ceil(hi * parts))):
+                weights[j] += w * (min(hi, (j + 1) / parts) - max(lo, j / parts))
+        total = sum(weights)
+        for j in range(parts):
+            out[t + j * step] = wh * weights[j] / total if total > 0 else wh / parts
+    return out
 
 
 def _total(series: dict[str | None, Series]) -> Series:
@@ -237,18 +286,22 @@ def _total(series: dict[str | None, Series]) -> Series:
     return dict(sorted(total.items()))
 
 
-def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], site: Site, arrays: dict[str, ArrayConfig],
-         learned: dict[str, LearnedArray], inst: Installation, temps: dict[float, float | None],
-         actual: dict[str, Series], now: float) -> None:
+def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], clear: Callable[[str, float], list[float]],
+         arrays: dict[str, ArrayConfig], inst: Installation, actual: dict[str, Series], now: float
+         ) -> dict[str, dict[str, dict[float, list[float]]]]:
     """Cap the published values of arrays with a fixed limit, their own or one they share with others (a system
     without a battery holding several arrays), keeping the uncapped ones (see pv).
 
     Measured hours stay as measured. Held values are capped too: they are forecasts of hours that have begun.
+    clear(array, hour start): its clear-sky power at the hour's sub-steps. Returns per series (forecast, morning,
+    expected) and array the capped power at the sub-steps of each hour the cap changed or that stays as measured,
+    the shape of its 15-minute steps.
     """
     limits = {sid: w for sid, w in inst.limited_arrays().items() if sid in arrays}
     caps = [(members, w) for group, w in inst.forecast_caps() if (members := tuple(a for a in group if a in arrays))]
+    steps: dict[str, dict[str, dict[float, list[float]]]] = {}
     if not limits and not caps:
-        return
+        return steps
     result.limits, result.caps = limits, caps
     result.uncapped = {name: {sid: dict(getattr(result, name)[sid]) for sid in arrays}
                        for name in ("forecast", "morning", "expected")}
@@ -257,27 +310,43 @@ def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], site: Site, arr
     def profile(sid: str, t: float) -> list[float]:
         profiles = result.profiles.setdefault(sid, {})
         if t not in profiles:
-            profiles[t] = clearsky_profile(site, arrays[sid].geometry, learned.get(sid, LearnedArray()), t,
-                                           temps.get(t), SUBSTEPS)
+            profiles[t] = clear(sid, t)
         return profiles[t]
 
-    def apply(series: dict, keep=lambda sid, t: False) -> None:
+    def measured(sid: str, t: float, hour: dict[str, float]) -> list[float]:
+        """A measured hour stays as it is. Its sub-steps stay under its own limit and under its share of a shared
+        one (by its part of the members' sum), so its 15-minute steps do too."""
+        bounds = [limits[sid]] if sid in limits else []
+        for group, w in caps:
+            total = sum(hour.get(a, 0.0) for a in group)
+            if sid in group and total > 0:
+                bounds.append(w * hour[sid] / total)
+        return ct.fill_steps(hour[sid], profile(sid, t), min(bounds, default=math.inf))
+
+    def apply(series: dict, keep=lambda sid, t: False, name: str | None = None) -> None:
         for sid in capped:
             if sid in series:
                 series[sid] = dict(series[sid])
         members = [sid for sid in capped if sid in series]
+        shapes = steps.setdefault(name, {}) if name else {}
         for t in sorted({t for sid in members for t in series[sid]}):
             hour = {sid: series[sid][t] for sid in members if t in series[sid]}
-            for sid, v in ct.cap_group(hour, lambda sid, t=t: profile(sid, t), limits, caps).items():
+            values, power = ct.cap_group_steps(hour, lambda sid, t=t: profile(sid, t), limits, caps)
+            for sid, v in values.items():
                 if not keep(sid, t):
                     series[sid][t] = v
+                    if sid in power:
+                        shapes.setdefault(sid, {})[t] = power[sid]
+                elif name and v > 0:
+                    shapes.setdefault(sid, {})[t] = measured(sid, t, hour)
 
-    apply(result.forecast)
-    apply(result.morning)
+    apply(result.forecast, name="forecast")
+    apply(result.morning, name="morning")
     apply(result.held)
-    apply(result.expected, lambda sid, t: t + 3600 <= now and t in actual.get(sid, {}))
+    apply(result.expected, lambda sid, t: t + 3600 <= now and t in actual.get(sid, {}), name="expected")
     for hours in alt.values():
         apply(hours)
+    return steps
 
 
 def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Profile, floor_profile: lf.Profile | None,

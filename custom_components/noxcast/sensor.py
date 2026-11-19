@@ -380,6 +380,21 @@ def _today(b: dict, key: str) -> float:
     return round(sum(h[key] for t, h in b["sim"].hours.items() if t < b["day_end"] and h[key] > 0) / 1000, 3)
 
 
+def _lowest(b: dict) -> tuple[float, float] | None:
+    """(time, level 0..1) of the lowest state of charge in the 48-hour outlook; the first one if it repeats."""
+    sim = b.get("ahead")
+    return min(sim.points, key=lambda p: p[1]) if sim and sim.points else None
+
+
+def _ahead(b: dict) -> dict:
+    """The 48-hour outlook: lowest level and when, its end, and the level at every full hour in %."""
+    sim, low = b.get("ahead"), _lowest(b)
+    if not sim or low is None:
+        return {}
+    return {"lowest_at": _iso(low[0]), "until": _iso(sim.points[-1][0]),
+            "hourly": {_iso(t): round(s * 100, 1) for t, s in sim.points[1:] if t % 3600 == 0}}
+
+
 @dataclass(frozen=True, kw_only=True)
 class BatteryDescription(SensorEntityDescription):
     value: Callable[[dict], Any]
@@ -414,6 +429,10 @@ BATTERY_SENSORS = (
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock",
                        value=lambda b: round((b["sim"].soc_at(b["charge_start"]) or 0) * 100),
                        attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "grid": round(b["sim"].grid_wh / 1000, 3)}),
+    BatteryDescription(key="battery_lowest_soc_48h", translation_key="battery_lowest_soc_48h",
+                       native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock-outline",
+                       value=lambda b: round(low[1] * 100) if (low := _lowest(b)) else None,
+                       attrs=_ahead),
 )
 
 

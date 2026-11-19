@@ -451,12 +451,105 @@ Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1); 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
 `backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
 `fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
-Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin). Je flexiblem
+Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Akku tiefster Stand (48 h)**
+(Attribute `hourly`: der erwartete Stand zu jeder vollen Stunde der nächsten 48 Stunden in %, `lowest_at`, `until`:
+früher, wenn die *Prognosetage* vorher enden). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,
 `pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt oder keiner
 mindestens 5 % aus Überschuss bekommt) und der Binärsensor **jetzt starten**: an, solange ein
 jetzt gestarteter Lauf mindestens den eingestellten PV-Anteil aus Überschuss bekommt und höchstens 5 Punkte weniger
 als das beste Fenster, das heute noch kommt.
+
+## Andere Werkzeuge (EVCC, Predbat, EMHASS)
+
+Noxcast veröffentlicht seine Prognose in eigenen Attributen, nicht im Format eines anderen Projekts. Jedes Werkzeug
+bekommt sie über seinen eigenen Weg: eine Einstellung, einen Template-Sensor oder einen REST-Befehl. Die Entitäts-IDs
+unten sind die einer englischen Einrichtung; die IDs folgen der Sprache, die Home Assistant beim Hinzufügen von
+Noxcast hatte, also kopiere deine aus den Einstellungen der Entität. Die Stundenwerte sind kWh pro Stunde, also
+dieselbe Zahl wie die mittlere Leistung in kW.
+
+### EVCC
+
+EVCC liest die Solarprognose des Energie-Dashboards von Home Assistant. Wähle dort Noxcast als Solarprognose (und
+keine andere, weil EVCC sie addiert), dann in EVCC:
+
+```yaml
+tariffs:
+  solar:
+    - type: template
+      template: homeassistant
+      uri: http://homeassistant.local:8123
+```
+
+EVCC liest daraus Stundenwerte.
+
+### Predbat
+
+Predbat liest Prognosen in der Form der Solcast-Integration: ein Attribut `detailedForecast` mit halbstündlichen
+Einträgen (`period_start`, `pv_estimate` in kW), die Tagessumme in kWh als Zustand. Ein Template-Sensor je Tag baut
+das aus dem Attribut `hourly`, jede Stunde als zwei halbe Stunden mit derselben Leistung:
+
+```yaml
+template:
+  - sensor:
+      - name: Noxcast Predbat today
+        unique_id: noxcast_predbat_today
+        unit_of_measurement: kWh
+        state: "{{ states('sensor.noxcast_expected_today') }}"
+        attributes:
+          detailedForecast: >
+            {% set ns = namespace(out=[]) %}
+            {% for start, kw in (state_attr('sensor.noxcast_expected_today', 'hourly') or {}).items() %}
+              {% set t = as_datetime(start) %}
+              {% set ns.out = ns.out + [{'period_start': t.isoformat(), 'pv_estimate': kw},
+                                        {'period_start': (t + timedelta(minutes=30)).isoformat(), 'pv_estimate': kw}] %}
+            {% endfor %}
+            {{ ns.out }}
+```
+
+Wiederhole ihn mit `sensor.noxcast_forecast_tomorrow` und `sensor.noxcast_forecast_day_after_tomorrow` (und
+`sensor.noxcast_forecast_in_3_days`, die es ab 4 *Prognosetagen* gibt und die deaktiviert ist, bis du sie aktivierst), dann in Predbats `apps.yaml`:
+
+```yaml
+  pv_forecast_today: sensor.noxcast_predbat_today
+  pv_forecast_tomorrow: sensor.noxcast_predbat_tomorrow
+  pv_forecast_d3: sensor.noxcast_predbat_day_after_tomorrow
+  pv_forecast_d4: sensor.noxcast_predbat_in_3_days
+```
+
+Noxcast hat P10 / P90 pro Tag, nicht pro Stunde, deshalb tragen die Einträge kein `pv_estimate10` / `pv_estimate90`:
+Predbat nimmt dann die mittlere Prognose für seinen schwachen und starken Fall. Den Akku simuliert Predbat selbst.
+
+### EMHASS
+
+EMHASS nimmt Prognosen als Zuordnung von Zeit zu W, mit der Zeitzone im Schlüssel, und hält in seinen eigenen
+Zeitschritten jeden Wert bis zum nächsten. Ein REST-Befehl baut sie aus den Attributen `hourly` von PV und Last; `sensor.battery_soc` steht für
+den Ladestand deines Akkus in %:
+
+```yaml
+rest_command:
+  emhass_mpc:
+    url: http://localhost:5000/action/naive-mpc-optim
+    method: POST
+    content_type: application/json
+    payload: >
+      {%- macro watts(sensors) -%}
+        {%- set ns = namespace(items=[]) -%}
+        {%- for s in sensors -%}
+          {%- for t, kwh in (state_attr(s, 'hourly') or {}).items() -%}
+            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * 1000) | round(0)] -%}
+          {%- endfor -%}
+        {%- endfor -%}
+        {{ '{' ~ ns.items | join(', ') ~ '}' }}
+      {%- endmacro -%}
+      {"prediction_horizon": 48,
+       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
+       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow']) }},
+       "soc_init": {{ states('sensor.battery_soc') | float / 100 }}}
+```
+
+Die Lastprognose enthält jeden eingerichteten Verbraucher. Lass weg, was EMHASS als verschiebbare Last plant, sonst
+zählt die Last doppelt: Richte so einen Verbraucher in Noxcast als *flexibel* ein (er zählt dann mit null).
 
 ## Reparaturen
 
@@ -630,6 +723,8 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
   Abweichung (speist immer oder nie ein) zählt mit seinem Anteil an der PV der Stunde, da alle Akkus ein Speicher
   sind; was es ohnehin einspeist, zählt gegen die Grenze des Haushalts. Die Grenze gilt für die mittlere Leistung
   der Stunde: Kurze Spitzen darüber zählen nicht als abgeregelt.
+- Dieselbe Simulation läuft auch für die nächsten 48 Stunden, über den Ladebeginn hinaus, so weit die PV-Prognose
+  reicht: *Akku tiefster Stand (48 h)*, für Tarif- und Ladeplaner.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
 - **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
   werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.

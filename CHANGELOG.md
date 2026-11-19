@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- New sensor *Battery lowest level (48 h)*: the battery forecast now also runs for the next 48 hours, past
+  tomorrow's charge start, as far as the PV forecast reaches. Its attribute `hourly` holds the expected level at
+  every full hour in %, for tariff and charge planners.
+- The README shows how to feed the forecast to EVCC, Predbat and EMHASS.
+
 ### Changed
 - Nightly learning and the backtest need about a third less computing time: during a run, the sun's path through an
   hour is computed once instead of again in every step. The results stay the same; the run holds up to about 18 MB

@@ -616,6 +616,14 @@ def forecast(base_profile: Profile, consumers: list[Consumer], tz: tzinfo, now: 
     return LoadForecast(hours, base, parts, round(k, 3), sustained[0], sustained[1])
 
 
+def until(fc: LoadForecast, end: float) -> LoadForecast:
+    """The forecast with every hour from `end` on left out."""
+    def cut(series: Series) -> Series:
+        return {t: v for t, v in series.items() if t < end}
+    return LoadForecast(cut(fc.hours), cut(fc.base), {c: cut(s) for c, s in fc.consumers.items()}, fc.k,
+                        fc.sustained, fc.sustained_since)
+
+
 def remaining(hours: Series, now: float, end: float) -> float:
     """Wh from now until end; the running hour counts with its remaining share."""
     total = 0.0

@@ -243,3 +243,21 @@ def test_feed_in_shares_come_from_the_arrays():
                             10 * H, 11 * H, pv, (0.0, ("balcony",), ("stream",)))
     assert out["feed_in"] == bt.FeedIn(0.0, {10 * H: 0.2}, {10 * H: 0.2})
     assert out["sim"].fed_in_wh == 800 and out["sim"].curtailed_wh == 3200
+
+
+def test_outlook_runs_48_hours_past_the_charge_start_but_not_past_the_pv_forecast():
+    b = bt.Battery(10000, 0.5, efficiency=1.0)
+    days = range(0, 96)
+    pv = {h * H: (2000.0 if h % 24 in range(10, 15) else 0.0) for h in days}
+    load_ = flat(400.0, days)
+    now = 12 * H
+    out = bt.day_simulation([b], pv, flat(400.0, range(0, 48)), None, now, 24 * H, ahead=(load_, 96 * H))
+    ahead = out["ahead"]
+    assert ahead.points[0] == (now, 0.5) and ahead.points[-1][0] == now + 48 * H
+    assert out["sim"].points[-1][0] == out["charge_start"] < ahead.points[-1][0]
+    # the same hours give the same levels as the simulation until the charge start
+    assert ahead.points[:len(out["sim"].points)] == out["sim"].points
+    # it ends where the PV forecast ends, and without a load ahead there is none
+    short = bt.day_simulation([b], pv, load_, None, now, 24 * H, ahead=(load_, 40 * H))
+    assert short["ahead"].points[-1][0] == 40 * H
+    assert "ahead" not in bt.day_simulation([b], pv, load_, None, now, 24 * H)

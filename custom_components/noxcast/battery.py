@@ -38,6 +38,7 @@ H = 3600.0
 COUPLING_DC, COUPLING_AC = "dc", "ac"
 DEFAULT_EFFICIENCY = {COUPLING_DC: 0.95, COUPLING_AC: 0.90}   # round trip
 LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
+AHEAD_HOURS = 48                # the state of charge outlook for tariff and charge planners
 
 
 @dataclass(frozen=True)
@@ -312,7 +313,8 @@ def lost_when_full(sim: Simulation, max_soc: float) -> dict[float, float]:
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
                    pv_arrays: dict[str, Series] | None = None,
-                   rule: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None) -> dict | None:
+                   rule: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None,
+                   ahead: tuple[Series, float] | None = None) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
@@ -320,6 +322,8 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     pv_arrays: PV per array, for batteries with an output cap behind an array.
     rule: the feed-in rule (limit in W or None for free, arrays of systems that always and that never feed in);
     None feeds everything in.
+    ahead: (load, end) for the outlook "ahead": the same simulation for the next AHEAD_HOURS, past the charge start,
+    but not past `end`, where the PV forecast ends.
     """
     if not batteries or load is None:
         return None
@@ -330,7 +334,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     start = charge_start(pv, load, day_end, tomorrow_end) or tomorrow_end
     pv_arrays = pv_arrays or {}
     # caps for every hour ahead, also past the charge start: the consumer plan for tomorrow and the card use them
-    hours = sorted(t for t in set(pv) | set(load) if t + H > now)
+    hours = sorted(t for t in set(pv) | set(load) | set(ahead[0] if ahead else ()) if t + H > now)
     caps = limits(batteries, pv_arrays, hours)
     # a level near the limit only says "it stops here" while it has surplus to take, not after a discharge
     hour = now - now % H
@@ -339,6 +343,8 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     sim = simulate(storage, pv, load, now, start, caps, held, grid)
     out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held,
            "feed_in": grid}
+    if ahead and (until := min(now + AHEAD_HOURS * H, ahead[1])) > now:
+        out["ahead"] = simulate(storage, pv, ahead[0], now, until, caps, held, grid)
     if band_hours:
         # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
         sims = []

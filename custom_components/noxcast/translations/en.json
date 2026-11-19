@@ -562,6 +562,9 @@
       "battery_soc_at_charge_start": {
         "name": "Battery at next charge start"
       },
+      "battery_lowest_soc_48h": {
+        "name": "Battery lowest level (48 h)"
+      },
       "flex_pv_share_now": {
         "name": "{name} PV share now"
       },

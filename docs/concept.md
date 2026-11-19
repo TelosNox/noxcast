@@ -524,10 +524,13 @@ not types of their own. Independent devices are systems of their own, side by si
 ## Outputs
 
 - Per array and total, 15-minute and hourly resolution, today / tomorrow / day after. The weather comes in hours, so
-  the 15-minute steps split each published hour (`forecasting.quarter_hours`): by the model's power at the hour's
-  10-minute sub-steps under the hour's mean weather (a sub-step that spans two steps counts half in each), or, where
-  a fixed limit capped the hour, by the capped sub-steps of `curtailment.cap_group_steps`. The steps add up to the
-  hour and stay under the limit; they carry the sun's path within the hour, not clouds within it.
+  the 15-minute steps split each published hour (`forecasting.quarter_hours`) by the clear-sky output of the learned
+  model at the hour's 10-minute sub-steps (a sub-step that spans two steps counts half in each): every step has the
+  hour's clearness, and none passes the clear sky unless the hour does. Where a fixed limit capped the hour, the
+  capped sub-steps of `curtailment.cap_group_steps` are the shape; a measured hour at a limit is filled flat at the
+  limit (`curtailment.fill_steps`). The steps add up to the hour and stay under the limit. The model's own sub-steps
+  under the hourly mean weather were the first idea and do not work as a shape: at sunrise the first sub-step above
+  the horizon gets the whole hour's beam, and a quarter came out at twice its clear-sky value.
 - Remaining energy today, peak time, P10 / P50 / P90. The band is empirical (`band.py`): from the
   day-ahead archive, the shift in clearness per day and per hour, (actual - forecast) / clear-sky
   output of the current learned model, grouped by the clearness of the forecast (overcast below

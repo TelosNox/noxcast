@@ -162,3 +162,14 @@ def test_the_forecast_in_quarter_hours_adds_up_to_every_published_hour():
     # the sun rises within an hour: its first quarter gets less than its last
     first = min(t for t, wh in result.forecast["a"].items() if wh > 0)
     assert result.quarters["forecast"]["a"][first] < result.quarters["forecast"]["a"][first + 2700]
+
+
+def test_every_quarter_of_an_hour_gets_the_hour_s_clearness():
+    # the weather is an hourly mean: darker clouds lower every quarter alike, and the sunrise does not move
+    def shares(k):
+        days = [model.WeatherHour(w.start, w.ghi * k, temp=w.temp) for w in weather()]
+        result, _, _ = fc.pv(SITE, ARRAYS, {}, days, {}, fc.Today(), {}, {}, DAY, DAY, DAY_START, DAY_END)
+        hours, quarters = result.forecast["b"], result.quarters["forecast"]["b"]
+        return {t: quarters[t] / hours[t - t % 3600] for t in quarters if hours[t - t % 3600] > 1}
+    bright, dark = shares(1.0), shares(0.3)
+    assert bright.keys() == dark.keys() and all(abs(bright[t] - dark[t]) < 1e-9 for t in bright)

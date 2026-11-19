@@ -458,8 +458,8 @@ its own way in: a setting, a template sensor or a REST command. The entity IDs b
 the IDs follow the language Home Assistant had when Noxcast was added, so copy yours from the entity's settings.
 The hourly values are kWh per hour, which is the same number as the mean power in kW; the values of
 `quarter_hourly` are kWh per 15 minutes, a quarter of the mean power in kW. The weather forecast comes in hours, so
-within an hour the 15-minute steps follow the sun under that hour's clouds (and stay under a power limit), not
-clouds that come and go within the hour.
+each 15-minute step gets its hour's cloudiness and follows the course of the sun within the hour (and stays under a
+power limit); clouds that come and go within the hour are not in it.
 
 ### EVCC
 
@@ -518,7 +518,8 @@ uses the central forecast for its weak and strong case. Predbat simulates the ba
 
 EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and holds each value until the
 next one in its own time steps. A REST command builds it from the `quarter_hourly` attributes of PV and the `hourly`
-attributes of the load; `sensor.battery_soc` stands for your
+attributes of the load (set EMHASS to a 15-minute time step, since with a longer one it takes only the value at the
+start of each step); `sensor.battery_soc` stands for your
 battery's state of charge in %:
 
 ```yaml

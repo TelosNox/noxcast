@@ -203,6 +203,28 @@ def cap_group_steps(hours: Mapping[str, float], profile: Callable[[str], list[fl
     return out, {a: power[a] for a in changed}
 
 
+def fill_steps(wh: float, profile: list[float], limit: float) -> list[float]:
+    """Power at the sub-steps of an hour whose energy (Wh = mean W) is known, e.g. measured, under a limit (W).
+
+    The sub-steps follow the profile scaled so that their mean is wh, flat at the limit where the scaled profile
+    would pass it: the shape of an hour the limit clipped. An hour above what the limit allows stays at the limit.
+    """
+    n = len(profile)
+    if wh <= 0 or not n or max(profile) <= 0:
+        return [max(wh, 0.0)] * n
+
+    def mean(k: float) -> float:
+        return sum(min(k * p, limit) for p in profile) / n
+
+    lo, hi = 0.0, wh / (sum(profile) / n)          # without the limit hi gives the mean wh; clipping only lowers it
+    while mean(hi) < wh and hi < 1e12:
+        lo, hi = hi, hi * 2
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if mean(mid) < wh else (lo, mid)
+    return [min(hi * p, limit) for p in profile]
+
+
 def cap(series: Series, limit: float, profile: Callable[[float], list[float] | None]) -> Series:
     """A series of hourly energies capped by cap_hour; profile(hour start) gives the hour's clear-sky sub-steps."""
     return {t: cap_hour(wh, limit, profile(t)) if wh > 0 else wh for t, wh in series.items()}

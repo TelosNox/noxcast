@@ -533,3 +533,15 @@ def test_quarter_hours_of_a_capped_hour_stay_under_the_limit():
                 assert abs(sum(quarters["a"][t + i * 900] for i in range(4)) - wh) < 1e-6
             for t in quarters["a"]:
                 assert sum(quarters[sid][t] for sid in members) <= limit / 4 + 1e-6
+
+
+def test_measured_hours_at_the_limit_stay_under_it_in_quarter_hours():
+    t = DAY_START + 11 * 3600
+    for installation, actual, members, limit in ((LIMITED, {"a": {t: 400.0}}, ("a",), 400.0),
+                                                 (SHARED_INST, {"a": {t: 600.0}, "b": {t: 300.0}}, ("a", "b"), 900.0)):
+        capped, _, _ = run(14, installation, actual)
+        quarters = capped.quarters["expected"]
+        assert capped.expected["a"][t] == actual["a"][t]
+        assert abs(sum(quarters["a"][t + i * 900] for i in range(4)) - actual["a"][t]) < 1e-6
+        for i in range(4):
+            assert sum(quarters[sid][t + i * 900] for sid in members) <= limit / 4 + 1e-6

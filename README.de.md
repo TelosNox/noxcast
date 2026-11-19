@@ -467,9 +467,9 @@ bekommt sie über seinen eigenen Weg: eine Einstellung, einen Template-Sensor od
 unten sind die einer englischen Einrichtung; die IDs folgen der Sprache, die Home Assistant beim Hinzufügen von
 Noxcast hatte, also kopiere deine aus den Einstellungen der Entität. Die Stundenwerte sind kWh pro Stunde, also
 dieselbe Zahl wie die mittlere Leistung in kW; die Werte von `quarter_hourly` sind kWh pro 15 Minuten, ein Viertel
-der mittleren Leistung in kW. Die Wettervorhersage kommt in Stunden, deshalb folgen die 15-Minuten-Schritte innerhalb
-einer Stunde der Sonne unter den Wolken dieser Stunde (und bleiben unter einer Leistungsgrenze), nicht Wolken, die
-innerhalb der Stunde kommen und gehen.
+der mittleren Leistung in kW. Die Wettervorhersage kommt in Stunden, deshalb bekommt jeder 15-Minuten-Schritt die
+Bewölkung seiner Stunde und folgt dem Lauf der Sonne innerhalb der Stunde (und bleibt unter einer Leistungsgrenze);
+Wolken, die innerhalb der Stunde kommen und gehen, stecken nicht darin.
 
 ### EVCC
 
@@ -528,7 +528,8 @@ Predbat nimmt dann die mittlere Prognose für seinen schwachen und starken Fall.
 
 EMHASS nimmt Prognosen als Zuordnung von Zeit zu W, mit der Zeitzone im Schlüssel, und hält in seinen eigenen
 Zeitschritten jeden Wert bis zum nächsten. Ein REST-Befehl baut sie aus den Attributen `quarter_hourly` der PV und
-`hourly` der Last; `sensor.battery_soc` steht für
+`hourly` der Last (stell EMHASS auf einen Zeitschritt von 15 Minuten, denn mit einem längeren nimmt es nur den Wert
+am Anfang jedes Schritts); `sensor.battery_soc` steht für
 den Ladestand deines Akkus in %:
 
 ```yaml

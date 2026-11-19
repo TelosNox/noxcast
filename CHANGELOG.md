@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- Nightly learning and the backtest need less computing time: the sun's path through an hour is computed once
+  instead of again in every step. It keeps about 9 MB of memory for a year of hours; the results stay the same.
+
 ## [0.5.0] - 2026-11-19
 
 All changes since 0.4.0: the pre-releases 0.5.0b1 to 0.5.0b8 (their single steps are listed in

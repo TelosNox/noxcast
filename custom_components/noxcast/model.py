@@ -55,6 +55,7 @@ import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from functools import lru_cache
 
 from .solar import (
     Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
@@ -67,6 +68,7 @@ EL_STEP = 5.0
 HOUR = 3600.0                    # seconds, the default period
 THUNDER = 95                     # WMO weather codes from here on: thunderstorm
 SUBSTEPS = 6                     # 10-minute sub-steps per hour
+SUN_PATH_CACHE = 366 * 24        # sun paths kept: a year of hours, about 9 MB
 MIN_BEAM_W = 60.0                # expected beam power (W) needed to observe shading
 MIN_CELL_SAMPLES = 4
 RECENT_DAYS = 60                 # window for change detection per cell
@@ -265,10 +267,15 @@ def _substeps(period: float) -> int:
     return max(1, round(period / HOUR * SUBSTEPS))
 
 
-def _sun_path(site: Site, start: float, period: float) -> list[SunPosition]:
-    """The sun at the middle of each sub-step of a period, also below the horizon."""
+@lru_cache(maxsize=SUN_PATH_CACHE)
+def _sun_path(site: Site, start: float, period: float) -> tuple[SunPosition, ...]:
+    """The sun at the middle of each sub-step of a period, also below the horizon.
+
+    Cached: learning, its hold-outs and the backtest go over the same hours many times, and the sun position was
+    a third of their time.
+    """
     n = _substeps(period)
-    return [sun_position(site, start + (i + 0.5) * period / n) for i in range(n)]
+    return tuple(sun_position(site, start + (i + 0.5) * period / n) for i in range(n))
 
 
 def _periods(hours: float, period: float) -> float:
@@ -1430,13 +1437,13 @@ def clearsky_profile(site: Site, geo: ArrayGeometry, learned: LearnedArray, star
     return out
 
 
-def sun_paths(site: Site, starts: list[float], period: float = HOUR) -> dict[float, list[SunPosition]]:
+def sun_paths(site: Site, starts: list[float], period: float = HOUR) -> dict[float, tuple[SunPosition, ...]]:
     """The sun path of each period, for forecast() when it runs many times on the same hours."""
     return {t: _sun_path(site, t, period) for t in starts}
 
 
 def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour],
-             period: float = HOUR, paths: dict[float, list[SunPosition]] | None = None) -> Series:
+             period: float = HOUR, paths: dict[float, tuple[SunPosition, ...]] | None = None) -> Series:
     """Expected energy per period (Wh), keyed by period start (UNIX seconds); weather: means of those periods.
 
     paths: precomputed sun paths (sun_paths()); a period without one computes its own.

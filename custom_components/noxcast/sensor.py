@@ -114,7 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
 
 class NoxcastEntity(CoordinatorEntity[NoxcastCoordinator]):
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"hourly", "backtest"})      # keep the recorder database small
+    _unrecorded_attributes = frozenset({"hourly", "quarter_hourly", "backtest"})      # keep the recorder database small
 
     def __init__(self, coordinator: NoxcastCoordinator, unique_id: str, device: DeviceInfo) -> None:
         super().__init__(coordinator)
@@ -155,9 +155,11 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         if self.entity_description.day_offset is None:
             return None
-        attrs = {"schema_version": ATTR_SCHEMA_VERSION,
-                 "hourly": hourly_attribute(self._hours(), self.entity_description.day_offset)}
         data = self.coordinator.data
+        quarters = data.quarters.get(self.entity_description.series, {}).get(self._sub_id, {}) if data else {}
+        attrs = {"schema_version": ATTR_SCHEMA_VERSION,
+                 "hourly": hourly_attribute(self._hours(), self.entity_description.day_offset),
+                 "quarter_hourly": hourly_attribute(quarters, self.entity_description.day_offset)}
         if self.entity_description.series == "morning" and data is not None:
             fixed = data.fixed_at(self._sub_id)
             attrs["fixed_at"] = fixed.isoformat() if fixed else None

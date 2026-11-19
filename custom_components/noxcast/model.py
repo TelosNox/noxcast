@@ -1480,10 +1480,12 @@ def sun_paths(site: Site, starts: list[float], period: float = HOUR) -> dict[flo
 
 
 def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour],
-             period: float = HOUR, paths: dict[float, tuple[SunPosition, ...]] | None = None) -> Series:
+             period: float = HOUR, paths: dict[float, tuple[SunPosition, ...]] | None = None,
+             steps: dict[float, list[float]] | None = None) -> Series:
     """Expected energy per period (Wh), keyed by period start (UNIX seconds); weather: means of those periods.
 
     paths: precomputed sun paths (sun_paths()); a period without one computes its own.
+    steps: filled with the power (W) at each sub-step of every period, the shape within it (quarter_hours).
     """
     out = {}
     n = _substeps(period)
@@ -1491,8 +1493,13 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
         dni_extra = extra_radiation(wh.start + period / 2)
         total = 0.0
         path = paths.get(wh.start) if paths else None
+        shape = steps.setdefault(wh.start, []) if steps is not None else None
+        if shape:
+            shape.clear()
         for sun in path if path is not None else _sun_path(site, wh.start, period):
             if sun.elevation <= 0 or wh.ghi <= 0:
+                if shape is not None:
+                    shape.append(0.0)
                 continue
             if wh.dni is None or wh.dhi is None:
                 dni, dhi = erbs(wh.ghi, sun.zenith, dni_extra)
@@ -1502,8 +1509,10 @@ def forecast(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: lis
                                                    sky_view=learned.sky_view)
             poa = beam * transmission(learned, sun.azimuth, sun.elevation) * direction_factor(
                 learned, sun.azimuth, sun.elevation) + diff + reflection_factor(learned, sun.azimuth, sun.elevation) * dni
-            total += geo.peak_w * learned.efficiency * temperature_factor(
-                learned.temp_coeff, wh.temp, poa, heating) * poa / 1000
+            power = geo.peak_w * learned.efficiency * temperature_factor(learned.temp_coeff, wh.temp, poa, heating) * poa / 1000
+            total += power
+            if shape is not None:
+                shape.append(power)
         out[wh.start] = total / n * (period / HOUR)
     return out
 

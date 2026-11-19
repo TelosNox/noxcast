@@ -11,6 +11,10 @@ breaking changes.
 - New sensor *Battery lowest level (48 h)*: the battery forecast now also runs for the next 48 hours, past
   tomorrow's charge start, as far as the PV forecast reaches. Its attribute `hourly` holds the expected level at
   every full hour in %, for tariff and charge planners.
+- The forecast sensors carry the forecast also in 15-minute steps (attribute `quarter_hourly`, kWh per step), for
+  planners with 15-minute tariffs. The four steps add up to the hourly value and stay under a power limit; within
+  the hour they follow the sun, since the weather forecast comes in hours. The README templates for Predbat and
+  EMHASS use them.
 - The README shows how to feed the forecast to EVCC, Predbat and EMHASS.
 
 ### Changed

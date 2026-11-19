@@ -151,6 +151,13 @@ def cap_hour(wh: float, limit: float, profile: list[float] | None) -> float:
 
 def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] | None], own: Mapping[str, float],
               shared: Iterable[tuple[tuple[str, ...], float]]) -> dict[str, float]:
+    """cap_group_steps without the sub-steps."""
+    return cap_group_steps(hours, profile, own, shared)[0]
+
+
+def cap_group_steps(hours: Mapping[str, float], profile: Callable[[str], list[float] | None],
+                    own: Mapping[str, float], shared: Iterable[tuple[tuple[str, ...], float]]
+                    ) -> tuple[dict[str, float], dict[str, list[float]]]:
     """One hour of several arrays under their fixed limits: own (array -> W) caps an array alone, shared
     (arrays, W) the sum of those arrays.
 
@@ -158,12 +165,13 @@ def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] |
     Every array follows its own profile scaled to its value (as cap_hour), is capped by its own limit, and where
     a shared limit is exceeded at a sub-step, each of its arrays gives up the same share of its power there. An
     array without a usable profile counts with its hourly mean at every sub-step. Without a shared limit this is
-    cap_hour for each array.
+    cap_hour for each array. Returns the capped hours and, for each array the cap changed, its power at the
+    sub-steps (their mean is its capped value), so a finer split of the hour stays under the limit.
     """
     out = dict(hours)
     live = [a for a, wh in hours.items() if wh > 0]
     if not live:
-        return out
+        return out, {}
     steps: dict[str, list[float] | None] = {}
     for a in live:
         p = profile(a)
@@ -192,7 +200,7 @@ def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] |
                 changed.update(group)
     for a in changed:
         out[a] = sum(power[a]) / n
-    return out
+    return out, {a: power[a] for a in changed}
 
 
 def cap(series: Series, limit: float, profile: Callable[[float], list[float] | None]) -> Series:

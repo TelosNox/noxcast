@@ -7,10 +7,118 @@ breaking changes.
 
 ## Unreleased
 
+## [0.5.0] - 2026-11-19
+
+All changes since 0.4.0: the pre-releases 0.5.0b1 to 0.5.0b8 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)) and, since then, the wording of the
+geometry check. The installation is now entered as systems, and the update converts the configuration on its first
+start. After the update, check the Repairs notices and the new *Installation* tab, which shows per setting how far
+Noxcast computes it. Learning changes for most installations from the first nightly learning run on, since it now
+leaves out only the hours a limit or a full battery really affected.
+
+### Breaking
+- The main entry no longer has its own list of battery state-of-charge sensors. A battery counts only where it is
+  entered with its system, and then only for the PV arrays it can curtail. The update drops each sensor that such a
+  battery already has; for any other, a repair asks you to enter its battery with its system and the PV arrays it
+  charges. Until you do, hours in which that battery was full count in learning. Arrays that a battery cannot
+  curtail now also learn from the hours in which it was full.
+- Regulation and the deviation from the feed-in rule are set on the system only, and its subsystems follow it.
+  Subsystems are devices one control coordinates (EcoFlow Stream, for example), so they cannot choose differently.
+  The update moves a subsystem's value to its system where the system had none and its subsystems agreed, and drops
+  it from the subsystems otherwise. If a subsystem was set differently from its system, it is a device that control
+  does not regulate: make it a system of its own (*Belongs to* empty), or it now follows its system, also in what
+  learning leaves out.
+
+### Added
+- Systems: a new entry *System* describes how modules and batteries reach the house, from the templates *Inverter
+  without battery*, *PV with battery in one device*, *Battery at the house grid* and *Coupled systems* (e.g.
+  EcoFlow Stream). A system holds its PV arrays and at most one battery, or subsystems that share its output limit.
+  Each system is one entry with everything inside it; opening it shows a menu with each part, and removing a part
+  asks first and names what goes with it; deleting a system deletes everything inside it, with what was learned for
+  its PV arrays. A system's template can be changed and keeps the values the new template does not set. The
+  configuration forms explain the building blocks with small drawings,
+  and the README has a new section *How it fits together* with examples of common installations.
+- A new panel tab *Installation* draws the installation as a flow diagram: PV arrays, systems with their batteries
+  and limits, house and grid, with a dot per part for whether Noxcast computes its settings exactly, simplified or
+  not yet. Tapping a part shows its settings, and *Belongs to* moves a PV array, a battery or a system to another
+  system. The forms show the same diagram on top.
+- The household's *Feed-in rule* can limit the feed-in to a value in W or to a share of the PV peak power. With the
+  *Grid power* sensor in the main entry, hours in which the export reached the limit count as "at least this much"
+  in learning, and the correction of today's forecast does not read them as clouds.
+- The output limit of a system without battery caps the forecast, also when several PV arrays share it (east and
+  west on one inverter): their sum stays below the limit in every 10-minute step, and each array gives up its share
+  of what lies above. Forecast sensors, band, battery forecast and day view follow. Hours at the limit count as "at
+  least this much" in learning, and entering or changing the limit relearns the system's PV arrays. Subsystems with batteries behind
+  a shared limit deliver together at most that limit in the battery forecast.
+- When the PV arrays of a system without battery together stay flat at a maximum on sunny days, Noxcast suggests
+  that value as the system's output limit under Repairs: *Set output limit*, *Other value* or *There is no limit*.
+- The battery forecast splits the surplus that does not fit into the battery into what goes into the grid and what
+  is curtailed. It feeds in up to the household's feed-in limit, nothing under zero export, and follows a system's
+  own deviation by that system's share of the PV; PV above an output limit is curtailed. The sensors *Surplus rest of
+  today* and *Surplus lost today* have the new attributes `fed_in` and `curtailed`, and the overview and *Battery &
+  surplus* show the split. The value of *Surplus lost today* stays all surplus without room.
+- *Learned* → *Data basis* shows per array what the daylight hours were used for (used, capped, battery full, snow,
+  no output, excluded), weighted by the energy a clear sky would have given, overall and per month, and points at
+  anomalies with their most telling day: "battery full" although the array delivered what the model expects, output
+  clearly above the learned model under a calm clear sky, days without output under a bright sky, bright days far
+  below the model, and snow periods that only the 7-day limit ended. A calendar of the last year colours each day by
+  output against the model; a day stays pale when its deviation lies within what the satellite's error and the
+  array's ordinary day-to-day noise explain, and the page says whether there is enough data for the days shown.
+  Admins click a day to see its hours and an hour to see the model's steps from clear sky to the result.
+- *Hours as CSV* (for admins) exports every measured daylight hour of an array with whether learning used it,
+  counted it only as "at least this much" (status `lower_bound`) or left it out, and every reason; with the satellite archive also the model
+  on the measured irradiance, split into its steps. The diagnostics download holds the same table for every array.
+- The *Day* view explains the whole day, per array or for all together, from clear sky to the forecast and on to the
+  actual value; today it goes on over newer weather, today's correction and the measured hours to the expectation.
+  Under *Groups* each array shows its actual value so far today.
+
 ### Changed
-- The geometry check no longer shows a "Confidence" of low, medium or high, which read like a verdict on
-  the configured tilt and azimuth. It now shows the "Hint of a deviation": none, weak or clear, with how much the
-  best fit lowers the spread. "None" means the measurements give no reason to change the configured geometry.
+- A full battery leaves hours out of learning only for the PV arrays it can curtail: those of its own system and of
+  subsystems that cover the house load together with it or share an output limit. Under zero export a battery no
+  longer counts for PV it is not coupled with. Several devices with a battery each under one system count an hour as
+  capped only when no battery takes more. A battery whose upper limit comes from an entity counts as full from that
+  limit.
+- A battery charging at its maximum power, where the rest cannot go out, makes the hour count as "at least this
+  much" in learning, and the correction of today's forecast does not read it as clouds. Noxcast reads the charge
+  power from 5-minute means, so a single spike of the sensor no longer counts. Where another battery's charge power
+  is not configured, such an hour is left out.
+- A system with the regulation *Self-consumption* and no battery delivers only what the house draws. With the *Grid
+  power* sensor, hours in which the household imported little or nothing count as "at least this much" in learning
+  instead of weak sun.
+- The update turns the configuration into systems on its first start: every PV array gets a system of its own, a
+  battery with a PV array behind its inverter becomes *PV with battery in one device*, an AC battery *Battery at the
+  house grid*, and two or more batteries become subsystems of a system *Batteries* that balance each other, as
+  simulated before. *Surplus is fed into the grid* becomes the household's *Feed-in rule* (*Free* or *Zero export*);
+  a system at *Full power* under zero export gets *Feeds the rest in anyway*, since such an inverter cannot hold the
+  export at zero, so the day card now shows its feed-in. Forecasts, learning history and entities stay. A DC battery
+  without a PV array gets a Repairs notice.
+- A system follows the household's *Feed-in rule* unless it has a *Deviation from the feed-in rule*: *Feeds the rest
+  in anyway* or *Never feeds in*. Its regulation is *Full power*, *Self-consumption* or *Fixed power*.
+- The battery form no longer has *Coupling* and *Shared inverter*: where the battery sits and the output limit are set
+  on its system. A battery added without a system gets one of its own at the house grid (default efficiency 90 %).
+- Learning keeps its own copy of the temperature, snowfall and satellite archives and fetches only the new hours and
+  the last two weeks each night; changing the archive URL, satellite model or location fetches the whole history
+  again. If the temperature or satellite archive cannot be reached, the learning run is
+  skipped and the previous learned values stay; the overview shows the failed run, and *Relearn* reports an error.
+- The waterfall of today no longer shows a *Latest forecast* bar.
+- The geometry check no longer shows a "Confidence" of low, medium or high, which read like a verdict on the
+  configured tilt and azimuth. It shows the "Hint of a deviation": none, weak or clear, with how much the best fit
+  lowers the spread.
+- The diagnostics download no longer contains sensor IDs or the addresses of your own weather or archive services,
+  so it can be posted in an issue.
+
+### Fixed
+- Days on which a PV array delivered almost nothing (an inverter that was off, modules under snow) and hours with snow
+  on the modules no longer count in learning as shade; the snow filter needs *Air temperature from archive* (on by
+  default). Snowfall in air warmer than 3 °C no longer counts as snow. The
+  snow thresholds are physical assumptions not yet checked on installations with snowy winters; if the list in
+  *Does the configuration fit?* looks wrong for yours, please report it.
+- A short peak at a *Power limit*, as at the edge of a cloud, no longer turns the whole hour into "at least this
+  much" for learning.
+- A temperature coefficient from the datasheet is always shown and used as entered. A failed answer of the
+  temperature archive no longer makes learning set it to 0 %/K.
+- The shade area in the day card keeps the shape of the shadow once the hours have passed.
+- The overview no longer lists the remaining or elapsed time of an idle appliance as a note.
 
 ## [0.5.0b8] - 2026-11-18
 

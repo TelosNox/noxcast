@@ -51,11 +51,13 @@ minimum number of hours stays the same observed time (see _periods).
 from __future__ import annotations
 
 import bisect
+import contextlib
+import functools
 import math
-from collections.abc import Callable, Collection
+import threading
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from functools import lru_cache
 
 from .solar import (
     Site, SunPosition, clearsky_simplified_solis, erbs, extra_radiation, plane_of_array, sun_position,
@@ -68,7 +70,6 @@ EL_STEP = 5.0
 HOUR = 3600.0                    # seconds, the default period
 THUNDER = 95                     # WMO weather codes from here on: thunderstorm
 SUBSTEPS = 6                     # 10-minute sub-steps per hour
-SUN_PATH_CACHE = 366 * 24        # sun paths kept: a year of hours, about 9 MB
 MIN_BEAM_W = 60.0                # expected beam power (W) needed to observe shading
 MIN_CELL_SAMPLES = 4
 RECENT_DAYS = 60                 # window for change detection per cell
@@ -267,15 +268,51 @@ def _substeps(period: float) -> int:
     return max(1, round(period / HOUR * SUBSTEPS))
 
 
-@lru_cache(maxsize=SUN_PATH_CACHE)
-def _sun_path(site: Site, start: float, period: float) -> tuple[SunPosition, ...]:
-    """The sun at the middle of each sub-step of a period, also below the horizon.
+_paths: dict[tuple[Site, float, float], tuple[SunPosition, ...]] = {}
+_paths_users = 0
+_paths_lock = threading.Lock()
 
-    Cached: learning, its hold-outs and the backtest go over the same hours many times, and the sun position was
-    a third of their time.
+
+@contextlib.contextmanager
+def sun_paths_kept() -> Iterator[None]:
+    """Keeps the sun paths of hourly and longer periods inside the block, and frees them when no such block is left.
+
+    Learning, its hold-outs and the backtest go over the same hours many times, and the sun position was a third
+    of their time. A run goes through its periods in order, so a bounded cache (LRU) smaller than the history would
+    drop each path before it is used again; this one holds the whole run, two years of hours about 18 MB.
+    Sub-hour periods (5-minute learning) stay uncached: 12 times the paths, a single sun position each.
     """
-    n = _substeps(period)
-    return tuple(sun_position(site, start + (i + 0.5) * period / n) for i in range(n))
+    global _paths_users
+    with _paths_lock:
+        _paths_users += 1
+    try:
+        yield
+    finally:
+        with _paths_lock:
+            _paths_users -= 1
+            if not _paths_users:
+                _paths.clear()
+
+
+def sun_path_cache[**P, R](run: Callable[P, R]) -> Callable[P, R]:
+    """run with sun_paths_kept()."""
+    @functools.wraps(run)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        with sun_paths_kept():
+            return run(*args, **kwargs)
+    return wrapped
+
+
+def _sun_path(site: Site, start: float, period: float) -> tuple[SunPosition, ...]:
+    """The sun at the middle of each sub-step of a period, also below the horizon."""
+    key = (site, start, period)
+    path = _paths.get(key)
+    if path is None:
+        n = _substeps(period)
+        path = tuple(sun_position(site, start + (i + 0.5) * period / n) for i in range(n))
+        if _paths_users and period >= HOUR:
+            _paths[key] = path
+    return path
 
 
 def _periods(hours: float, period: float) -> float:

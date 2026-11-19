@@ -21,7 +21,8 @@ from . import load as lf
 from . import plan as pl
 from .model import (
     EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather,
-    forecast, learn, measured_forecast, sample_reasons, snow_windows, solar_date, solar_day, steady_hours, usable_samples,
+    forecast, learn, measured_forecast, sample_reasons, snow_windows, solar_date, solar_day, steady_hours, sun_path_cache,
+    usable_samples,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
@@ -369,6 +370,7 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
     return result
 
 
+@sun_path_cache
 def learn_arrays(site: Site, arrays: dict[str, ArrayConfig], history: PvHistory, now: float, soc_full: float,
                  exclusions: list[tuple[float, float]], keep: Keep | None = None,
                  period: float = HOUR) -> dict[str, LearnedArray]:

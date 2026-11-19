@@ -537,3 +537,21 @@ def test_sky_view_flag_of_earlier_stored_data_is_unknown():
     stored = model.LearnedArray(sky_view=0.95, sky_view_learned=True).as_dict()
     del stored["sky_view_learned"]
     assert model.LearnedArray.from_dict(stored).sky_view_learned is None
+
+
+def test_sun_paths_are_kept_only_during_a_run(monkeypatch):
+    monkeypatch.setattr(model, "_paths", {})                  # outside the session-wide cache of conftest
+    monkeypatch.setattr(model, "_paths_users", 0)
+    inside = []
+
+    @model.sun_path_cache
+    def run():
+        first = model._sun_path(SITE, START + 12 * 3600, 3600.0)
+        inside.append(model._sun_path(SITE, START + 12 * 3600, 3600.0) is first)
+        model._sun_path(SITE, START + 12 * 3600, 300.0)       # 5-minute periods stay uncached
+        inside.append(len(model._paths))
+
+    run()
+    assert inside == [True, 1]
+    assert model._paths == {} and model._paths_users == 0
+    assert model._sun_path(SITE, START, 3600.0) and model._paths == {}   # outside a run nothing is kept

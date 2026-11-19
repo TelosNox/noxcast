@@ -27,7 +27,7 @@ from itertools import combinations
 from . import backtest as bt
 from . import learning as ln
 from .const import Series
-from .model import LearnedArray, WeatherHour, clearsky_weather, forecast, mean_weather, sun_paths
+from .model import LearnedArray, WeatherHour, clearsky_weather, forecast, mean_weather, sun_path_cache, sun_paths
 from .solar import Site
 
 VERSION = 1
@@ -77,6 +77,7 @@ def _beats(best: Days, current: Days, rng: random.Random) -> float:
     return round(wins / RESAMPLES, 3)
 
 
+@sun_path_cache
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
         weather: dict[str, list[WeatherHour]], current: list[str], soc_full: float,
         exclusions: list[tuple[float, float]], tz: tzinfo, now: float) -> dict:

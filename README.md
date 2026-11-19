@@ -471,7 +471,7 @@ tariffs:
       uri: http://homeassistant.local:8123
 ```
 
-EVCC asks Home Assistant for access when you save it and reads hourly values.
+EVCC reads hourly values from it.
 
 ### Predbat
 
@@ -498,7 +498,7 @@ template:
 ```
 
 Repeat it with `sensor.noxcast_forecast_tomorrow` and `sensor.noxcast_forecast_day_after_tomorrow` (and
-`sensor.noxcast_forecast_in_3_days`, which is disabled until you enable it), then in Predbat's `apps.yaml`:
+`sensor.noxcast_forecast_in_3_days`, which exists from 4 *Forecast days* on and is disabled until you enable it), then in Predbat's `apps.yaml`:
 
 ```yaml
   pv_forecast_today: sensor.noxcast_predbat_today
@@ -512,14 +512,14 @@ uses the central forecast for its weak and strong case. Predbat simulates the ba
 
 ### EMHASS
 
-EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and averages them into its own
-time steps. A REST command builds it from the `hourly` attributes of PV and load; `sensor.battery_soc` stands for your
+EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and holds each value until the
+next one in its own time steps. A REST command builds it from the `hourly` attributes of PV and load; `sensor.battery_soc` stands for your
 battery's state of charge in %:
 
 ```yaml
 rest_command:
-  emhass_dayahead:
-    url: http://localhost:5000/action/dayahead-optim
+  emhass_mpc:
+    url: http://localhost:5000/action/naive-mpc-optim
     method: POST
     content_type: application/json
     payload: >
@@ -532,7 +532,8 @@ rest_command:
         {%- endfor -%}
         {{ '{' ~ ns.items | join(', ') ~ '}' }}
       {%- endmacro -%}
-      {"pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
+      {"prediction_horizon": 48,
+       "pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
        "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow']) }},
        "soc_init": {{ states('sensor.battery_soc') | float / 100 }}}
 ```

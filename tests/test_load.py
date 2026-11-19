@@ -283,3 +283,10 @@ def test_run_energy_with_either_kind_of_counter():
     assert lf.run_energy(52_100.0, [51_600.0, 51_800.0]) == 500.0          # meter that keeps counting
     assert lf.run_energy(600.0, []) is None                                 # no history: kind of counter unknown
     assert lf.run_energy(None, [1.0]) is None
+
+
+def test_until_cuts_every_series_at_the_end():
+    fc = lf.LoadForecast({0.0: 1.0, H: 2.0, 2 * H: 3.0}, {0.0: 1.0, 2 * H: 3.0}, {"a": {H: 1.0, 2 * H: 1.0}}, 1.1, 50.0, 0.0)
+    cut = lf.until(fc, 2 * H)
+    assert cut.hours == {0.0: 1.0, H: 2.0} and cut.base == {0.0: 1.0} and cut.consumers == {"a": {H: 1.0}}
+    assert (cut.k, cut.sustained, cut.sustained_since) == (1.1, 50.0, 0.0)

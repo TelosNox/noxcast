@@ -1448,12 +1448,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 result.expected[TOTAL], result.correction):
             self._archive_store.async_delay_save(self._archive_data, 300)
 
-        result.load = await self._async_load_forecast(
-            now, dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp(),
-            {w.start: w.temp for w in weather})
+        # the load until the end of tomorrow; further only for the battery's 48-hour outlook
+        load_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=2)).timestamp()
+        load = await self._async_load_forecast(now, max(load_end, now + bt.AHEAD_HOURS * 3600),
+                                               {w.start: w.temp for w in weather})
+        result.load = lf.until(load, load_end) if load is not None else None
         runs = [r for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE and (r := self.run_profile(sid))]
         await self.hass.async_add_executor_job(
-            fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end, self.feed_in)
+            fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end, self.feed_in,
+            (load.hours, horizon) if load is not None else None)
         self._log_battery(result.battery, local_now, now)
 
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}

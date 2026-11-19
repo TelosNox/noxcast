@@ -444,10 +444,101 @@ With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`,
 `consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
 today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
 what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
-charge start** (attribute `grid`: grid energy until then). Per flexible consumer: **PV share now**,
+charge start** (attribute `grid`: grid energy until then), **Battery lowest level (48 h)** (attributes `hourly`: the
+expected level at every full hour of the next 48 hours in %, `lowest_at`, `until`: earlier when *Forecast days* end
+before). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.
+
+## Other tools (EVCC, Predbat, EMHASS)
+
+Noxcast publishes its forecast in its own attributes, not in the format of another project. Each tool gets it through
+its own way in: a setting, a template sensor or a REST command. The entity IDs below are those of an English setup;
+the IDs follow the language Home Assistant had when Noxcast was added, so copy yours from the entity's settings.
+The hourly values are kWh per hour, which is the same number as the mean power in kW.
+
+### EVCC
+
+EVCC reads the solar forecast of the Home Assistant energy dashboard. Choose Noxcast there as the solar forecast (and
+no other one, since EVCC adds them up), then in EVCC:
+
+```yaml
+tariffs:
+  solar:
+    - type: template
+      template: homeassistant
+      uri: http://homeassistant.local:8123
+```
+
+EVCC asks Home Assistant for access when you save it and reads hourly values.
+
+### Predbat
+
+Predbat reads forecasts in the form of the Solcast integration: an attribute `detailedForecast` with half-hourly
+entries (`period_start`, `pv_estimate` in kW), the day total in kWh as state. A template sensor per day builds it
+from the `hourly` attribute, each hour as two half hours of the same power:
+
+```yaml
+template:
+  - sensor:
+      - name: Noxcast Predbat today
+        unique_id: noxcast_predbat_today
+        unit_of_measurement: kWh
+        state: "{{ states('sensor.noxcast_expected_today') }}"
+        attributes:
+          detailedForecast: >
+            {% set ns = namespace(out=[]) %}
+            {% for start, kw in (state_attr('sensor.noxcast_expected_today', 'hourly') or {}).items() %}
+              {% set t = as_datetime(start) %}
+              {% set ns.out = ns.out + [{'period_start': t.isoformat(), 'pv_estimate': kw},
+                                        {'period_start': (t + timedelta(minutes=30)).isoformat(), 'pv_estimate': kw}] %}
+            {% endfor %}
+            {{ ns.out }}
+```
+
+Repeat it with `sensor.noxcast_forecast_tomorrow` and `sensor.noxcast_forecast_day_after_tomorrow` (and
+`sensor.noxcast_forecast_in_3_days`, which is disabled until you enable it), then in Predbat's `apps.yaml`:
+
+```yaml
+  pv_forecast_today: sensor.noxcast_predbat_today
+  pv_forecast_tomorrow: sensor.noxcast_predbat_tomorrow
+  pv_forecast_d3: sensor.noxcast_predbat_day_after_tomorrow
+  pv_forecast_d4: sensor.noxcast_predbat_in_3_days
+```
+
+Noxcast has P10 / P90 per day, not per hour, so the entries carry no `pv_estimate10` / `pv_estimate90`: Predbat then
+uses the central forecast for its weak and strong case. Predbat simulates the battery itself.
+
+### EMHASS
+
+EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and averages them into its own
+time steps. A REST command builds it from the `hourly` attributes of PV and load; `sensor.battery_soc` stands for your
+battery's state of charge in %:
+
+```yaml
+rest_command:
+  emhass_dayahead:
+    url: http://localhost:5000/action/dayahead-optim
+    method: POST
+    content_type: application/json
+    payload: >
+      {%- macro watts(sensors) -%}
+        {%- set ns = namespace(items=[]) -%}
+        {%- for s in sensors -%}
+          {%- for t, kwh in (state_attr(s, 'hourly') or {}).items() -%}
+            {%- set ns.items = ns.items + ['"' ~ t ~ '": ' ~ (kwh * 1000) | round(0)] -%}
+          {%- endfor -%}
+        {%- endfor -%}
+        {{ '{' ~ ns.items | join(', ') ~ '}' }}
+      {%- endmacro -%}
+      {"pv_power_forecast": {{ watts(['sensor.noxcast_expected_today', 'sensor.noxcast_forecast_tomorrow']) }},
+       "load_power_forecast": {{ watts(['sensor.noxcast_load_rest_of_today', 'sensor.noxcast_load_tomorrow']) }},
+       "soc_init": {{ states('sensor.battery_soc') | float / 100 }}}
+```
+
+The load forecast contains every configured consumer. Leave out what EMHASS plans as a deferrable load, or the load
+counts twice: configure such a consumer as *flexible* in Noxcast (it then counts with zero).
 
 ## Repairs
 
@@ -617,6 +708,8 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
   own (always or never feeds in) counts with its share of the hour's PV, since all batteries are one storage; what
   it feeds in anyway counts against the household's limit. The limit is compared with the hour's mean power: short
   peaks above it do not count as curtailed.
+- The same simulation also runs for the next 48 hours, past the charge start, as far as the PV forecast reaches:
+  *Battery lowest level (48 h)*, for tariff and charge planners.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
 - **Flexible consumers:** each run is placed into the surplus that would not go into the battery
   anyway; several are placed one after the other. Results: best window today and tomorrow, PV

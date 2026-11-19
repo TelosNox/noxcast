@@ -56,7 +56,7 @@ from . import plan as pl
 from . import plateau as pt
 from .forecasting import NoxcastData
 from .learning import ArrayConfig, ConsumerConfig
-from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour
+from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour, sun_paths_kept
 from .solar import Site, angle_of_incidence, sun_position
 from .sources import (
     async_archive_irradiance, async_archive_weather, async_hourly_statistics,
@@ -675,32 +675,34 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
         """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""
         now = dt_util.utcnow()
-        history, soc_full, exclusions = await self._async_pv_history(now)
-        air_temp = history.air_temp
-        learned = await self.hass.async_add_executor_job(
-            ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
-        try:
-            await self.hass.async_add_executor_job(self._basis, learned, history, soc_full, exclusions)
-        except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
-            _LOGGER.exception("Noxcast could not summarise the data basis")
-        # a copy: add_history replaces days of the live dict, and merged() tells those by identity
-        base = dict(self.forecast_archive)
-        work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),
-                                                      soc_full)
-        # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
-        self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
-        self.learned.update(learned)          # applied in one step on the event loop
-        try:
-            # only the window's days of the 5-minute archive, which holds years; expanded in the executor
-            first = (dt_util.now() - timedelta(days=pt.WINDOW_DAYS + 1)).date().isoformat()
-            fine_days = {d: dict(v) for d, v in self.fine.items() if d >= first}
-            self.limits["detected"] = await self.hass.async_add_executor_job(
-                self._detect_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
-            self.limits["systems"] = await self.hass.async_add_executor_job(
-                self._detect_system_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
-        except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
-            _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
-        self.band = await self.hass.async_add_executor_job(self._learn_band)
+        # one sun path cache for the whole run: basis, archive, limits and band go over the same hours again
+        with sun_paths_kept():
+            history, soc_full, exclusions = await self._async_pv_history(now)
+            air_temp = history.air_temp
+            learned = await self.hass.async_add_executor_job(
+                ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
+            try:
+                await self.hass.async_add_executor_job(self._basis, learned, history, soc_full, exclusions)
+            except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
+                _LOGGER.exception("Noxcast could not summarise the data basis")
+            # a copy: add_history replaces days of the live dict, and merged() tells those by identity
+            base = dict(self.forecast_archive)
+            work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),
+                                                          soc_full)
+            # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
+            self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
+            self.learned.update(learned)          # applied in one step on the event loop
+            try:
+                # only the window's days of the 5-minute archive, which holds years; expanded in the executor
+                first = (dt_util.now() - timedelta(days=pt.WINDOW_DAYS + 1)).date().isoformat()
+                fine_days = {d: dict(v) for d, v in self.fine.items() if d >= first}
+                self.limits["detected"] = await self.hass.async_add_executor_job(
+                    self._detect_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
+                self.limits["systems"] = await self.hass.async_add_executor_job(
+                    self._detect_system_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
+            except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
+                _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
+            self.band = await self.hass.async_add_executor_job(self._learn_band)
         await self._async_forecast_error()
         if self.house_load:
             await self._async_learn_load(now, air_temp)

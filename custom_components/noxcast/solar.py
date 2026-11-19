@@ -22,7 +22,7 @@ class Site:
         return 100.0 * ((44331.514 - self.altitude) / 11880.516) ** (1 / 0.1902632)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SunPosition:
     azimuth: float          # degrees clockwise from north
     elevation: float        # apparent elevation (with refraction)

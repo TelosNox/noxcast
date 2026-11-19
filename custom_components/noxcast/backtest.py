@@ -30,7 +30,9 @@ from . import explain
 from . import fine as fn
 from . import learning as ln
 from .band import CLEARNESS_MAX
-from .model import LearnedArray, clearsky_weather, forecast, measured_forecast, steady_hours, usable_samples
+from .model import (
+    LearnedArray, clearsky_weather, forecast, measured_forecast, steady_hours, sun_path_cache, usable_samples,
+)
 from .solar import Site, sun_position
 from .const import Series
 
@@ -334,6 +336,7 @@ def local_day(tz: tzinfo) -> Callable[[float], date]:
     return day_of
 
 
+@sun_path_cache
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
         archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo,
         near_limit: NearLimit | None = None, limits: dict[str, float] | None = None,

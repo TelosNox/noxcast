@@ -31,7 +31,7 @@ from .const import (
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_FEED_IN_MODE, CONF_LIMIT_PER_PHASE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_REGULATION, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
+    CONF_FEED_IN_MODE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_REGULATION, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
 from . import archive as fc_archive
@@ -1004,11 +1004,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _shared_cap(self, system: sy.System | None) -> tuple[str, float, tuple[str, ...]] | None:
         """The output limit a battery's system shares with the other subsystems of its system (battery.Battery)."""
-        parent = self.systems.get(system.parent or "") if system else None
-        if parent is None or not parent.get(CONF_OUTPUT_LIMIT) or parent.get(CONF_LIMIT_PER_PHASE):
-            return None
-        others = tuple(a for c in parent.children if self.systems[c].battery is None for a in self.systems[c].arrays)
-        return parent.id, float(parent.get(CONF_OUTPUT_LIMIT)), others
+        return sy.shared_limit(self.systems, system.id) if system else None
 
     def _log_battery(self, battery: dict | None, local_now: datetime, now: float) -> None:
         """Keep the first battery prediction after the morning fix, to compare it with what happens."""

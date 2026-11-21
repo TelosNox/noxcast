@@ -407,6 +407,12 @@ not types of their own. Independent devices are systems of their own, side by si
   is set on the system only: subsystems are devices one control coordinates and follow it. A device that does not
   follow that control is a system of its own. Device properties stay on the subsystem (its output limit, phase,
   battery and where that charges from).
+- A system's output limit holds for all its subsystems together, whatever phase they feed into (a balcony system
+  that keeps the feed-in point at 800 W), or, set per phase, for each phase on its own: the subsystems on one phase
+  share it (EcoFlow Stream in three-phase mode), every phase may reach it (`systems.limit_groups`). A three-phase
+  subsystem, or one without a phase, takes an unknown part of every phase it feeds into; it belongs to no phase
+  group, so a phase's limit stays an upper bound of its single-phase subsystems, only an hour in which the other
+  took a part shows no cut (simplified).
 - An outer rule holds inside unless a deviation is set: the household's feed-in rule (free, at most W, at most a
   share of the PV peak power, zero export) is a requirement, not a fact; each system follows it, or names its
   own deviation ("feeds the rest in anyway", "never feeds in"). A deviation is optional and only set where it
@@ -1128,7 +1134,7 @@ this.
 
 Done: temperature loss, the satellite filter and sky view, the geometry check, batteries and then the system model
 (household -> system -> subsystem, with the Installation tab), power limits per sensor and per system (forecast cap,
-lower bounds in learning, suggestion from flat maxima), curtailment per system (full battery, charge power, load
+lower bounds in learning, suggestion from flat maxima, shared per phase), curtailment per system (full battery, charge power, load
 following without battery, the household feed-in limit), the accuracy archive of 400 days and the backtest
 scorecard. The open work is tracked in GitHub issues:
 
@@ -1138,7 +1144,7 @@ scorecard. The open work is tracked in GitHub issues:
    and model.
 2. **Light model** (#249): C1, C2 and C3 were falsified on real data, and the cause of the low-sun error is still
    open; C6 (the band's P10 / P90 as ranks) is built, C5, C7 and C8 follow on the hindcast.
-3. **Installation model, rest** (#250): battery forecast per independent system, shared limits per phase, fixed power, balancing.
+3. **Installation model, rest** (#250): battery forecast per independent system, fixed power, balancing.
 4. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.
 

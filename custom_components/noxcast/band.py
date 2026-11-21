@@ -202,8 +202,9 @@ def coverage(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
 
     Counted per weather class of the forecast (as in learn_band) and for all days, for whole days and for single
     hours. Only the band users saw counts, as archived when the forecast was made; it was learned on the days
-    before, so the check is out of sample. Hours with possible curtailment or at a fixed limit are left out, and
-    a day with one of them entirely, since their actual value does not show what the sun gave. "days" of a row
+    before, so the check is out of sample. Hours with possible curtailment, at a fixed limit or without the actual
+    value of every array are left out, and a day with one of them entirely, since their actual value does not show
+    what the sun gave. With a battery this leaves out mostly sunny days (full battery), so their clear row is thin. "days" of a row
     is the number of days its hours come from; below COVERAGE_MIN_DAYS the view reports too little data.
     """
     daily: dict[str, dict] = {}
@@ -215,13 +216,15 @@ def coverage(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
         clean = True
         a_sum = ghi_sum = clear_sum = 0.0
         for h in day.hours:
-            if h.curtailed or h.limited:
+            # an array without its actual value (sensor unavailable) would make the total look too low
+            if h.curtailed or h.limited or any(sid not in h.actual for sid in h.forecast):
                 clean = False
                 continue
             cs = clear_ghi(h.ts)
-            a = sum(h.actual.get(sid, 0.0) for sid in h.forecast)
+            a = sum(h.actual[sid] for sid in h.forecast)
             a_sum += a
-            ghi_sum, clear_sum = ghi_sum + (h.ghi or 0.0), clear_sum + max(cs, 0.0)
+            if cs > 0:              # as in learn_band: twilight irradiance does not move the day's class
+                ghi_sum, clear_sum = ghi_sum + (h.ghi or 0.0), clear_sum + cs
             if h.band and cs > 0:
                 for name in ("all", weather_class((h.ghi or 0.0) / cs)):
                     _tally(hourly, name, a, h.band[0], h.band[1], day.date)

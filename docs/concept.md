@@ -549,7 +549,9 @@ not types of their own. Independent devices are systems of their own, side by si
   Whether the band holds is checked on the band that was published (`band.coverage`, archived with each
   day-ahead forecast and learned on the days before, so out of sample): the share of days and of hours whose
   actual total fell below P10, inside, or above P90, per weather class of the forecast, over the last 120 days.
-  The target is 10 / 80 / 10 %. Curtailed or limited hours are left out, and a day with one of them entirely. A
+  The target is 10 / 80 / 10 %. Curtailed or limited hours and hours without the actual value of every array are
+  left out, and a day with one of them entirely; with a battery that removes mostly sunny days (full battery), a
+  selection the view names. A
   class with fewer than 30 days shows "not enough data": with fewer, a 10 % tail rests on two or three days. The
   accuracy view shows it; calibrating the band from it (C6, #249) waits until the classes reach that size.
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total

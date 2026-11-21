@@ -88,7 +88,7 @@ def covered(days=40, clear_day=True, curtail=None):
                 hours[str(ts)]["curtailed"] = True
         # every 10th day below the band, every 10th above, the rest inside
         band = [5.5, 6.0] if d % 10 == 0 else [4.0, 4.5] if d % 10 == 1 else [4.5, 5.5]
-        out[f"2026-01-{d:02d}"] = {"hours": hours, "band": band}
+        out[f"2026-{1 + d // 28:02d}-{1 + d % 28:02d}"] = {"hours": hours, "band": band}
     return out
 
 
@@ -114,3 +114,11 @@ def test_coverage_uses_the_weather_class_of_the_forecast_and_skips_days_without_
     a["2026-02-02"] = {"hours": {"0": {"ghi": 100.0, "forecast": {"a": 1.0}, "actual": None}}, "band": [0.0, 1.0]}
     c = bd.coverage(a, lambda ts: CLEAR)
     assert set(c["days"]) == {"all", "overcast"} and c["days"]["all"]["n"] == 3
+
+
+def test_coverage_leaves_out_hours_without_the_actual_of_every_array():
+    a = covered()
+    hour = a["2026-01-04"]["hours"][str(3 * 86400 + 12 * 3600)]
+    del hour["actual"]["b"]                          # the second sensor was unavailable
+    c = bd.coverage(a, lambda ts: CLEAR)
+    assert c["days"]["all"]["n"] == 39 and c["left_out"] == 1 and c["hours"]["all"]["n"] == 399

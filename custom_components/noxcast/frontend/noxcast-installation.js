@@ -3,7 +3,9 @@
 // each: exact, simplified or not yet. There a PV array, a battery or a system can be moved to another system
 // ("noxcast/move_part", the same rules as the forms), and admins change a part in the form of its dialog beside the
 // diagram ("noxcast/part_form", shown with Home Assistant's ha-form): every change is drawn first
-// ("noxcast/part_preview"), saving stores it as the dialog does ("noxcast/part_save").
+// ("noxcast/part_preview"), saving stores it as the dialog does ("noxcast/part_save"). The dashed "+" boxes of the
+// diagram add a part with the same form, drawn in the diagram before it is saved; a system's template is picked on
+// its picture. Removing a part shows first what goes with it and the diagram without it ("noxcast/part_remove").
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/installation".
 const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
@@ -16,6 +18,12 @@ const INST_TEXT = {
     previewHelp: "Das Bild zeigt die Änderung schon. Gespeichert wird erst mit „Speichern“; danach lädt Noxcast neu.",
     changed: "Dieser Teil wurde inzwischen anderswo geändert (z. B. in einem Dialog). Das Bild zeigt jetzt den gespeicherten Stand; ändere ihn bitte noch einmal.",
     noForm: "Das Formular lässt sich hier nicht laden. Ändere den Teil unter Einstellungen → Geräte & Dienste → Noxcast.",
+    added: { array: "Neue PV-Gruppe", battery: "Neuer Akku", system: "Neues System", sub: "Neues Teilsystem" },
+    addHelp: "Das Bild zeigt den neuen Teil schon, hervorgehoben. Angelegt wird er erst mit „Speichern“; danach lädt Noxcast neu.",
+    pickTemplate: "Tippe auf die Vorlage, die zu deinem Gerät passt:",
+    remove: "Entfernen", removeAsk: "{name} entfernen?", removeWith: "Mit entfernt wird: {list}.",
+    removeWarn: "Seine Entitäten und was Noxcast dafür gelernt hat, werden mit entfernt. Das lässt sich nicht rückgängig machen. Das Bild zeigt die Anlage ohne diesen Teil.",
+    removeYes: "Endgültig entfernen", removing: "Entfernt …",
     status: { exact: "rechnet genau", simplified: "rechnet vereinfacht", not_yet: "noch nicht berücksichtigt" },
     inherited: "vom System", fromHouse: "Vorgabe des Haushalts",
     help: "Jede Angabe wird gespeichert, auch wenn Noxcast sie noch nicht verrechnet. Spätere Versionen rechnen sie genauer, ohne dass du etwas neu eintragen musst.",
@@ -48,6 +56,12 @@ const INST_TEXT = {
     previewHelp: "The picture already shows the change. It is stored only with “Save”; Noxcast reloads afterwards.",
     changed: "This part was changed elsewhere meanwhile (e.g. in a dialog). The picture now shows what is stored; please change it again.",
     noForm: "The form cannot be loaded here. Change the part under Settings → Devices & services → Noxcast.",
+    added: { array: "New PV array", battery: "New battery", system: "New system", sub: "New subsystem" },
+    addHelp: "The picture already shows the new part, highlighted. It is created only with “Save”; Noxcast reloads afterwards.",
+    pickTemplate: "Tap the template that fits your device:",
+    remove: "Remove", removeAsk: "Remove {name}?", removeWith: "Removed with it: {list}.",
+    removeWarn: "Its entities and what Noxcast learned for it are removed too. This cannot be undone. The picture shows the installation without this part.",
+    removeYes: "Remove for good", removing: "Removing …",
     status: { exact: "computed exactly", simplified: "computed simplified", not_yet: "not used yet" },
     inherited: "from its system", fromHouse: "the household's rule",
     help: "Every setting is stored, even where Noxcast does not compute it yet. Later versions compute it more precisely without you entering anything again.",
@@ -85,9 +99,25 @@ class NoxcastInstallation extends HTMLElement {
       if (save) { this._move(save.dataset.save); return; }
       const edit = path.find((n) => n.dataset && n.dataset.edit);
       if (edit) { this._startEdit(edit.dataset.entry, edit.dataset.edit); return; }
+      const remove = path.find((n) => n.dataset && n.dataset.remove);
+      if (remove) { this._askRemove(remove.dataset.entry, remove.dataset.remove); return; }
       const act = path.find((n) => n.dataset && n.dataset.act);
-      if (act) { if (act.dataset.act === "save-part") this._savePart(); else this._stopEdit(); return; }
-      if (this._edit) return;                   // the part being changed stays chosen until saved or cancelled
+      if (act) {
+        if (act.dataset.act === "save-part") this._savePart();
+        else if (act.dataset.act === "remove-yes") this._remove();
+        else this._stopEdit();
+        return;
+      }
+      const template = path.find((n) => n.getAttribute && n.getAttribute("data-template"));
+      if (template && this._edit) { this._changed({ ...this._edit.input, template: template.getAttribute("data-template") }); return; }
+      if (this._edit || this._removal) return;  // the part being changed stays chosen until saved or cancelled
+      const add = path.find((n) => n.getAttribute && n.getAttribute("data-add"));
+      const flow = path.find((n) => n.classList && n.classList.contains("flow"));
+      if (add && flow && this._admin) {
+        const [kind, to] = add.getAttribute("data-add").split(":");
+        this._startEdit(flow.dataset.entry, null, kind, to || null);
+        return;
+      }
       if (path.some((n) => n.dataset && n.dataset.entries)) {
         history.pushState(null, "", "/config/integrations/integration/noxcast");
         window.dispatchEvent(new CustomEvent("location-changed"));
@@ -109,6 +139,7 @@ class NoxcastInstallation extends HTMLElement {
 
   get _t() { return INST_TEXT[(this._hass.language || "en").slice(0, 2)] || INST_TEXT.en; }
   get _lang() { return this._hass.language || "en"; }
+  get _admin() { return !(this._hass.user && !this._hass.user.is_admin); }
 
   async _load() {
     try {
@@ -161,15 +192,16 @@ class NoxcastInstallation extends HTMLElement {
     return !!customElements.get("ha-form");
   }
 
-  // the form of a part (or "house"), as its dialog has it
-  async _startEdit(entryId, part) {
+  // the form of a part (or "house"), as its dialog has it; without a part, the form of a new one of this kind in
+  // the system "to" (a new system: its parent, none on the top level)
+  async _startEdit(entryId, part, kind, to) {
     const t = this._t;
     this._editError = null;
     let form;
     try {
       if (!(await this._ensureForm())) throw new Error(t.noForm);
       if (this._hass.loadBackendTranslation) await this._hass.loadBackendTranslation("selector", "noxcast");
-      form = await ask(this._hass, { type: "noxcast/part_form", entry_id: entryId, part, language: this._lang });
+      form = await ask(this._hass, { type: "noxcast/part_form", entry_id: entryId, part, kind, to, language: this._lang });
     } catch (err) {
       this._editError = errorText(err, this._hass.language);
       this._render();
@@ -177,9 +209,13 @@ class NoxcastInstallation extends HTMLElement {
     }
     this._edit = { entryId, part, form, input: form.data, errors: {}, diagram: null, saving: false };
     this._form = this._makeForm(form);
-    this._sel = part;
+    this._sel = part || "draft";
     this._render();
+    if (!part) this._preview();                 // the new part shows in the diagram right away
   }
+
+  // the parts of a request that say which part is edited: its id, or the kind and place of a new one
+  _which(e) { return { entry_id: e.entryId, part: e.part, kind: e.form.kind, to: e.form.to, language: this._lang }; }
 
   _makeForm(form) {
     const f = document.createElement("ha-form");
@@ -215,13 +251,13 @@ class NoxcastInstallation extends HTMLElement {
     const draft = { name: e.input.name, template: e.input.template };
     if (e.input.parent !== undefined) draft.parent = e.input.parent;
     try {
-      const form = await ask(this._hass, { type: "noxcast/part_form", entry_id: e.entryId, part: e.part, draft,
-        language: this._lang });
+      const form = await ask(this._hass, { type: "noxcast/part_form", ...this._which(e), draft });
       if (this._edit !== e) return;
       e.form = { ...form, revision: e.form.revision };
       e.input = form.data;
       this._formTexts(this._form, e.form);
     } catch (err) { e.base = errorText(err, this._hass.language); }
+    this._render();                             // the picture of the templates marks the new one
     this._preview();
   }
 
@@ -232,8 +268,7 @@ class NoxcastInstallation extends HTMLElement {
     const seq = (this._seq = (this._seq || 0) + 1);
     let r;
     try {
-      r = await ask(this._hass, { type: "noxcast/part_preview", entry_id: e.entryId, part: e.part, input: e.input,
-        language: this._lang });
+      r = await ask(this._hass, { type: "noxcast/part_preview", ...this._which(e), input: e.input });
     } catch (err) { return; }
     if (seq !== this._seq || this._edit !== e) return;
     e.diagram = r.diagram;
@@ -259,8 +294,8 @@ class NoxcastInstallation extends HTMLElement {
     this._render();
     let r;
     try {
-      r = await ask(this._hass, { type: "noxcast/part_save", entry_id: e.entryId, part: e.part, input: e.input,
-        revision: e.form.revision, language: this._lang });
+      r = await ask(this._hass, { type: "noxcast/part_save", ...this._which(e), input: e.input,
+        revision: e.form.revision });
     } catch (err) {
       e.saving = false;
       e.base = errorText(err, this._hass.language);
@@ -275,6 +310,7 @@ class NoxcastInstallation extends HTMLElement {
       return;
     }
     this._merge(r);
+    if (!e.part) this._sel = null;              // the new part's id comes with the reload; nothing chosen meanwhile
     this._stopEdit();
   }
 
@@ -282,7 +318,39 @@ class NoxcastInstallation extends HTMLElement {
     clearTimeout(this._previewTimer);
     this._edit = null;
     this._form = null;
+    this._removal = null;
     this._render();
+  }
+
+  // what removing a part takes with it, shown with the diagram without it before anything is removed
+  async _askRemove(entryId, part) {
+    this._editError = null;
+    try {
+      const r = await ask(this._hass, { type: "noxcast/part_remove", entry_id: entryId, part, language: this._lang });
+      this._removal = { entryId, ...r, busy: false };
+    } catch (err) { this._editError = errorText(err, this._hass.language); }
+    this._render();
+  }
+
+  async _remove() {
+    const r = this._removal;
+    if (!r || r.busy) return;
+    r.busy = true;
+    this._render();
+    let data;
+    try {
+      data = await ask(this._hass, { type: "noxcast/part_remove", entry_id: r.entryId, part: r.part, confirm: true,
+        revision: r.revision, language: this._lang });
+    } catch (err) {
+      r.busy = false;
+      r.error = errorText(err, this._hass.language);
+      this._render();
+      return;
+    }
+    if (data.errors) { this._stopEdit(); this._editError = this._t.changed; this._load(); return; }
+    this._merge(data);
+    this._sel = null;
+    this._stopEdit();
   }
 
   // an answer holds the entry it changed only: keep the others
@@ -293,15 +361,19 @@ class NoxcastInstallation extends HTMLElement {
   }
 
   _selStyle() {
-    return this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke-width: 2.4; }</style>` : "";
+    return this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke: var(--primary-color);
+      stroke-width: 2.4; }</style>` : "";
   }
 
   // the form in place of the settings while a part is changed
   _editor(e) {
     const t = this._t, ed = this._edit;
-    return `<div class="edit"><div class="slot"></div>
+    const pick = ed.form.templates ? `<p class="help">${t.pickTemplate}</p><div class="templates">
+      <style>.templates [data-template="${CSS.escape(ed.input.template || "")}"] > rect:first-child {
+        stroke: var(--primary-color); stroke-width: 2.4; }</style>${ed.form.templates}</div>` : "";
+    return `<div class="edit">${pick}<div class="slot"></div>
       <div class="error small">${esc(ed.base || "")}</div>
-      <p class="help">${t.previewHelp}</p>
+      <p class="help">${ed.part ? t.previewHelp : t.addHelp}</p>
       <div class="row"><button class="chip primary" data-act="save-part" ${ed.saving ? "disabled" : ""}>${
         ed.saving ? t.saving : t.saveChange}</button><button class="chip" data-act="cancel">${t.cancel}</button></div></div>`;
   }
@@ -373,16 +445,29 @@ class NoxcastInstallation extends HTMLElement {
 
   _detail(e, sel) {
     const t = this._t;
+    const ed = this._edit && this._edit.entryId === e.entry_id ? this._edit : null;
+    if (ed && !ed.part) {
+      const kind = ed.form.kind === "system" && ed.form.to ? "sub" : ed.form.kind;
+      return `<div class="head"><span class="title">${t.added[kind] || ""}</span></div>${this._editor(e)}`;
+    }
+    const rm = this._removal && this._removal.entryId === e.entry_id ? this._removal : null;
+    if (rm) {
+      return `<div class="head"><span class="title">${esc(t.removeAsk.replace("{name}", rm.name))}</span></div>
+        ${rm.inside.length ? `<p>${esc(t.removeWith.replace("{list}", rm.inside.join(", ")))}</p>` : ""}
+        <p class="help">${t.removeWarn}</p>
+        ${rm.error ? `<div class="error small">${esc(rm.error)}</div>` : ""}
+        <div class="row actions"><button class="chip danger" data-act="remove-yes" ${rm.busy ? "disabled" : ""}>${
+          rm.busy ? t.removing : t.removeYes}</button><button class="chip" data-act="cancel">${t.cancel}</button></div>`;
+    }
     const node = sel && this._find(e, sel);
     if (!node) return `<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
-    const admin = !(this._hass.user && !this._hass.user.is_admin);
-    if (this._edit && this._edit.entryId === e.entry_id) {
-      return `<div class="head"><span class="title">${esc(node.title)}</span></div>${this._editor(e)}`;
-    }
+    const admin = this._admin;
+    if (ed) return `<div class="head"><span class="title">${esc(node.title)}</span></div>${this._editor(e)}`;
     const moves = (node.moves || []).map(([id, label]) => this._belongs(e, id, label)).join("");
     const change = admin ? `<button class="chip" data-edit="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${
-      node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>` : "";
+      node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>${node.ids[0] === "house" ? ""
+      : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}` : "";
     return `<div class="head"><span class="title">${esc(node.title)}</span>${change}</div>
       ${this._editError ? `<div class="error small">${esc(this._editError)}</div>` : ""}
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
@@ -401,9 +486,12 @@ class NoxcastInstallation extends HTMLElement {
     else body = this._data.entries.map((e) => {
       this._effects = e.effects || [];
       const editing = this._edit && this._edit.entryId === e.entry_id;
-      const diagram = (editing && this._edit.diagram) || e.diagram || "";
+      const removing = this._removal && this._removal.entryId === e.entry_id;
+      const diagram = (removing && this._removal.diagram) || (editing && this._edit.diagram) || e.diagram || "";
+      // the "+" boxes only for admins, and not while a part is changed or removed
+      const handles = this._admin && !this._edit && !this._removal ? "" : "<style>[data-add] { display: none; }</style>";
       return `<section class="card pad">
-        ${e.systems.length ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${diagram}</div>`
+        ${e.systems.length || this._admin ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${handles}${diagram}</div>`
           : `<div class="muted">${t.noSystems}</div>`}
         <div class="detail">${this._detail(e, e.systems.length ? this._sel : "house")}</div>
         <p class="help">${t.help} ${t.edit}</p>
@@ -454,7 +542,10 @@ class NoxcastInstallation extends HTMLElement {
       .error { color: var(--error-color, #db4437); }
       .chip:disabled { opacity: .6; cursor: default; }
       .chip.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
-      .head .chip { margin-left: auto; }
+      .head .chip:first-of-type { margin-left: auto; }
+      .chip.danger { background: var(--error-color, #db4437); border-color: var(--error-color, #db4437); color: #fff; }
+      .row.actions { display: flex; gap: 8px; margin-top: 8px; }
+      .templates svg { display: block; width: 100%; max-width: 680px; height: auto; }
       .edit { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-width: 560px; }
       .edit .row { display: flex; gap: 8px; }
       .help { color: var(--secondary-text-color); font-size: 12px; margin: 12px 0 0; line-height: 1.45; }

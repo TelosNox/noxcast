@@ -1,7 +1,8 @@
 """Editing the installation in the panel's Installation tab: the same forms, checks and stored data as the
 configuration dialogs. The forms go to the panel as Home Assistant form schemas with their texts, so that the panel
 shows them with ha-form beside the diagram; every change is drawn before it is saved, and saving writes the parts
-the way the dialogs do (store.async_store), so both ways stay interchangeable."""
+the way the dialogs do (store.async_store), so both ways stay interchangeable. Removing a part shows first what goes
+with it, in words and in the diagram without it, as the dialog's confirmation does."""
 from __future__ import annotations
 
 import hashlib
@@ -17,7 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.translation import async_get_translations
 
 from . import config_flow as cf
-from . import flowchart, store
+from . import concepts, flowchart, store
 from . import systems as sy
 from .const import (
     CONF_NAME, CONF_PARENT, CONF_SYSTEM, CONF_TEMPLATE, CONF_UNENTERED_SOC, DOMAIN, SUBENTRY_ARRAY,
@@ -150,7 +151,9 @@ async def async_form(hass: HomeAssistant, entry: ConfigEntry, part: str | None, 
     return {"kind": kind, "part": part, "to": to,
             "schema": vol.to_field_list(schema, custom_serializer=cv.custom_serializer),
             "data": _initial(schema),
-            "revision": revision(entry, part) if part else None, **await _texts(hass, kind, lang)}
+            "revision": revision(entry, part) if part else None, **await _texts(hass, kind, lang),
+            # a system's template is picked on its picture
+            **({"templates": concepts.templates(lang)} if kind == SUBENTRY_SYSTEM else {})}
 
 
 async def _check(hass: HomeAssistant, entry: ConfigEntry, kind: str, part: str | None, to: str | None,
@@ -229,5 +232,51 @@ async def async_save(hass: HomeAssistant, entry: ConfigEntry, kind: str | None, 
         return {}
     flat = dict(store.flat(entry))
     flat[part or cf.ulid_now()] = (kind, data[CONF_NAME], data)
+    store.async_store(hass, entry, flat)
+    return {}
+
+
+def _inside(flat: dict[str, Any], part: str) -> list[str]:
+    """What goes with a part: a system's subsystems, and the PV arrays and battery of it and of its subsystems."""
+    systems = sy.systems_of(flat)
+    if part not in systems:
+        return []
+    out: list[str] = []
+    for sid in (part, *systems[part].children):
+        s = systems[sid]
+        out += ([sid] if sid != part else []) + list(s.arrays) + ([s.battery] if s.battery else [])
+    return out
+
+
+def _removal_revision(flat: dict[str, Any], part: str) -> str:
+    """The fingerprint of the part and all that goes with it: something added inside meanwhile is not removed
+    unseen."""
+    gone = {p: flat[p][2] for p in (part, *_inside(flat, part))}
+    return hashlib.sha1(json.dumps(gone, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def removal(entry: ConfigEntry, part: str, lang: str) -> dict[str, Any]:
+    """What removing a part would do, before anything is removed: its name, the names of what goes with it, and the
+    diagram without them."""
+    flat = dict(store.flat(entry))
+    if part not in flat:
+        raise EditError("not_found")
+    inside = _inside(flat, part)
+    rest = {p: v for p, v in flat.items() if p != part and p not in inside}
+    return {"part": part, "name": flat[part][1], "inside": sorted(flat[p][1] for p in inside),
+            "diagram": flowchart.render(sy.tree(dict(entry.data), rest), lang),
+            "revision": _removal_revision(flat, part)}
+
+
+def remove(hass: HomeAssistant, entry: ConfigEntry, part: str, rev: str | None) -> dict[str, str]:
+    """Remove a part with all that goes with it, as the dialog does; "changed" instead when the part or what is
+    inside it changed since the confirmation was shown."""
+    flat = dict(store.flat(entry))
+    if part not in flat:
+        raise EditError("not_found")
+    if rev != _removal_revision(flat, part):
+        return {"base": "changed"}
+    for p in (part, *_inside(flat, part)):
+        flat.pop(p, None)
     store.async_store(hass, entry, flat)
     return {}

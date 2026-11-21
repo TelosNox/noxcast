@@ -48,6 +48,7 @@ WS_MOVE = f"{DOMAIN}/move_part"
 WS_PART_FORM = f"{DOMAIN}/part_form"
 WS_PART_PREVIEW = f"{DOMAIN}/part_preview"
 WS_PART_SAVE = f"{DOMAIN}/part_save"
+WS_PART_REMOVE = f"{DOMAIN}/part_remove"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -74,6 +75,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_part_form)
     websocket_api.async_register_command(hass, ws_part_preview)
     websocket_api.async_register_command(hass, ws_part_save)
+    websocket_api.async_register_command(hass, ws_part_remove)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -336,7 +338,9 @@ def _installation(entries: list, lang: str) -> dict[str, Any]:
     out = []
     for e in entries:
         tree = installation_tree(e)
-        out.append({"entry_id": e.entry_id, "title": e.title, **tree, "diagram": flowchart.render(tree, lang)})
+        # the "+" handles are drawn for everyone; the tab shows them to admins only, who may add parts
+        out.append({"entry_id": e.entry_id, "title": e.title, **tree,
+                    "diagram": flowchart.render(tree, lang, handles=True)})
     return {"entries": out}
 
 
@@ -435,6 +439,29 @@ async def ws_part_save(hass: HomeAssistant, connection: websocket_api.ActiveConn
         connection.send_error(msg["id"], str(err), "The part cannot be edited there")
         return
     lang = (msg.get("language") or hass.config.language or "en")[:2]
+    _send(connection, msg, {"errors": errors} if errors else _installation([entry], lang))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_PART_REMOVE, vol.Required("entry_id"): str,
+                                  vol.Required("part"): str, vol.Optional("confirm", default=False): bool,
+                                  vol.Optional("revision"): vol.Any(str, None), vol.Optional("language"): str})
+@callback
+def ws_part_remove(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Without confirm: what removing the part would take with it, and the diagram without it; nothing is removed.
+    With confirm and that answer's revision: remove it, as the dialog does. Answers then with the installation as it
+    is now, or {"errors": {"base": "changed"}} when the part changed meanwhile."""
+    if (entry := _editable(hass, connection, msg)) is None:
+        return
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    try:
+        if not msg["confirm"]:
+            _send(connection, msg, editor.removal(entry, msg["part"], lang))
+            return
+        errors = editor.remove(hass, entry, msg["part"], msg.get("revision"))
+    except editor.EditError as err:
+        connection.send_error(msg["id"], str(err), "No such part of a Noxcast installation")
+        return
     _send(connection, msg, {"errors": errors} if errors else _installation([entry], lang))
 
 

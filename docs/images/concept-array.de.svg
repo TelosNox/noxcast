@@ -22,7 +22,8 @@ svg.nx-flow { --nf-text: #1f1f1f; --nf-muted: #666; --nf-line: #8a8a8a; --nf-nod
 .nx-flow .needle { stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: 1.8; stroke-linecap: round; fill: none; }
 .nx-flow .north { stroke: var(--nx-muted, var(--nf-muted)); stroke-width: 1.2; }
 .nx-flow .exact { fill: #3f9b4f; } .nx-flow .simplified { fill: #c98a12; } .nx-flow .not_yet { fill: #8a8f98; }
-.nx-flow [data-node] { cursor: pointer; }
+.nx-flow .add { fill: transparent; stroke: var(--nx-muted, var(--nf-muted)); stroke-width: .8; stroke-dasharray: 4 3; }
+.nx-flow [data-node], .nx-flow [data-add], .nx-flow [data-template] { cursor: pointer; }
 </style><style>
 .nx-flow .out { stroke: var(--nx-sys-line, var(--nf-sys-line)); stroke-width: 2.2; fill: none; }
 .nx-flow .load { stroke: var(--nx-muted, var(--nf-muted)); stroke-width: 1.4; stroke-dasharray: 4 3; fill: none; }

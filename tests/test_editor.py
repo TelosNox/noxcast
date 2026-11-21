@@ -137,3 +137,50 @@ async def test_the_household_is_edited_like_its_dialog(hass: HomeAssistant, setu
     msg = await ask("part_save", part="house", revision=form["revision"],
                     input={**form["data"], "feed_in_mode": "limited", "feed_in_limit": {"feed_in_limit_w": 800}})
     assert msg["success"] and entry.data["feed_in_mode"] == "limited" and entry.data["feed_in_limit_w"] == 800
+
+
+async def test_a_new_system_and_subsystem_are_added_with_their_template(hass: HomeAssistant, setup) -> None:
+    entry, ask = setup
+    form = (await ask("part_form", kind="system", language="de"))["result"]
+    # the template is picked on its picture: one card per template
+    assert form["templates"].count("data-template=") == 4 and 'data-template="coupled"' in form["templates"]
+    form = (await ask("part_form", kind="system", draft={"name": "Stream", "template": "coupled"}))["result"]
+    msg = await ask("part_save", kind="system", input={**form["data"], "name": "Stream"})
+    assert msg["success"] and "errors" not in msg["result"]
+    stream = next(sid for sid, d in parts_of(hass, entry, "system").items() if d["name"] == "Stream")
+    # an empty system that coordinates devices offers a subsystem, not a PV array
+    diagram = msg["result"]["entries"][0]["diagram"]
+    assert f'data-add="system:{stream}"' in diagram and f'data-add="array:{stream}"' not in diagram
+    assert 'data-add="system:"' in diagram
+    form = (await ask("part_form", kind="system", to=stream, draft={"name": "Unit", "template": "pv_battery"}))["result"]
+    msg = await ask("part_preview", kind="system", to=stream, input={**form["data"], "name": "Unit"})
+    assert msg["result"]["node"] == "draft" and 'data-node="draft"' in msg["result"]["diagram"]
+    msg = await ask("part_save", kind="system", to=stream, input={**form["data"], "name": "Unit"})
+    assert msg["success"]
+    unit = next(d for d in parts_of(hass, entry, "system").values() if d["name"] == "Unit")
+    assert unit["parent"] == stream
+    # a system with a battery template and no battery offers one, as its menu does
+    assert 'data-add="battery:' in msg["result"]["entries"][0]["diagram"]
+
+
+async def test_a_part_is_removed_only_after_what_goes_with_it_was_shown(hass: HomeAssistant, setup) -> None:
+    entry, ask = setup
+    system = parts_of(hass, entry, "array")["roof"]["system"]
+    msg = await ask("part_remove", part=system, language="de")
+    assert msg["success"]
+    shown = msg["result"]
+    assert shown["inside"] == ["Roof"] and 'data-node="roof"' not in shown["diagram"]
+    assert system in parts_of(hass, entry, "system")                               # nothing removed yet
+    # something changed inside meanwhile: nothing is removed unseen
+    msg = await ask("part_form", kind="array", to=system)
+    array = {**msg["result"]["data"], "name": "Garage", "power_sensors": ["sensor.pv3"], "tilt": 20, "azimuth": 90,
+             "peak_power": 500}
+    assert (await ask("part_save", kind="array", to=system, input=array))["success"]
+    msg = await ask("part_remove", part=system, confirm=True, revision=shown["revision"])
+    assert msg["result"]["errors"] == {"base": "changed"} and system in parts_of(hass, entry, "system")
+    shown = (await ask("part_remove", part=system))["result"]
+    assert shown["inside"] == ["Garage", "Roof"]
+    msg = await ask("part_remove", part=system, confirm=True, revision=shown["revision"])
+    assert msg["success"] and not parts_of(hass, entry, "system") and not parts_of(hass, entry, "array")
+    msg = await ask("part_remove", part="house")
+    assert not msg["success"] and msg["error"]["code"] == "not_found"

@@ -175,3 +175,63 @@ def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], tot
     if rest_band:
         days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]
     return {"hours": hours, "days": days, "rest": rest_band}
+
+
+COVERAGE_MIN_DAYS = 30       # fewer days in a class say too little about a 10 % tail
+
+
+def _tally(rows: dict, name: str, actual: float, low: float, high: float, day: str) -> None:
+    row = rows.setdefault(name, {"n": 0, "below": 0, "inside": 0, "above": 0, "dates": set()})
+    row["n"] += 1
+    row["dates"].add(day)
+    row["below" if actual < low else "above" if actual > high else "inside"] += 1
+
+
+def _rows(rows: dict) -> dict:
+    out = {}
+    for name in ("all", *(c for _, c in CLASSES)):
+        if name in rows:
+            r = rows[name]
+            out[name] = {"n": r["n"], "days": len(r["dates"]), "below": r["below"], "inside": r["inside"],
+                         "above": r["above"]}
+    return out
+
+
+def coverage(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
+    """How often the actual total fell below, inside or above the band published with the day-ahead forecast.
+
+    Counted per weather class of the forecast (as in learn_band) and for all days, for whole days and for single
+    hours. Only the band users saw counts, as archived when the forecast was made; it was learned on the days
+    before, so the check is out of sample. Hours with possible curtailment or at a fixed limit are left out, and
+    a day with one of them entirely, since their actual value does not show what the sun gave. "days" of a row
+    is the number of days its hours come from; below COVERAGE_MIN_DAYS the view reports too little data.
+    """
+    daily: dict[str, dict] = {}
+    hourly: dict[str, dict] = {}
+    left_out = 0
+    for day in fc_archive.days(archive):
+        if not day.complete or not (day.band or any(h.band for h in day.hours)):
+            continue
+        clean = True
+        a_sum = ghi_sum = clear_sum = 0.0
+        for h in day.hours:
+            if h.curtailed or h.limited:
+                clean = False
+                continue
+            cs = clear_ghi(h.ts)
+            a = sum(h.actual.get(sid, 0.0) for sid in h.forecast)
+            a_sum += a
+            ghi_sum, clear_sum = ghi_sum + (h.ghi or 0.0), clear_sum + max(cs, 0.0)
+            if h.band and cs > 0:
+                for name in ("all", weather_class((h.ghi or 0.0) / cs)):
+                    _tally(hourly, name, a, h.band[0], h.band[1], day.date)
+        if not day.band:
+            continue
+        if not clean:
+            left_out += 1
+            continue
+        if clear_sum > 0:
+            for name in ("all", weather_class(ghi_sum / clear_sum)):
+                _tally(daily, name, a_sum / 1000, day.band[0], day.band[1], day.date)
+    return {"min_days": COVERAGE_MIN_DAYS, "target": [round(Q_LOW, 2), round(Q_HIGH - Q_LOW, 2), round(1 - Q_HIGH, 2)],
+            "days": _rows(daily), "hours": _rows(hourly), "left_out": left_out}

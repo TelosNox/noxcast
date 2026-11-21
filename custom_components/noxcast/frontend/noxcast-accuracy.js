@@ -27,6 +27,11 @@ const ACC_TEXT = {
     btPending: "Noch keine Rückrechnung. Sie läuft nachts nach dem Lernen.", btNoSat: "Dafür braucht es das Satellitenarchiv (Optionen der Integration).",
     btFew: (days, needed) => `Noch zu wenig Daten: ${days} von ${needed} Tagen.`,
     btHelp: "Die Prozentzahl zeigt, wie stark der Fehler gegenüber dem Vergleichswert schrumpft: 20 % → 18 % sind 10 % kleiner. Oben: Hätte das heutige Modell die archivierten Tage besser getroffen? Der Fehler der Wettervorhersage bleibt dabei enthalten. Unten: Das Modell lernt auf jedem zweiten Tag und wird auf den übrigen mit gemessener Einstrahlung geprüft; das zeigt, was die Verschattungskarte auf unbekannten Tagen bringt. Liegen die ungelernten Tage deutlich über den gelernten, merkt sich das Modell Zufälle. Die beiden Zahlen beantworten verschiedene Fragen und sind nicht direkt vergleichbar.",
+    bandTitle: "Trifft die Spanne P10–P90?", bandDays: "Ganze Tage", bandHours: "Einzelne Stunden", allWeather: "alle",
+    below: "darunter", inside: "in der Spanne", above: "darüber", target: "Ziel",
+    bandFew: (n, min) => `zu wenig Daten (${n} von ${min} Tagen)`, bandNone: "Noch keine Tage mit archivierter Spanne.",
+    bandLeftOut: (n) => `${n} ${n === 1 ? "Tag" : "Tage"} mit möglicher Abregelung nicht gezählt.`,
+    bandHelp: (span, min) => `Die Spanne soll den Ist-Wert in etwa 8 von 10 Fällen einschließen; je etwa 1 von 10 liegt darunter und darüber. Gezählt wird die Spanne, die am Vorabend mit der Prognose ausgegeben wurde, für die Summe aller PV-Gruppen, über die letzten ${span} Tage und unabhängig von der Auswahl oben. Liegen deutlich mehr Werte außerhalb, ist die Spanne zu schmal; liegen fast alle darin, ist sie breiter als nötig. Bei Stunden zählt die Wetterlage der Stunde. Stunden mit möglicher Abregelung (Akku voll, Limit erreicht) zählen nicht, ein Tag mit solchen Stunden ganz nicht. Unter ${min} Tagen je Wetterlage sagt der Anteil noch zu wenig.`,
     weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
     mcTitle: "Wettermodelle vergleichen", mcStart: "Vergleich starten", mcCombo: "Wettermodelle", mcRank: "Platz",
     mcIntro: "Welche Wettermodelle passen zu deiner Anlage? Noxcast holt für jedes Modell die Vortagsprognosen des letzten Jahres, rechnet sie mit deinem gelernten Modell durch und vergleicht mit der gemessenen Erzeugung, jedes Modell einzeln und jedes Paar gemittelt, wie in der Prognose.",
@@ -74,6 +79,11 @@ const ACC_TEXT = {
     btPending: "No backtest yet. It runs at night after learning.", btNoSat: "This needs the satellite archive (options of the integration).",
     btFew: (days, needed) => `Not enough data yet: ${days} of ${needed} days.`,
     btHelp: "The percentage shows how much the error shrinks against the comparison: 20 % → 18 % is 10 % smaller. Above: would today's model have matched the archived days better? The error of the weather forecast stays in. Below: the model learns on every other day and is checked on the rest with measured irradiance; this shows what the shading map brings on unknown days. If the unlearned days lie well above the learned ones, the model memorises chance. The two figures answer different questions and cannot be compared directly.",
+    bandTitle: "Does the range P10–P90 hold?", bandDays: "Whole days", bandHours: "Single hours", allWeather: "all",
+    below: "below", inside: "in the range", above: "above", target: "Target",
+    bandFew: (n, min) => `not enough data (${n} of ${min} days)`, bandNone: "No days with an archived range yet.",
+    bandLeftOut: (n) => `${n} ${n === 1 ? "day" : "days"} with possible curtailment not counted.`,
+    bandHelp: (span, min) => `The range should hold the actual value in about 8 of 10 cases, with about 1 in 10 below and 1 in 10 above. What counts is the range published with the forecast the evening before, for the sum of all PV arrays, over the last ${span} days and regardless of the choice above. If clearly more values fall outside, the range is too narrow; if nearly all fall inside, it is wider than needed. For hours, the weather of the hour counts. Hours with possible curtailment (battery full, limit reached) do not count, and a day with such hours not at all. Below ${min} days per weather class the share says too little.`,
     weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
     mcTitle: "Compare weather models", mcStart: "Start comparison", mcCombo: "Weather models", mcRank: "Rank",
     mcIntro: "Which weather models suit your installation? Noxcast fetches each model's day-ahead forecasts of the past year, runs them through your learned model and compares them with the measured output, each model on its own and each pair averaged, as in the forecast.",
@@ -299,6 +309,7 @@ class NoxcastAccuracy extends HTMLElement {
       <section class="card pad"><div class="figs">${figs}</div><p class="help">${t.help}</p></section>
       <section class="card pad"><h3>${t.perDay}</h3>${this._bars(days)}</section>
       ${this._split(days)}
+      ${this._bandCover()}
       ${this._backtest()}
       ${this._modelsSlot()}
       <section class="card pad">${sel ? this._hourly(sel) : `<h3>${t.hourly}</h3><p class="muted">${t.pick}</p>`}</section>
@@ -307,6 +318,35 @@ class NoxcastAccuracy extends HTMLElement {
         <section class="card pad grow"><h3>${t.byWeather}</h3>${this._weather(days)}</section>
         ${this._compare(days)}
       </div>`;
+  }
+
+  // how often the actual total fell below, inside or above the published range (band.coverage), per weather class
+  _bandCover() {
+    const t = this._t, entry = (this._data.entries || [])[0], c = entry && entry.band;
+    if (!c) return "";
+    const table = (rows, label) => {
+      const names = ["all", ...CLASSES.map(([n]) => n)].filter((n) => rows[n]);
+      if (!names.length) return "";
+      const body = names.map((n) => {
+        const r = rows[n], name = n === "all" ? t.allWeather : t[n];
+        if (r.days < c.min_days) return `<tr><td>${name}</td><td class="num">${r.days}</td><td colspan="4" class="muted small">${t.bandFew(r.days, c.min_days)}</td></tr>`;
+        const sh = [r.below, r.inside, r.above].map((v) => v / r.n);
+        return `<tr><td>${name}</td><td class="num">${r.days}</td>${sh.map((v) => `<td class="num">${this._pct(v)}</td>`).join("")}<td>${this._cover(sh)}</td></tr>`;
+      }).join("");
+      const target = `<tr class="muted"><td>${t.target}</td><td></td>${c.target.map((v) => `<td class="num">${this._pct(v)}</td>`).join("")}<td>${this._cover(c.target)}</td></tr>`;
+      return `<div class="grow"><h3>${label}</h3><table><thead><tr><th></th><th class="num">${t.days}</th><th class="num">${t.below}</th>
+        <th class="num">${t.inside}</th><th class="num">${t.above}</th><th></th></tr></thead><tbody>${body}${target}</tbody></table></div>`;
+    };
+    const tables = table(c.days, t.bandDays) + table(c.hours, t.bandHours);
+    const left = c.left_out ? `<p class="help">${t.bandLeftOut(c.left_out)}</p>` : "";
+    return `<section class="card pad"><h3>${t.bandTitle}</h3>${tables ? `<div class="split">${tables}</div>` : `<p class="muted">${t.bandNone}</p>`}
+      ${left}<p class="help">${t.bandHelp(c.span, c.min_days)}</p></section>`;
+  }
+
+  // shares below / inside / above as one bar
+  _cover(sh) {
+    const cls = ["out", "in", "out"];
+    return `<div class="cover">${sh.map((v, i) => `<div class="${cls[i]}" style="width:${(v * 100).toFixed(1)}%"></div>`).join("")}</div>`;
   }
 
   _bars(days) {
@@ -688,6 +728,8 @@ class NoxcastAccuracy extends HTMLElement {
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .meter { width: 80px; height: 6px; border-radius: 3px; background: var(--nx-empty); overflow: hidden; }
       .meter div { height: 100%; border-radius: 3px; }
+      .cover { display: flex; width: 100px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--nx-empty); }
+      .cover .in { background: var(--nx-fc); opacity: .7; } .cover .out { background: var(--nx-bar-on); }
       .wx { fill: var(--nx-wx); opacity: .75; } .md { fill: var(--nx-md); opacity: .75; } .wx.on, .md.on { opacity: 1; }
       .zero { stroke: var(--secondary-text-color); stroke-opacity: .5; }
       .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }

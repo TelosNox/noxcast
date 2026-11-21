@@ -546,6 +546,12 @@ not types of their own. Independent devices are systems of their own, side by si
   forecast, 10.1 kWh against 8.3 kWh with a clear sky. Applied to today's rest,
   tomorrow and the day after (attributes `p10` / `p90` of the total sensors), per hour in the day
   card, and to the battery simulation (lost surplus and full time with PV at P10 and at P90).
+  Whether the band holds is checked on the band that was published (`band.coverage`, archived with each
+  day-ahead forecast and learned on the days before, so out of sample): the share of days and of hours whose
+  actual total fell below P10, inside, or above P90, per weather class of the forecast, over the last 120 days.
+  The target is 10 / 80 / 10 %. Curtailed or limited hours are left out, and a day with one of them entirely. A
+  class with fewer than 30 days shows "not enough data": with fewer, a 10 % tail rests on two or three days. The
+  accuracy view shows it; calibrating the band from it (C6, #249) waits until the classes reach that size.
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total
   (measured hours + corrected rest) and the remaining energy. The intraday correction works on
   clearness (output relative to the clear-sky output of the same hour): if the last three hours
@@ -1108,13 +1114,15 @@ lower bounds in learning, suggestion from flat maxima), curtailment per system (
 following without battery, the household feed-in limit), the accuracy archive of 400 days and the backtest
 scorecard. The open work is tracked in GitHub issues:
 
-1. **Snow filter on real winters** (#282): days without output and the snow window are built; the snow thresholds
-   are still to be checked on installations with snow.
-2. **Light model** (#249): C1 and C2 were falsified on real data; next is C3, the bound as the brightest plausible
-   sky, then C5-C8.
+1. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
+   and the state of charge for 48 h, 15-minute steps and band coverage are built; open are the shading map
+   uncertainty, what the nightly learning changed, and the deviation of a day split into weather, shade, limit
+   and model.
+2. **Light model** (#249): C1, C2 and C3 were falsified on real data, and the cause of the low-sun error is still
+   open; C5-C8 follow on the hindcast (C6, the band calibration, once band coverage has enough days).
 3. **Installation model, rest** (#250): battery forecast per independent system, shared limits per phase, fixed power, balancing.
-4. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
-   and the state of charge for 48 h, band coverage, shading map uncertainty, 15-minute steps (built: the first
-   three and the last).
-5. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
+4. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.
+
+The snow filter (#282) is built; its thresholds are unfitted physics and are checked on installations with real
+winters.

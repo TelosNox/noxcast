@@ -703,7 +703,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     self._detect_system_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
             except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
                 _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
-            self.band = await self.hass.async_add_executor_job(self._learn_band)
+            self.band = await self.hass.async_add_executor_job(self._learn_band, history, exclusions)
         await self._async_forecast_error()
         if self.house_load:
             await self._async_learn_load(now, air_temp)
@@ -817,10 +817,22 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         """The archived days the band and the backtest learn from (EVAL_DAYS)."""
         return fc_archive.recent(self.forecast_archive, dt_util.now().date() - timedelta(days=EVAL_DAYS))
 
-    def _learn_band(self) -> dict:
-        """Forecast band from the archive, with the clear-sky output of the current learned model. Executor."""
+    def _learn_band(self, history: ln.PvHistory | None = None,
+                    exclusions: list[tuple[float, float]] | None = None) -> dict:
+        """Forecast band from the archive, with the clear-sky output of the current learned model. Executor.
+
+        With the learning run's history, the hours learning leaves out (days without output, snow, excluded
+        periods) are left out of the band too; at startup, until the first learning run, the band takes every hour.
+        """
+        keep = None
+        if history is not None:
+            left = frozenset().union(*(ln.left_out(self.site, arr, history).hours for arr in self.arrays.values()))
+            spans = exclusions or []
+
+            def keep(ts: float) -> bool:
+                return ts not in left and not any(a <= ts < b for a, b in spans)
         return bd.from_archive(self._eval_archive(), self.site, {sid: a.geometry for sid, a in self.arrays.items()},
-                               self.learned, limits=self.installation.limited_arrays(),
+                               self.learned, keep=keep, limits=self.installation.limited_arrays(),
                                caps=self.installation.forecast_caps())
 
     async def _async_load_series(self, start: datetime, period: str = "hour") -> dict[str, Series]:

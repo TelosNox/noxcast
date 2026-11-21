@@ -54,7 +54,7 @@ def stored() -> dict:
 
 def test_band_from_stored_archive():
     band = bd.learn_band(stored(), lambda ts: 800.0, lambda ts, ids: 600.0 * len(ids))
-    assert band == {"version": 2, "daily": {"all": [-0.04, 0.015, 9]},
+    assert band == {"version": 2, "daily": {"all": [-0.042, 0.015, 9]},
                     "hourly": {"overcast": [-0.029, 0.007, 89], "all": [-0.052, 0.022, 141]}}
 
 

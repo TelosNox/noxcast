@@ -5,13 +5,15 @@ days (and hours) the shift in clearness is collected, (actual - forecast) / clea
 the clear-sky output comes from the same learned model (efficiency, shading) with a clear sky. The
 shifts are grouped per weather class of the forecast (clearness = forecast GHI relative to clear-sky
 GHI). The 10th and 90th percentile of the shift, added to a new forecast's clearness, give P10 and
-P90; the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
+P90, as ranks that leave a tenth of new days below and above even when a class has few past days (_quantile);
+the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
 geometry or a wrongly learned shadow, cloud enhancement). A clear forecast can therefore hardly
 rise, an overcast one can rise up to a clear sky. Hours with possible curtailment or at a fixed limit
 are left out, since their actual value does not show what the sun gave.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from . import archive as fc_archive
@@ -38,11 +40,17 @@ def weather_class(clearness: float) -> str:
 
 
 def _quantile(values: list[float], q: float) -> float:
+    """The value of rank floor(q (n + 1)) for a lower, ceil(q (n + 1)) for an upper quantile, within 1..n.
+
+    A new day falls below the k-th of n past values in k / (n + 1) of the cases, if the days are alike. The
+    percentile of the n values themselves is narrower: with 8 days it puts P10 and P90 at the 2nd and 7th value,
+    and on unseen days only 66 % instead of 80 % of the days fell inside (replay of a year, docs/concept.md).
+    With few days the band reaches the smallest and largest shift; with many it is the plain percentile.
+    """
     s = sorted(values)
-    pos = q * (len(s) - 1)
-    lo = int(pos)
-    hi = min(lo + 1, len(s) - 1)
-    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+    n = len(s)
+    k = math.ceil(q * (n + 1)) if q > 0.5 else math.floor(q * (n + 1))
+    return s[min(max(k, 1), n) - 1]
 
 
 def _summary(groups: dict[str, list[float]], minimum: int) -> dict:
@@ -61,7 +69,8 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
 
     clear_wh(hour_start, array ids): clear-sky output of these arrays in that hour (Wh), from the
     current learned model. Classes with too little data are left out. keep(hour_start): only these
-    hours count (meant to select whole days, see learning.py). limits: arrays with a fixed limit (W); an hour
+    hours count; the coordinator leaves out what learning leaves out (days without output, snow, excluded periods),
+    since with few days in a class a single such day would set P10 (_quantile). limits: arrays with a fixed limit (W); an hour
     whose archived forecast of such an array reached it is left out, since that forecast was capped and its
     shift would not be one of the clouds; caps: limits shared by several arrays (arrays, W), the same for the sum
     of their forecasts.
@@ -75,6 +84,9 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
         for h in day.hours:
             if h.curtailed or h.limited or (keep is not None and not keep(h.ts)):
                 continue
+            # an array without its actual value (sensor unavailable) would read as a dark sky
+            if any(sid not in h.actual for sid in h.forecast):
+                continue
             if limits and any(h.forecast.get(sid, 0.0) >= (1 - LIMIT_MARGIN) * w for sid, w in limits.items()):
                 continue
             if caps and any(sum(h.forecast.get(sid, 0.0) for sid in group) >= (1 - LIMIT_MARGIN) * w
@@ -82,7 +94,7 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())
-            a = sum(h.actual.get(sid, 0.0) for sid in ids)
+            a = sum(h.actual[sid] for sid in ids)
             cs = clear_ghi(h.ts)
             if cs <= 0:
                 continue
@@ -175,3 +187,67 @@ def forecast_band(band: dict | None, site: Site, weather: list[WeatherHour], tot
     if rest_band:
         days[0] = [round(done / 1000 + rest_band[0], 3), round(done / 1000 + rest_band[1], 3)]
     return {"hours": hours, "days": days, "rest": rest_band}
+
+
+COVERAGE_MIN_DAYS = 30       # fewer days in a class say too little about a 10 % tail
+
+
+def _tally(rows: dict, name: str, actual: float, low: float, high: float, day: str) -> None:
+    row = rows.setdefault(name, {"n": 0, "below": 0, "inside": 0, "above": 0, "dates": set()})
+    row["n"] += 1
+    row["dates"].add(day)
+    row["below" if actual < low else "above" if actual > high else "inside"] += 1
+
+
+def _rows(rows: dict) -> dict:
+    out = {}
+    for name in ("all", *(c for _, c in CLASSES)):
+        if name in rows:
+            r = rows[name]
+            out[name] = {"n": r["n"], "days": len(r["dates"]), "below": r["below"], "inside": r["inside"],
+                         "above": r["above"]}
+    return out
+
+
+def coverage(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
+    """How often the actual total fell below, inside or above the band published with the day-ahead forecast.
+
+    Counted per weather class of the forecast (as in learn_band) and for all days, for whole days and for single
+    hours. Only the band users saw counts, as archived when the forecast was made; it was learned on the days
+    before, so the check is out of sample. Hours with possible curtailment, at a fixed limit or without the actual
+    value of every array are left out, and a day with one of them entirely, since their actual value does not show
+    what the sun gave. With a battery this leaves out mostly sunny days (full battery), so their clear row is thin. "days" of a row
+    is the number of days its hours come from; below COVERAGE_MIN_DAYS a share says little. clear_ghi: clear-sky GHI
+    by hour start. Part of the diagnostics download, to check the band on an installation.
+    """
+    daily: dict[str, dict] = {}
+    hourly: dict[str, dict] = {}
+    left_out = 0
+    for day in fc_archive.days(archive):
+        if not day.complete or not (day.band or any(h.band for h in day.hours)):
+            continue
+        clean = True
+        a_sum = ghi_sum = clear_sum = 0.0
+        for h in day.hours:
+            # an array without its actual value (sensor unavailable) would make the total look too low
+            if h.curtailed or h.limited or any(sid not in h.actual for sid in h.forecast):
+                clean = False
+                continue
+            cs = clear_ghi(h.ts)
+            a = sum(h.actual[sid] for sid in h.forecast)
+            a_sum += a
+            if cs > 0:              # as in learn_band: twilight irradiance does not move the day's class
+                ghi_sum, clear_sum = ghi_sum + (h.ghi or 0.0), clear_sum + cs
+            if h.band and cs > 0:
+                for name in ("all", weather_class((h.ghi or 0.0) / cs)):
+                    _tally(hourly, name, a, h.band[0], h.band[1], day.date)
+        if not day.band:
+            continue
+        if not clean:
+            left_out += 1
+            continue
+        if clear_sum > 0:
+            for name in ("all", weather_class(ghi_sum / clear_sum)):
+                _tally(daily, name, a_sum / 1000, day.band[0], day.band[1], day.date)
+    return {"min_days": COVERAGE_MIN_DAYS, "target": [round(Q_LOW, 2), round(Q_HIGH - Q_LOW, 2), round(1 - Q_HIGH, 2)],
+            "days": _rows(daily), "hours": _rows(hourly), "left_out": left_out}

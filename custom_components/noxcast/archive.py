@@ -199,7 +199,8 @@ MIN_MEMBERS = 10           # fewer runs give no usable P10 / P90
 def ensemble(members: list[float]) -> list[float] | None:
     """[P10, P50, P90, number of runs] of the GHI of an hour's ensemble runs (W/m², rounded); None if too few.
 
-    Linear interpolation between the sorted runs, as for the band's quantiles (band.py).
+    Linear interpolation between the sorted runs: with 10 or more runs of one model this is their spread. The
+    band's P10 / P90 use ranks instead (band._quantile), since a class there can hold only a few past days.
     """
     if len(members) < MIN_MEMBERS:
         return None

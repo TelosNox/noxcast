@@ -1,6 +1,8 @@
 """Fixed power limits per PV sensor: the installation, the cuts per period, the forecast cap and its band."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from conftest import load
 
 fc = load("forecasting")
@@ -293,10 +295,70 @@ def test_a_pv_only_subsystem_under_a_shared_limit_depends_on_the_other_batteries
     assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 2
 
 
-def test_a_limit_per_phase_waits_for_the_phases():
-    subs = {**STREAM, "p": ("system", "Stream", {"name": "Stream", "output_limit_w": 800, "limit_per_phase": True})}
+# EcoFlow Stream in three-phase mode: 800 W per phase, shared by the devices on it; three micro-inverters on L1, one
+# on L2
+PHASED = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "all",
+                                     "output_limit_w": 800, "limit_per_phase": True}),
+          **{f"m{i}": ("system", f"Micro {i}", {"name": f"Micro {i}", "template": "inverter", "parent": "p",
+                                                "phase": "l2" if i == 4 else "l1"}) for i in range(1, 5)},
+          **{f"a{i}": ("array", f"A{i}", {"system": f"m{i}"}) for i in range(1, 5)}}
+PHASED_ARRAYS = {f"a{i}": [f"pv{i}"] for i in range(1, 5)}
+
+
+def test_a_limit_per_phase_is_shared_by_the_devices_on_each_phase():
+    built = inst.build(PHASED_ARRAYS, systems=sy.systems_of(PHASED))
+    assert [(c.arrays, c.limit_w, c.phase) for c in built.caps] == [(("a1", "a2", "a3"), 800.0, "l1"),
+                                                                   (("a4",), 800.0, "l2")]
+    # the device alone on L2 has the whole 800 W; the three on L1 share theirs
+    assert built.limited_arrays() == {"a4": 800.0} and built.forecast_caps() == [(("a1", "a2", "a3"), 800.0)]
+    capped = ct.cap_group({"a1": 400.0, "a2": 400.0, "a3": 400.0, "a4": 700.0}, lambda a: None,
+                          built.limited_arrays(), built.forecast_caps())
+    assert capped["a4"] == 700.0 and sum(capped[a] for a in ("a1", "a2", "a3")) == pytest.approx(800.0)
+    # 1500 W in total is no cut: L1 and L2 each stay below their limit
+    peaks = {"pv1": {0.0: 300.0, 3600.0: 200.0}, "pv2": {0.0: 300.0, 3600.0: 200.0},
+             "pv3": {0.0: 200.0, 3600.0: 200.0}, "pv4": {0.0: 700.0, 3600.0: 100.0}}
+    assert ct.limited_hours(built, "a1", peaks) == {0.0} and ct.limited_hours(built, "a4", peaks) == set()
+    cut = ct.cuts(built, ct.Observed({"pv1": ct.Stat(300), "pv2": ct.Stat(300), "pv3": ct.Stat(200),
+                                      "pv4": ct.Stat(700)}))
+    assert set(cut) == {"a1", "a2", "a3"} and cut["a1"].reason is ct.Reason.OUTPUT_LIMIT and cut["a1"].node == "p"
+    effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(PHASED), PHASED)}
+    assert effects[("p", "output_limit")] == effects[("p", "limit_per_phase")] == effects[("m4", "phase")] == sy.EXACT
+    # without "per phase" all four share one 800 W
+    total = {**PHASED, "p": ("system", "Stream", {**PHASED["p"][2], "limit_per_phase": False})}
+    assert [c.arrays for c in inst.build(PHASED_ARRAYS, systems=sy.systems_of(total)).caps] == [
+        ("a1", "a2", "a3", "a4")]
+
+
+def test_a_device_on_all_three_phases_stays_out_of_the_phase_limits():
+    # how much of a phase's limit it takes is not known: the phases stay an upper bound of the others, simplified
+    subs = {**PHASED, "m4": ("system", "Hybrid", {"name": "Hybrid", "template": "inverter", "parent": "p",
+                                                  "phase": "three"})}
+    built = inst.build(PHASED_ARRAYS, systems=sy.systems_of(subs))
+    assert [c.arrays for c in built.caps] == [("a1", "a2", "a3")] and built.array_limit("a4") is None
     effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(subs), subs)}
-    assert effects[("p", "output_limit")] == sy.NOT_YET
+    assert effects[("p", "output_limit")] == effects[("m4", "phase")] == effects[("m1", "phase")] == sy.SIMPLIFIED
+    # a phase without a limit per phase counts for nothing
+    total = {**subs, "p": ("system", "Stream", {**PHASED["p"][2], "limit_per_phase": False})}
+    effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, sy.systems_of(total), total)}
+    assert effects[("m1", "phase")] == sy.NOT_YET
+
+
+def test_a_battery_shares_a_limit_per_phase_only_with_the_devices_on_its_phase():
+    subs = {**PHASED, "m1": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p",
+                                                "phase": "l1"}),
+            "b1": ("battery", "Ultra battery", {"system": "m1", "soc_sensor": "soc.u", "battery_power": "p.u"})}
+    systems = sy.systems_of(subs)
+    assert sy.shared_limit(systems, "m1") == ("p:l1", 800.0, ("a2", "a3"))
+    # the battery is full: it may hold back the devices on L1 through their shared limit, not the one on L2
+    assert set(sy.curtailed_arrays(systems)["m1"]) == {"a1", "a2", "a3"}
+    built = inst.build(PHASED_ARRAYS, {}, 95, systems, {"b1": subs["b1"][2]}, "free")
+    assert [c.arrays for c in built.caps] == [("a4",)]
+    assert [(set(o.arrays), o.phase) for o in built.outlets] == [({"a1", "a2", "a3"}, "l1")]
+    assert built.stores_of("a4") == ()
+    effects = {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, systems, subs)}
+    assert effects[("p", "output_limit")] == sy.SIMPLIFIED
+    caps = bt.output_ceilings([bt.Battery(2000, 0.5, arrays=("a1",), shared=sy.shared_limit(systems, "m1"))])
+    assert caps == [(("a1", "a2", "a3"), 800.0)]
 
 
 def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest_cannot_go_out():

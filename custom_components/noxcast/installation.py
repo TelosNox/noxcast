@@ -35,7 +35,7 @@ from typing import Any
 
 from . import systems as sy
 from .const import (
-    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
     CONF_SOC_SENSOR,
 )
 
@@ -174,6 +174,7 @@ class Cap:
     system: str
     arrays: tuple[str, ...]
     limit_w: float
+    phase: str | None = None             # the phase it holds for, where the system's limit holds per phase
 
 
 @dataclass(frozen=True)
@@ -185,6 +186,7 @@ class Outlet:
     arrays: tuple[str, ...]
     limit_w: float
     meters: tuple[Meter, ...]            # the power sensors of every battery below the limit
+    phase: str | None = None             # as Cap.phase
 
 
 @dataclass(frozen=True)
@@ -397,41 +399,41 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
 
 
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
-    """The output limits that are fixed: no battery in the system or its subsystems. A limit per phase is left
-    out: the system's total may exceed it."""
+    """The output limits that are fixed: no battery in the system or its subsystems. A limit per phase holds for
+    each phase's subsystems (systems.limit_groups), fixed where none of them has a battery."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
         limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit or s.get(CONF_LIMIT_PER_PHASE):
+        if not limit:
             continue
-        tree = [s, *(systems[c] for c in s.children)]
-        if any(x.battery for x in tree):
-            continue
-        members = tuple(a for x in tree for a in x.arrays if a in known)
-        if members:
-            out.append(Cap(s.id, members, float(limit)))
+        for phase, tree in sy.limit_groups(systems, s.id):
+            if any(x.battery for x in tree):
+                continue
+            members = tuple(a for x in tree for a in x.arrays if a in known)
+            if members:
+                out.append(Cap(s.id, members, float(limit), phase))
     return tuple(out)
 
 
 def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
              batteries: Mapping[str, Mapping[str, Any]]) -> tuple[Outlet, ...]:
     """The output limits with a battery in the system or its subsystems (the others are fixed, _caps), where every
-    such battery has a power sensor: without one the output is not known. A limit per phase is left out."""
+    such battery has a power sensor: without one the output is not known. Per phase as _caps."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
         limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit or s.get(CONF_LIMIT_PER_PHASE):
+        if not limit:
             continue
-        tree = [s, *(systems[c] for c in s.children)]
-        found = [batteries.get(x.battery) or {} for x in tree if x.battery]
-        if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
-            continue
-        members = tuple(a for x in tree for a in x.arrays if a in known)
-        if members:
-            meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
-            out.append(Outlet(s.id, members, float(limit), meters))
+        for phase, tree in sy.limit_groups(systems, s.id):
+            found = [batteries.get(x.battery) or {} for x in tree if x.battery]
+            if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
+                continue
+            members = tuple(a for x in tree for a in x.arrays if a in known)
+            if members:
+                meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
+                out.append(Outlet(s.id, members, float(limit), meters, phase))
     return tuple(out)
 
 

@@ -8,6 +8,12 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- An output limit that holds per phase now counts (*Limit holds per phase*, e.g. EcoFlow Stream in three-phase
+  mode): the devices on one phase share its limit, a device alone on a phase gets the whole limit. Without a battery
+  it caps the PV forecast of each phase, and learning counts the hours in which a phase reached it as "at least this
+  much"; with a battery, hours in which a phase's output reached it count the same, and the battery forecast shares
+  the limit only with the devices on the same phase. Until now such a limit was not used at all. A three-phase
+  device, or one without a phase, is left out of the phase limits; the *Installation* tab shows this as simplified.
 - The array check flags a power sensor that showed power while the sun was down in the last 60 days: it measures more
   than PV, usually the output of an inverter with a battery, and so counts battery energy, even energy charged from
   the grid, as sun in the actual value and in learning. The array gets the *Check* badge and a notice under Repairs.

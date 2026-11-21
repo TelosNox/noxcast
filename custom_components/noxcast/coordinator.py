@@ -336,7 +336,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         (installation.battery_hours)."""
         today = dt_util.now().date()
         pv_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
-        chargers = sorted({c.sensor for c in self._installation_now().chargers()} - set(pv_ids))
+        chargers = sorted({m.sensor for m in self._installation_now().meters()} - set(pv_ids))
         sensor_ids = pv_ids + chargers
         days = fn.missing_days(self.fine, set(sensor_ids), today)
         if not days:
@@ -578,7 +578,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             # a system following the load at a flat base load would look like a limit too
             def keep(t: float, since=arr.valid_since, own=history.full.get(arr.subentry_id, frozenset())
                      | history.held.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
-                     | history.unsure.get(arr.subentry_id, frozenset())) -> bool:
+                     | history.unsure.get(arr.subentry_id, frozenset())
+                     | history.output.get(arr.subentry_id, frozenset())) -> bool:
                 return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
@@ -732,19 +733,20 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # the kept 5-minute means are in W already: charge_power only turns the sign of an inverted sensor. A
         # battery sensor that is also a PV sensor is kept with the PV's periods only: its hours go by the hourly mean
         pv_sensors = set(sensor_ids)
-        own = [c for c in installation.chargers() if c.sensor not in pv_sensors]
+        own = [m for m in installation.meters() if m.sensor not in pv_sensors]
         days = dict(self.fine)
         fine = inst.charge_power(own, await self.hass.async_add_executor_job(
             lambda: {c.sensor: fn.series(days, c.sensor) for c in own}), {})
         air_temp, satellite_ghi, snowfall = await self._async_archives(start, now, record) if archives else (None, None, None)
         blocked = {sid: installation.battery_hours(sid, soc, charging, fine) for sid in self.arrays}
         full = {sid: frozenset(f) for sid, (f, _, _) in blocked.items()}
+        output = self._output_hours(installation, power, power_max, factors, charging, fine, days)
         charge = {sid: frozenset(m) for sid, (_, m, _) in blocked.items()}
         unsure = {sid: frozenset(u) for sid, (_, _, u) in blocked.items() if u}
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors, {},
-                               air_temp, satellite_ghi, full, charge, held, unsure, snowfall)
+                               air_temp, satellite_ghi, full, charge, held, unsure, snowfall, output=output)
         soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
         return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
 
@@ -1287,11 +1289,29 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         stats = await async_hourly_statistics(self.hass, [self.grid], start, "min" if factor > 0 else "max", period)
         return {t: v * factor for t, v in stats.get(self.grid, {}).items() if v is not None}
 
+    @staticmethod
+    def _output_hours(installation: inst.Installation, power: dict, power_max: dict, factors: dict[str, float],
+                      charging: dict[str, dict[float, float]], fine: dict[str, dict[float, float]],
+                      days: dict) -> dict[str, frozenset[float]]:
+        """Per array the hour starts at an output limit with a battery below it (installation.output_hours), from the
+        PV's hourly maxima (the mean where there is none) and the kept 5-minute means."""
+        if not installation.outlets:
+            return {}
+        sensors = installation.outlet_sensors()
+        peak: dict[str, dict[float, float]] = {}
+        for s in sensors:
+            high = power_max.get(s) or {}
+            peak[s] = {t: (high[t] if high.get(t) is not None else mean) * factors.get(s, 1.0)
+                       for t, mean in (power.get(s) or {}).items() if mean is not None}
+        fine_pv = {s: fn.series(days, s) for s in sensors}
+        arrays = {a for o in installation.outlets for a in o.arrays}
+        return {a: frozenset(h) for a in arrays if (h := installation.output_hours(a, peak, charging, fine_pv, fine))}
+
     async def _async_charge_means(self, installation: inst.Installation, start: datetime, period: str = "hour"
                                   ) -> dict[str, dict[float, float]]:
         """Battery power sensor -> mean charge power per period (W), for the batteries whose maximum charge power
         may curtail PV (installation.charge_power). Means, not maxima: a spike of a second says nothing."""
-        chargers = installation.chargers()
+        chargers = installation.meters()
         if not chargers:
             return {}
         factors = await async_power_factors(self.hass, [c.sensor for c in chargers])
@@ -1301,13 +1321,15 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_curtailed(self, day_start: float, now: float) -> dict[str, set[float]]:
         """Per array today's hours with possibly curtailed PV: a battery that may curtail it was full or charged at
         its maximum power where no other battery took more (see forecasting.curtailed_hours and
-        installation.blocked)."""
+        installation.blocked), or an output limit with a battery below it was reached (installation.output_hours)."""
         installation = self._installation_now()
         soc_ids = installation.soc_sensors()
         held = await self._async_held_today(installation, day_start, now)
+        charging = await self._async_charging_today(installation, day_start)
+        for sid, hours in (await self._async_output_today(installation, day_start, charging)).items():
+            held[sid] = held.get(sid, set()) | hours
         if not soc_ids:
             return held
-        charging = await self._async_charging_today(installation, day_start)
         live: dict[str, float] = {}
         for sid in soc_ids:
             try:
@@ -1339,6 +1361,24 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             out[sid] = hours_full | hours_max | held.get(sid, set())
         return out
 
+    async def _async_output_today(self, installation: inst.Installation, day_start: float,
+                                  charging: dict[str, dict[float, float]]) -> dict[str, set[float]]:
+        """Per array today's hours at an output limit with a battery below it, from the 5-minute means of PV and
+        charge (installation.output_hours); the running period is not compiled yet and waits for the next update."""
+        if not installation.outlets:
+            return {}
+        sensors = installation.outlet_sensors()
+        try:
+            factors = await async_power_factors(self.hass, sensors)
+            stats = await async_hourly_statistics(self.hass, sensors, dt_util.utc_from_timestamp(day_start), "mean",
+                                                  "5minute")
+        except Exception as err:  # noqa: BLE001 – without them the correction reads those hours as clouds
+            _LOGGER.debug("Today's PV statistics unavailable: %s", err)
+            return {}
+        pv = {s: {t: v * factors.get(s, 1.0) for t, v in (stats.get(s) or {}).items() if v is not None} for s in sensors}
+        arrays = {a for o in installation.outlets for a in o.arrays}
+        return {a: installation.output_hours(a, {}, {}, pv, charging) for a in arrays}
+
     async def _async_held_today(self, installation: inst.Installation, day_start: float, now: float
                                 ) -> dict[str, set[float]]:
         """Per array today's hours in which its system may have held PV back for a low load or at the feed-in
@@ -1368,7 +1408,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                     ) -> dict[str, dict[float, float]]:
         """Battery power sensor -> today's mean charge power per 5-minute period (W). The running period is not
         compiled yet and stays out: a single reading of the sensor may be a spike far above what the battery takes."""
-        if not installation.chargers():
+        if not installation.meters():
             return {}
         try:
             return await self._async_charge_means(installation, dt_util.utc_from_timestamp(day_start), "5minute")

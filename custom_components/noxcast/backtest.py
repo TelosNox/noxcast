@@ -88,7 +88,8 @@ def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusio
     site: given, days without output and hours under snow are left out too, as in learning (ln.left_out)."""
     summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
     full = (history.full.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
-            | history.held.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset()))
+            | history.held.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset())
+            | history.output.get(arr.subentry_id, frozenset()))
     if site is not None:
         full |= ln.left_out(site, arr, history).hours
     return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,

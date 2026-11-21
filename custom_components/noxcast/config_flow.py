@@ -263,7 +263,9 @@ class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
             user_input = _flatten(user_input, MAIN_SECTIONS)
             errors = await _validate_main(self, user_input)
             if not errors:
-                return self.async_create_entry(title="Noxcast", data=user_input)
+                # the systems come next: the closing message links the Installation tab, where they are drawn
+                return self.async_create_entry(title="Noxcast", data=user_input, description="installation",
+                                               description_placeholders={"url": "/noxcast?section=installation"})
         return self.async_show_form(step_id="user", data_schema=_main_schema(user_input or {}), errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

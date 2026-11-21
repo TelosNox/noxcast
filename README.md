@@ -129,14 +129,18 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 
 1. Settings → Devices & services → *Add integration* → **Noxcast**. Choose the feed-in rule (what may go to the
    grid: free, limited or zero export); everything else can stay empty.
-2. On the integration page: ⋮ → *Add system*. Choose what the system is (e.g. an inverter without battery), then
-   add its PV arrays in its menu: pick the power sensor(s), enter tilt, azimuth and peak power. Add one array per
-   group of modules that is measured together.
+2. The last step links to the *Installation* tab of the Noxcast panel. Tap *+ System* there and pick the template
+   that fits your device (e.g. an inverter without battery), then *+ PV array* beside it: pick the power sensor(s),
+   enter tilt, azimuth and peak power. Add one array per group of modules that is measured together. The picture
+   shows every part before you save it. (The same works on the integration page: ⋮ → *Add system*, then the
+   system's menu.)
 3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
 
 Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Learned* what it
 found about each array, *Day* the forecast of today in detail.
 For the dashboard: *Add card* → *Noxcast*.
+
+![The Installation tab: PV arrays with compass needles, systems with battery and output limit, house and grid, dashed boxes to add a PV array or a system, and the chosen array with Change and Remove](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/installation.png)
 
 ### Examples
 

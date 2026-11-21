@@ -32,6 +32,8 @@ breaking changes.
   the diagram before it is saved. A new system's template is picked on a picture of the four templates. *Remove*
   first names what goes with the part and shows the diagram without it; nothing is removed before you confirm.
   Administrators only.
+- The first setup ends with a link to the *Installation* tab, which opens with a *+ System* box and a short hint for
+  an installation without systems. The system dialogs point to the tab as well.
 - The diagnostics download contains the learned range and how often the actual value fell inside the range that
   was published, per weather class.
 

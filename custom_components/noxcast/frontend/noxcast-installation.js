@@ -13,6 +13,7 @@ const INST_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     refresh: "Aktualisieren", house: "Haushalt", noSystems: "Noch kein System eingetragen.",
+    start: "Noch kein System eingetragen. Tippe im Bild auf „+ System“ und wähle die Vorlage, die zu deinem Gerät passt; danach fügst du dort seine PV-Gruppen und seinen Akku hinzu.",
     edit: "Ändern: hier mit „Ändern“ oder unter Einstellungen → Geräte & Dienste → Noxcast.",
     change: "Ändern", changeHouse: "Haushalt ändern", saveChange: "Speichern", cancel: "Abbrechen",
     previewHelp: "Das Bild zeigt die Änderung schon. Gespeichert wird erst mit „Speichern“; danach lädt Noxcast neu.",
@@ -51,6 +52,7 @@ const INST_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page",
     refresh: "Refresh", house: "Household", noSystems: "No system entered yet.",
+    start: "No system entered yet. Tap “+ System” in the picture and pick the template that fits your device; then add its PV arrays and its battery there.",
     edit: "Change it here with “Change”, or under Settings → Devices & services → Noxcast.",
     change: "Change", changeHouse: "Change household", saveChange: "Save", cancel: "Cancel",
     previewHelp: "The picture already shows the change. It is stored only with “Save”; Noxcast reloads afterwards.",
@@ -361,8 +363,9 @@ class NoxcastInstallation extends HTMLElement {
   }
 
   _selStyle() {
-    return this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke: var(--primary-color);
-      stroke-width: 2.4; }</style>` : "";
+    // important: the diagram's own class rules (.pv, .sys …) would win over an attribute selector
+    return this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke: var(--primary-color) !important;
+      stroke-width: 2.4 !important; }</style>` : "";
   }
 
   // the form in place of the settings while a part is changed
@@ -491,6 +494,7 @@ class NoxcastInstallation extends HTMLElement {
       // the "+" boxes only for admins, and not while a part is changed or removed
       const handles = this._admin && !this._edit && !this._removal ? "" : "<style>[data-add] { display: none; }</style>";
       return `<section class="card pad">
+        ${!e.systems.length && this._admin && !editing ? `<p class="start">${t.start}</p>` : ""}
         ${e.systems.length || this._admin ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${handles}${diagram}</div>`
           : `<div class="muted">${t.noSystems}</div>`}
         <div class="detail">${this._detail(e, e.systems.length ? this._sel : "house")}</div>
@@ -543,6 +547,7 @@ class NoxcastInstallation extends HTMLElement {
       .chip:disabled { opacity: .6; cursor: default; }
       .chip.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
       .head .chip:first-of-type { margin-left: auto; }
+      .start { margin: 0 0 12px; font-size: 14px; }
       .chip.danger { background: var(--error-color, #db4437); border-color: var(--error-color, #db4437); color: #fff; }
       .row.actions { display: flex; gap: 8px; margin-top: 8px; }
       .templates svg { display: block; width: 100%; max-width: 680px; height: auto; }

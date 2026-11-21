@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: when a battery counts as full, house load, grid and the feed-in rule. Add your systems, PV arrays and batteries afterwards.",
+        "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: when a battery counts as full, house load, grid and the feed-in rule. Afterwards you add your systems, PV arrays and batteries, most easily in the Installation tab of the Noxcast panel, which shows every change in the picture.",
         "data": {
           "soc_full_pct": "Battery considered full at",
           "house_load": "House load",
@@ -83,6 +83,9 @@
     "abort": {
       "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
       "reconfigure_successful": "Settings saved."
+    },
+    "create_entry": {
+      "installation": "Noxcast is set up. Next, add your systems, PV arrays and batteries: the [Installation tab of the Noxcast panel]({url}) draws the installation, and tapping *+ System* there starts with the first one. Every change shows in the picture before it is saved."
     }
   },
   "config_subentries": {
@@ -94,7 +97,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "A system is everything that delivers power to the house through one output: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Choose what fits; the template fills in the settings, each stays changeable. Then add its PV arrays, its battery or its subsystems in the system's menu.\n\n{concept}\n\n{diagram}",
+          "description": "A system is everything that delivers power to the house through one output: an inverter, a device with PV and battery, a battery at the house grid, or several devices that coordinate. Choose what fits; the template fills in the settings, each stays changeable. Then add its PV arrays, its battery or its subsystems in the system's menu. The Installation tab of the Noxcast panel does the same in the picture: tap a part to change it, or a dashed box to add one.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Template"
@@ -164,7 +167,7 @@
         },
         "menu": {
           "title": "{name}",
-          "description": "Everything inside {name}. ✎ changes what exists, + adds, − removes. Each form saves when you send it.\n\n{diagram}",
+          "description": "Everything inside {name}. ✎ changes what exists, + adds, − removes. Each form saves when you send it. The Installation tab of the Noxcast panel does the same in the picture.\n\n{diagram}",
           "menu_option_descriptions": {
             "edit": "The settings of {name} itself, such as regulation and limits",
             "add_sub": "A new subsystem inside {name}",

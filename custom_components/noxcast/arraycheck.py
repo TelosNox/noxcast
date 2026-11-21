@@ -29,6 +29,10 @@ SECTORS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]   # sun azimuth in 45° s
 EFFICIENCY_HIGH = 1.05               # above: more than the configured modules can give
 DIRECTION_SWING = 0.12               # morning and afternoon this far apart (relative): the azimuth
 SEASON_SWING = 0.15                  # months this far apart (relative): the tilt, or model errors at low sun
+DARK_MIN_W = 20.0                    # power in an hour without sun above this, and above DARK_MIN_SHARE of the peak
+DARK_MIN_SHARE = 0.02
+DARK_MIN_HOURS = 5                   # such hours before the hint: a single one can be a glitch of the sensor
+DARK_DAYS = 60                       # ... within the last days of the history, so an old glitch or a fixed sensor fades
 
 
 def _month(ts: float) -> str:
@@ -159,15 +163,33 @@ def _efficiency_by(key, min_hours: int, rows: list[dict], geo: ArrayGeometry, le
     return out
 
 
-def hints(geo: ArrayGeometry, learned: LearnedArray) -> list[str]:
+def dark_hours(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]]) -> list[float]:
+    """Starts of the hours in the last DARK_DAYS in which the sun stayed below the horizon, yet the sensor measured power.
+
+    Modules give nothing then, so the sensor measures more than PV: typically the output of an inverter with a
+    battery behind it, which also counts what the battery delivers, including energy charged from the grid.
+    """
+    if not samples:
+        return []
+    floor = max(DARK_MIN_W, DARK_MIN_SHARE * geo.peak_w)
+    since = max(t for t, _ in samples) - DARK_DAYS * 86400
+    # the sun below the horizon at the start, middle and end of an hour stays below it throughout, near enough
+    return [t for t, p in samples if t >= since and p > floor
+            and all(sun_position(site, t + f * H).elevation < 0 for f in (0.0, 0.5, 1.0))]
+
+
+def hints(geo: ArrayGeometry, learned: LearnedArray, dark: int = 0) -> list[str]:
     """What does not fit the configuration, most certain first.
 
+    dark: power in hours without sun (dark_hours), which only a sensor that measures more than PV shows;
     peak: an hourly mean above the configured peak power, which no module gives (peak power or sensor);
     high: an efficiency above EFFICIENCY_HIGH (peak power, sensor or a geometry that gets too little light);
     direction: morning and afternoon disagree (azimuth); season: the months disagree (tilt).
     Shade and little data only lower the efficiency, so a low one alone is no hint.
     """
     out = []
+    if dark >= DARK_MIN_HOURS:
+        out.append("dark")
     if learned.max_power_w is not None and learned.max_power_w > geo.peak_w:
         out.append("peak")
     if learned.samples and learned.efficiency > EFFICIENCY_HIGH:
@@ -324,6 +346,10 @@ def annotate(site: Site, geo: ArrayGeometry, learned: LearnedArray, samples: lis
         if samples:
             learned.max_power_t, learned.max_power_w = max(samples, key=lambda s: s[1])
             learned.max_power_w = round(learned.max_power_w, 1)
-        learned.hints = hints(geo, learned)
+        dark = dark_hours(site, geo, samples)
+        if dark:
+            _LOGGER.info("%d hours with power while the sun was down, the last starting %s UTC", len(dark),
+                         datetime.fromtimestamp(max(dark), timezone.utc).strftime("%Y-%m-%d %H:%M"))
+        learned.hints = hints(geo, learned, len(dark))
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Array check failed")

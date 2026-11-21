@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The array check flags a power sensor that showed power while the sun was down in the last 60 days: it measures more
+  than PV, usually the output of an inverter with a battery, and so counts battery energy, even energy charged from
+  the grid, as sun in the actual value and in learning. The array gets the *Check* badge and a notice under Repairs.
+  The description of the power sensors now says that they should measure PV only.
+
 ## [0.6.0b1] - 2026-11-21
 
 ### Added

@@ -126,6 +126,7 @@ const TEXT = {
         snow_cap: "{n}-mal ließ Noxcast nach Schneefall die längste Zeit von 7 Tagen nach dem letzten Schneefall aus, zuletzt bis zum {d}, obwohl es helle Stunden gab: Die Gruppe lieferte darin nie, was freie Module liefern, und kein Tauwetter beendete den Schnee früher. Lag so lange Schnee, stimmt das. Sonst erkennt Noxcast freie Module an dieser Gruppe nicht (etwa wegen Schatten), und dem Lernen fehlt nach jedem Schneefall eine Woche. Der Kalender zeigt, ab wann die Gruppe wieder lieferte.",
       },
       hint: {
+        dark: "Der Sensor zeigte in den letzten 60 Tagen Leistung in Stunden, in denen die Sonne unter dem Horizont stand. Das kommt nicht von den Modulen: Der Sensor misst mehr als die PV, meist die Ausgangsleistung eines Wechselrichters mit Akku, die auch abgibt, was der Akku liefert, auch Strom, der aus dem Netz geladen wurde. Seltener hält ein Sensor nachts seinen letzten Wert fest. Bitte einen Sensor wählen, der nur die PV misst (PV- oder MPPT-Leistung) und nachts auf 0 geht. Bis dahin zählt Noxcast Akkustrom als Sonne, auch beim Lernen.",
         peak: "Die höchste gemessene Stundenleistung liegt über der eingetragenen Spitzenleistung. Das schafft kein Modul: Entweder sind die Wp zu niedrig eingetragen (ein Modul vergessen, die Wp eines Moduls statt aller Module) oder der Sensor misst mehr als diese Gruppe, etwa einen weiteren Eingang oder einen Eingang, der auch in einer anderen Gruppe steckt.",
         high: "Der Wirkungsgrad liegt über 105 %: Die Gruppe liefert mehr, als die eingetragenen Module bei dieser Ausrichtung können. Bitte prüfen: die Wp je Ausrichtung, ob der Sensor nur diese Gruppe misst, und ob die Module steiler oder anders ausgerichtet sind als eingetragen.",
         direction: "Vormittags und nachmittags ergibt sich ein deutlich anderer Wirkungsgrad. Das deutet auf eine falsch eingetragene Ausrichtung: Ist der Vormittag höher, zeigen die Module weiter nach Osten als eingetragen, ist der Nachmittag höher, weiter nach Westen. Auch ein Schatten, den die Karte noch nicht kennt, kann eine Seite drücken.",
@@ -221,6 +222,7 @@ const TEXT = {
         snow_cap: "{n} times Noxcast left out the longest time after snowfall, 7 days after the last snowfall, last until {d}, although there were bright hours: the array never delivered in them what free modules deliver, and no thaw ended the snow earlier. If snow lay that long, that is right. Otherwise Noxcast does not see this array's modules free again (shade, for example), and learning loses a week after every snowfall. The calendar shows when the array delivered again.",
       },
       hint: {
+        dark: "In the last 60 days, the sensor showed power in hours when the sun was below the horizon. That does not come from the modules: the sensor measures more than PV, usually the output of an inverter with a battery, which also gives what the battery delivers, including energy charged from the grid. Less often, a sensor holds its last value through the night. Please choose a sensor that measures PV only (PV or MPPT power) and drops to 0 at night. Until then, Noxcast counts battery energy as sun, in learning too.",
         peak: "The highest measured hourly power is above the configured peak power. No module does that: either the peak power is set too low (a module left out, the peak power of one module instead of the whole array) or the sensor measures more than this array, such as a further input or an input that is also part of another array.",
         high: "The efficiency is above 105 %: the array gives more than the configured modules can at this orientation. Please check the peak power of each plane, whether the sensor measures this array only, and whether the modules are steeper or face another way than configured.",
         direction: "Morning and afternoon give clearly different efficiencies. That points at a wrong azimuth: a higher morning means the modules face further east than configured, a higher afternoon further west. A shadow the map does not know yet can also push one side down.",
@@ -774,7 +776,7 @@ class NoxcastPanel extends HTMLElement {
         </button>`).join("");
       const gc = arr.learned && arr.learned.geometry_check;
       const hints = (arr.learned && arr.learned.hints) || [];
-      const badge = (hints.includes("peak") || hints.includes("high") ? `<span class="badge">${t.checks.badgeCheck}</span>` : "")
+      const badge = (hints.includes("dark") || hints.includes("peak") || hints.includes("high") ? `<span class="badge">${t.checks.badgeCheck}</span>` : "")
         + (gc && gc.deviates ? `<span class="badge">${t.checks.badge}</span>` : "");
       return `<section class="card row">
         <div class="figs"><h2>${esc(arr.name)}${badge}</h2>${figs}

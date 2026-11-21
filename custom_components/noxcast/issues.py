@@ -25,7 +25,7 @@ BATTERY_WITHOUT_PV = "battery_without_pv_"  # + battery subentry id
 UNENTERED_SOC = "unentered_soc"       # old state-of-charge sensors no battery has (systems.drop_old_soc)
 # only the hints that are configuration errors for sure, as the panel's "Check" badge: direction and season
 # can come from shade as well, so they stay in the panel and the diagnostics
-CERTAIN_HINTS = {"peak", "high"}
+CERTAIN_HINTS = {"dark", "peak", "high"}
 
 
 def _battery_names(entry: NoxcastConfigEntry) -> dict[str, str]:

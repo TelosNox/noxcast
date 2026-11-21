@@ -127,3 +127,16 @@ def test_hints_name_what_does_not_fit():
 def test_a_low_efficiency_alone_is_no_hint():
     shaded = model.LearnedArray(efficiency=0.47, samples=500)
     assert ac.hints(TRUE, shaded) == []
+
+
+def test_power_without_sun_is_a_sensor_that_measures_more_than_pv():
+    samples, ghi = clear_samples(TRUE)
+    night = [(START + d * 86400 + 1 * 3600, 300.0) for d in range(280, 290)]  # a battery delivering at 01:00 UTC
+    la = _annotated(TRUE, samples + night, ghi, EFF)
+    assert la.hints[0] == "dark"
+    sunset = [t for t, _ in samples if solar.sun_position(SITE, t + 3600).elevation < 0][:3]
+    assert sunset and ac.dark_hours(SITE, TRUE, [(t, 900.0) for t in sunset]) == []   # the sun set within them
+    old = [(t - 90 * 86400, p) for t, p in night]
+    assert "dark" not in _annotated(TRUE, samples + old, ghi, EFF).hints            # long ago, outside DARK_DAYS
+    few = night[:ac.DARK_MIN_HOURS - 1]                                 # a few glitches are no hint
+    assert "dark" not in _annotated(TRUE, samples + few, ghi, EFF).hints

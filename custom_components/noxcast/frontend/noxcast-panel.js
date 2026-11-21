@@ -423,6 +423,9 @@ class NoxcastPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     adoptTheme(this.shadowRoot);
     this._state = { section: "overview", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
+    // a link may open a section: the end of the first setup opens the Installation tab (?section=installation)
+    const asked = new URLSearchParams(window.location.search).get("section");
+    if (asked) this._state.section = asked;
     this._sections = {};
     this._data = null;
     this._cache = {};

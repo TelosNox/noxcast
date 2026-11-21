@@ -131,13 +131,17 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 
 1. Einstellungen → Geräte & Dienste → *Integration hinzufügen* → **Noxcast**. Die Einspeisevorgabe wählen (was ins
    Netz darf: frei, begrenzt oder Nulleinspeisung); alles andere kann leer bleiben.
-2. Auf der Seite der Integration: ⋮ → *System hinzufügen*. Wählen, was das System ist (z. B. Wechselrichter ohne
-   Akku), dann in seinem Menü die PV-Gruppen hinzufügen: den oder die Leistungssensoren wählen, Neigung, Azimut und
-   Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen, die gemeinsam gemessen wird.
+2. Der letzte Schritt verlinkt den Reiter *Anlage* im Noxcast-Panel. Dort auf *+ System* tippen und die Vorlage
+   wählen, die zum Gerät passt (z. B. Wechselrichter ohne Akku), dann daneben *+ PV-Gruppe*: den oder die
+   Leistungssensoren wählen, Neigung, Azimut und Spitzenleistung eintragen. Eine PV-Gruppe je Gruppe von Modulen,
+   die gemeinsam gemessen wird. Das Bild zeigt jeden Teil, bevor du ihn speicherst. (Dasselbe geht auf der Seite der
+   Integration: ⋮ → *System hinzufügen*, dann das Menü des Systems.)
 3. Fertig. Noxcast lernt sofort aus dem vorhandenen Verlauf und danach jede Nacht um 01:30.
 
 Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und in den nächsten Tagen ansteht,
 *Gelerntes*, was es über jede PV-Gruppe herausgefunden hat, *Tag* die Prognose von heute im Detail. Fürs Dashboard: *Karte hinzufügen* → *Noxcast*.
+
+![Der Reiter Anlage: PV-Gruppen mit Kompassnadel, Systeme mit Akku und Ausgangsgrenze, Haus und Netz, gestrichelte Kästen zum Hinzufügen einer PV-Gruppe oder eines Systems, und die gewählte PV-Gruppe mit Ändern und Entfernen](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/installation.png)
 
 ### Beispiele
 

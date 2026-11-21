@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: ab wann ein Akku als voll gilt, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus danach hinzufügen.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: ab wann ein Akku als voll gilt, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du danach hinzu, am einfachsten im Reiter Anlage des Noxcast-Panels, der jede Änderung im Bild zeigt.",
         "data": {
           "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
@@ -83,6 +83,9 @@
     "abort": {
       "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
       "reconfigure_successful": "Einstellungen gespeichert."
+    },
+    "create_entry": {
+      "installation": "Noxcast ist eingerichtet. Als Nächstes trägst du deine Systeme, PV-Gruppen und Akkus ein: Der [Reiter Anlage im Noxcast-Panel]({url}) zeichnet die Anlage, und ein Tipp auf *+ System* beginnt dort mit dem ersten. Jede Änderung erscheint im Bild, bevor sie gespeichert wird."
     }
   },
   "config_subentries": {
@@ -94,7 +97,7 @@
       "step": {
         "user": {
           "title": "System",
-          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. Danach fügst du im Menü des Systems seine PV-Gruppen, seinen Akku oder seine Teilsysteme hinzu.\n\n{concept}\n\n{diagram}",
+          "description": "Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechselrichter, ein Gerät mit PV und Akku, ein Akku am Hausnetz oder mehrere Geräte, die sich absprechen. Wähle, was passt; die Vorlage füllt die Einstellungen vor, jede bleibt änderbar. Danach fügst du im Menü des Systems seine PV-Gruppen, seinen Akku oder seine Teilsysteme hinzu. Der Reiter Anlage im Noxcast-Panel kann dasselbe im Bild: Tippe auf einen Teil, um ihn zu ändern, oder auf einen gestrichelten Kasten, um einen hinzuzufügen.\n\n{concept}\n\n{diagram}",
           "data": {
             "name": "Name",
             "template": "Vorlage"
@@ -164,7 +167,7 @@
         },
         "menu": {
           "title": "{name}",
-          "description": "Alles, was in {name} steckt. ✎ ändert Bestehendes, + fügt hinzu, − entfernt. Jedes Formular speichert beim Absenden.\n\n{diagram}",
+          "description": "Alles, was in {name} steckt. ✎ ändert Bestehendes, + fügt hinzu, − entfernt. Jedes Formular speichert beim Absenden. Der Reiter Anlage im Noxcast-Panel kann dasselbe im Bild.\n\n{diagram}",
           "menu_option_descriptions": {
             "edit": "Die Einstellungen von {name} selbst, etwa Regelung und Grenzen",
             "add_sub": "Ein neues Teilsystem in {name}",

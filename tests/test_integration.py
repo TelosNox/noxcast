@@ -103,6 +103,9 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {})
         assert result["type"] is FlowResultType.CREATE_ENTRY
+        # the closing message links the Installation tab, where the systems come next
+        assert result["description"] == "installation"
+        assert result["description_placeholders"] == {"url": "/noxcast?section=installation"}
         entry = result["result"]
         await hass.async_block_till_done()
 

@@ -7,6 +7,11 @@ tab follows the Home Assistant theme and the image follows the light or dark mod
 Every setting that changes the forecast shows where it acts: an array's orientation as a compass needle in its box,
 a power limit per sensor on the line from the array, a system's output limit and its deviation from the feed-in rule
 on its output, the phase of a subsystem on the line it feeds, the feed-in rule between house and grid.
+
+With handles (the Installation tab, for admins) dashed "+" boxes (data-add="kind:system") mark where a part can be
+added, by the same rules as the menu of a system's dialog: a PV array below the arrays of a system without
+subsystems, a battery inside such a system without one, a subsystem inside a system that holds subsystems, a system
+below all others.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ HOUSE_X, HOUSE_W = 576, 144
 GRID_X, GRID_W = 776, 72
 ROW, GAP = 64, 14                     # an array box and the space between boxes
 BATTERY_H = 40
+ADD_H = 26                            # a "+" handle
 TOP = 16
 NAME_CHARS = 20                       # what fits on one line of a box at 13 px
 LINE_CHARS = 22                       # a detail line beside the compass at 11 px
@@ -37,6 +43,7 @@ TEXT = {
            "sensors": "{n} Sensoren addiert", "no_sensor": "kein Sensor", "own_pv": "lädt aus PV",
            "house_charge": "lädt aus Hausnetz", "consumption": "Verbrauch", "grid_sensor": "Netz",
            "export": "speist trotzdem ein", "never": "speist nie ein", "three": "L1–L3",
+           "add": {"array": "+ PV-Gruppe", "battery": "+ Akku", "sub": "+ Teilsystem", "system": "+ System"},
            "templates": {"inverter": "Wechselrichter", "pv_battery": "PV mit Akku", "ac_battery": "Akku am Hausnetz",
                          "coupled": "Geräte, die sich abstimmen"}},
     "en": {"house": "House", "grid": "Grid", "array": "PV array", "battery": "Battery", "free": "free",
@@ -46,6 +53,7 @@ TEXT = {
            "sensors": "{n} sensors summed", "no_sensor": "no sensor", "own_pv": "charges from PV",
            "house_charge": "charges from house", "consumption": "Load", "grid_sensor": "Grid",
            "export": "feeds in anyway", "never": "never feeds in", "three": "L1–L3",
+           "add": {"array": "+ PV array", "battery": "+ Battery", "sub": "+ Subsystem", "system": "+ System"},
            "templates": {"inverter": "Inverter", "pv_battery": "PV with battery", "ac_battery": "Battery at the house",
                          "coupled": "Devices that coordinate"}},
 }
@@ -76,7 +84,8 @@ svg.nx-flow { --nf-text: #1f1f1f; --nf-muted: #666; --nf-line: #8a8a8a; --nf-nod
 .nx-flow .needle { stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: 1.8; stroke-linecap: round; fill: none; }
 .nx-flow .north { stroke: var(--nx-muted, var(--nf-muted)); stroke-width: 1.2; }
 .nx-flow .exact { fill: #3f9b4f; } .nx-flow .simplified { fill: #c98a12; } .nx-flow .not_yet { fill: #8a8f98; }
-.nx-flow [data-node] { cursor: pointer; }
+.nx-flow .add { fill: transparent; stroke: var(--nx-muted, var(--nf-muted)); stroke-width: .8; stroke-dasharray: 4 3; }
+.nx-flow [data-node], .nx-flow [data-add], .nx-flow [data-template] { cursor: pointer; }
 </style>"""
 
 
@@ -112,6 +121,25 @@ def _pill(x: float, y: float, label: str, cls: str = "lim") -> str:
     w = 12 + 6 * len(label)
     return f'<rect class="{cls}" x="{x - w / 2:.0f}" y="{y - 10:.0f}" width="{w:.0f}" height="20" rx="10"/>' + \
         _text(x, y, "s", label)
+
+
+def _add(x: float, y: float, w: float, kind: str, system: str, label: str) -> str:
+    """A dashed "+" box: adding a part of this kind to this system ("" for a system of the top level)."""
+    return (f'<g data-add="{kind}:{escape(system)}"><rect class="add" x="{x:.0f}" y="{y:.0f}" width="{w:.0f}" '
+            f'height="{ADD_H}" rx="6"/>' + _text(x + w / 2, y + ADD_H / 2, "s", label) + "</g>")
+
+
+def _adds(s: Mapping[str, Any], top: bool) -> tuple[bool, list[str]]:
+    """What can be added to a system: (a PV array, [what goes inside its box]). A battery fits a template with one,
+    a subsystem an empty system of the top level that coordinates devices; PV arrays fit where no subsystems are,
+    except a battery at the house grid, which has no PV."""
+    if s.get("children"):
+        return False, []
+    template = s.get("template")
+    inside = ["battery"] if template in ("pv_battery", "ac_battery") and not s.get("battery") else []
+    if top and template == "coupled" and not s.get("arrays") and not s.get("battery"):
+        return False, ["sub"]
+    return template not in ("ac_battery", "coupled"), inside
 
 
 def _compass(x: float, y: float, planes: list[Mapping[str, float]]) -> str:
@@ -156,22 +184,24 @@ def _lines(s: Mapping[str, Any], t: Mapping[str, Any]) -> list[str]:
     return [x for x in out if x]
 
 
-def render(tree: Mapping[str, Any], lang: str = "en") -> str:
-    """The SVG of an installation as systems.tree returns it; lang: "de" or "en"."""
+def render(tree: Mapping[str, Any], lang: str = "en", handles: bool = False) -> str:
+    """The SVG of an installation as systems.tree returns it; lang: "de" or "en"; handles: the "+" boxes."""
     t = TEXT.get(lang, TEXT["en"])
     effects = list(tree.get("effects") or [])
     body: list[str] = []
     outputs: list[float] = []                 # y of every top-level system's output
     y = TOP
 
-    def leaf(s: Mapping[str, Any], y0: float) -> float:
+    def leaf(s: Mapping[str, Any], y0: float, top: bool) -> float:
         """A system box with its battery inside and its arrays to the left; returns the y below it."""
         lines = _lines(s, t)
         arrays = s.get("arrays") or []
         battery = s.get("battery")
-        empty = not arrays and not battery
-        head = 30 + 16 * (len(lines) + empty) + (BATTERY_H + 6 if battery else 0) + 8
-        height = max(head, len(arrays) * (ROW + GAP) - GAP)
+        add_array, inside = _adds(s, top) if handles else (False, [])
+        empty = not arrays and not battery and not inside
+        head = 30 + 16 * (len(lines) + empty) + (BATTERY_H + 6 if battery else 0) + (ADD_H + 6) * len(inside) + 8
+        column = len(arrays) * (ROW + GAP) - GAP + (ADD_H + (GAP if arrays else 0) if add_array else 0)
+        height = max(head, column)
         sid = escape(s["id"])
         body.append(f'<g data-node="{sid}"><rect class="sys" x="{SYS_X}" y="{y0:.0f}" width="{SYS_W}" '
                     f'height="{height:.0f}" rx="8"/>' + _text(SYS_X + 12, y0 + 18, "t", _short(s["name"], 18), "start")
@@ -189,9 +219,15 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
                         + _text(SYS_X + 18, by + 13, "t", _short(battery["name"], 18), "start")
                         + _text(SYS_X + 18, by + 29, "s", _short(" · ".join(detail), 26), "start")
                         + _dot(SYS_X + SYS_W - 18, by + 10, _status(effects, battery["id"])) + "</g>")
-        top = y0 + (height - (len(arrays) * (ROW + GAP) - GAP)) / 2
+        for i, kind in enumerate(inside):
+            iy = y0 + 30 + 16 * len(lines) + 2 + (BATTERY_H + 6 if battery else 0) + i * (ADD_H + 6)
+            body.append(_add(SYS_X + 8, iy, SYS_W - 16, kind if kind == "battery" else "system", s["id"],
+                             t["add"][kind]))
+        first = y0 + (height - column) / 2
+        if add_array:
+            body.append(_add(ARRAY_X, first + column - ADD_H, ARRAY_W, "array", s["id"], t["add"]["array"]))
         for i, a in enumerate(arrays):
-            ay = top + i * (ROW + GAP)
+            ay = first + i * (ROW + GAP)
             planes = a.get("planes") or []
             body.append(f'<g data-node="{escape(a["id"])}"><rect class="pv" x="{ARRAY_X}" y="{ay:.0f}" '
                         f'width="{ARRAY_W}" height="{ROW}" rx="8"/>'
@@ -227,7 +263,7 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
             mids = []
             for c in children:
                 start = y
-                y = leaf(c, y)
+                y = leaf(c, y, False)
                 mid = (start + y) / 2
                 mids.append(mid)
                 body.append(f'<path class="ln" d="M{SYS_X + SYS_W} {mid:.0f} H{JOIN_X}"/>')
@@ -235,6 +271,9 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
                     phase = t["three"] if c["phase"] == "three" else c["phase"].upper()
                     body.append(_pill((SYS_X + SYS_W + JOIN_X) / 2, mid, phase, "ph"))
                 y += GAP
+            if handles:
+                body.append(_add(SYS_X, y, SYS_W, "system", s["id"], t["add"]["sub"]))
+                y += ADD_H + GAP
             frame_bottom = y - GAP + FRAME_PAD
             # the frame is about 26 characters wide at 13 px, the dot included
             label = f'{_short(s["name"], 11)} · {t["balance"]}' if s.get("balance") else _short(s["name"], 23)
@@ -251,14 +290,17 @@ def render(tree: Mapping[str, Any], lang: str = "en") -> str:
             y = frame_bottom + GAP + 8
         else:
             start = y
-            y = leaf(s, y)
+            y = leaf(s, y, True)
             mid = (start + y) / 2
             body.append(f'<path class="ln" d="M{SYS_X + SYS_W} {mid:.0f} H{BUS_X}"/>')
             output(s, SYS_X + SYS_W, mid)
             outputs.append(mid)
             y += GAP + 8
 
-    if not outputs:
+    if handles:
+        body.append(_add(SYS_X, y, SYS_W, "system", "", t["add"]["system"]))
+        y += ADD_H + GAP
+    elif not outputs:
         body.append(_text(SYS_X + SYS_W / 2, y + 20, "s", t["no_systems"]))
         y += 40
     height = max(y, TOP + ROW + 40)

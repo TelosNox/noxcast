@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 
+from .const import TEMPLATE_OPTIONS
 from .flowchart import STYLE, _text
 
 WIDTH = 680
@@ -217,7 +218,9 @@ def templates(lang: str) -> str:
     for i, (head1, head2, ex1, ex2) in enumerate(t["templates"]):
         x = 8 + i * 168
         c = x + 80
-        b += [f'<rect class="node" x="{x}" y="8" width="160" height="226" rx="10"/>',
+        # each card a group: the Installation tab picks a template by tapping its card
+        b += [f'<g data-template="{TEMPLATE_OPTIONS[i]}"><rect class="node" x="{x}" y="8" width="160" height="226" '
+              'rx="10"/>',
               _lines(c, 26, "t", [head1, head2], dy=16), _lines(c, 200, "s", [ex1, ex2])]
         if i == 0:
             b += [_box("pv", c - 50, 60, 100, 26, t["pv"]), _arrow(f"M{c} 86 V102"),
@@ -236,7 +239,7 @@ def templates(lang: str) -> str:
         both = ' marker-start="url(#nx-c-arrow)"' if i == 2 else ""
         b += [f'<path class="ln" marker-end="url(#nx-c-arrow)"{both} d="M{c} {bottom} V{156 if i == 2 else 158}"/>'
               if i == 2 else _arrow(f"M{c} {bottom} V158"),
-              _box("node", c - 40, 160, 80, 24, t["house"])]
+              _box("node", c - 40, 160, 80, 24, t["house"]), "</g>"]
     return _svg(242, b)
 
 

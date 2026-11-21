@@ -277,7 +277,12 @@ Teilsystems auf der Leitung, in die es einspeist, die Einspeisevorgabe zwischen 
 zeigt seine Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
 oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. *Ändern* (nur für Administratoren) öffnet
 neben dem Bild dasselbe Formular wie der Einstellungsdialog, für ein System, eine PV-Gruppe, einen Akku oder den
-Haushalt: Jede Änderung erscheint sofort im Bild, *Speichern* übernimmt sie wie der Dialog, und Noxcast lädt neu. Die Formulare für Systeme,
+Haushalt: Jede Änderung erscheint sofort im Bild, *Speichern* übernimmt sie wie der Dialog, und Noxcast lädt neu. Die
+gestrichelten Kästen fügen einen Teil dort hinzu, wo er passt: *+ PV-Gruppe* unter den PV-Gruppen eines Systems,
+*+ Akku* in einem System, dessen Vorlage einen hat, *+ Teilsystem* in einem System gekoppelter Geräte, *+ System*
+unter allen Systemen. Ein neues System beginnt mit seiner Vorlage, gewählt auf einem Bild der vier; der neue Teil steht
+hervorgehoben im Bild, bevor *Speichern* ihn anlegt. *Entfernen* zeigt erst, was mit dem Teil geht, und das Bild ohne
+ihn, und entfernt nichts vor *Endgültig entfernen*. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)

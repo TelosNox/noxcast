@@ -273,7 +273,11 @@ its deviation from the feed-in rule on its output, a subsystem's phase on the li
 house and grid. Tapping a part shows its settings and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
 another system, with the same rules as the forms. *Change* (administrators only) opens the same form as the configuration dialog beside the
 diagram, for a system, PV array, battery or the household: every change is drawn in the diagram right away, *Save*
-stores it as the dialog would, and Noxcast reloads. The forms for systems, PV arrays and batteries show the same diagram
+stores it as the dialog would, and Noxcast reloads. The dashed boxes add a part where one fits: *+ PV array*
+below a system's arrays, *+ Battery* in a system whose template has one, *+ Subsystem* in a system of coordinated
+devices, *+ System* below all systems. A new system starts with its template, picked on a picture of the four; the new
+part is drawn highlighted before *Save* creates it. *Remove* shows first what goes with the part, and the diagram
+without it, and removes nothing before *Remove for good*. The forms for systems, PV arrays and batteries show the same diagram
 on top. Later versions compute more of the settings without new input.
 
 ### 3. PV arrays (one per group of power sensors)

@@ -27,6 +27,11 @@ breaking changes.
   form as the configuration dialog beside the diagram, the diagram shows each change before it is saved, and *Save*
   checks and stores it as the dialog does. A change made elsewhere in the meantime is not overwritten; the tab then
   reloads it. Administrators only.
+- Parts can be added and removed in the *Installation* tab: dashed boxes in the diagram add a PV array, a battery, a
+  subsystem or a system where one fits, with the same form as the configuration dialog, and the new part is drawn in
+  the diagram before it is saved. A new system's template is picked on a picture of the four templates. *Remove*
+  first names what goes with the part and shows the diagram without it; nothing is removed before you confirm.
+  Administrators only.
 - The diagnostics download contains the learned range and how often the actual value fell inside the range that
   was published, per weather class.
 

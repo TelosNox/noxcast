@@ -275,7 +275,9 @@ Sensoren im Kasten, eine Leistungsgrenze je Sensor auf der Leitung von der PV-Gr
 (*je Phase*, wo sie pro Phase gilt) und seine Abweichung von der Einspeisevorgabe an seinem Ausgang, die Phase eines
 Teilsystems auf der Leitung, in die es einspeist, die Einspeisevorgabe zwischen Haus und Netz. Ein Tipp auf einen Teil
 zeigt seine Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
-oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. Die Formulare für Systeme,
+oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. *Ändern* (nur für Administratoren) öffnet
+neben dem Bild dasselbe Formular wie der Einstellungsdialog, für ein System, eine PV-Gruppe, einen Akku oder den
+Haushalt: Jede Änderung erscheint sofort im Bild, *Speichern* übernimmt sie wie der Dialog, und Noxcast lädt neu. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)

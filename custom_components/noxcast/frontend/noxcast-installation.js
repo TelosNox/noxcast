@@ -1,7 +1,9 @@
 // Noxcast panel section "Installation": the installation as a flow diagram (PV arrays -> systems -> house -> grid,
 // drawn by the backend, flowchart.py) and, for the node clicked, its settings and how far Noxcast already computes
 // each: exact, simplified or not yet. There a PV array, a battery or a system can be moved to another system
-// ("noxcast/move_part", the same rules as the forms).
+// ("noxcast/move_part", the same rules as the forms), and admins change a part in the form of its dialog beside the
+// diagram ("noxcast/part_form", shown with Home Assistant's ha-form): every change is drawn first
+// ("noxcast/part_preview"), saving stores it as the dialog does ("noxcast/part_save").
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/installation".
 const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
@@ -9,7 +11,11 @@ const INST_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     refresh: "Aktualisieren", house: "Haushalt", noSystems: "Noch kein System eingetragen.",
-    edit: "Ändern unter Einstellungen → Geräte & Dienste → Noxcast.",
+    edit: "Ändern: hier mit „Ändern“ oder unter Einstellungen → Geräte & Dienste → Noxcast.",
+    change: "Ändern", changeHouse: "Haushalt ändern", saveChange: "Speichern", cancel: "Abbrechen",
+    previewHelp: "Das Bild zeigt die Änderung schon. Gespeichert wird erst mit „Speichern“; danach lädt Noxcast neu.",
+    changed: "Dieser Teil wurde inzwischen anderswo geändert (z. B. in einem Dialog). Das Bild zeigt jetzt den gespeicherten Stand; ändere ihn bitte noch einmal.",
+    noForm: "Das Formular lässt sich hier nicht laden. Ändere den Teil unter Einstellungen → Geräte & Dienste → Noxcast.",
     status: { exact: "rechnet genau", simplified: "rechnet vereinfacht", not_yet: "noch nicht berücksichtigt" },
     inherited: "vom System", fromHouse: "Vorgabe des Haushalts",
     help: "Jede Angabe wird gespeichert, auch wenn Noxcast sie noch nicht verrechnet. Spätere Versionen rechnen sie genauer, ohne dass du etwas neu eintragen musst.",
@@ -37,7 +43,11 @@ const INST_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page",
     refresh: "Refresh", house: "Household", noSystems: "No system entered yet.",
-    edit: "Change under Settings → Devices & services → Noxcast.",
+    edit: "Change it here with “Change”, or under Settings → Devices & services → Noxcast.",
+    change: "Change", changeHouse: "Change household", saveChange: "Save", cancel: "Cancel",
+    previewHelp: "The picture already shows the change. It is stored only with “Save”; Noxcast reloads afterwards.",
+    changed: "This part was changed elsewhere meanwhile (e.g. in a dialog). The picture now shows what is stored; please change it again.",
+    noForm: "The form cannot be loaded here. Change the part under Settings → Devices & services → Noxcast.",
     status: { exact: "computed exactly", simplified: "computed simplified", not_yet: "not used yet" },
     inherited: "from its system", fromHouse: "the household's rule",
     help: "Every setting is stored, even where Noxcast does not compute it yet. Later versions compute it more precisely without you entering anything again.",
@@ -73,6 +83,11 @@ class NoxcastInstallation extends HTMLElement {
       if (path.some((n) => n.dataset && n.dataset.refresh)) { this._load(); return; }
       const save = path.find((n) => n.dataset && n.dataset.save);
       if (save) { this._move(save.dataset.save); return; }
+      const edit = path.find((n) => n.dataset && n.dataset.edit);
+      if (edit) { this._startEdit(edit.dataset.entry, edit.dataset.edit); return; }
+      const act = path.find((n) => n.dataset && n.dataset.act);
+      if (act) { if (act.dataset.act === "save-part") this._savePart(); else this._stopEdit(); return; }
+      if (this._edit) return;                   // the part being changed stays chosen until saved or cancelled
       if (path.some((n) => n.dataset && n.dataset.entries)) {
         history.pushState(null, "", "/config/integrations/integration/noxcast");
         window.dispatchEvent(new CustomEvent("location-changed"));
@@ -86,6 +101,7 @@ class NoxcastInstallation extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    if (this._form) this._form.hass = hass;
     if (first) this._load();
   }
 
@@ -128,12 +144,166 @@ class NoxcastInstallation extends HTMLElement {
       this._moveError = err && err.code === "not_possible" ? this._t.notPossible : errorText(err, this._hass.language);
     }
     // the answer holds this entry only: keep the others, and what an earlier move already saved
-    if (data && data.v === WS_SCHEMA && this._data) {
-      const fresh = Object.fromEntries(data.entries.map((x) => [x.entry_id, x]));
-      this._data = { ...this._data, entries: this._data.entries.map((x) => fresh[x.entry_id] || x) };
-    }
+    this._merge(data);
     this._saving = false;
     this._render();
+  }
+
+  // ha-form comes with Home Assistant's frontend, but only once a page has used it: a card editor loads it
+  async _ensureForm() {
+    if (customElements.get("ha-form")) return true;
+    try {
+      const helpers = await window.loadCardHelpers();
+      const card = await helpers.createCardElement({ type: "entities", entities: [] });
+      if (card.constructor.getConfigElement) await card.constructor.getConfigElement();
+    } catch (err) { /* waited for below */ }
+    await Promise.race([customElements.whenDefined("ha-form"), new Promise((r) => setTimeout(r, 5000))]);
+    return !!customElements.get("ha-form");
+  }
+
+  // the form of a part (or "house"), as its dialog has it
+  async _startEdit(entryId, part) {
+    const t = this._t;
+    this._editError = null;
+    let form;
+    try {
+      if (!(await this._ensureForm())) throw new Error(t.noForm);
+      if (this._hass.loadBackendTranslation) await this._hass.loadBackendTranslation("selector", "noxcast");
+      form = await ask(this._hass, { type: "noxcast/part_form", entry_id: entryId, part, language: this._lang });
+    } catch (err) {
+      this._editError = errorText(err, this._hass.language);
+      this._render();
+      return;
+    }
+    this._edit = { entryId, part, form, input: form.data, errors: {}, diagram: null, saving: false };
+    this._form = this._makeForm(form);
+    this._sel = part;
+    this._render();
+  }
+
+  _makeForm(form) {
+    const f = document.createElement("ha-form");
+    f.hass = this._hass;
+    this._formTexts(f, form);
+    f.addEventListener("value-changed", (ev) => { ev.stopPropagation(); this._changed(ev.detail.value); });
+    return f;
+  }
+
+  _formTexts(f, form) {
+    f.schema = form.schema;
+    f.data = form.data;
+    f.computeLabel = (s) => form.labels[s.name] || form.sections[s.name] || s.name;
+    f.computeHelper = (s) => form.helpers[s.name] || "";
+    f.computeError = (err) => form.errors[err] || err;
+    f.localizeValue = (key) => this._hass.localize(`component.noxcast.selector.${key}`);
+  }
+
+  _changed(value) {
+    const e = this._edit;
+    if (!e) return;
+    const before = e.input;
+    e.input = value;
+    this._form.data = value;
+    // another template brings other settings, filled in by it: the form is built anew, as in the dialog
+    if (e.form.kind === "system" && value.template !== before.template) { this._retemplate(); return; }
+    clearTimeout(this._previewTimer);
+    this._previewTimer = setTimeout(() => this._preview(), 300);
+  }
+
+  async _retemplate() {
+    const e = this._edit;
+    const draft = { name: e.input.name, template: e.input.template };
+    if (e.input.parent !== undefined) draft.parent = e.input.parent;
+    try {
+      const form = await ask(this._hass, { type: "noxcast/part_form", entry_id: e.entryId, part: e.part, draft,
+        language: this._lang });
+      if (this._edit !== e) return;
+      e.form = { ...form, revision: e.form.revision };
+      e.input = form.data;
+      this._formTexts(this._form, e.form);
+    } catch (err) { e.base = errorText(err, this._hass.language); }
+    this._preview();
+  }
+
+  // the diagram with the form's input, and its problems; only the diagram and the messages are drawn again, so the
+  // form keeps its focus while typing
+  async _preview() {
+    const e = this._edit;
+    const seq = (this._seq = (this._seq || 0) + 1);
+    let r;
+    try {
+      r = await ask(this._hass, { type: "noxcast/part_preview", entry_id: e.entryId, part: e.part, input: e.input,
+        language: this._lang });
+    } catch (err) { return; }
+    if (seq !== this._seq || this._edit !== e) return;
+    e.diagram = r.diagram;
+    this._showErrors(r.errors);
+    const flow = this.shadowRoot.querySelector(`.flow[data-entry="${CSS.escape(e.entryId)}"]`);
+    if (flow) flow.innerHTML = this._selStyle() + r.diagram;
+  }
+
+  _showErrors(errors) {
+    const e = this._edit;
+    const { base, ...fields } = errors || {};
+    e.errors = fields;
+    e.base = base ? (base === "changed" ? this._t.changed : e.form.errors[base] || base) : null;
+    this._form.error = fields;
+    const msg = this.shadowRoot.querySelector(".edit .error");
+    if (msg) msg.textContent = e.base || "";
+  }
+
+  async _savePart() {
+    const e = this._edit;
+    if (!e || e.saving) return;
+    e.saving = true;
+    this._render();
+    let r;
+    try {
+      r = await ask(this._hass, { type: "noxcast/part_save", entry_id: e.entryId, part: e.part, input: e.input,
+        revision: e.form.revision, language: this._lang });
+    } catch (err) {
+      e.saving = false;
+      e.base = errorText(err, this._hass.language);
+      this._render();
+      return;
+    }
+    e.saving = false;
+    if (r.errors) {
+      if (r.errors.base === "changed") { this._stopEdit(); this._editError = this._t.changed; this._load(); return; }
+      this._render();
+      this._showErrors(r.errors);
+      return;
+    }
+    this._merge(r);
+    this._stopEdit();
+  }
+
+  _stopEdit() {
+    clearTimeout(this._previewTimer);
+    this._edit = null;
+    this._form = null;
+    this._render();
+  }
+
+  // an answer holds the entry it changed only: keep the others
+  _merge(data) {
+    if (!data || data.v !== WS_SCHEMA || !this._data) return;
+    const fresh = Object.fromEntries(data.entries.map((x) => [x.entry_id, x]));
+    this._data = { ...this._data, entries: this._data.entries.map((x) => fresh[x.entry_id] || x) };
+  }
+
+  _selStyle() {
+    return this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke-width: 2.4; }</style>` : "";
+  }
+
+  // the form in place of the settings while a part is changed
+  _editor(e) {
+    const t = this._t, ed = this._edit;
+    return `<div class="edit"><div class="slot"></div>
+      <div class="error small">${esc(ed.base || "")}</div>
+      <p class="help">${t.previewHelp}</p>
+      <div class="row"><button class="chip primary" data-act="save-part" ${ed.saving ? "disabled" : ""}>${
+        ed.saving ? t.saving : t.saveChange}</button><button class="chip" data-act="cancel">${t.cancel}</button></div></div>`;
   }
 
   // a select for where a part belongs, only where it has somewhere else to go and the user may change it
@@ -206,8 +376,15 @@ class NoxcastInstallation extends HTMLElement {
     const node = sel && this._find(e, sel);
     if (!node) return `<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
+    const admin = !(this._hass.user && !this._hass.user.is_admin);
+    if (this._edit && this._edit.entryId === e.entry_id) {
+      return `<div class="head"><span class="title">${esc(node.title)}</span></div>${this._editor(e)}`;
+    }
     const moves = (node.moves || []).map(([id, label]) => this._belongs(e, id, label)).join("");
-    return `<div class="head"><span class="title">${esc(node.title)}</span></div>
+    const change = admin ? `<button class="chip" data-edit="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${
+      node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>` : "";
+    return `<div class="head"><span class="title">${esc(node.title)}</span>${change}</div>
+      ${this._editError ? `<div class="error small">${esc(this._editError)}</div>` : ""}
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
       ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}
       ${moves ? `<div class="moves">${moves}
@@ -223,15 +400,20 @@ class NoxcastInstallation extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else body = this._data.entries.map((e) => {
       this._effects = e.effects || [];
-      const sel = this._sel ? `<style>[data-node="${CSS.escape(this._sel)}"] > rect { stroke-width: 2.4; }</style>` : "";
-      return `<section class="card pad">${sel}
-        ${e.systems.length ? `<div class="flow">${e.diagram || ""}</div>` : `<div class="muted">${t.noSystems}</div>`}
+      const editing = this._edit && this._edit.entryId === e.entry_id;
+      const diagram = (editing && this._edit.diagram) || e.diagram || "";
+      return `<section class="card pad">
+        ${e.systems.length ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${diagram}</div>`
+          : `<div class="muted">${t.noSystems}</div>`}
         <div class="detail">${this._detail(e, e.systems.length ? this._sel : "house")}</div>
         <p class="help">${t.help} ${t.edit}</p>
         <button class="chip" data-entries="1">${t.openEntry}</button></section>`;
     }).join("");
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">
       <div class="bar"><button class="chip" data-refresh="1">${t.refresh}</button></div>${body}</div>`;
+    // the same form element each time, so that what is typed and the focus stay
+    const slot = this.shadowRoot.querySelector(".edit .slot");
+    if (slot && this._form) { slot.appendChild(this._form); this._form.error = this._edit.errors; }
   }
 
   _style() {
@@ -254,7 +436,7 @@ class NoxcastInstallation extends HTMLElement {
         --nx-card: var(--card-background-color);
         ${d ? "--nx-pv: #3d2f16; --nx-pv-line: #e0a43c; --nx-sys: #15362c; --nx-sys-line: #4cc7a0; --nx-limit: #43231a; --nx-limit-line: #e88a68; --nx-bat: #1a2747; --nx-bat-line: #7d9ae6;"
             : "--nx-pv: #fbf1df; --nx-pv-line: #c98a12; --nx-sys: #e3f4ee; --nx-sys-line: #2e9e7b; --nx-limit: #fae8e2; --nx-limit-line: #d0603a; --nx-bat: #e8eefb; --nx-bat-line: #4b6fc4;"} }
-      .flow svg { display: block; width: 100%; max-width: 680px; height: auto; }
+      .flow svg { display: block; width: 100%; max-width: 862px; height: auto; }
       .detail { border-top: 1px solid var(--divider-color); margin-top: 12px; padding-top: 12px; }
       .settings { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
       .settings li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
@@ -271,6 +453,10 @@ class NoxcastInstallation extends HTMLElement {
       .moves .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
       .error { color: var(--error-color, #db4437); }
       .chip:disabled { opacity: .6; cursor: default; }
+      .chip.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+      .head .chip { margin-left: auto; }
+      .edit { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-width: 560px; }
+      .edit .row { display: flex; gap: 8px; }
       .help { color: var(--secondary-text-color); font-size: 12px; margin: 12px 0 0; line-height: 1.45; }
       .chip { border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); border-radius: 16px;
         padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }

@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import concepts, databasis, flowchart, store, systems, views
+from . import concepts, databasis, editor, flowchart, store, systems, views
 from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +45,9 @@ WS_RELEARN = f"{DOMAIN}/relearn"
 WS_REMOVE_EXCLUSION = f"{DOMAIN}/remove_exclusion"
 WS_INSTALLATION = f"{DOMAIN}/installation"
 WS_MOVE = f"{DOMAIN}/move_part"
+WS_PART_FORM = f"{DOMAIN}/part_form"
+WS_PART_PREVIEW = f"{DOMAIN}/part_preview"
+WS_PART_SAVE = f"{DOMAIN}/part_save"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -68,6 +71,9 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_remove_exclusion)
     websocket_api.async_register_command(hass, ws_installation)
     websocket_api.async_register_command(hass, ws_move_part)
+    websocket_api.async_register_command(hass, ws_part_form)
+    websocket_api.async_register_command(hass, ws_part_preview)
+    websocket_api.async_register_command(hass, ws_part_save)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -364,6 +370,72 @@ def ws_move_part(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     store.async_store(hass, entry, {**subs, msg["part"]: (kind, title, data)})
     lang = (msg.get("language") or hass.config.language or "en")[:2]
     _send(connection, msg, _installation([entry], lang))
+
+
+# a part of the installation edited in the Installation tab: its id, "house" for the household, or none for a new one
+# (then its kind, and the system it goes into)
+_PART = {vol.Required("entry_id"): str, vol.Optional("part"): vol.Any(str, None), vol.Optional("kind"): str,
+         vol.Optional("to"): vol.Any(str, None), vol.Optional("language"): str}
+
+
+def _editable(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> Any:
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "not_found", "No such Noxcast installation")
+        return None
+    return entry
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_PART_FORM, **_PART, vol.Optional("draft"): dict})
+@websocket_api.async_response
+async def ws_part_form(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The form of a part as the configuration dialogs have it (editor.async_form), for ha-form in the panel. With a
+    draft (a system whose template changed) the form is built for it."""
+    if (entry := _editable(hass, connection, msg)) is None:
+        return
+    try:
+        form = await editor.async_form(hass, entry, msg.get("part"), msg.get("kind"), msg.get("to"), msg.get("draft"),
+                                       (msg.get("language") or hass.config.language or "en")[:2])
+    except editor.EditError as err:
+        connection.send_error(msg["id"], str(err), "The part cannot be edited there")
+        return
+    _send(connection, msg, form)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_PART_PREVIEW, **_PART, vol.Required("input"): dict})
+@websocket_api.async_response
+async def ws_part_preview(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The diagram as it would look with the form's input, and the form's problems; nothing is stored."""
+    if (entry := _editable(hass, connection, msg)) is None:
+        return
+    try:
+        result = await editor.async_preview(hass, entry, msg.get("kind"), msg.get("part"), msg.get("to"), msg["input"],
+                                            (msg.get("language") or hass.config.language or "en")[:2])
+    except editor.EditError as err:
+        connection.send_error(msg["id"], str(err), "The part cannot be edited there")
+        return
+    _send(connection, msg, result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_PART_SAVE, **_PART, vol.Required("input"): dict,
+                                  vol.Optional("revision"): vol.Any(str, None)})
+@websocket_api.async_response
+async def ws_part_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Store a part as the dialogs do. Answers with the problems ({"errors": …}) or with the installation as it is
+    now; the entry reloads as after a dialog."""
+    if (entry := _editable(hass, connection, msg)) is None:
+        return
+    try:
+        errors = await editor.async_save(hass, entry, msg.get("kind"), msg.get("part"), msg.get("to"), msg["input"],
+                                         msg.get("revision"))
+    except editor.EditError as err:
+        connection.send_error(msg["id"], str(err), "The part cannot be edited there")
+        return
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    _send(connection, msg, {"errors": errors} if errors else _installation([entry], lang))
 
 
 # no ".svg" ending: the Markdown filter of the forms might drop SVG images by their name; the content type says it

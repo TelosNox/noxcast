@@ -23,6 +23,10 @@ breaking changes.
   a power limit per sensor on the line from the array, each battery as a box of its own with its capacity and where it
   charges from, a system's output limit and its deviation from the feed-in rule on its output, a subsystem's phase,
   the house load and grid sensors, and the feed-in rule between house and grid. Tapping a battery shows its settings.
+- Systems, PV arrays, batteries and the household can be changed in the *Installation* tab: *Change* opens the same
+  form as the configuration dialog beside the diagram, the diagram shows each change before it is saved, and *Save*
+  checks and stores it as the dialog does. A change made elsewhere in the meantime is not overwritten; the tab then
+  reloads it. Administrators only.
 - The diagnostics download contains the learned range and how often the actual value fell inside the range that
   was published, per weather class.
 

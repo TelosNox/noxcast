@@ -271,7 +271,9 @@ an array's orientation as a compass needle (north up, longer the steeper), its p
 power limit per sensor on the line from the array, a system's output limit (*per phase* where it holds per phase) and
 its deviation from the feed-in rule on its output, a subsystem's phase on the line it feeds, the feed-in rule between
 house and grid. Tapping a part shows its settings and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
-another system, with the same rules as the forms. The forms for systems, PV arrays and batteries show the same diagram
+another system, with the same rules as the forms. *Change* (administrators only) opens the same form as the configuration dialog beside the
+diagram, for a system, PV array, battery or the household: every change is drawn in the diagram right away, *Save*
+stores it as the dialog would, and Noxcast reloads. The forms for systems, PV arrays and batteries show the same diagram
 on top. Later versions compute more of the settings without new input.
 
 ### 3. PV arrays (one per group of power sensors)

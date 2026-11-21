@@ -608,6 +608,40 @@ def _battery_errors(hass: HomeAssistant, user_input: dict[str, Any] | None, choi
     return {}
 
 
+def _system_defaults(systems: dict[str, sy.System], flat: dict[str, tuple[str, str, Any]], own: str | None,
+                     template: str, sub: bool) -> dict[str, Any]:
+    """What the settings of a system show: a changed template fills in its settings anew, the same template keeps
+    what was set."""
+    old = dict(flat[own][2]) if own else {}
+    defaults = old if old.get(CONF_TEMPLATE) == template else {**old, **sy.template_data(template)}
+    before = old.get(CONF_PARENT)
+    if not sub and before in systems:
+        # leaving its system, it keeps behaving as that made it until changed here
+        defaults = {**{k: systems[before].get(k) for k in sy.BEHAVIOUR if systems[before].get(k) is not None},
+                    **{k: v for k, v in defaults.items() if k not in sy.BEHAVIOUR or v is not None}}
+    return defaults
+
+
+def _system_kinds(systems: dict[str, sy.System], own: str | None, template: str) -> tuple[bool, bool]:
+    """(holds subsystems, holds a battery): which settings a system's form offers."""
+    group = template == "coupled" or bool(own in systems and systems[own].children)
+    battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
+    return group, battery
+
+
+def _system_data(basics: dict[str, Any], user_input: dict[str, Any],
+                 sub: bool) -> tuple[dict[str, Any] | None, dict[str, str]]:
+    """The stored data of a system from what it is (basics) and its settings form; a subsystem keeps no behaviour
+    of its own (it follows its system)."""
+    user_input = _flatten(user_input, SYSTEM_SECTIONS)
+    if user_input.get(CONF_REGULATION) == "fixed" and not user_input.get(CONF_FIXED_POWER):
+        return None, {"base": "fixed_power_needed"}
+    data = {k: v for k, v in {**basics, **user_input}.items() if v not in (None, "", False)}
+    if sub:
+        data = {k: v for k, v in data.items() if k not in sy.BEHAVIOUR}
+    return data, {}
+
+
 # the menu of a system; its items carry the names of the parts, so they are built here, not in the translations.
 # Each starts with what it does (a menu has no icons): ✎ changes something that exists, + adds, − removes
 MENU_TEXT = {
@@ -766,27 +800,14 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         template = self._basics[CONF_TEMPLATE]
         own = self._edit
-        old = dict(self._flat[own][2]) if own else {}
         systems = self._systems()
-        # a changed template fills in its settings anew; the same template keeps what was set
-        defaults = old if old.get(CONF_TEMPLATE) == template else {**old, **sy.template_data(template)}
         sub = bool(self._basics.get(CONF_PARENT))
-        before = old.get(CONF_PARENT)
-        if not sub and before in systems:
-            # leaving its system, it keeps behaving as that made it until changed here
-            defaults = {**{k: systems[before].get(k) for k in sy.BEHAVIOUR if systems[before].get(k) is not None},
-                        **{k: v for k, v in defaults.items() if k not in sy.BEHAVIOUR or v is not None}}
-        group = template == "coupled" or bool(own in systems and systems[own].children)
-        battery = template in ("pv_battery", "ac_battery") or bool(own in systems and systems[own].battery)
+        defaults = _system_defaults(systems, self._flat, own, template, sub)
+        group, battery = _system_kinds(systems, own, template)
         errors = {}
         if user_input is not None:
-            user_input = _flatten(user_input, SYSTEM_SECTIONS)
-            if user_input.get(CONF_REGULATION) == "fixed" and not user_input.get(CONF_FIXED_POWER):
-                errors = {"base": "fixed_power_needed"}
-            else:
-                data = {k: v for k, v in {**self._basics, **user_input}.items() if v not in (None, "", False)}
-                if sub:
-                    data = {k: v for k, v in data.items() if k not in sy.BEHAVIOUR}
+            data, errors = _system_data(self._basics, user_input, sub)
+            if data is not None:
                 sid = own or ulid_now()
                 self._save({sid: (SUBENTRY_SYSTEM, data[CONF_NAME], data)})
                 self._node = sid
@@ -796,7 +817,8 @@ class SystemSubentryFlow(_DiagramMixin, ConfigSubentryFlow):
         return self.async_show_form(
             step_id="settings", errors=errors,
             description_placeholders={"name": self._basics[CONF_NAME], "concept": _concepts(self.hass, *drawings)},
-            data_schema=_system_settings(user_input or defaults, battery=battery, group=group, sub=sub))
+            data_schema=_system_settings(_flatten(user_input, SYSTEM_SECTIONS) if user_input else defaults,
+                                        battery=battery, group=group, sub=sub))
 
     async def async_step_array(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         own = self._edit

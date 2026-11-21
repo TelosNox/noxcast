@@ -177,7 +177,7 @@ class NoxcastInstallation extends HTMLElement {
       <span class="st ${e.status}" title="${t.status[e.status]}"><span class="dot"></span>${t.status[e.status]}</span></li>`).join("")}</ul>`;
   }
 
-  // the node clicked in the diagram: house, a system (with subsystems), or a PV array
+  // the node clicked in the diagram: house, a system (with subsystems), its battery, or a PV array
   _find(e, id) {
     const t = this._t;
     if (id === "house") return { title: t.house, sub: "", ids: ["house"] };
@@ -187,6 +187,9 @@ class NoxcastInstallation extends HTMLElement {
           const sub = [parent ? `${t.sub} · ${parent.name}` : "", t.templates[s.template] || "",
             s.battery ? `${t.battery}: ${s.battery.name}` : ""].filter(Boolean).join(" · ");
           return { title: s.name, sub, ids: [s.id], moves: [[s.id, t.belongs], ...(s.battery ? [[s.battery.id, t.batteryBelongs]] : [])] };
+        }
+        if (s.battery && s.battery.id === id) {
+          return { title: s.battery.name, sub: `${t.battery} · ${s.name}`, ids: [id], moves: [[id, t.batteryBelongs]] };
         }
         const a = s.arrays.find((x) => x.id === id);
         if (a) return { title: a.name, sub: `${t.array} · ${s.name} · ${a.sensors === 1 ? t.sensor : t.sensors.replace("{n}", a.sensors)}`, ids: [a.id], moves: [[a.id, t.belongs]] };
@@ -248,8 +251,9 @@ class NoxcastInstallation extends HTMLElement {
       .flow { overflow-x: auto; --nx-text: var(--primary-text-color); --nx-muted: var(--secondary-text-color);
         --nx-line: var(--secondary-text-color); --nx-node: var(--secondary-background-color, var(--card-background-color));
         --nx-frame: var(--secondary-text-color); --nx-font: var(--ha-font-family-body, var(--paper-font-body1_-_font-family));
-        ${d ? "--nx-pv: #3d2f16; --nx-pv-line: #e0a43c; --nx-sys: #15362c; --nx-sys-line: #4cc7a0; --nx-limit: #43231a; --nx-limit-line: #e88a68;"
-            : "--nx-pv: #fbf1df; --nx-pv-line: #c98a12; --nx-sys: #e3f4ee; --nx-sys-line: #2e9e7b; --nx-limit: #fae8e2; --nx-limit-line: #d0603a;"} }
+        --nx-card: var(--card-background-color);
+        ${d ? "--nx-pv: #3d2f16; --nx-pv-line: #e0a43c; --nx-sys: #15362c; --nx-sys-line: #4cc7a0; --nx-limit: #43231a; --nx-limit-line: #e88a68; --nx-bat: #1a2747; --nx-bat-line: #7d9ae6;"
+            : "--nx-pv: #fbf1df; --nx-pv-line: #c98a12; --nx-sys: #e3f4ee; --nx-sys-line: #2e9e7b; --nx-limit: #fae8e2; --nx-limit-line: #d0603a; --nx-bat: #e8eefb; --nx-bat-line: #4b6fc4;"} }
       .flow svg { display: block; width: 100%; max-width: 680px; height: auto; }
       .detail { border-top: 1px solid var(--divider-color); margin-top: 12px; padding-top: 12px; }
       .settings { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

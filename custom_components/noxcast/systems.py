@@ -30,7 +30,7 @@ from .const import (
     CONF_GRID, CONF_BALANCE, CONF_BATTERY_ARRAY, CONF_BATTERY_POWER, CONF_CHARGES_FROM, CONF_COUPLING, CONF_EFFICIENCY, CONF_FEED_IN, CONF_FEED_IN_LIMIT,
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSOR, CONF_SOC_SENSORS, CONF_SYSTEM,
-    CONF_TEMPLATE, CONF_UNENTERED_SOC, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
+    CONF_TEMPLATE, CONF_UNENTERED_SOC, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, CONF_TILT, CONF_AZIMUTH, CONF_CAPACITY, CONF_HOUSE_LOAD, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
 )
 
 type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -> (type, title, data)
@@ -712,6 +712,15 @@ def _limit_status(s: System, below: list[System], systems: Mapping[str, System])
     return EXACT
 
 
+def _planes(data: Mapping[str, Any]) -> list[dict[str, float]]:
+    """The orientations of an array as entered: the main one, then the further ones that are filled in."""
+    out = []
+    for d in (data, *(data.get(k) or {} for k in CONF_ORIENTATIONS)):
+        if all(d.get(k) is not None for k in (CONF_TILT, CONF_AZIMUTH, CONF_PEAK_POWER)):
+            out.append({"tilt": float(d[CONF_TILT]), "azimuth": float(d[CONF_AZIMUTH]), "peak_w": float(d[CONF_PEAK_POWER])})
+    return out
+
+
 def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
     """The installation for the Installation tab: household -> systems -> subsystems -> arrays and battery."""
     systems = systems_of(subs)
@@ -728,9 +737,13 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
             "own_feed_in": behaviour(systems, sid, CONF_OWN_FEED_IN), "charges_from": s.get(CONF_CHARGES_FROM),
             "balance": bool(s.get(CONF_BALANCE)) if s.children else None,
             "arrays": [{"id": a, "name": arrays[a][0], "sensors": len(arrays[a][1].get(CONF_POWER_SENSORS) or []),
+                        "sensor_ids": list(arrays[a][1].get(CONF_POWER_SENSORS) or []),
+                        "planes": _planes(arrays[a][1]),
                         "sensor_limits": sorted(set((arrays[a][1].get(CONF_SENSOR_LIMITS) or {}).values()))}
                        for a in s.arrays],
-            "battery": {"id": s.battery, "name": batteries[s.battery][0]} if s.battery else None,
+            "battery": {"id": s.battery, "name": batteries[s.battery][0],
+                        "capacity_kwh": batteries[s.battery][1].get(CONF_CAPACITY),
+                        "soc_sensor": batteries[s.battery][1].get(CONF_SOC_SENSOR)} if s.battery else None,
             "children": [node(c) for c in s.children],
         }
 
@@ -742,6 +755,7 @@ def tree(household: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
     return {
         "feed_in": household.get(CONF_FEED_IN_MODE, "none"), "feed_in_limit_w": household.get(CONF_FEED_IN_LIMIT),
         "feed_in_limit_pct": household.get(CONF_FEED_IN_PCT),
+        "house_load": household.get(CONF_HOUSE_LOAD), "grid": household.get(CONF_GRID),
         "systems": [node(sid) for sid in top],
         "effects": effects(household, systems, subs),
         # per array, battery and system: where it sits and where it can go ("" = a system on its own)

@@ -269,8 +269,12 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
 
 Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet. Der Panel-Reiter *Anlage* zeichnet die
-Anlage als Flussbild (PV-Gruppen, Systeme mit ihren Akkus und Grenzen, Haus, Netz); ein Tipp auf einen Teil zeigt seine
-Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
+Anlage als Flussbild (PV-Gruppen, Systeme mit ihren Akkus und Grenzen, Haus, Netz). Jede Einstellung steht dort, wo sie
+wirkt: die Ausrichtung einer PV-Gruppe als Kompassnadel (Norden oben, länger je steiler), ihre Spitzenleistung und
+Sensoren im Kasten, eine Leistungsgrenze je Sensor auf der Leitung von der PV-Gruppe, die Ausgangsgrenze eines Systems
+(*je Phase*, wo sie pro Phase gilt) und seine Abweichung von der Einspeisevorgabe an seinem Ausgang, die Phase eines
+Teilsystems auf der Leitung, in die es einspeist, die Einspeisevorgabe zwischen Haus und Netz. Ein Tipp auf einen Teil
+zeigt seine Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
 oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 

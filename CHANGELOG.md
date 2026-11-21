@@ -18,6 +18,11 @@ breaking changes.
   than PV, usually the output of an inverter with a battery, and so counts battery energy, even energy charged from
   the grid, as sun in the actual value and in learning. The array gets the *Check* badge and a notice under Repairs.
   The description of the power sensors now says that they should measure PV only.
+- The installation diagram (*Installation* tab and the forms of systems, PV arrays and batteries) shows every setting
+  where it acts: each array's orientation as a compass needle with tilt, direction and peak power, its power sensors,
+  a power limit per sensor on the line from the array, each battery as a box of its own with its capacity and where it
+  charges from, a system's output limit and its deviation from the feed-in rule on its output, a subsystem's phase,
+  the house load and grid sensors, and the feed-in rule between house and grid. Tapping a battery shows its settings.
 - The diagnostics download contains the learned range and how often the actual value fell inside the range that
   was published, per weather class.
 

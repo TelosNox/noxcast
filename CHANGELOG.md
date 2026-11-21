@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.6.0b1] - 2026-11-21
+
 ### Added
 - New sensor *Battery lowest level (48 h)*: the battery forecast now also runs for the next 48 hours, past
   tomorrow's charge start, as far as the PV forecast reaches. Its attribute `hourly` holds the expected level at

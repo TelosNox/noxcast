@@ -69,7 +69,8 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
 
     clear_wh(hour_start, array ids): clear-sky output of these arrays in that hour (Wh), from the
     current learned model. Classes with too little data are left out. keep(hour_start): only these
-    hours count (meant to select whole days, see learning.py). limits: arrays with a fixed limit (W); an hour
+    hours count; the coordinator leaves out what learning leaves out (days without output, snow, excluded periods),
+    since with few days in a class a single such day would set P10 (_quantile). limits: arrays with a fixed limit (W); an hour
     whose archived forecast of such an array reached it is left out, since that forecast was capped and its
     shift would not be one of the clouds; caps: limits shared by several arrays (arrays, W), the same for the sum
     of their forecasts.
@@ -83,6 +84,9 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
         for h in day.hours:
             if h.curtailed or h.limited or (keep is not None and not keep(h.ts)):
                 continue
+            # an array without its actual value (sensor unavailable) would read as a dark sky
+            if any(sid not in h.actual for sid in h.forecast):
+                continue
             if limits and any(h.forecast.get(sid, 0.0) >= (1 - LIMIT_MARGIN) * w for sid, w in limits.items()):
                 continue
             if caps and any(sum(h.forecast.get(sid, 0.0) for sid in group) >= (1 - LIMIT_MARGIN) * w
@@ -90,7 +94,7 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())
-            a = sum(h.actual.get(sid, 0.0) for sid in ids)
+            a = sum(h.actual[sid] for sid in ids)
             cs = clear_ghi(h.ts)
             if cs <= 0:
                 continue

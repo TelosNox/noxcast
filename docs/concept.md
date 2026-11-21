@@ -548,7 +548,9 @@ not types of their own. Independent devices are systems of their own, side by si
   card, and to the battery simulation (lost surplus and full time with PV at P10 and at P90).
   P10 and P90 are ranks, not the percentile of the past shifts: of n shifts, the one at rank floor(0.1 (n + 1))
   and ceil(0.9 (n + 1)), so a new day falls below or above with a tenth's chance even when a class has few days
-  (with 8 days the band spans all of them, with 99 it is the 10th and 90th value). The plain percentile is too
+  (up to 18 days the band spans the smallest to the largest shift, with 99 it is the 10th and 90th value). So that
+  a single bad day cannot set it, the band leaves out what learning leaves out: days without output, hours under
+  snow and excluded periods, besides curtailed and limited hours and hours without the actual value of every array. The plain percentile is too
   narrow on unseen days. C6 (#249) replayed a year of day-ahead forecasts (`prototype/band_replay.py`: Open-Meteo
   previous-runs archive, today's learned model, the band learned walk-forward from the 120 days before each day)
   on one installation, two arrays, 153 clean days:

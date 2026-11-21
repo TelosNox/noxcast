@@ -131,3 +131,12 @@ def test_quantiles_leave_a_tenth_of_new_days_below_and_above_even_with_few_days(
     many = [float(v) for v in range(1, 100)]
     assert (bd._quantile(many, bd.Q_LOW), bd._quantile(many, bd.Q_HIGH)) == (10.0, 90.0)
     assert bd._quantile([3.0], bd.Q_LOW) == bd._quantile([3.0], bd.Q_HIGH) == 3.0
+
+
+def test_hours_without_every_array_actual_do_not_teach_the_band():
+    a = archive()
+    for day in a.values():                       # a second array without its actual value: as if its sensor failed
+        for h in day["hours"].values():
+            h["forecast"]["b"] = 100.0
+    band = learn(a)
+    assert band["daily"] == {} and band["hourly"] == {}

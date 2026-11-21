@@ -60,6 +60,7 @@ def fetch(path: pathlib.Path, models: list[str], loc: dict, first: date, last: d
             for v in VARS:
                 col[v] += h.get(f"{v}_previous_day1") or h.get(f"{v}_previous_day1_{model}") or [None] * len(h["time"])
             a = b + timedelta(days=1)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
 
 
@@ -71,6 +72,12 @@ def weather(columns: dict) -> dict[float, mdl.WeatherHour]:
         start = datetime.fromisoformat(s).replace(tzinfo=timezone.utc).timestamp() - 3600   # mean of the hour before
         both = n is not None and d is not None
         out[start] = mdl.WeatherHour(start=start, ghi=max(g, 0.0), dni=n if both else None, dhi=d if both else None, temp=t)
+    # temperature is an instant at the label, the end of the hour here: the hour gets the mean of its start and end
+    at_end = {start: w.temp for start, w in out.items()}
+    for start, w in out.items():
+        before = at_end.get(start - 3600)
+        if w.temp is not None and before is not None:
+            out[start] = mdl.WeatherHour(start=start, ghi=w.ghi, dni=w.dni, dhi=w.dhi, temp=(before + w.temp) / 2)
     return out
 
 
@@ -167,7 +174,7 @@ def main() -> None:
         c = sum(clear_ghi[t] for t in ts if clear_ghi[t] > 0)
         kt = sum(h["ghi"] for t, h in zip(ts, rows) if clear_ghi[t] > 0) / c if c else 0.0
         clean = not any(h.get("curtailed") or h.get("limited") for h in rows)
-        if clean and sky_total > bd.MIN_DAY_WH and (r := bd.day_band(band, total, sky_total, kt)):
+        if clean and sky_total >= bd.MIN_DAY_WH and (r := bd.day_band(band, total, sky_total, kt)):
             days.setdefault(bd.weather_class(kt), []).append(
                 (sum(sum(h["actual"].values()) for h in rows), r[0], r[1], sky_total))
         hb = bd.hour_band(band, {t: sum(h["forecast"].values()) for t, h in zip(ts, rows)},

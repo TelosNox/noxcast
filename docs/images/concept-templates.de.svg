@@ -1,18 +1,26 @@
 <svg class="nx-flow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 242" width="680" height="242" role="img"><style>
 svg.nx-flow { --nf-text: #1f1f1f; --nf-muted: #666; --nf-line: #8a8a8a; --nf-node: #f6f6f6; --nf-frame: #9a9a9a;
   --nf-pv: #fbf1df; --nf-pv-line: #c98a12; --nf-sys: #e3f4ee; --nf-sys-line: #2e9e7b; --nf-limit: #fae8e2;
-  --nf-limit-line: #d0603a; font-family: var(--nx-font, Roboto, "Segoe UI", sans-serif); }
+  --nf-limit-line: #d0603a; --nf-bat: #e8eefb; --nf-bat-line: #4b6fc4; --nf-card: #ffffff;
+  font-family: var(--nx-font, Roboto, "Segoe UI", sans-serif); }
 @media (prefers-color-scheme: dark) { svg.nx-flow { --nf-text: #ececec; --nf-muted: #a8a8a8; --nf-line: #8f8f8f;
   --nf-node: #2a2a2a; --nf-frame: #777; --nf-pv: #3d2f16; --nf-pv-line: #e0a43c; --nf-sys: #15362c;
-  --nf-sys-line: #4cc7a0; --nf-limit: #43231a; --nf-limit-line: #e88a68; } }
+  --nf-sys-line: #4cc7a0; --nf-limit: #43231a; --nf-limit-line: #e88a68; --nf-bat: #1a2747; --nf-bat-line: #7d9ae6;
+  --nf-card: #1c1c1c; } }
 .nx-flow .t { fill: var(--nx-text, var(--nf-text)); font-size: 13px; font-weight: 500; }
 .nx-flow .s { fill: var(--nx-muted, var(--nf-muted)); font-size: 11px; }
 .nx-flow .ln { stroke: var(--nx-line, var(--nf-line)); stroke-width: 1.4; fill: none; }
 .nx-flow .node { fill: var(--nx-node, var(--nf-node)); stroke: var(--nx-line, var(--nf-line)); stroke-width: .6; }
 .nx-flow .pv { fill: var(--nx-pv, var(--nf-pv)); stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: .6; }
 .nx-flow .sys { fill: var(--nx-sys, var(--nf-sys)); stroke: var(--nx-sys-line, var(--nf-sys-line)); stroke-width: .6; }
-.nx-flow .frame { fill: none; stroke: var(--nx-frame, var(--nf-frame)); stroke-width: .8; stroke-dasharray: 5 4; }
+.nx-flow .batt { fill: var(--nx-bat, var(--nf-bat)); stroke: var(--nx-bat-line, var(--nf-bat-line)); stroke-width: .6; }
+.nx-flow .frame { fill: transparent; stroke: var(--nx-frame, var(--nf-frame)); stroke-width: .8; stroke-dasharray: 5 4; }
 .nx-flow .lim { fill: var(--nx-limit, var(--nf-limit)); stroke: var(--nx-limit-line, var(--nf-limit-line)); stroke-width: .6; }
+.nx-flow .ph { fill: var(--nx-node, var(--nf-node)); stroke: var(--nx-line, var(--nf-line)); stroke-width: .6; }
+.nx-flow .dev { fill: var(--nx-pv, var(--nf-pv)); stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: .6; }
+.nx-flow .dial { fill: var(--nx-card, var(--nf-card)); stroke: var(--nx-line, var(--nf-line)); stroke-width: .6; }
+.nx-flow .needle { stroke: var(--nx-pv-line, var(--nf-pv-line)); stroke-width: 1.8; stroke-linecap: round; fill: none; }
+.nx-flow .north { stroke: var(--nx-muted, var(--nf-muted)); stroke-width: 1.2; }
 .nx-flow .exact { fill: #3f9b4f; } .nx-flow .simplified { fill: #c98a12; } .nx-flow .not_yet { fill: #8a8f98; }
 .nx-flow [data-node] { cursor: pointer; }
 </style><style>

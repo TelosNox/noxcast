@@ -266,8 +266,11 @@ entries shows what sits inside what.
 | Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |
 
 Noxcast stores every setting, also those it does not compute yet. The panel tab *Installation* draws the installation
-as a flow diagram (PV arrays, systems with their batteries and limits, house, grid); tapping a part shows its settings
-and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
+as a flow diagram (PV arrays, systems with their batteries and limits, house, grid). Each setting shows where it acts:
+an array's orientation as a compass needle (north up, longer the steeper), its peak power and sensors in its box, a
+power limit per sensor on the line from the array, a system's output limit (*per phase* where it holds per phase) and
+its deviation from the feed-in rule on its output, a subsystem's phase on the line it feeds, the feed-in rule between
+house and grid. Tapping a part shows its settings and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
 another system, with the same rules as the forms. The forms for systems, PV arrays and batteries show the same diagram
 on top. Later versions compute more of the settings without new input.
 

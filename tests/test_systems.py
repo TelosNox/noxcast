@@ -186,6 +186,44 @@ def test_the_flow_diagram_shows_every_part_and_the_limits():
     assert "Noch keine Systeme" in fl.render(sy.tree({}, {}), "de")
 
 
+def test_the_flow_diagram_shows_each_setting_where_it_acts():
+    fl = load("flowchart")
+    subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800,
+                                       "limit_per_phase": True, "regulation": "load"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p", "phase": "l1"}),
+            "a": ("system", "AC Pro", {"name": "AC Pro", "template": "ac_battery", "parent": "p", "phase": "three",
+                                       "charges_from": "house"}),
+            "r": ("system", "Roof", {"name": "Roof", "template": "inverter", "own_feed_in": "export"}),
+            "south": ("array", "South", {"system": "u", "power_sensors": ["sensor.pv1_power"], "tilt": 30,
+                                         "azimuth": 180, "peak_power": 800, "sensor_limits": {"sensor.pv1_power": 600}}),
+            "roof": ("array", "Roof", {"system": "r", "power_sensors": ["sensor.a", "sensor.b"], "tilt": 35,
+                                       "azimuth": 90, "peak_power": 4000,
+                                       "orientation_2": {"tilt": 35, "azimuth": 270, "peak_power": 4000},
+                                       "orientation_3": {"tilt": None, "azimuth": None, "peak_power": None}}),
+            "bu": ("battery", "Ultra battery", {"system": "u", "soc_sensor": "sensor.u_soc", "capacity": 6}),
+            "ba": ("battery", "Pro battery", {"system": "a", "soc_sensor": "sensor.a_soc"})}
+    household = {"feed_in_mode": "limited", "feed_in_limit_w": 800, "house_load": "sensor.house_power"}
+    tree = sy.tree(household, subs)
+    roof = tree["systems"][0]["arrays"][0]                            # systems by name: Roof, Stream
+    # the further orientation left empty is no plane
+    assert roof["planes"] == [{"tilt": 35.0, "azimuth": 90.0, "peak_w": 4000.0},
+                              {"tilt": 35.0, "azimuth": 270.0, "peak_w": 4000.0}]
+    assert roof["sensor_ids"] == ["sensor.a", "sensor.b"] and tree["house_load"] == "sensor.house_power"
+    ultra = tree["systems"][1]["children"][1]
+    assert ultra["battery"] == {"id": "bu", "name": "Ultra battery", "capacity_kwh": 6, "soc_sensor": "sensor.u_soc"}
+    svg = fl.render(tree, "de")
+    assert 'data-node="bu"' in svg and 'data-node="ba"' in svg            # a battery is a node of its own
+    assert "30° · S 180° · 800 Wp" in svg and "pv1_power" in svg          # orientation and sensor of an array
+    assert "2 Richtungen · 8 kWp" in svg and "2 Sensoren addiert" in svg
+    assert svg.count('class="needle"') == 3                               # one needle per plane
+    assert "≤ 600 W" in svg                                               # the limit per sensor
+    assert "≤ 800 W je Phase" in svg and ">L1<" in svg and ">L1–L3<" in svg
+    assert "speist trotzdem ein" in svg and "6 kWh · lädt aus PV" in svg and "lädt aus Hausnetz" in svg
+    assert "Verbrauch: house_power" in svg and svg.count("≤ 800 W") == 2  # the feed-in limit too
+    en = fl.render(tree, "en")
+    assert "30° · S 180° · 800 Wp" in en and "feeds in anyway" in en and "≤ 800 W per phase" in en
+
+
 def test_behaviour_moves_to_the_system_and_a_group_dissolves():
     ids = iter(f"n{i}" for i in range(9))
     subs = {"p": ("system", "Stream", {"name": "Stream", "template": "coupled", "output_limit_w": 800}),

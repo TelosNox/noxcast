@@ -21,6 +21,11 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
   which says less, so an hour in between is left out (battery_hours). Charging at its maximum holds back none
   of the own PV where the own arrays' fixed limits together stay at or below that maximum: what it charges beyond
   them came from elsewhere.
+- An output limit with a battery below it is the other half of that ceiling: the PV leaves the system through the
+  output or into the battery, nowhere else. Its output is measured as the PV less what the batteries charge (a
+  discharge counts as nothing: the controller lowers it before it cuts PV); a period in which it reached the limit delivered at least what was measured, whatever the
+  battery took, so it is a lower bound in learning too (Outlet, output_hours). Overestimating the output only turns
+  an exact hour into a lower bound; missing one teaches a cut as shade.
 """
 from __future__ import annotations
 
@@ -49,6 +54,10 @@ HELD_IMPORT_W = 100.0
 # an hour in which the household's export came this close to its feed-in limit may have held PV back: a share of
 # the limit, at least HELD_IMPORT_W (controllers keep a margin below the limit as below zero)
 LIMIT_MARGIN = 0.05
+# a system's output counts as at its limit from 95 % of it, as a fixed limit (curtailment.LIMIT_MARGIN). The output is
+# measured on the DC side (PV less charge), a few percent above the AC output the limit holds: the margin covers it
+OUTPUT_MARGIN = 0.05
+FINE_STEP = 300.0                # seconds, the periods of the 5-minute archive (fine.STEP)
 
 
 def limit_threshold(limit_w: float) -> float:
@@ -76,6 +85,14 @@ class Charger:
     def at_max(self, charging_w: float | None) -> bool:
         """At its maximum, judged by a 5-minute mean (or a value as short)."""
         return charging_w is not None and charging_w >= (1 - CHARGE_MARGIN) * self.max_w
+
+
+@dataclass(frozen=True)
+class Meter:
+    """A battery's power sensor (> 0 = charging, unless inverted), where its maximum is not needed."""
+
+    sensor: str
+    invert: bool
 
 
 @dataclass(frozen=True)
@@ -160,6 +177,17 @@ class Cap:
 
 
 @dataclass(frozen=True)
+class Outlet:
+    """An output limit with batteries below it: what the arrays' PV gives, less what the batteries charge, leaves
+    through it. Not fixed, so no forecast cap; a measured state, read period by period (output_hours)."""
+
+    system: str
+    arrays: tuple[str, ...]
+    limit_w: float
+    meters: tuple[Meter, ...]            # the power sensors of every battery below the limit
+
+
+@dataclass(frozen=True)
 class Installation:
     inputs: Mapping[str, Input] = field(default_factory=dict)                # by sensor
     reach: Mapping[str, Reach] = field(default_factory=dict)                 # array -> batteries that take its PV
@@ -167,6 +195,7 @@ class Installation:
     # array -> grid power (W, export negative) below which its system may have held PV back: HELD_IMPORT_W for
     # one that follows the load without a battery, limit_threshold under the household's feed-in limit
     held: Mapping[str, float] = field(default_factory=dict)
+    outlets: tuple[Outlet, ...] = ()
 
     def held_hours(self, array: str, grid_low: Mapping[float, float]) -> set[float]:
         """Period starts in which the array's system may have held PV back: the household's lowest grid import
@@ -197,6 +226,48 @@ class Installation:
         """Every battery power sensor whose maximum may curtail some array."""
         return sorted({st.charger for r in self.reach.values() for st in r.own + r.others if st.charger},
                       key=lambda c: c.sensor)
+
+    def meters(self) -> list[Meter]:
+        """Every battery power sensor learning reads: those whose maximum may curtail some array, and those below
+        an output limit (Outlet)."""
+        found = {c.sensor: Meter(c.sensor, c.invert) for c in self.chargers()}
+        found.update({m.sensor: m for o in self.outlets for m in o.meters})
+        return [found[s] for s in sorted(found)]
+
+    def outlet_sensors(self) -> list[str]:
+        """The PV sensors of the arrays below an output limit with a battery."""
+        return sorted({i.sensor for o in self.outlets for a in o.arrays for i in self.inputs_of(a)})
+
+    def output_hours(self, array: str, peak: Mapping[str, Mapping[float, float]],
+                     charge: Mapping[str, Mapping[float, float]], fine_pv: Mapping[str, Mapping[float, float]],
+                     fine_charge: Mapping[str, Mapping[float, float]]) -> Hours:
+        """Hour starts in which an output limit with a battery below it, over the array, was reached: the PV less
+        what the batteries charged came to the limit (OUTPUT_MARGIN), so the array delivered at least what was
+        measured.
+
+        peak: PV sensor -> highest power per hour (W); charge: battery power sensor -> mean charge power per hour
+        (W, charging positive, charge_power). fine_pv, fine_charge: the same as 5-minute means where they are kept;
+        an hour they cover goes by them. Otherwise by the PV's maximum less the charge's mean: the battery charges
+        most when the PV peaks, so this overestimates the output, the safe side.
+        """
+        out: Hours = set()
+        for o in self.outlets:
+            if array not in o.arrays:
+                continue
+            sensors = [i.sensor for a in o.arrays for i in self.inputs_of(a)]
+            meters = [m.sensor for m in o.meters]
+            reached = (1 - OUTPUT_MARGIN) * o.limit_w
+            fine = _output(sensors, meters, fine_pv, fine_charge)
+            # an hour goes by its 5-minute means only when all of them are there: one without a plane's sun has
+            # gaps, and its periods at the limit may sit in them
+            count: dict[float, int] = {}
+            for t in fine:
+                count[t - t % HOUR] = count.get(t - t % HOUR, 0) + 1
+            known = {h for h, n in count.items() if n >= HOUR // FINE_STEP}
+            fine = {t: w for t, w in fine.items() if t - t % HOUR in known}
+            out |= {t - t % HOUR for t, w in fine.items() if w >= reached}
+            out |= {t for t, w in _output(sensors, meters, peak, charge).items() if t not in known and w >= reached}
+        return out
 
     def battery_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]],
                       hourly: Mapping[str, Mapping[float, float]], fine: Mapping[str, Mapping[float, float]]
@@ -261,7 +332,19 @@ def _charge_hours(c: Charger, hourly: Mapping[str, Mapping[float, float]],
     return at_max, unsure - at_max
 
 
-def charge_power(chargers: Iterable[Charger], values: Mapping[str, Mapping[float, float | None]],
+def _output(sensors: list[str], meters: list[str], pv: Mapping[str, Mapping[float, float]],
+            charge: Mapping[str, Mapping[float, float]]) -> dict[float, float]:
+    """Period start -> the PV of the sensors less what the batteries charged (W), where every sensor has a value.
+
+    A discharge counts as nothing: below the limit the controller lowers the discharge before it cuts PV, so PV and
+    discharge together at the limit say nothing about the PV."""
+    if not sensors or any(s not in pv for s in sensors) or any(m not in charge for m in meters):
+        return {}
+    common = set(pv[sensors[0]]).intersection(*(pv[s] for s in sensors[1:]), *(charge[m] for m in meters))
+    return {t: sum(pv[s][t] for s in sensors) - sum(max(charge[m][t], 0.0) for m in meters) for t in common}
+
+
+def charge_power(chargers: Iterable[Charger | Meter], values: Mapping[str, Mapping[float, float | None]],
                  factors: Mapping[str, float]) -> dict[str, dict[float, float]]:
     """Power sensor -> mean charge power per period in W (charging positive, also for an inverted sensor), from the
     sensors' period means; factors: the sensor's unit to W (none for values already in W)."""
@@ -331,6 +414,27 @@ def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap,
     return tuple(out)
 
 
+def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
+             batteries: Mapping[str, Mapping[str, Any]]) -> tuple[Outlet, ...]:
+    """The output limits with a battery in the system or its subsystems (the others are fixed, _caps), where every
+    such battery has a power sensor: without one the output is not known. A limit per phase is left out."""
+    known = set(arrays)
+    out = []
+    for s in sorted(systems.values(), key=lambda s: s.id):
+        limit = s.get(CONF_OUTPUT_LIMIT)
+        if not limit or s.get(CONF_LIMIT_PER_PHASE):
+            continue
+        tree = [s, *(systems[c] for c in s.children)]
+        found = [batteries.get(x.battery) or {} for x in tree if x.battery]
+        if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
+            continue
+        members = tuple(a for x in tree for a in x.arrays if a in known)
+        if members:
+            meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
+            out.append(Outlet(s.id, members, float(limit), meters))
+    return tuple(out)
+
+
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
           soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
@@ -352,7 +456,8 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
         ceilings[array] = sum(w for w in group if w is not None) if group and None not in group else None
     return Installation(inputs,
                         _reach(systems, batteries or {}, float(soc_full_pct), max_soc or {}, ceilings),
-                        _caps(systems, arrays), _held(systems, export_limit))
+                        _caps(systems, arrays), _held(systems, export_limit),
+                        _outlets(systems, arrays, batteries or {}))
 
 
 def _held(systems: Mapping[str, sy.System], export_limit: tuple[Iterable[str], float] | None

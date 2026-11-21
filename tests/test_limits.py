@@ -221,6 +221,43 @@ def test_output_limit_without_battery_is_a_fixed_limit():
     assert inst.build({"x": ["pv1"]}, systems=sy.systems_of(phase)).caps == ()
 
 
+def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
+    # a hybrid inverter: 11 kW out, two strings, a DC battery that charges below its maximum
+    hybrid = {"s": ("system", "Hybrid", {"name": "Hybrid", "template": "pv_battery", "output_limit_w": 11000}),
+              "x": ("array", "X", {"system": "s"}), "y": ("array", "Y", {"system": "s"}),
+              "b": ("battery", "B", {"system": "s", "soc_sensor": "soc", "battery_power": "p.b",
+                                     "battery_power_invert": True, "max_charge_w": 5000})}
+    systems = sy.systems_of(hybrid)
+    batteries = {"b": hybrid["b"][2]}
+    built = inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, batteries, "free")
+    assert built.caps == () and [(o.arrays, o.limit_w) for o in built.outlets] == [(("x", "y"), 11000.0)]
+    assert [m.sensor for m in built.meters()] == ["p.b"] and built.outlet_sensors() == ["pv1", "pv2"]
+    # hour 0: 13 kW of PV, 2 kW into the battery, 11 kW out: at the limit, although the battery is neither full nor
+    # at its maximum. Hour 1: 12 kW of PV, 4 kW into the battery, 8 kW out: free. Hour 2: 10 kW of PV and 1 kW
+    # discharged: the controller lowers the discharge before it cuts PV, so it counts as nothing
+    peak = {"pv1": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5000.0}, "pv2": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5000.0}}
+    charge = inst.charge_power(built.meters(), {"p.b": {0.0: -2000.0, 3600.0: -4000.0, 7200.0: 1000.0}}, {})
+    assert built.output_hours("x", peak, charge, {}, {}) == {0.0} == built.output_hours("y", peak, charge, {}, {})
+    assert not any(0.0 in hours for hours in built.battery_hours("x", {}, charge, {}))    # the battery alone misses it
+    # kept 5-minute means decide an hour that has all of them: here the output stayed below the limit all hour
+    steps = [k * 300.0 for k in range(12)]
+    fine_pv = {"pv1": {t: 5000.0 for t in steps}, "pv2": {t: 5000.0 for t in steps}}
+    fine_charge = {"p.b": {t: 2000.0 for t in steps}}
+    assert built.output_hours("x", peak, charge, fine_pv, fine_charge) == set()
+    # with gaps (a plane's sun behind it) the hour goes by its hourly values
+    gaps = {s: {t: v for t, v in series.items() if t < 1800.0} for s, series in fine_pv.items()}
+    assert built.output_hours("x", peak, charge, gaps, fine_charge) == {0.0}
+    # without the battery's power sensor the output is not known
+    blind = {**batteries, "b": {k: v for k, v in batteries["b"].items() if k != "battery_power"}}
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, blind, "free").outlets == ()
+    # learning keeps the hour as a lower bound, the backtest leaves it out, the hour table names the limit
+    arr = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None)
+    history = ln.PvHistory({"pv1": {0.0: 6000.0, 3600.0: 5500.0}}, {}, {}, {}, {}, output={"x": frozenset({0.0})})
+    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
+    assert list(btest.usable(arr, history, 95.0, [])) == [3600.0]
+
+
 def test_learning_leaves_out_full_hours_and_bounds_hours_at_a_shared_limit():
     arr = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None,
                          caps=((("pv1", "pv2"), 600.0),))

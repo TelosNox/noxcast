@@ -23,6 +23,13 @@ breaking changes.
   hour is computed once instead of again in every step. The results stay the same; the run holds up to about 18 MB
   more memory while it lasts.
 
+### Fixed
+- A system with a battery and an output limit no longer teaches the cut at its limit as shade. When the PV
+  less what the battery charges reached the output limit, the hour counts as "at least this much" in learning,
+  however much the battery took, and the intraday correction no longer reads it as clouds. Before, only a full
+  battery or one charging at its maximum power marked such hours. This needs the battery's *Charge / discharge
+  power* sensor; the next learning run applies it to the whole history.
+
 ## [0.5.0] - 2026-11-19
 
 All changes since 0.4.0: the pre-releases 0.5.0b1 to 0.5.0b8 (their single steps are listed in

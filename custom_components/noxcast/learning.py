@@ -101,6 +101,9 @@ class PvHistory:
     # at their maximum for a part of the hour: left out of learning like a full battery (installation.battery_hours)
     unsure: dict[str, frozenset[float]] = field(default_factory=dict)
     snowfall: Series | None = None                       # snowfall archive (cm per hour at the site, hour start)
+    # per array the hour starts in which an output limit with a battery below it was reached: the PV less the charge
+    # came to the limit (installation.output_hours); a lower bound like a fixed limit
+    output: dict[str, frozenset[float]] = field(default_factory=dict)
     # left_out per (array, period), computed once: learning, backtest and hold-out of a night ask for it again
     memo: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -185,7 +188,7 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
     return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
                      air or None, satellite or None, history.full, history.charge, history.held, history.unsure,
-                     history.snowfall)
+                     history.snowfall, output=history.output)
 
 
 # An hour whose maximum touched a limit, but whose mean reached this share of what free modules give under the
@@ -298,9 +301,10 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
         samples = [s for s in samples if keep(s[0])]
     steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
                            for s in arr.sensors])
-    # an hour charging at the maximum, or one in which a system following the load held PV back: every period in
-    # it delivered at least what was measured
-    charge = history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
+    # an hour charging at the maximum, at an output limit with a battery below it, or one in which a system
+    # following the load held PV back: every period in it delivered at least what was measured
+    charge = (history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
+              | history.output.get(arr.subentry_id, frozenset()))
     floors = floor_hours(arr, history, site) | {t for t, _ in samples if t - t % HOUR in charge}
     return samples, steady, floors
 
@@ -320,7 +324,8 @@ def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: flo
     reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors), soc=history.soc,
                              soc_full=soc_full, exclusions=exclusions, valid_since=arr.valid_since,
                              left={k: v for k, v in left.items() if v})
-    limit = floor_hours(arr, history, site)
+    output = history.output.get(sid, frozenset())
+    limit = floor_hours(arr, history, site) | {t for t in reasons if t - t % HOUR in output}
     bounds = {"at_limit": None, "charging_max": history.charge.get(sid, frozenset()),
               "held_back": history.held.get(sid, frozenset())}
     result = {}
@@ -393,7 +398,8 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
         fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
                                full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
-                               | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset()),
+                               | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset())
+                               | history.output.get(sid, frozenset()),
                                limited)
         if history.satellite_ghi:
             fc_archive.add_measured(archive, sid, history.satellite_ghi, history.air_temp,

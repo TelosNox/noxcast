@@ -27,7 +27,6 @@ from typing import Any
 
 from . import archive as fc_archive
 from . import backtest
-from . import band as bd
 from . import battery as bt
 from . import explain
 from . import plan as pl
@@ -218,11 +217,6 @@ def accuracy_days(archive: dict, site: Site) -> list[dict]:
             })
         days.append({"date": day.date, "issued": day.issued, "models": day.models, "hours": hours})
     return days
-
-
-def band_coverage(archive: dict, site: Site) -> dict:
-    """How often the actual total fell inside the published P10-P90 band, per weather class (band.coverage)."""
-    return bd.coverage(archive, lambda ts: clearsky_weather(site, ts).ghi)
 
 
 def array_names(arrays: dict) -> list[dict]:

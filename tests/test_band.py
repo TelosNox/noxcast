@@ -122,3 +122,12 @@ def test_coverage_leaves_out_hours_without_the_actual_of_every_array():
     del hour["actual"]["b"]                          # the second sensor was unavailable
     c = bd.coverage(a, lambda ts: CLEAR)
     assert c["days"]["all"]["n"] == 39 and c["left_out"] == 1 and c["hours"]["all"]["n"] == 399
+
+
+def test_quantiles_leave_a_tenth_of_new_days_below_and_above_even_with_few_days():
+    """Rank floor / ceil of q (n + 1): with 8 days the band spans all of them, with 99 it is the 10th and 90th value."""
+    few = [float(v) for v in range(8)]
+    assert (bd._quantile(few, bd.Q_LOW), bd._quantile(few, bd.Q_HIGH)) == (0.0, 7.0)
+    many = [float(v) for v in range(1, 100)]
+    assert (bd._quantile(many, bd.Q_LOW), bd._quantile(many, bd.Q_HIGH)) == (10.0, 90.0)
+    assert bd._quantile([3.0], bd.Q_LOW) == bd._quantile([3.0], bd.Q_HIGH) == 3.0

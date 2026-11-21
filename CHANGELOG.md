@@ -12,11 +12,15 @@ breaking changes.
   than PV, usually the output of an inverter with a battery, and so counts battery energy, even energy charged from
   the grid, as sun in the actual value and in learning. The array gets the *Check* badge and a notice under Repairs.
   The description of the power sensors now says that they should measure PV only.
-- The accuracy view shows whether the P10–P90 range holds: how often the actual value of a day, and of an hour,
-  fell below, inside or above the range published with the forecast the evening before, per weather class, with
-  the target of 10 / 80 / 10 %. A weather class with fewer than 30 days shows "not enough data". Days and hours
-  with possible curtailment are not counted, which with a battery leaves out mostly sunny days. The range is archived since 0.4, so most installations see first
-  figures after about a month.
+- The diagnostics download contains the learned range and how often the actual value fell inside the range that
+  was published, per weather class.
+
+### Changed
+- The P10–P90 range of a day is wider where it was too narrow. It is learned from the past days of the same weather,
+  and with few such days it now reaches their largest deviations instead of cutting them off. Replayed over a year
+  of day-ahead forecasts on one installation, the actual value of a day fell inside the range on 73 % of the days
+  instead of 66 % (target 80 %), with a better balance of width and misses. The hourly range hardly changes. The next
+  learning run applies it.
 
 ## [0.6.0b1] - 2026-11-21
 

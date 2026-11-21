@@ -538,7 +538,7 @@ not types of their own. Independent devices are systems of their own, side by si
   day-ahead archive, the shift in clearness per day and per hour, (actual - forecast) / clear-sky
   output of the current learned model, grouped by the clearness of the forecast (overcast below
   0.35, mixed, clear from 0.7; forecast GHI relative to clear-sky GHI), gives the 10th and 90th
-  percentile; a class with fewer than 8 days (40 hours) falls back to all days together, and hours
+  percentile (as ranks, see below); a class with fewer than 8 days (40 hours) falls back to all days together, and hours
   with possible curtailment or at a fixed limit are left out. The band varies the clouds, not the output: P10 and P90
   stay between no sun and a clear sky plus 5 % (geometry and shading errors, cloud enhancement), or the
   forecast itself if the weather source reports more irradiance than the clear-sky model.
@@ -546,14 +546,28 @@ not types of their own. Independent devices are systems of their own, side by si
   forecast, 10.1 kWh against 8.3 kWh with a clear sky. Applied to today's rest,
   tomorrow and the day after (attributes `p10` / `p90` of the total sensors), per hour in the day
   card, and to the battery simulation (lost surplus and full time with PV at P10 and at P90).
-  Whether the band holds is checked on the band that was published (`band.coverage`, archived with each
-  day-ahead forecast and learned on the days before, so out of sample): the share of days and of hours whose
-  actual total fell below P10, inside, or above P90, per weather class of the forecast, over the last 120 days.
-  The target is 10 / 80 / 10 %. Curtailed or limited hours and hours without the actual value of every array are
-  left out, and a day with one of them entirely; with a battery that removes mostly sunny days (full battery), a
-  selection the view names. A
-  class with fewer than 30 days shows "not enough data": with fewer, a 10 % tail rests on two or three days. The
-  accuracy view shows it; calibrating the band from it (C6, #249) waits until the classes reach that size.
+  P10 and P90 are ranks, not the percentile of the past shifts: of n shifts, the one at rank floor(0.1 (n + 1))
+  and ceil(0.9 (n + 1)), so a new day falls below or above with a tenth's chance even when a class has few days
+  (with 8 days the band spans all of them, with 99 it is the 10th and 90th value). The plain percentile is too
+  narrow on unseen days. C6 (#249) replayed a year of day-ahead forecasts (`prototype/band_replay.py`: Open-Meteo
+  previous-runs archive, today's learned model, the band learned walk-forward from the 120 days before each day)
+  on one installation, two arrays, 153 clean days:
+
+  | Days | below P10 | inside | above P90 | width | interval score |
+  |---|---|---|---|---|---|
+  | percentile | 19.6 % | 66.0 % | 14.4 % | 13.8 % | 34.8 % |
+  | rank | 17.0 % | 73.2 % | 9.8 % | 17.3 % | 33.2 % |
+
+  Width and interval score (width plus 10 times the miss, the score of an 80 % interval) relative to the
+  clear-sky energy; the rank form has the lower score in 97.6 % of bootstrap resamples of the days. Hours change
+  little (2120 hours, inside 75.6 → 76.5 %, score 65.8 → 66.1 %): their classes hold enough hours for the two to
+  agree. Neither a minimum of 20 days per class nor one band for all days without classes did better. Days still
+  fall below P10 more often than above P90: the remaining gap is a bias of the forecast on clear days, not the
+  width of the band.
+  Whether the published band holds on an installation is in the diagnostics download (`band.coverage`): the
+  share of days and hours below, inside and above, per weather class, on the band archived with each forecast.
+  Curtailed or limited hours and hours without the actual value of every array are left out, and a day with one
+  of them entirely; with a battery that removes mostly sunny days.
 - Today three ways: the forecast fixed at 06:00 (to see the day's deviation), the expected total
   (measured hours + corrected rest) and the remaining energy. The intraday correction works on
   clearness (output relative to the clear-sky output of the same hour): if the last three hours
@@ -1117,11 +1131,11 @@ following without battery, the household feed-in limit), the accuracy archive of
 scorecard. The open work is tracked in GitHub issues:
 
 1. **Explanations and outputs** (#251): diagnostics without personal data, outputs for EVCC / Predbat / EMHASS
-   and the state of charge for 48 h, 15-minute steps and band coverage are built; open are the shading map
+   and the state of charge for 48 h and 15-minute steps are built; open are the shading map
    uncertainty, what the nightly learning changed, and the deviation of a day split into weather, shade, limit
    and model.
 2. **Light model** (#249): C1, C2 and C3 were falsified on real data, and the cause of the low-sun error is still
-   open; C5-C8 follow on the hindcast (C6, the band calibration, once band coverage has enough days).
+   open; C6 (the band's P10 / P90 as ranks) is built, C5, C7 and C8 follow on the hindcast.
 3. **Installation model, rest** (#250): battery forecast per independent system, shared limits per phase, fixed power, balancing.
 4. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.

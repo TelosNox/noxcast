@@ -5,13 +5,15 @@ days (and hours) the shift in clearness is collected, (actual - forecast) / clea
 the clear-sky output comes from the same learned model (efficiency, shading) with a clear sky. The
 shifts are grouped per weather class of the forecast (clearness = forecast GHI relative to clear-sky
 GHI). The 10th and 90th percentile of the shift, added to a new forecast's clearness, give P10 and
-P90; the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
+P90, as ranks that leave a tenth of new days below and above even when a class has few past days (_quantile);
+the clearness stays between 0 and a clear sky plus a small tolerance (model errors such as
 geometry or a wrongly learned shadow, cloud enhancement). A clear forecast can therefore hardly
 rise, an overcast one can rise up to a clear sky. Hours with possible curtailment or at a fixed limit
 are left out, since their actual value does not show what the sun gave.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from . import archive as fc_archive
@@ -38,11 +40,17 @@ def weather_class(clearness: float) -> str:
 
 
 def _quantile(values: list[float], q: float) -> float:
+    """The value of rank floor(q (n + 1)) for a lower, ceil(q (n + 1)) for an upper quantile, within 1..n.
+
+    A new day falls below the k-th of n past values in k / (n + 1) of the cases, if the days are alike. The
+    percentile of the n values themselves is narrower: with 8 days it puts P10 and P90 at the 2nd and 7th value,
+    and on unseen days only 66 % instead of 80 % of the days fell inside (replay of a year, docs/concept.md).
+    With few days the band reaches the smallest and largest shift; with many it is the plain percentile.
+    """
     s = sorted(values)
-    pos = q * (len(s) - 1)
-    lo = int(pos)
-    hi = min(lo + 1, len(s) - 1)
-    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+    n = len(s)
+    k = math.ceil(q * (n + 1)) if q > 0.5 else math.floor(q * (n + 1))
+    return s[min(max(k, 1), n) - 1]
 
 
 def _summary(groups: dict[str, list[float]], minimum: int) -> dict:
@@ -205,7 +213,8 @@ def coverage(archive: dict, clear_ghi: Callable[[float], float]) -> dict:
     before, so the check is out of sample. Hours with possible curtailment, at a fixed limit or without the actual
     value of every array are left out, and a day with one of them entirely, since their actual value does not show
     what the sun gave. With a battery this leaves out mostly sunny days (full battery), so their clear row is thin. "days" of a row
-    is the number of days its hours come from; below COVERAGE_MIN_DAYS the view reports too little data.
+    is the number of days its hours come from; below COVERAGE_MIN_DAYS a share says little. clear_ghi: clear-sky GHI
+    by hour start. Part of the diagnostics download, to check the band on an installation.
     """
     daily: dict[str, dict] = {}
     hourly: dict[str, dict] = {}

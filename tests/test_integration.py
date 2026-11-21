@@ -127,6 +127,7 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     assert abs(learned.efficiency - 0.92) < 0.03
     table = next(iter(diag["arrays"].values()))["hours"]                # every daylight hour with its status
     assert diag["hours_error"] is None and len(table["rows"]) > 100
+    assert diag["band"] == coordinator.band and diag["band_coverage"]["min_days"] == 30
     assert {row[1] for row in table["rows"]} >= {"used"}
     dumped = json.dumps(diag)
     assert "latitude" not in dumped and "sensor.pv1" not in dumped     # entity IDs only as aliases

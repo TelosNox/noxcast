@@ -188,8 +188,7 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
         # the page offers up to 90 days; the whole archive would only make the answer larger
         recent = fc_archive.recent(c.forecast_archive, dt_util.now().date() - timedelta(days=EVAL_DAYS))
         days = await hass.async_add_executor_job(views.accuracy_days, recent, c.site)
-        band = await hass.async_add_executor_job(views.band_coverage, recent, c.site)
-        entries.append({"arrays": views.array_names(c.arrays), "days": days, "band": {**band, "span": EVAL_DAYS}})
+        entries.append({"arrays": views.array_names(c.arrays), "days": days})
     _send(connection, msg, {"time_zone": hass.config.time_zone, "entries": entries})
 
 

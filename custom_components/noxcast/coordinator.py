@@ -740,7 +740,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         air_temp, satellite_ghi, snowfall = await self._async_archives(start, now, record) if archives else (None, None, None)
         blocked = {sid: installation.battery_hours(sid, soc, charging, fine) for sid in self.arrays}
         full = {sid: frozenset(f) for sid, (f, _, _) in blocked.items()}
-        output = self._output_hours(installation, power, power_max, factors, charging, fine, days)
+        output = await self.hass.async_add_executor_job(
+            self._output_hours, installation, power, power_max, factors, charging, fine, days)
         charge = {sid: frozenset(m) for sid, (_, m, _) in blocked.items()}
         unsure = {sid: frozenset(u) for sid, (_, _, u) in blocked.items() if u}
         grid_low = await self._async_grid_low(installation, start)

@@ -233,16 +233,20 @@ def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
     assert built.caps == () and [(o.arrays, o.limit_w) for o in built.outlets] == [(("x", "y"), 11000.0)]
     assert [m.sensor for m in built.meters()] == ["p.b"] and built.outlet_sensors() == ["pv1", "pv2"]
     # hour 0: 13 kW of PV, 2 kW into the battery, 11 kW out: at the limit, although the battery is neither full nor
-    # at its maximum. Hour 1: 12 kW of PV, 4 kW into the battery, 8 kW out: free. Hour 2: 10.5 kW and discharging
-    # 0.5 kW: the output is at the limit
-    peak = {"pv1": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5250.0}, "pv2": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5250.0}}
-    charge = inst.charge_power(built.meters(), {"p.b": {0.0: -2000.0, 3600.0: -4000.0, 7200.0: 500.0}}, {})
-    assert built.output_hours("x", peak, charge, {}, {}) == {0.0, 7200.0} == built.output_hours("y", peak, charge, {}, {})
+    # at its maximum. Hour 1: 12 kW of PV, 4 kW into the battery, 8 kW out: free. Hour 2: 10 kW of PV and 1 kW
+    # discharged: the controller lowers the discharge before it cuts PV, so it counts as nothing
+    peak = {"pv1": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5000.0}, "pv2": {0.0: 6500.0, 3600.0: 6000.0, 7200.0: 5000.0}}
+    charge = inst.charge_power(built.meters(), {"p.b": {0.0: -2000.0, 3600.0: -4000.0, 7200.0: 1000.0}}, {})
+    assert built.output_hours("x", peak, charge, {}, {}) == {0.0} == built.output_hours("y", peak, charge, {}, {})
     assert not any(0.0 in hours for hours in built.battery_hours("x", {}, charge, {}))    # the battery alone misses it
-    # kept 5-minute means decide their hour: here the output stayed below the limit all hour
-    fine_pv = {"pv1": {0.0: 5000.0, 300.0: 5000.0}, "pv2": {0.0: 5000.0, 300.0: 5000.0}}
-    fine_charge = {"p.b": {0.0: 2000.0, 300.0: 2000.0}}
-    assert built.output_hours("x", peak, charge, fine_pv, fine_charge) == {7200.0}
+    # kept 5-minute means decide an hour that has all of them: here the output stayed below the limit all hour
+    steps = [k * 300.0 for k in range(12)]
+    fine_pv = {"pv1": {t: 5000.0 for t in steps}, "pv2": {t: 5000.0 for t in steps}}
+    fine_charge = {"p.b": {t: 2000.0 for t in steps}}
+    assert built.output_hours("x", peak, charge, fine_pv, fine_charge) == set()
+    # with gaps (a plane's sun behind it) the hour goes by its hourly values
+    gaps = {s: {t: v for t, v in series.items() if t < 1800.0} for s, series in fine_pv.items()}
+    assert built.output_hours("x", peak, charge, gaps, fine_charge) == {0.0}
     # without the battery's power sensor the output is not known
     blind = {**batteries, "b": {k: v for k, v in batteries["b"].items() if k != "battery_power"}}
     assert inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, blind, "free").outlets == ()

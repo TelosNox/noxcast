@@ -438,8 +438,8 @@ not types of their own. Independent devices are systems of their own, side by si
   spike of a second lifts), in which a system following the load without a battery may have held PV back
   (the household imported less than 100 W), and in which the household's export reached its feed-in limit count
   as lower bounds instead. So do the hours in which an output limit with a battery below it was reached: the PV
-  of the system's arrays less what its batteries charged (plus what they discharged) came to 95 % of the limit,
-  by the 5-minute means where they are kept, else by the PV's hourly maximum less the charge's hourly mean, which
+  of the system's arrays less what its batteries charged (a discharge counts as nothing) came to 95 % of the limit,
+  by the 5-minute means where an hour has all of them, else by the PV's hourly maximum less the charge's hourly mean, which
   overestimates the output (the safe side). This needs the power sensor of every battery below the limit
   (`installation.Outlet`).
 - Fixed limits (`installation.py`, `curtailment.py`): a configured limit per power sensor (MPPT input,

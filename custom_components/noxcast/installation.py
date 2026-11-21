@@ -22,8 +22,8 @@ hold a limit. The chain of ceilings (docs/concept.md, Installation model) decide
   of the own PV where the own arrays' fixed limits together stay at or below that maximum: what it charges beyond
   them came from elsewhere.
 - An output limit with a battery below it is the other half of that ceiling: the PV leaves the system through the
-  output or into the battery, nowhere else. Its output is measured as the PV less what the batteries charge (plus
-  what they discharge); a period in which it reached the limit delivered at least what was measured, whatever the
+  output or into the battery, nowhere else. Its output is measured as the PV less what the batteries charge (a
+  discharge counts as nothing: the controller lowers it before it cuts PV); a period in which it reached the limit delivered at least what was measured, whatever the
   battery took, so it is a lower bound in learning too (Outlet, output_hours). Overestimating the output only turns
   an exact hour into a lower bound; missing one teaches a cut as shade.
 """
@@ -57,6 +57,7 @@ LIMIT_MARGIN = 0.05
 # a system's output counts as at its limit from 95 % of it, as a fixed limit (curtailment.LIMIT_MARGIN). The output is
 # measured on the DC side (PV less charge), a few percent above the AC output the limit holds: the margin covers it
 OUTPUT_MARGIN = 0.05
+FINE_STEP = 300.0                # seconds, the periods of the 5-minute archive (fine.STEP)
 
 
 def limit_threshold(limit_w: float) -> float:
@@ -257,7 +258,13 @@ class Installation:
             meters = [m.sensor for m in o.meters]
             reached = (1 - OUTPUT_MARGIN) * o.limit_w
             fine = _output(sensors, meters, fine_pv, fine_charge)
-            known = {t - t % HOUR for t in fine}
+            # an hour goes by its 5-minute means only when all of them are there: one without a plane's sun has
+            # gaps, and its periods at the limit may sit in them
+            count: dict[float, int] = {}
+            for t in fine:
+                count[t - t % HOUR] = count.get(t - t % HOUR, 0) + 1
+            known = {h for h, n in count.items() if n >= HOUR // FINE_STEP}
+            fine = {t: w for t, w in fine.items() if t - t % HOUR in known}
             out |= {t - t % HOUR for t, w in fine.items() if w >= reached}
             out |= {t for t, w in _output(sensors, meters, peak, charge).items() if t not in known and w >= reached}
         return out
@@ -327,11 +334,14 @@ def _charge_hours(c: Charger, hourly: Mapping[str, Mapping[float, float]],
 
 def _output(sensors: list[str], meters: list[str], pv: Mapping[str, Mapping[float, float]],
             charge: Mapping[str, Mapping[float, float]]) -> dict[float, float]:
-    """Period start -> the PV of the sensors less what the batteries charged (W), where every sensor has a value."""
+    """Period start -> the PV of the sensors less what the batteries charged (W), where every sensor has a value.
+
+    A discharge counts as nothing: below the limit the controller lowers the discharge before it cuts PV, so PV and
+    discharge together at the limit say nothing about the PV."""
     if not sensors or any(s not in pv for s in sensors) or any(m not in charge for m in meters):
         return {}
     common = set(pv[sensors[0]]).intersection(*(pv[s] for s in sensors[1:]), *(charge[m] for m in meters))
-    return {t: sum(pv[s][t] for s in sensors) - sum(charge[m][t] for m in meters) for t in common}
+    return {t: sum(pv[s][t] for s in sensors) - sum(max(charge[m][t], 0.0) for m in meters) for t in common}
 
 
 def charge_power(chargers: Iterable[Charger | Meter], values: Mapping[str, Mapping[float, float | None]],

@@ -60,7 +60,10 @@ def test_learned_arrays():
     la = model.LearnedArray(efficiency=0.9, efficiency_months={"2026-06": [0.91, 120]})
     out = views.learned_arrays(arrays(), {"roof": la}, datetime(2026, 7, 1, 2, tzinfo=timezone.utc))
     assert [list(a) for a in out] == [["id", "name", "tilt", "azimuth", "peak_w", "planes", "learned", "facade_cells", "cell_certainty",
-                                       "last_learning"]] * 2
+                                       "last_learning", "changes"]] * 2
+    assert out[0]["changes"] is None
+    with_changes = views.learned_arrays(arrays(), {"roof": la}, None, {"roof": {"first": True}})
+    assert with_changes[0]["changes"] == {"first": True} and with_changes[1]["changes"] is None
     assert out[0]["learned"] == {**la.as_dict(), "efficiency_months": {"2026-06": {"efficiency": 0.91, "hours": 120}}}
     assert la.efficiency_months == {"2026-06": [0.91, 120]}                       # the stored state stays as it is
     assert out[0]["last_learning"] == "2026-07-01T02:00:00+00:00"

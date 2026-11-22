@@ -651,6 +651,11 @@ temperature turn this irradiance into the clear-sky power of the array.
   where it comes from (clear hours, all hours, fitted to the hourly course, from the neighbouring cells, at the power
   limit) and how far those hours scatter. *Sure* needs at least 12 clear hours within ±0.05 (without the satellite
   filter 30 hours), *fairly sure* 6 clear hours within ±0.12 (or 12 hours); *derived* cells have no hours of their own.
+- **What the last learning run changed** (card *Last learning run* and layer *Change* under Learned, from the second
+  run on): hours, efficiency, sky view, map coverage and the shading cells that got darker or lighter by 0.05 or
+  more, with their value before, the largest of them with the hours they rest on, and newly left-out days. A clear
+  day on the 15th of each month, computed with the old and the new state, shows in kWh what all changes together
+  amount to.
 - **Direction factor** (coarse bins, 0.8–1.2): what remains at unshaded positions – geometry and
   model errors.
 - **Reflection:** light from bright surfaces where the module itself gets little direct light.

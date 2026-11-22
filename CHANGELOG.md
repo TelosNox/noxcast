@@ -7,6 +7,10 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The installation diagram in the *Installation* tab grows with the width of the page, up to half as large again,
+  so boxes and text stay readable on a wide screen. On a phone it keeps a readable size and scrolls sideways.
+
 ## [0.6.0b2] - 2026-11-22
 
 ### Added

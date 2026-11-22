@@ -495,3 +495,12 @@ def test_cell_certainty_from_hours_origin_and_spread():
     assert views.cell_certainty(la) == {"1,1": "sure", "1,2": "fair", "1,3": "unsure", "1,4": "sure", "1,5": "unsure",
                                         "1,6": "derived", "1,7": "derived", "1,8": "sure"}
     assert views.cell_certainty(model.LearnedArray()) == {}          # learned before cell_info existed
+
+
+def test_a_unit_for_the_what_if_carries_its_own_pv_caps_and_discharge_limit():
+    b = bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000, 1500, output_w=800, arrays=("r",), unit="roof")
+    units = bt.units_of([b], {"r": {A: 1000.0, A + H: 200.0}}, [A, A + H], False)
+    out = views.unit_entry(units[0], "Roof", [A, A + H])
+    assert out["key"] == "roof" and out["name"] == "Roof" and out["storage"]["capacity_wh"] == 5000
+    # 1000 W of PV behind an 800 W cap: 200 W only for the battery, which may give nothing then; 600 W an hour later
+    assert out["hours"] == {"t": [A, A + H], "pv": [1000.0, 200.0], "capped": [200.0, 0.0], "discharge": [0.0, 600.0]}

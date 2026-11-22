@@ -612,6 +612,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
            "feed_in": grid, "lost_full": lost_full}
     if systems is not None:
         out["systems"] = systems
+        out["units"] = units_of(batteries, pv_arrays, hours, charging)     # for what-if runs (views.battery_entry)
     if ahead and (until := min(now + AHEAD_HOURS * H, ahead[1])) > now:
         out["ahead"] = run(pv, pv_arrays, ahead[0], until, caps)[0]
     if band_hours:

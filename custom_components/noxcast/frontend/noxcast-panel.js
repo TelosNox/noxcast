@@ -483,7 +483,9 @@ class NoxcastPanel extends HTMLElement {
     this._render();
     if (!this._data) this._load();
   }
-  disconnectedCallback() { this._stop(); clearTimeout(this._retry); clearTimeout(this._statusTimer); }
+  disconnectedCallback() {
+    this._stop(); clearTimeout(this._retry); clearTimeout(this._statusTimer); clearTimeout(this._versionTimer);
+  }
 
   // a reconnect (Home Assistant restarted, the app came back from the background) loads again
   _listenReady(conn) {
@@ -495,10 +497,19 @@ class NoxcastPanel extends HTMLElement {
 
   // Home Assistant keeps an open tab across a restart: after an update it would go on with the old scripts, whose
   // payloads may still match (WS_SCHEMA) while new controls are missing; so the page compares the scripts themselves
-  async _checkVersion() {
-    let r;
-    try { r = await ask(this._hass, { type: "noxcast/frontend" }); } catch (err) { return; }   // older backend: unknown
-    const stale = !!(r && r.version && OWN_VERSION && String(r.version) !== OWN_VERSION);
+  // After a restart the connection is often back before Noxcast is set up: the command is not there yet, or knows
+  // no version yet. So it asks again a few times, at growing intervals (about five minutes in all).
+  async _checkVersion(attempt = 0) {
+    clearTimeout(this._versionTimer);
+    let r = null;
+    try { r = await ask(this._hass, { type: "noxcast/frontend" }); } catch (err) { /* not set up yet, or older */ }
+    if (!(r && r.version)) {
+      if (attempt < 6 && this.isConnected) {
+        this._versionTimer = setTimeout(() => this._checkVersion(attempt + 1), 5000 * 2 ** attempt);
+      }
+      return;
+    }
+    const stale = !!(OWN_VERSION && String(r.version) !== OWN_VERSION);
     if (stale !== !!this._stale) { this._stale = stale; this._render(); }
   }
 

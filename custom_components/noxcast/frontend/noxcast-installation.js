@@ -280,7 +280,8 @@ class NoxcastInstallation extends HTMLElement {
     e.diagram = r.diagram;
     this._showErrors(r.errors);
     const flow = this.shadowRoot.querySelector(`.flow[data-entry="${CSS.escape(e.entryId)}"]`);
-    if (flow) flow.innerHTML = this._selStyle() + r.diagram;
+    // while editing, the "+" boxes stay hidden, as in the first drawing
+    if (flow) flow.innerHTML = this._selStyle() + "<style>[data-add] { display: none; }</style>" + r.diagram;
   }
 
   _showErrors(errors) {

@@ -73,8 +73,33 @@ def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning
             "peak_w": arr.geometry.peak_w, "planes": arr.geometry.describe(),
             "learned": learned_dict(la) if la else None,
             "facade_cells": facade_cells(la) if la else {},
+            "cell_certainty": cell_certainty(la) if la else {},
             "last_learning": last_learning.isoformat() if last_learning else None,
         })
+    return out
+
+
+# how sure a learned shading cell is (cell_certainty): its own hours and how far they scatter
+SURE_HOURS, FAIR_HOURS = 12, 6          # clear hours behind a cell's median
+SURE_SPREAD, FAIR_SPREAD = 0.10, 0.24   # P75 − P25 of their transmission (±0.05, ±0.12)
+SURE_ALL_HOURS, FAIR_ALL_HOURS = 30, 12  # all hours behind a P90: clouds scatter them, so count, not spread
+
+
+def cell_certainty(la: LearnedArray) -> dict[str, str]:
+    """Per learned cell: sure, fair or unsure from its own hours, or derived where its value comes from the shape
+    rules or a power limit (model.LearnedArray.cell_info). A map learned before cell_info existed gives none."""
+    out = {}
+    for key, (hours, origin, spread) in (la.cell_info or {}).items():
+        if origin in ("shaped", "limit") or not hours:
+            out[key] = "derived"
+        elif origin == "all":
+            out[key] = "sure" if hours >= SURE_ALL_HOURS else "fair" if hours >= FAIR_ALL_HOURS else "unsure"
+        elif hours >= SURE_HOURS and spread is not None and spread <= SURE_SPREAD:
+            out[key] = "sure"
+        elif hours >= FAIR_HOURS and spread is not None and spread <= FAIR_SPREAD:
+            out[key] = "fair"
+        else:
+            out[key] = "unsure"
     return out
 
 

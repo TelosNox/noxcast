@@ -602,7 +602,9 @@ not types of their own. Independent devices are systems of their own, side by si
   small maps and key figures) leads to one array: the full map over sun azimuth and elevation with
   sun paths, a date slider that moves the sun path through the year (with the day as a timeline),
   details per cell (values, when the sun is there) and a year grid of month × hour for those who do
-  not think in sun angles. Follows the Home Assistant theme (light and dark). Data comes from the
+  not think in sun angles. A layer *Certainty* shows per cell how well it is backed (`views.cell_certainty` from
+  `LearnedArray.cell_info`: hours, origin, P75 − P25 of their transmission), stored by learning for the panel only
+  and never read by the forecast. Follows the Home Assistant theme (light and dark). Data comes from the
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
   Further sections are tabs in the panel header, each a module of its own. One shared stylesheet
   (`noxcast-theme.js`, adopted into the panel and every section) gives all pages the same look:

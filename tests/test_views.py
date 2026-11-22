@@ -59,7 +59,7 @@ def test_series_and_band_rounding_and_window():
 def test_learned_arrays():
     la = model.LearnedArray(efficiency=0.9, efficiency_months={"2026-06": [0.91, 120]})
     out = views.learned_arrays(arrays(), {"roof": la}, datetime(2026, 7, 1, 2, tzinfo=timezone.utc))
-    assert [list(a) for a in out] == [["id", "name", "tilt", "azimuth", "peak_w", "planes", "learned", "facade_cells",
+    assert [list(a) for a in out] == [["id", "name", "tilt", "azimuth", "peak_w", "planes", "learned", "facade_cells", "cell_certainty",
                                        "last_learning"]] * 2
     assert out[0]["learned"] == {**la.as_dict(), "efficiency_months": {"2026-06": {"efficiency": 0.91, "hours": 120}}}
     assert la.efficiency_months == {"2026-06": [0.91, 120]}                       # the stored state stays as it is
@@ -483,3 +483,12 @@ def test_recent_accuracy_ends_with_the_last_complete_day():
     arc["2026-07-19"] = _archive_day(date(2026, 7, 19), 1000, None)
     out = views.recent_accuracy(arc, arrays(), today)
     assert out["yesterday"] is None and out["days"] == 14 and out["error"] == 0.0     # 5 to 18 July
+
+
+def test_cell_certainty_from_hours_origin_and_spread():
+    la = model.LearnedArray(cell_info={"1,1": [14, "clear", 0.04], "1,2": [8, "clear", 0.2], "1,3": [8, "clear", 0.5],
+                                 "1,4": [40, "all", 0.6], "1,5": [5, "all", 0.1], "1,6": [0, "shaped", None],
+                                 "1,7": [20, "limit", 0.0], "1,8": [14, "fit", 0.08]})
+    assert views.cell_certainty(la) == {"1,1": "sure", "1,2": "fair", "1,3": "unsure", "1,4": "sure", "1,5": "unsure",
+                                        "1,6": "derived", "1,7": "derived", "1,8": "sure"}
+    assert views.cell_certainty(model.LearnedArray()) == {}          # learned before cell_info existed

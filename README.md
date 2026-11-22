@@ -642,6 +642,10 @@ temperature turn this irradiance into the clear-sky power of the array.
   contradict it. It evens out irregularities: a single taller building or tree shows only in learned
   cells. Kept only if it clearly explains the shade in its range; shown under Learned, and cells it
   fills are marked in the map.
+- **Certainty of the shading map** (layer *Certainty* under Learned): per cell how many hours its value rests on,
+  where it comes from (clear hours, all hours, fitted to the hourly course, from the neighbouring cells, at the power
+  limit) and how far those hours scatter. *Sure* needs at least 12 clear hours within ±0.05 (without the satellite
+  filter 30 hours), *fairly sure* 6 clear hours within ±0.12 (or 12 hours); *derived* cells have no hours of their own.
 - **Direction factor** (coarse bins, 0.8–1.2): what remains at unshaded positions – geometry and
   model errors.
 - **Reflection:** light from bright surfaces where the module itself gets little direct light.

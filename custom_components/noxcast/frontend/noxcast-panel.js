@@ -61,7 +61,10 @@ const TEXT = {
       never: "hier steht die Sonne nie", ground: "unter dem Horizont" },
     panoIdle: "Ziehen schwenkt den Blick, Mausrad oder zwei Finger zoomen. Zeiger auf dem Bild: Richtung und Höhe.",
     panoAt: "Richtung {a}° ({d}) · Höhe {e}° · {k}", panoHome: "Blickrichtung Modul", panoFace: "Modul",
-    shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor",
+    shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor", sure: "Sicherheit",
+    certainty: { sure: "sicher", fair: "ziemlich sicher", unsure: "unsicher", derived: "abgeleitet" },
+    basis: "Grundlage", basisHours: (n) => `${n} Stunden`, spread: (v) => `Streuung ±${v}`,
+    origin: { all: "alle Stunden", clear: "klare Stunden", fit: "angepasst an den Stundenverlauf", shaped: "aus den Nachbarfeldern", limit: "an der Leistungsgrenze" },
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
     facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
@@ -77,6 +80,7 @@ const TEXT = {
       limit: "Felder mit Punkt liegen an der Leistungsgrenze: Dort erreichte die PV-Gruppe in den meisten klaren Stunden ihre Grenze. Ein Schatten ist dort nur zu sehen, wenn er die Leistung unter die Grenze drückt, deshalb rechnet Noxcast an diesen Sonnenständen ohne Schatten. An klaren Tagen begrenzt ohnehin die Grenze die Prognose.",
       refl: "Zusätzliches Licht von beschienenen Wänden oder Dächern, in Prozent der Direktstrahlung. Gelernt nur dort, wo das Modul selbst wenig Direktlicht bekommt.",
       dir: "Was nach Schatten und Reflexion übrig bleibt: Geometrie- und Modellfehler. Werte nahe 1 sind gut.",
+      sure: "Wie gut jedes Feld der Schattenkarte belegt ist. Sicher: mindestens 12 klare Stunden, die eng beieinander liegen (Streuung höchstens ±0,05), oder ohne Satellitenfilter mindestens 30 Stunden. Ziemlich sicher: mindestens 6 klare Stunden mit Streuung bis ±0,12, oder 12 Stunden. Abgeleitet: Der Wert kommt aus den Formregeln der Karte (Nachbarfelder) oder liegt an der Leistungsgrenze, nicht aus eigenen Stunden. Ein Klick auf ein Feld zeigt Stunden, Herkunft und Streuung.",
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
       pano: [
         "Das Bild zeigt, was eine Kamera auf dem Modul sähe, die in Blickrichtung des Moduls fotografiert. Wie auf einem Foto bleiben gerade Kanten gerade: Hauswände, Dachkanten und Ecken sehen so aus wie vor Ort. Ziehen schwenkt den Blick nach links und rechts oder schiebt ihn nach oben und unten, Mausrad oder zwei Finger ändern den Bildwinkel. Das Dreieck am Horizont zeigt, wohin das Modul schaut.",
@@ -159,7 +163,10 @@ const TEXT = {
       never: "the sun is never here", ground: "below the horizon" },
     panoIdle: "Drag to swivel the view, mouse wheel or two fingers to zoom. Pointer on the picture: direction and height.",
     panoAt: "Direction {a}° ({d}) · height {e}° · {k}", panoHome: "Module direction", panoFace: "Module",
-    shade: "Shade", refl: "Reflection", dir: "Direction factor",
+    shade: "Shade", refl: "Reflection", dir: "Direction factor", sure: "Certainty",
+    certainty: { sure: "sure", fair: "fairly sure", unsure: "unsure", derived: "derived" },
+    basis: "Basis", basisHours: (n) => `${n} hours`, spread: (v) => `spread ±${v}`,
+    origin: { all: "all hours", clear: "clear hours", fit: "fitted to the hourly course", shaped: "from the neighbouring cells", limit: "at the power limit" },
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
     facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
@@ -175,6 +182,7 @@ const TEXT = {
       limit: "Cells with a dot are at the power limit: there the array reached its limit in most clear hours. Shade shows there only when it pushes the power below the limit, so Noxcast assumes no shade at these sun positions. On clear days the limit caps the forecast anyway.",
       refl: "Extra light from sunlit walls or roofs, in percent of the direct normal irradiance. Learned only where the module itself gets little direct light.",
       dir: "What remains after shade and reflection: geometry and model errors. Values close to 1 are good.",
+      sure: "How well each cell of the shading map is backed. Sure: at least 12 clear hours that lie close together (spread at most ±0.05), or without the satellite filter at least 30 hours. Fairly sure: at least 6 clear hours with a spread up to ±0.12, or 12 hours. Derived: the value comes from the map's shape rules (neighbouring cells) or sits at the power limit, not from hours of its own. Click a cell for hours, origin and spread.",
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
       pano: [
         "The picture shows what a camera on the module would see, taking a photo in the direction the module faces. As on a photo, straight edges stay straight: house walls, roof edges and corners look as they do on site. Drag to swivel the view left and right or to move it up and down; the mouse wheel or two fingers change the angle of view. The triangle on the horizon marks where the module faces.",
@@ -247,6 +255,7 @@ const PALETTE = {
     free: [233, 243, 226], mid: [214, 120, 72], shade: [122, 24, 24],
     base: [243, 241, 236], refl: [[243, 241, 236], [244, 190, 120], [209, 104, 22]],
     dir: [[47, 111, 176], [243, 241, 236], [217, 130, 43]],
+    sure: { sure: "#2F7D4F", fair: "#8DC49B", unsure: "#E3A23B", derived: "#B7B9BD" },
     unlearned: "#D6D6D2", hatch: "rgba(255,255,255,0.6)", behind: "#EDEDEA", mapBg: "#FFFFFF", path: "#1D2125",
     pano: { sky: "#DCEAF7", partial: "#B9C6D2", obstacle: "#3F4246", facadeBg: "#9A9C9F", plane: "#6E7176", dot: "#9EA1A6", sun: "#E8890C",
       ground: "#D8D0C4", grid: "rgba(0,0,0,0.12)" },
@@ -255,6 +264,7 @@ const PALETTE = {
     free: [118, 168, 108], mid: [214, 132, 72], shade: [150, 36, 36],
     base: [66, 70, 74], refl: [[66, 70, 74], [176, 110, 50], [240, 150, 60]],
     dir: [[90, 150, 220], [66, 70, 74], [235, 150, 60]],
+    sure: { sure: "#4FB477", fair: "#2F6B45", unsure: "#D9952E", derived: "#5A5E63" },
     unlearned: "#34373A", hatch: "rgba(255,255,255,0.14)", behind: "#2B2D30", mapBg: "#1E2022", path: "#E4E6E8",
     pano: { sky: "#25313D", partial: "#3A4652", obstacle: "#C9CCD0", facadeBg: "#7C8085", plane: "#5A5E63", dot: "#7E8389", sun: "#F5A524",
       ground: "#2E2A26", grid: "rgba(255,255,255,0.13)" },
@@ -662,6 +672,9 @@ class NoxcastPanel extends HTMLElement {
     return {
       kind: "value", shade, facade: !(`${ai},${ei}` in (la.cells || {})) && `${ai},${ei}` in (arr.facade_cells || {}),
       limit: (la.limit_cells || []).includes(`${ai},${ei}`),
+      // a cell from the horizon line has no hours of its own; a map learned before 0.7.0 has no certainty yet
+      sure: (arr.cell_certainty || {})[`${ai},${ei}`] || (`${ai},${ei}` in (la.cells || {}) ? null : "derived"),
+      info: (la.cell_info || {})[`${ai},${ei}`] || null,
       refl: coarse(la.reflection, az, el, 0),
       dir: coarse(la.direction, az, el, 1),
     };
@@ -674,7 +687,9 @@ class NoxcastPanel extends HTMLElement {
     const la = arr.learned || {};
     const shade = displayValue(cellsOf(arr), ai, ei);
     if (shade === null) return { kind: "unlearned" };
-    return { kind: "value", shade, refl: coarse(la.reflection, az, el, 0), dir: coarse(la.direction, az, el, 1) };
+    const key = `${ai},${ei}`;
+    return { kind: "value", shade, refl: coarse(la.reflection, az, el, 0), dir: coarse(la.direction, az, el, 1),
+      sure: (arr.cell_certainty || {})[key] || (key in (la.cells || {}) ? null : "derived") };
   }
 
   _fill(c, layer) {
@@ -684,6 +699,7 @@ class NoxcastPanel extends HTMLElement {
     if (c.kind === "night") return "transparent";
     if (layer === "refl") return scale(P.refl, c.refl / 0.06);
     if (layer === "dir") return scale(P.dir, (c.dir - 0.9) / 0.2);
+    if (layer === "sure") return c.sure ? P.sure[c.sure] : "url(#nx-hatch)";
     const t = c.shade;
     return rgb(t < 0.5 ? lerp(P.shade, P.mid, t / 0.5) : lerp(P.mid, P.free, (t - 0.5) / 0.5));
   }
@@ -824,7 +840,7 @@ class NoxcastPanel extends HTMLElement {
   _renderArray(arr) {
     const t = this._t, s = this._state;
     const modeTabs = ["map", "grid", "pano"].map((m) => `<button role="tab" aria-selected="${s.mode === m}" class="tab ${s.mode === m ? "on" : ""}" data-action="mode" data-mode="${m}">${t[m]}</button>`).join("");
-    const layerTabs = ["shade", "refl", "dir"].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
+    const layerTabs = ["shade", "refl", "dir", "sure"].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
     const main = s.mode === "map" ? `
         <div class="card mapcard">${this._mapSvg(arr, s.layer, {})}</div>
         ${this._slider(arr)}` : s.mode === "pano" ? this._panoHtml(arr)
@@ -992,6 +1008,10 @@ class NoxcastPanel extends HTMLElement {
         <div class="tile"><span class="muted small">${t.shade}</span><b class="mono">${num(c.shade)}</b><span class="small">${label}${c.facade ? ` · ${t.fromFacade}` : ""}${c.limit ? ` · ${t.atLimit}` : ""}</span></div>
         <div class="tile"><span class="muted small">${t.refl}</span><b class="mono">${c.refl > 0.004 ? `+${num(c.refl * 100, 1)} %` : "–"}</b></div>
         <div class="tile"><span class="muted small">${t.dir}</span><b class="mono">${num(c.dir)}</b></div>
+        ${c.sure ? `<div class="tile"><span class="muted small">${t.basis}</span><b>${t.certainty[c.sure]}</b><span class="small">${[
+          c.info && c.info[0] ? t.basisHours(c.info[0]) : null,
+          c.info ? t.origin[c.info[1]] : c.facade ? t.fromFacade : null,
+          c.info && c.info[2] !== null && c.info[0] ? t.spread(num(c.info[2] / 2)) : null].filter(Boolean).join(" · ")}</span></div>` : ""}
       </div>`;
     }
     return `<section class="card pad">
@@ -1497,7 +1517,8 @@ class NoxcastPanel extends HTMLElement {
   _legend(layer, limit = false) {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
-    const items = layer === "refl" ? [[rgb(P.refl[0]), t.none], [rgb(P.refl[1]), "+3 %"], [rgb(P.refl[2]), "+6 %"]]
+    const items = layer === "sure" ? ["sure", "fair", "unsure", "derived"].map((k) => [P.sure[k], t.certainty[k]])
+      : layer === "refl" ? [[rgb(P.refl[0]), t.none], [rgb(P.refl[1]), "+3 %"], [rgb(P.refl[2]), "+6 %"]]
       : layer === "dir" ? [[rgb(P.dir[0]), `0,90 ${t.less}`], [rgb(P.dir[1]), "1,00"], [rgb(P.dir[2]), `1,10 ${t.more}`]]
         : [[rgb(P.free), t.free], [rgb(P.mid), t.partial], [rgb(P.shade), t.shaded]];
     const hatch = `<span class="sw hatch"></span>`;

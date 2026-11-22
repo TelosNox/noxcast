@@ -20,7 +20,8 @@ breaking changes.
   from what the others send out. They share the consumption evenly, each up to its discharge power, and a system
   with *fixed power* delivers it whatever the house draws. *Battery full at* and *Battery empty at* show the earliest
   system, and the `systems` attribute of these sensors and of *Battery highest level* lists each system; the
-  *Battery & surplus* tab shows them per system. Batteries of one system stay one storage as before.
+  *Battery & surplus* tab shows them per system, and its what-if computes the same way, with a capacity slider per
+  system. Batteries of one system stay one storage as before.
 - *Fixed power* now counts: it caps the PV forecast of a system without a battery like an output limit, and learning
   counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
   fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab

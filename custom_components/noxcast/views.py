@@ -408,6 +408,19 @@ def soc_capacities(batteries: dict[str, dict]) -> dict[str, float]:
             for d in batteries.values() if d.get(CONF_SOC_SENSOR)}
 
 
+def unit_entry(u: bt.Unit, name: str, hours: list[float]) -> dict:
+    """One independent system for the what-if (battery.Unit): its storage, own PV, capped PV and discharge limit."""
+    st = u.storage
+    return {"key": u.key, "name": name, "held_wh": round(u.held_wh, 1), "fixed_w": u.fixed_w, "from_house": u.from_house,
+            "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
+                        "efficiency": st.efficiency, "max_charge_w": st.max_charge_w, "max_discharge_w": st.max_discharge_w},
+            # as battery.simulate_units: without a limit of the hour, the storage's own discharge power
+            "hours": columns(((t, round(u.pv.get(t, 0.0), 1), round(u.caps.capped.get(t, 0.0), 1),
+                               None if (w := u.caps.discharge.get(t, st.max_discharge_w) if u.caps.discharge
+                                        else st.max_discharge_w) is None else round(w, 1))
+                              for t in hours), "pv", "capped", "discharge")}
+
+
 def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: float) -> dict:
     """The storage, PV and load per hour for what-if runs and the current simulation (see battery.day_simulation)."""
     out: dict[str, Any] = {"batteries": [{"name": names.get(sid, ""), "capacity_kwh": d.get(CONF_CAPACITY),
@@ -440,9 +453,11 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
                         "hours": columns(((t, round(grid.free.get(t, 0.0), 4), round(grid.never.get(t, 0.0), 4))
                                           for t in hours if t in grid.free or t in grid.never), "free", "never")},
         })
-        # several independent systems, simulated each on its own (the what-if counts them as one storage)
+        # several independent systems, simulated each on its own (battery.simulate_units), the what-if the same way
         if systems := bt.system_figures(b, b.get("system_names") or {}):
             out["systems"] = systems
+            out["units"] = [unit_entry(u, (b.get("system_names") or {}).get(u.key, u.key), hours)
+                            for u in b.get("units") or ()]
     return out
 
 

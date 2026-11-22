@@ -1,6 +1,7 @@
 // Noxcast panel section "Battery & surplus": what-if runs on the current forecast and the last 30 days.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/battery".
-// The what-if simulation mirrors battery.simulate in the integration; without changes it gives the same numbers.
+// The what-if simulation mirrors battery.simulate (one storage) and battery.simulate_units (separate systems) in the
+// integration; without changes it gives the same numbers.
 const { WS_SCHEMA, ask, errorText, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const BAT_TEXT = {
@@ -10,14 +11,14 @@ const BAT_TEXT = {
     noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf.",
     socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", fedIn: "davon eingespeist", curtailed: "davon abgeregelt", grid: "Netzbezug",
     until: "bis Ladebeginn morgen", never: "–",
-    whatIf: "Was wäre, wenn …", capacity: "Akkukapazität", consumer: "Zusätzlicher Verbraucher", power: "Leistung",
+    whatIf: "Was wäre, wenn …", capacity: "Akkukapazität", capacityOf: (n) => `Kapazität ${n}`, consumer: "Zusätzlicher Verbraucher", power: "Leistung",
     duration: "Dauer", start: "Start", reset: "Zurücksetzen", now: "jetzt", base: "Wie geplant", variant: "Variante",
     share: "Davon aus PV und Akku", chart: "Ladestand und Leistung", pv: "PV erwartet", load: "Last", soc: "Ladestand",
     socBase: "Ladestand wie geplant", socEnd: "Im Akku morgen 24 Uhr",
     review: "Rückblick", reviewHelp: "Tiefster und höchster Ladestand je Tag aus der Langzeitstatistik der Ladestand-Sensoren. Voll = obere Grenze erreicht, leer = untere Grenze plus Reserve erreicht.",
     daysFull: "Tage voll", daysEmpty: "Tage leer", noStats: "Noch keine Statistik für die Ladestand-Sensoren.",
     perSystem: "Je System", system: "System",
-    help: "Die Akkus eines Systems zählen als ein Speicher. Getrennte Systeme rechnet die Prognose je für sich: jedes lädt aus seiner eigenen PV, den Verbrauch teilen sie sich gleichmäßig, jedes höchstens bis zu seiner Entladeleistung. Die Was-wäre-wenn-Rechnung zählt alle Akkus als einen Speicher. Überschuss ohne Platz wird eingespeist, soweit die Einspeisevorgabe es erlaubt (bis zur Einspeisegrenze; Systeme mit eigener Abweichung nach ihrem Anteil an der PV), der Rest und PV über einer Ausgangsgrenze werden abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
+    help: "Die Akkus eines Systems zählen als ein Speicher. Getrennte Systeme rechnet die Prognose je für sich: jedes lädt aus seiner eigenen PV, den Verbrauch teilen sie sich gleichmäßig, jedes höchstens bis zu seiner Entladeleistung. Die Was-wäre-wenn-Rechnung rechnet genauso, mit einer Kapazität je System. Überschuss ohne Platz wird eingespeist, soweit die Einspeisevorgabe es erlaubt (bis zur Einspeisegrenze; Systeme mit eigener Abweichung nach ihrem Anteil an der PV), der Rest und PV über einer Ausgangsgrenze werden abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
     horizon: "(bis morgen 24 Uhr)", kwh: "kWh", h: "h", today: "heute", tomorrow: "morgen",
     pred: "Vorhersage und Wirklichkeit", predFull: "Voll: Abweichung", predEmpty: "Leer für die Nacht: Abweichung", predHit: "Voll ja/nein getroffen",
     predHitEmpty: "Nacht getroffen", notCharged: "nicht geladen", holds: "hält",
@@ -31,14 +32,14 @@ const BAT_TEXT = {
     noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run.",
     socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", fedIn: "of that fed in", curtailed: "of that curtailed", grid: "From grid",
     until: "until tomorrow's charge start", never: "–",
-    whatIf: "What if …", capacity: "Battery capacity", consumer: "Additional consumer", power: "Power",
+    whatIf: "What if …", capacity: "Battery capacity", capacityOf: (n) => `Capacity ${n}`, consumer: "Additional consumer", power: "Power",
     duration: "Duration", start: "Start", reset: "Reset", now: "now", base: "As planned", variant: "Variant",
     share: "Covered by PV and battery", chart: "State of charge and power", pv: "PV expected", load: "Load", soc: "State of charge",
     socBase: "State of charge as planned", socEnd: "In the battery tomorrow midnight",
     review: "Review", reviewHelp: "Lowest and highest state of charge per day from the long-term statistics of the state of charge sensors. Full = upper limit reached, empty = lower limit plus reserve reached.",
     daysFull: "days full", daysEmpty: "days empty", noStats: "No statistics for the state of charge sensors yet.",
     perSystem: "Per system", system: "System",
-    help: "The batteries of one system count as one storage. Separate systems are forecast each on its own: each charges from its own PV, they share the consumption evenly, each up to its discharge power. The what-if counts all batteries as one storage. Surplus without room is fed in as far as the feed-in rule allows (up to the feed-in limit; systems with a deviation of their own by their share of the PV); the rest and PV above an output limit are curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
+    help: "The batteries of one system count as one storage. Separate systems are forecast each on its own: each charges from its own PV, they share the consumption evenly, each up to its discharge power. The what-if works the same way, with a capacity per system. Surplus without room is fed in as far as the feed-in rule allows (up to the feed-in limit; systems with a deviation of their own by their share of the PV); the rest and PV above an output limit are curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
     horizon: "(until tomorrow midnight)", kwh: "kWh", h: "h", today: "today", tomorrow: "tomorrow",
     pred: "Prediction and reality", predFull: "Full: deviation", predEmpty: "Empty for the night: deviation", predHit: "Full yes/no right",
     predHitEmpty: "Night right", notCharged: "not charged", holds: "lasts",
@@ -88,6 +89,99 @@ function simulate(st, hours, now, end, feed) {
     }
     r.points.push([stop, e / cap]);
   }
+  r.endWh = e;
+  return r;
+}
+
+// need split evenly over the parts, none above its cap; what a part cannot take goes to the others (battery._fill)
+function fill(need, caps) {
+  const out = caps.map(() => 0);
+  let open = caps.map((c, i) => i).filter((i) => caps[i] > 0);
+  while (need > 1e-9 && open.length) {
+    const each = need / open.length, full = open.filter((i) => caps[i] - out[i] <= each);
+    if (!full.length) { for (const i of open) out[i] += each; return out; }
+    for (const i of full) { need -= caps[i] - out[i]; out[i] = caps[i]; }
+    open = open.filter((i) => !full.includes(i));
+  }
+  return out;
+}
+
+// separate systems against one house load, same rules as battery.simulate_units; rows: [t, pv, load] of the house,
+// units: as views.unit_entry (hours: t -> [own pv, capped, discharge]); the result is the whole house
+function simulateUnits(units, rows, now, end, feed) {
+  const n = units.length, caps = units.map((u) => u.storage.capacity_wh);
+  const st = units.map((u) => u.storage), eta = st.map((s) => Math.sqrt(Math.max(0.01, Math.min(1, s.efficiency))));
+  const e = st.map((s, i) => (s.soc ?? s.min) * caps[i]);
+  const eMax = st.map((s, i) => Math.max(s.max * caps[i] - (units[i].held_wh || 0), 0)), eMin = st.map((s, i) => s.min * caps[i]);
+  const follow = units.map((u, i) => i).filter((i) => !units[i].fixed_w), takers = units.map((u, i) => i).filter((i) => units[i].from_house);
+  const own = units.map((u) => new Map(tsRows(u.hours, "pv", "capped", "discharge").map(([t, ...v]) => [t, v])));
+  const total = caps.reduce((a, b) => a + b, 0), level = () => e.reduce((a, b) => a + b, 0) / total;
+  const r = { points: [[now, level()]], full: null, empty: null, lost: 0, fed: 0, grid: 0, units: units.map(() => ({ full: null, empty: null })) };
+  for (const [t, pvAll, load] of rows) {
+    if (t + H <= now || t >= end) continue;
+    const start = Math.max(t, now), stop = Math.min(t + H, end), share = (stop - start) / H;
+    const hour = own.map((m, i) => m.get(t) || [0, 0, units[i].storage.max_discharge_w]);
+    const ownPv = hour.map(([pv]) => pv * share), capped = hour.map(([, c], i) => Math.min(c * share, ownPv[i]));
+    const deliverable = ownPv.map((o, i) => o - capped[i]);
+    const free = Math.max(pvAll * share - ownPv.reduce((a, b) => a + b, 0), 0);
+    const power = hour.map(([, , w]) => (w === null || w === undefined ? Infinity : w * share));
+    const avail = e.map((x, i) => Math.max(x - eMin[i], 0) * eta[i]), giveMax = avail.map((a, i) => Math.min(a, power[i]));
+    let need = load * share - free, out = Math.max(-need, 0);
+    need = Math.max(need, 0);
+    const fromPv = units.map(() => 0), give = units.map(() => 0), short = units.map(() => false);
+    units.forEach((u, i) => {
+      if (!u.fixed_w) return;
+      const target = u.fixed_w * share;
+      fromPv[i] = Math.min(deliverable[i], target);
+      give[i] = Math.min(target - fromPv[i], giveMax[i]);
+      short[i] = fromPv[i] + give[i] < target - 0.5;
+    });
+    const fixedOut = fromPv.reduce((a, b) => a + b, 0) + give.reduce((a, b) => a + b, 0);
+    out += Math.max(fixedOut - need, 0);
+    need = Math.max(need - fixedOut, 0);
+    const pvLeft = follow.reduce((a, i) => a + deliverable[i], 0);
+    if (pvLeft > 0 && need > 0) {
+      const part = Math.min(need / pvLeft, 1);
+      for (const i of follow) fromPv[i] = deliverable[i] * part;
+      need -= pvLeft * part;
+    }
+    fill(need, follow.map((i) => giveMax[i])).forEach((g, k) => { give[follow[k]] = g; });
+    const grid = Math.max(need - follow.reduce((a, i) => a + give[i], 0), 0);
+    const lost = units.map(() => 0), gone = units.map(() => 0);
+    units.forEach((u, i) => {
+      const surplus = deliverable[i] - fromPv[i] + capped[i];
+      let took = 0;
+      if (surplus > 0) {
+        const room = Math.max(eMax[i] - e[i], 0) / eta[i], limit = st[i].max_charge_w ? st[i].max_charge_w * share : Infinity;
+        took = Math.min(surplus, room, limit);
+        e[i] += took * eta[i];
+        if (took < surplus && room <= limit && r.units[i].full === null) r.units[i].full = start + (took / surplus) * (stop - start);
+        lost[i] = surplus - took;
+      }
+      gone[i] = Math.max(lost[i] - Math.max(capped[i] - took, 0), 0);
+      if (give[i] > 0) e[i] -= give[i] / eta[i];
+      if (avail[i] <= power[i] && give[i] >= avail[i] - 1e-9 && (short[i] || (follow.includes(i) && grid > 0.5)) && r.units[i].empty === null) r.units[i].empty = stop;
+    });
+    out += gone.reduce((a, b) => a + b, 0);
+    if (takers.length && out > 0) {
+      const rooms = takers.map((i) => Math.min(Math.max(eMax[i] - e[i], 0) / eta[i], st[i].max_charge_w ? st[i].max_charge_w * share : Infinity));
+      fill(out, rooms).forEach((w, k) => {
+        if (w <= 0) return;
+        const i = takers[k];
+        e[i] += w * eta[i];
+        out -= w;
+        if (w >= rooms[k] - 1e-9 && rooms[k] < (st[i].max_charge_w || Infinity) * share && r.units[i].full === null) r.units[i].full = stop;
+      });
+    }
+    const fed = out > 0 ? fedIn(feed, t, out, share) : 0;
+    const leaves = out + lost.reduce((a, b) => a + b, 0) - gone.reduce((a, b) => a + b, 0);
+    r.lost += leaves; r.fed += fed; r.grid += grid;
+    r.points.push([stop, level()]);
+  }
+  const first = (k) => r.units.map((u) => u[k]).filter((v) => v !== null);
+  r.full = first("full").length ? Math.min(...first("full")) : null;
+  r.empty = first("empty").length ? Math.min(...first("empty")) : null;
+  r.endWh = e.reduce((a, b) => a + b, 0);
   return r;
 }
 
@@ -128,7 +222,9 @@ class NoxcastBattery extends HTMLElement {
   }
 
   _defaults(e) {
-    return { capacity_wh: e.storage.capacity_wh, power: 0, minutes: 120, start: Math.ceil(this._data.now / 900) * 900 };
+    // several systems: a capacity per system (cap:<key>), else one for the storage
+    const caps = Object.fromEntries((e.units || []).map((u) => [`cap:${u.key}`, u.storage.capacity_wh]));
+    return { capacity_wh: e.storage.capacity_wh, ...caps, power: 0, minutes: 120, start: Math.ceil(this._data.now / 900) * 900 };
   }
 
   _render() {
@@ -158,7 +254,19 @@ class NoxcastBattery extends HTMLElement {
       const overlap = Math.max(0, Math.min(ts + H, b) - Math.max(ts, a)) / H;
       return [ts, pv, load + v.power * overlap, capped, discharge];
     });
+    if (this._several(e)) {
+      const units = e.units.map((u) => ({ ...u, storage: { ...u.storage, capacity_wh: v[`cap:${u.key}`] } }));
+      return { sim: simulateUnits(units, hours, this._data.now, this._end(e), this._feed(e)), hours };
+    }
     return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, hours, this._data.now, this._end(e), this._feed(e)), hours };
+  }
+
+  _several(e) { return (e.units || []).length > 1; }
+
+  _base(e) {
+    const rows = tsRows(e.hours, "pv", "load", "capped", "discharge");
+    return this._several(e) ? simulateUnits(e.units, rows, this._data.now, this._end(e), this._feed(e))
+      : simulate(e.storage, rows, this._data.now, this._end(e), this._feed(e));
   }
 
   // the feed-in rule of the payload: limit in W (null = free), hour -> [share always, share never feeding in]
@@ -172,7 +280,7 @@ class NoxcastBattery extends HTMLElement {
 
   _results(e) {
     const t = this._t, now = this._data.now;
-    const base = simulate(e.storage, tsRows(e.hours, "pv", "load", "capped", "discharge"), now, this._end(e), this._feed(e)), { sim, hours } = this._variant(e);
+    const base = this._base(e), { sim, hours } = this._variant(e);
     const v = this._v, energy = v.power * v.minutes / 60;
     const extra = sim.grid - base.grid;
     const row = (label, a, b, fmt, goodIfLower) => {
@@ -181,12 +289,12 @@ class NoxcastBattery extends HTMLElement {
     };
     const time = (ts) => (ts === null ? t.never : this._when(ts));
     const timeRow = (label, a, b) => `<tr><td>${label}</td><td class="num">${time(a)}</td><td class="num${a !== b ? " chg" : ""}">${time(b)}</td></tr>`;
-    const kwh = (wh) => `${this._kwh(wh)} ${t.kwh}`, last = (r) => r.points[r.points.length - 1][1];
+    const kwh = (wh) => `${this._kwh(wh)} ${t.kwh}`;
     const table = `<table><thead><tr><th></th><th class="num">${t.base}</th><th class="num">${t.variant}</th></tr></thead><tbody>
       ${timeRow(t.fullAt, base.full, sim.full)}${timeRow(t.emptyAt, base.empty, sim.empty)}
       ${row(t.lost, base.lost, sim.lost, kwh, true)}${row(t.fedIn, base.fed, sim.fed, kwh, false)}
       ${row(t.curtailed, base.lost - base.fed, sim.lost - sim.fed, kwh, true)}${row(t.grid, base.grid, sim.grid, kwh, true)}
-      ${row(t.socEnd, last(base) * e.storage.capacity_wh, last(sim) * v.capacity_wh, kwh, false)}
+      ${row(t.socEnd, base.endWh, sim.endWh, kwh, false)}
       ${energy > 0 ? `<tr><td>${t.share}</td><td></td><td class="num"><b>${Math.round(Math.max(0, Math.min(1, 1 - extra / energy)) * 100)} %</b></td></tr>` : ""}
     </tbody></table>`;
     return { table, chart: this._chart(e, base, sim, hours) };
@@ -210,12 +318,13 @@ class NoxcastBattery extends HTMLElement {
     const lastStart = Math.max(now, this._end(e) - 900);
     const res = this._results(e);
     const slider = (k, label, min, max, step, out) => `<label class="ctl"><span>${label}</span>
-      <input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v[k]}"><output id="o-${k}">${out}</output></label>`;
+      <input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v[k]}"><output id="o-${k.replace(":", "-")}"${k.startsWith("cap") ? ` data-cap="${k}"` : ""}>${out}</output></label>`;
     return `
       <section class="card pad"><div class="figs">${figs}</div>${systems}<p class="help">${t.until}: ${this._when(e.charge_start)}. ${t.help}</p></section>
       <section class="card pad"><div class="head"><h3>${t.whatIf} <span class="muted small">${t.horizon}</span></h3><button id="reset">${t.reset}</button></div>
         <div class="ctls">
-          ${slider("capacity_wh", t.capacity, 0, Math.max(30000, st.capacity_wh * 3), 500, `${this._kwh(v.capacity_wh)} ${t.kwh}`)}
+          ${this._several(e) ? e.units.map((u) => slider(`cap:${u.key}`, t.capacityOf(esc(u.name)), 0, Math.max(10000, u.storage.capacity_wh * 3), 250, `${this._kwh(v[`cap:${u.key}`])} ${t.kwh}`)).join("")
+            : slider("capacity_wh", t.capacity, 0, Math.max(30000, st.capacity_wh * 3), 500, `${this._kwh(v.capacity_wh)} ${t.kwh}`)}
           <div class="sub muted small">${t.consumer}</div>
           ${slider("power", t.power, 0, 5000, 100, `${v.power} W`)}
           ${slider("minutes", t.duration, 15, 480, 15, this._dur(v.minutes))}
@@ -227,7 +336,7 @@ class NoxcastBattery extends HTMLElement {
 
   _update(e) {
     const t = this._t, v = this._v, root = this.shadowRoot;
-    root.querySelector("#o-capacity_wh").textContent = `${this._kwh(v.capacity_wh)} ${t.kwh}`;
+    root.querySelectorAll("output[data-cap]").forEach((o) => { o.textContent = `${this._kwh(v[o.dataset.cap])} ${t.kwh}`; });
     root.querySelector("#o-power").textContent = `${v.power} W`;
     root.querySelector("#o-minutes").textContent = this._dur(v.minutes);
     root.querySelector("#o-start").textContent = this._when(v.start);

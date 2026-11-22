@@ -340,7 +340,7 @@ PV, a battery at the house grid also from what the others send out. They share t
 its discharge power; what one cannot give, the others take over. A system with *fixed power* delivers it whatever
 the house draws. *Battery full at*, *Battery empty at* and *Battery highest level* then show the earliest system (the
 level: all batteries weighted by capacity) and list each system in the `systems` attribute; the *Battery & surplus* tab shows
-them per system. The *Installation* tab shows the even split as simplified, since not every system settles that way.
+them per system, and its what-if computes the same way, with a capacity per system. The *Installation* tab shows the even split as simplified, since not every system settles that way.
 
 Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
 *covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery

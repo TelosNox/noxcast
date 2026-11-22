@@ -277,6 +277,7 @@ def test_one_system_full_loses_its_surplus_while_the_other_still_charges():
     assert per["balcony"].full_at is None and abs(per["balcony"].charged_wh - 2 * 250) < 1e-6
     assert abs(sim.lost_wh - per["roof"].lost_wh) < 1e-6 and sim.full_at == per["roof"].full_at
     assert out["lost_full"] and min(out["lost_full"]) == 11 * H
+    assert [u.key for u in out["units"]] == ["balcony", "roof"]          # for the what-if (views.unit_entry)
     one = bt.day_simulation([bt.Battery(1000, 0.5, efficiency=1.0), bt.Battery(5000, 0.2, efficiency=1.0)],
                             pv, load_, None, 11 * H, 13 * H)
     assert one["sim"].lost_wh == 0 and "systems" not in one

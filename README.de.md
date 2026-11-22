@@ -346,7 +346,7 @@ eigenen PV, ein Akku am Hausnetz auch aus dem, was die anderen abgeben. Den Verb
 jedes höchstens bis zu seiner Entladeleistung; was eines nicht liefern kann, übernehmen die anderen. Ein System mit
 *feste Leistung* liefert sie, egal wie viel das Haus bezieht. *Akku voll um*, *Akku leer um* und *Akku höchster
 Stand* zeigen dann das früheste System (den Ladestand: alle Akkus nach Kapazität gewichtet) und nennen jedes
-System im Attribut `systems`; der Reiter *Akku & Überschuss* zeigt sie je System. Der Reiter *Anlage* zeigt die gleichmäßige
+System im Attribut `systems`; der Reiter *Akku & Überschuss* zeigt sie je System, und seine Was-wäre-wenn-Rechnung rechnet genauso, mit einer Kapazität je System. Der Reiter *Anlage* zeigt die gleichmäßige
 Aufteilung als vereinfacht, da sich nicht jedes System so einpendelt.
 
 Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;

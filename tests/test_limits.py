@@ -226,6 +226,36 @@ def test_output_limit_without_battery_is_a_fixed_limit():
     assert inst.build({"x": ["pv1"]}, systems=sy.systems_of(phase)).caps == ()
 
 
+def test_a_fixed_power_holds_the_output_as_a_limit_does():
+    # a balcony inverter set to deliver 300 W, whatever the PV gives
+    fixed = {"s": ("system", "Balcony", {"name": "Balcony", "template": "inverter", "regulation": "fixed",
+                                         "fixed_power_w": 300}),
+             "x": ("array", "X", {"system": "s"}), "y": ("array", "Y", {"system": "s"})}
+    single = inst.build({"x": ["pv1"]}, systems=sy.systems_of({k: fixed[k] for k in ("s", "x")}))
+    assert single.array_limit("x") == 300 and single.limited_arrays() == {"x": 300}
+    shared = inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(fixed))
+    assert shared.forecast_caps() == [(("x", "y"), 300.0)]
+    # with an output limit as well, the tighter one holds
+    both = {**fixed, "s": ("system", "Balcony", {**fixed["s"][2], "output_limit_w": 250})}
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(both)).forecast_caps() == [(("x", "y"), 250.0)]
+    # another regulation, or a stray power, holds nothing
+    load = {**fixed, "s": ("system", "Balcony", {**fixed["s"][2], "regulation": "load"})}
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(load)).caps == ()
+    # with a battery: an outlet where its power is known, and charging at its maximum holds PV back
+    battery = {**fixed, "b": ("battery", "B", {"system": "s", "soc_sensor": "soc", "battery_power": "p.b",
+                                               "max_charge_w": 800})}
+    systems = sy.systems_of(battery)
+    built = inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, systems, {"b": battery["b"][2]}, "free")
+    assert built.caps == () and [(o.arrays, o.limit_w) for o in built.outlets] == [(("x", "y"), 300.0)]
+    assert sy.charge_curtails(systems, "s")
+    status = {e["setting"]: e["status"] for e in sy.effects({"feed_in_mode": "free"}, systems, battery)
+              if e["node"] == "s"}
+    assert status["fixed_power"] == status["regulation"] == "simplified"
+    plain = {e["setting"]: e["status"] for e in sy.effects({"feed_in_mode": "free"}, sy.systems_of(fixed), fixed)
+             if e["node"] == "s"}
+    assert plain["fixed_power"] == plain["regulation"] == "exact"
+
+
 def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
     # a hybrid inverter: 11 kW out, two strings, a DC battery that charges below its maximum
     hybrid = {"s": ("system", "Hybrid", {"name": "Hybrid", "template": "pv_battery", "output_limit_w": 11000}),

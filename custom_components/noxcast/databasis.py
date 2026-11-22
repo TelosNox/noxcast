@@ -25,14 +25,14 @@ from .model import (LearnedArray, WeatherHour, clearsky_hour, clearsky_weather, 
                     solar_day_of)
 from .solar import Site
 
-VERSION = 2
+VERSION = 3
 COLUMNS = ["start", "status", "reasons", "power_w", "model_w", "bound_w", "clear_w", "clouds_w", "shade_w", "reflection_w",
-           "direction_w", "heat_w", "kt", "air_temp", "snowfall_cm", "soc_pct", "steady", "efficiency", "check"]
+           "direction_w", "heat_w", "kt", "air_temp", "snowfall_cm", "steady", "efficiency", "check"]
 USED, LOWER_BOUND, LEFT_OUT = "used", "lower_bound", "left_out"
 _STEP_COLUMNS = ("clear", "clouds", "shade", "reflection", "direction", "heat")
 
 
-def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: ln.PvHistory, soc_full: float,
+def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: ln.PvHistory,
                exclusions: list[tuple[float, float]]) -> dict:
     """{"version", "columns", "rows"}: every hour of the array's history with the sun up, oldest first.
 
@@ -40,20 +40,19 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
     the shading map, the most the array should give (the design's upper bound). clear_w exists for every row (the learned model
     under a clear sky, to weigh an hour by what it could have given); the other model columns are empty without a
     satellite value for the hour (the satellite archive is an option). model_w is the model without
-    the output limits, so a lower_bound hour at a limit shows more than the limit. soc_pct is the household's state of
-    charge (main entry); battery_full also comes from the batteries of the array's systems. Only hours with a
-    measurement are listed. efficiency and check only exist for samples (arraycheck.hour_table).
+    the output limits, so a lower_bound hour at a limit shows more than the limit. battery_full comes from the batteries of
+    the array's systems. Only hours with a measurement are listed. efficiency and check only exist for samples (arraycheck.hour_table).
     """
     geo = arr.geometry
-    reasons = ln.hour_reasons(site, arr, history, soc_full, exclusions)
+    reasons = ln.hour_reasons(site, arr, history, exclusions)
     power = ln.scaled_sum(history.power, arr.sensors, history.factors)
-    samples, steady, floors = ln.array_samples(arr, history, soc_full, exclusions,
+    samples, steady, floors = ln.array_samples(arr, history, exclusions,
                                                skip=ln.left_out(site, arr, history).hours, site=site)
     checked = {row[0]: (row[7], row[8]) for row in
                ac.hour_table(site, geo, learned, samples, history.satellite_ghi, history.air_temp, steady,
                              floors)["rows"]}
     sat, air = history.satellite_ghi or {}, history.air_temp or {}
-    snow, soc = history.snowfall or {}, history.soc or {}
+    snow = history.snowfall or {}
     sky: dict[float, tuple[float, float]] = {}       # hour start -> (elevation, clear-sky GHI)
     for t in reasons:
         _, _, _, el, cs_ghi = clearsky_hour(site, geo, t, learned.sky_view)
@@ -82,7 +81,7 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
         rows.append([iso, status, " ".join(why or low), round(power[t], 1), step.get("result"),
                      round(bound[t], 1) if t in bound else None,
                      *(step.get(name) for name in _STEP_COLUMNS), kt,
-                     round(temp, 1) if temp is not None else None, snow.get(t), soc.get(t),
+                     round(temp, 1) if temp is not None else None, snow.get(t),
                      t in steady if status != LEFT_OUT else None, eff, check if status != LEFT_OUT else None])
     return {"version": VERSION, "columns": COLUMNS, "rows": rows}
 
@@ -103,7 +102,7 @@ SUMMARY_VERSION = 4
 CATEGORIES = ("used", "lower_bound", "battery", "snow", "no_output", "excluded", "other")
 # a day under snow that delivered nothing is snow first: it is the textbook snow case, not an outage
 _LEFT = (("excluded", {"excluded"}), ("snow", {"snow"}), ("no_output", {"no_output"}),
-         ("battery", {"soc_full", "battery_full"}))
+         ("battery", {"battery_full"}))
 LIT_SHARE = 0.1             # an hour counts for a rule from this share of the peak power on (model or bound)
 MATCH = 0.05                # "battery full" although the power is within this of the model
 MATCH_DAYS = 3              # ... on at least this many days (two such hours each), and

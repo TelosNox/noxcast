@@ -33,7 +33,7 @@ def _power() -> dict[float, float]:
 
 def _history(power: dict[float, float], **kw) -> ln.PvHistory:
     sat = {t: model.clearsky_weather(SITE, t).ghi for t in power}
-    return ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {}, kw.pop("soc", {}),
+    return ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {},
                         {t: 20.0 for t in power}, sat, **kw)
 
 
@@ -47,8 +47,8 @@ def test_status_agrees_with_what_learning_used():
     history = _history(power, full={"a": full})
     excl = [(START + 12 * 86400, START + 13 * 86400)]
     arr = _arr()
-    samples, _, floors = ln.array_samples(arr, history, 95.0, excl, skip=ln.left_out(SITE, arr, history).hours)
-    reasons = ln.hour_reasons(SITE, arr, history, 95.0, excl)
+    samples, _, floors = ln.array_samples(arr, history, excl, skip=ln.left_out(SITE, arr, history).hours)
+    reasons = ln.hour_reasons(SITE, arr, history, excl)
     assert {t for t, (why, _) in reasons.items() if not why} == {t for t, _ in samples}
     assert {t for t, (_, low) in reasons.items() if low} == floors & {t for t, _ in samples}
     assert all(reasons[t][0] == ("battery_full",) for t in full)
@@ -62,8 +62,8 @@ def test_table_lists_daylight_hours_with_the_model_split():
     power = _power()
     history = _history(power, full={"a": frozenset({START + 2 * 86400 + 12 * 3600})})
     arr = _arr()
-    learned = ln.learn_array(SITE, arr, history, START + DAYS * 86400, 95.0, [])
-    table = db.hour_table(SITE, arr, learned, history, 95.0, [])
+    learned = ln.learn_array(SITE, arr, history, START + DAYS * 86400, [])
+    table = db.hour_table(SITE, arr, learned, history, [])
     rows = [dict(zip(table["columns"], r)) for r in table["rows"]]
     assert rows and all(r["clear_w"] is not None for r in rows)                   # sun up only, satellite for all
     by = {r["start"]: r for r in rows}

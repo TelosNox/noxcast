@@ -137,11 +137,14 @@ def main() -> None:
     instant = _hourly(args.temperature, "temperature_2m")
     air = {t: (v + instant[t + 3600]) / 2 for t, v in instant.items() if t + 3600 in instant}
     snowfall = {t - 3600: max(v, 0.0) for t, v in _snowfall(args.temperature).items()}
+    soc_full = float(curtailment.get("soc_full_pct", 95))
+    # without the battery configuration every array counts as curtailed while the highest state of charge is full
+    full = frozenset(t for t, v in ln.highest(socs).items() if v >= soc_full)
     history = ln.PvHistory(_statistics(raw, "mean"), _statistics(raw, "min"), _statistics(raw, "max"), {},
-                           ln.highest(socs), air or None, satellite or None, snowfall=snowfall or None)
+                           air or None, satellite or None, {arr.subentry_id: full for arr in arrays.values()},
+                           snowfall=snowfall or None)
     last = max(t for s in arrays.values() for sensor in s.sensors for t in history.power.get(sensor, {}))
     now = datetime.fromisoformat(args.now).timestamp() if args.now else last + 3600
-    soc_full = float(curtailment.get("soc_full_pct", 95))
     exclusions = [(datetime.combine(date.fromisoformat(a), datetime.min.time(), tz).timestamp(),
                    datetime.combine(date.fromisoformat(b), datetime.max.time(), tz).timestamp())
                   for a, b in curtailment.get("exclude_periods", [])]
@@ -149,14 +152,14 @@ def main() -> None:
     days = archive.from_store(stored) if "days" in stored else stored
 
     start = time.monotonic()
-    learned = ln.learn_arrays(site, arrays, history, now, soc_full, exclusions)
+    learned = ln.learn_arrays(site, arrays, history, now, exclusions)
     learning = time.monotonic() - start
-    result = backtest.run(site, arrays, learned, history, days, now, soc_full, exclusions, tz, limits=limits,
+    result = backtest.run(site, arrays, learned, history, days, now, exclusions, tz, limits=limits,
                           caps=shared)
     if args.fine:
         fine = json.loads(pathlib.Path(args.fine).read_text(encoding="utf-8"))
         fine = fine.get("data", fine).get("days", {})
-        result["fine_holdout"] = backtest.fine_holdout(site, arrays, history, fine, now, soc_full, exclusions, tz)
+        result["fine_holdout"] = backtest.fine_holdout(site, arrays, history, fine, now, exclusions, tz)
     names = {sid: arr.name for sid, arr in arrays.items()}
     if args.scorecard:
         print(scorecard_table(result["holdout"], names))

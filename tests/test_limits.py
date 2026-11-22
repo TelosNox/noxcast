@@ -128,12 +128,12 @@ def test_record_archive_flags_the_hours_of_a_limited_array():
     t = DAY_START + 12 * 3600
     store = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0, "b": 200.0}}}}}
     history = ln.PvHistory({"pv1": {t: 199.0}, "pv2": {t: 196.0}, "pv3": {t: 200.0}}, {},
-                           {"pv1": {t: 200.0}, "pv2": {t: 199.0}, "pv3": {t: 210.0}}, {}, {})
-    ln.record_archive(store, SITE, ARRAYS, {}, history, t + 7200, 95.0, LIMITED)
+                           {"pv1": {t: 200.0}, "pv2": {t: 199.0}, "pv3": {t: 210.0}}, {})
+    ln.record_archive(store, SITE, ARRAYS, {}, history, t + 7200, LIMITED)
     hour = store["2026-06-01"]["hours"][str(t)]
     assert hour["limited"] is True and hour["actual"] == {"a": 395.0, "b": 200.0}
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
-    ln.record_archive(plain, SITE, ARRAYS, {}, history, t + 7200, 95.0)
+    ln.record_archive(plain, SITE, ARRAYS, {}, history, t + 7200)
     assert "limited" not in plain["2026-06-01"]["hours"][str(t)]
 
 
@@ -155,13 +155,13 @@ def test_band_learning_leaves_out_hours_whose_forecast_was_capped():
 def test_the_archived_model_on_measured_weather_is_capped_like_the_forecast():
     t = DAY_START + 12 * 3600
     store = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
-    history = ln.PvHistory({"pv1": {t: 199.0}, "pv2": {t: 196.0}}, {}, {"pv1": {t: 200.0}, "pv2": {t: 199.0}}, {}, {},
+    history = ln.PvHistory({"pv1": {t: 199.0}, "pv2": {t: 196.0}}, {}, {"pv1": {t: 200.0}, "pv2": {t: 199.0}}, {},
                            {t: 20.0}, {t: 900.0})
     learned = {"a": model.LearnedArray(), "b": model.LearnedArray()}
-    ln.record_archive(store, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, 95.0, LIMITED)
+    ln.record_archive(store, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, LIMITED)
     assert store["2026-06-01"]["hours"][str(t)]["measured"]["a"] <= 400.0 + 1e-6
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 400.0}}}}}
-    ln.record_archive(plain, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200, 95.0)
+    ln.record_archive(plain, SITE, {"a": ARRAYS["a"]}, learned, history, t + 7200)
     assert plain["2026-06-01"]["hours"][str(t)]["measured"]["a"] > 600.0
 
 
@@ -254,10 +254,10 @@ def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
     assert inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, blind, "free").outlets == ()
     # learning keeps the hour as a lower bound, the backtest leaves it out, the hour table names the limit
     arr = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None)
-    history = ln.PvHistory({"pv1": {0.0: 6000.0, 3600.0: 5500.0}}, {}, {}, {}, {}, output={"x": frozenset({0.0})})
-    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    history = ln.PvHistory({"pv1": {0.0: 6000.0, 3600.0: 5500.0}}, {}, {}, {}, output={"x": frozenset({0.0})})
+    samples, _, floors = ln.array_samples(arr, history, [])
     assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
-    assert list(btest.usable(arr, history, 95.0, [])) == [3600.0]
+    assert list(btest.usable(arr, history, [])) == [3600.0]
 
 
 def test_learning_leaves_out_full_hours_and_bounds_hours_at_a_shared_limit():
@@ -265,8 +265,8 @@ def test_learning_leaves_out_full_hours_and_bounds_hours_at_a_shared_limit():
                          caps=((("pv1", "pv2"), 600.0),))
     assert arr.limit_w is None                                          # shared: no limit of its own
     history = ln.PvHistory({"pv1": {0.0: 300.0, 3600.0: 350.0, 7200.0: 100.0}, "pv2": {0.0: 300.0, 3600.0: 100.0}},
-                           {}, {}, {}, {}, full={"x": frozenset({3600.0})})
-    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+                           {}, {}, {}, full={"x": frozenset({3600.0})})
+    samples, _, floors = ln.array_samples(arr, history, [])
     assert [t for t, _ in samples] == [0.0, 7200.0] and floors == {0.0}
     alone = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None, caps=((("pv1",), 600.0),))
     assert alone.limit_w == 600.0
@@ -386,8 +386,8 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     assert small.battery_hours("south", {}, means, {}) == (set(), set(), set())
     # learning keeps the hour as a lower bound instead of leaving it out
     arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
-    history = ln.PvHistory({"pv.s": {0.0: 900.0, 3600.0: 400.0}}, {}, {}, {}, {}, charge={"south": frozenset({0.0})})
-    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    history = ln.PvHistory({"pv.s": {0.0: 900.0, 3600.0: 400.0}}, {}, {}, {}, charge={"south": frozenset({0.0})})
+    samples, _, floors = ln.array_samples(arr, history, [])
     assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
     # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
     free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "all"})}
@@ -417,11 +417,11 @@ def test_the_charge_maximum_is_read_from_means_not_from_spikes():
     assert built.battery_hours("south", {}, hourly, fine) == (set(), {3 * h}, {h})
     # learning leaves an unsure hour out, as one with a full battery; the backtest too
     arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
-    history = ln.PvHistory({"pv.s": {0.0: 900.0, h: 400.0, 2 * h: 500.0}}, {}, {}, {}, {},
+    history = ln.PvHistory({"pv.s": {0.0: 900.0, h: 400.0, 2 * h: 500.0}}, {}, {}, {},
                            charge={"south": frozenset({0.0})}, unsure={"south": frozenset({h})})
-    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    samples, _, floors = ln.array_samples(arr, history, [])
     assert [t for t, _ in samples] == [0.0, 2 * h] and floors == {0.0}
-    assert set(btest.usable(arr, history, 95.0, [])) == {2 * h}
+    assert set(btest.usable(arr, history, [])) == {2 * h}
 
 
 SHARED = {"s": ("system", "Inverter", {"name": "Inverter", "template": "inverter", "output_limit_w": 900}),
@@ -510,14 +510,14 @@ def test_nested_shared_limits_cut_from_the_inside_out():
 def test_the_archived_model_on_measured_weather_is_capped_by_a_shared_limit():
     t = DAY_START + 12 * 3600
     store = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 500.0, "b": 400.0}}}}}
-    history = ln.PvHistory({"pv1": {t: 300.0}, "pv2": {t: 300.0}, "pv3": {t: 300.0}}, {}, {}, {}, {},
+    history = ln.PvHistory({"pv1": {t: 300.0}, "pv2": {t: 300.0}, "pv3": {t: 300.0}}, {}, {}, {},
                            {t: 20.0}, {t: 900.0})
     learned = {"a": model.LearnedArray(), "b": model.LearnedArray()}
-    ln.record_archive(store, SITE, ARRAYS, learned, history, t + 7200, 95.0, SHARED_INST)
+    ln.record_archive(store, SITE, ARRAYS, learned, history, t + 7200, SHARED_INST)
     measured = store["2026-06-01"]["hours"][str(t)]["measured"]
     assert measured["a"] + measured["b"] <= 900.0 + 0.2
     plain = {"2026-06-01": {"hours": {str(t): {"forecast": {"a": 500.0, "b": 400.0}}}}}
-    ln.record_archive(plain, SITE, ARRAYS, learned, history, t + 7200, 95.0)
+    ln.record_archive(plain, SITE, ARRAYS, learned, history, t + 7200)
     assert sum(plain["2026-06-01"]["hours"][str(t)]["measured"].values()) > 1000.0
 
 
@@ -540,16 +540,16 @@ def test_a_system_following_the_load_without_battery_counts_held_back_hours_as_a
                "s": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "p"})}
     assert sy.held_back_arrays(sy.systems_of(coupled)) == ()
     arr = ln.ArrayConfig("bal", "Balcony", ("pv.b",), model.ArrayGeometry(30, 180, 800), None)
-    history = ln.PvHistory({"pv.b": {0.0: 300.0, 3600.0: 250.0, 7200.0: 200.0}}, {}, {}, {}, {},
+    history = ln.PvHistory({"pv.b": {0.0: 300.0, 3600.0: 250.0, 7200.0: 200.0}}, {}, {}, {},
                            held={"bal": frozenset({3600.0, 7200.0})})
-    samples, _, floors = ln.array_samples(arr, history, 95.0, [])
+    samples, _, floors = ln.array_samples(arr, history, [])
     assert [t for t, _ in samples] == [0.0, 3600.0, 7200.0] and floors == {3600.0, 7200.0}
     # the Installation tab: simplified with the grid sensor, not used yet without it
     rows = {(e["node"], e["setting"]): e["status"] for e in sy.effects({"grid_power": "sensor.grid"}, systems, subs)}
     assert rows[("b", "regulation")] == sy.SIMPLIFIED and rows[("b", "held_learning")] == sy.SIMPLIFIED
     assert ("r", "held_learning") not in rows and ("s", "held_learning") not in rows
     # the backtest leaves such an hour out as a measure of the forecast, like one at a charge ceiling
-    assert set(btest.usable(arr, history, 95.0, [])) == {0.0}
+    assert set(btest.usable(arr, history, [])) == {0.0}
     assert {(e["node"], e["setting"]): e["status"] for e in sy.effects({}, systems, subs)}[("b", "regulation")] \
         == sy.NOT_YET
 

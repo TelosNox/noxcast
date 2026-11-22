@@ -116,8 +116,8 @@ const TEXT = {
       daySum: "Gemessen {a}, Modell {m} an den verwendeten Stunden mit Satellitenwert, wie im Kalender.", dayNoModel: "Keine verwendete Stunde mit Satellitenwert: kein Vergleich mit dem Modell.",
       dayStatus: { used: "verwendet", lower_bound: "begrenzt", left_out: "ausgelassen" },
       dayStep: { clear: "klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Temperatur" },
-      dayKt: "Satellit {v} klar", dayTemp: "{v} °C", daySnow: "Schneefall {v} cm", daySoc: "Ladestand {v} %",
-      reason: { before_use: "vor Inbetriebnahme", negative: "negativer Messwert", soc_full: "Akku voll (Haushalt)", battery_full: "Akku voll (System)", maybe_charging: "Akku lädt vielleicht", no_output: "kein Ertrag am Tag", snow: "Schnee", excluded: "ausgeschlossen", at_limit: "an der Leistungsgrenze", charging_max: "Akku lädt mit voller Leistung", held_back: "PV zurückgehalten" },
+      dayKt: "Satellit {v} klar", dayTemp: "{v} °C", daySnow: "Schneefall {v} cm",
+      reason: { before_use: "vor Inbetriebnahme", negative: "negativer Messwert", battery_full: "Akku voll", maybe_charging: "Akku lädt vielleicht", no_output: "kein Ertrag am Tag", snow: "Schnee", excluded: "ausgeschlossen", at_limit: "an der Leistungsgrenze", charging_max: "Akku lädt mit voller Leistung", held_back: "PV zurückgehalten" },
       anomaly: {
         battery_matches: "„Akku voll“ an {n} Tagen, obwohl die Gruppe lieferte, was das Modell erwartet: {v} dieser Stunden innerhalb von 5 %, bei den verwendeten Stunden nur {u} (am deutlichsten am {d}). Der Akku hat dort offenbar nicht begrenzt, etwa weil die Anlage dann einspeist; dem Lernen fehlen diese Stunden unnötig. Prüfe die Schwelle „Akku voll“ im Haupteintrag oder die Zuordnung zum System.",
         above_clear: "In {n} Stunden mit ruhigem Himmel lieferte die Gruppe deutlich mehr, als das gelernte Modell bei klarem Himmel ohne Schatten zulässt (bis zum {v}-Fachen, am {d}). Immer zur selben Tageszeit: Prüfe die Ausrichtung; den ganzen Tag: Peakleistung oder Einheit des Sensors.",
@@ -212,8 +212,8 @@ const TEXT = {
       daySum: "Measured {a}, model {m} in the used hours with a satellite value, as in the calendar.", dayNoModel: "No used hour with a satellite value: no comparison with the model.",
       dayStatus: { used: "used", lower_bound: "capped", left_out: "left out" },
       dayStep: { clear: "clear sky", clouds: "clouds", shade: "shade", reflection: "reflection", direction: "direction", heat: "temperature" },
-      dayKt: "satellite {v} clear", dayTemp: "{v} °C", daySnow: "snowfall {v} cm", daySoc: "state of charge {v} %",
-      reason: { before_use: "before commissioning", negative: "negative reading", soc_full: "battery full (household)", battery_full: "battery full (system)", maybe_charging: "battery may be charging", no_output: "no output that day", snow: "snow", excluded: "excluded", at_limit: "at the power limit", charging_max: "battery charging at full power", held_back: "PV held back" },
+      dayKt: "satellite {v} clear", dayTemp: "{v} °C", daySnow: "snowfall {v} cm",
+      reason: { before_use: "before commissioning", negative: "negative reading", battery_full: "battery full", maybe_charging: "battery may be charging", no_output: "no output that day", snow: "snow", excluded: "excluded", at_limit: "at the power limit", charging_max: "battery charging at full power", held_back: "PV held back" },
       anomaly: {
         battery_matches: "“Battery full” on {n} days although the array delivered what the model expects: {v} of these hours within 5 %, against only {u} of the used hours (most clearly on {d}). The battery did not seem to hold it back, for example because the installation exports then; learning lost these hours for nothing. Check the “battery full” threshold in the main entry or the system the array belongs to.",
         above_clear: "In {n} hours under a calm sky the array delivered clearly more than the learned model allows under a clear sky without shade (up to {v} times, on {d}). Always at the same time of day: check the orientation; all day: the peak power or the sensor's unit.",
@@ -1153,7 +1153,7 @@ class NoxcastPanel extends HTMLElement {
     // the same order as databasis.category
     const names = (reasons || "").split(" ");
     return names.includes("excluded") ? "excluded" : names.includes("snow") ? "snow" : names.includes("no_output") ? "no_output"
-      : names.includes("soc_full") || names.includes("battery_full") ? "battery" : "other";
+      : names.includes("battery_full") ? "battery" : "other";
   }
 
   _hourLabel(r) {
@@ -1174,7 +1174,6 @@ class NoxcastPanel extends HTMLElement {
     if (r.kt != null) parts.push(c.dayKt.replace("{v}", `${Math.round(r.kt * 100)} %`));
     if (r.air_temp != null) parts.push(c.dayTemp.replace("{v}", num(r.air_temp)));
     if (r.snowfall_cm) parts.push(c.daySnow.replace("{v}", num(r.snowfall_cm)));
-    if (r.soc_pct != null) parts.push(c.daySoc.replace("{v}", num(Math.round(r.soc_pct))));
     return parts.join(" · ");
   }
 

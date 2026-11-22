@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The data basis in the panel names a full battery just "battery full": the separate "battery full (household)" reason
+  never applied any more, since every battery is judged against its own charge limit. The hour table and its CSV
+  download no longer have the state of charge column, which stayed empty.
+
 ## [0.6.0b2] - 2026-11-22
 
 ### Added

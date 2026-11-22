@@ -22,7 +22,7 @@ def history(**kw) -> "ln.PvHistory":
         beam, diff, *_ = model.clearsky_hour(SITE, GEO, t)
         series[t] = 0.5 * GEO.peak_w * 0.92 * (beam + diff) / 1000      # two sensors, half each
     power = {"pv1": series, "pv2": {t: v / 1000 for t, v in series.items()}}     # the second one in kW
-    return ln.PvHistory(power, {}, {}, {"pv2": 1000.0}, {}, **kw)
+    return ln.PvHistory(power, {}, {}, {"pv2": 1000.0}, **kw)
 
 
 ARRAY = ln.ArrayConfig("roof", "Roof", ("pv1", "pv2"), GEO, None)
@@ -33,16 +33,16 @@ def even(ts: float) -> bool:
 
 
 def test_arrays_are_learned_from_the_summed_sensors():
-    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, history(), NOW, 95, [])["roof"]
+    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, history(), NOW, [])["roof"]
     assert abs(learned.efficiency - 0.92) < 0.03 and learned.samples > 200
     assert learned.months                                       # panel explanations are set
 
 
 def test_day_filter_learns_only_from_kept_days():
     hist = history()
-    full = ln.learn_array(SITE, ARRAY, hist, NOW, 95, [])
-    assert ln.learn_array(SITE, ARRAY, hist, NOW, 95, [], keep=lambda ts: True).as_dict() == full.as_dict()
-    half = ln.learn_array(SITE, ARRAY, hist, NOW, 95, [], keep=even)
+    full = ln.learn_array(SITE, ARRAY, hist, NOW, [])
+    assert ln.learn_array(SITE, ARRAY, hist, NOW, [], keep=lambda ts: True).as_dict() == full.as_dict()
+    half = ln.learn_array(SITE, ARRAY, hist, NOW, [], keep=even)
     assert 0.4 < half.samples / full.samples < 0.6
     assert abs(half.efficiency - full.efficiency) < 0.01
 
@@ -51,8 +51,8 @@ def test_record_archive_adds_actuals_and_flags_full_battery():
     t = DAY0 + 10 * 3600
     archive = {"2026-06-01": {"hours": {str(int(t)): {"ghi": 500.0, "forecast": {"roof": 400.0}}}}}
     hist = history()
-    hist = ln.PvHistory(hist.power, {}, {}, hist.factors, {t: 100.0})
-    ln.record_archive(archive, SITE, {"roof": ARRAY}, {"roof": model.LearnedArray()}, hist, NOW, 95)
+    hist = ln.PvHistory(hist.power, {}, {}, hist.factors, full={"roof": frozenset({t})})
+    ln.record_archive(archive, SITE, {"roof": ARRAY}, {"roof": model.LearnedArray()}, hist, NOW)
     hour = archive["2026-06-01"]["hours"][str(int(t))]
     assert hour["actual"]["roof"] == round(hist.power["pv1"][t] * 2, 1) and hour["curtailed"]
 
@@ -80,6 +80,6 @@ def test_load_models_and_day_filter():
 
 def test_explanations_are_for_hours_only():
     five = {t: 500.0 for t in (DAY0 + 12 * 3600 + k * 300 for k in range(24 * 12))}
-    history_ = ln.PvHistory({"pv1": five, "pv2": {t: v / 1000 for t, v in five.items()}}, {}, {}, {"pv2": 1000.0}, {})
-    learned = ln.learn_arrays(SITE, {"a": ARRAY}, history_, NOW, 95, [], period=300.0)["a"]
+    history_ = ln.PvHistory({"pv1": five, "pv2": {t: v / 1000 for t, v in five.items()}}, {}, {}, {"pv2": 1000.0})
+    learned = ln.learn_arrays(SITE, {"a": ARRAY}, history_, NOW, [], period=300.0)["a"]
     assert learned.samples and not learned.months

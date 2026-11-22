@@ -283,7 +283,7 @@
               },
               "data_description": {
                 "max_soc_entity": "Optional: the current charge limit from the device; it takes precedence over the number.",
-                "full_margin": "From this many percent points below the upper limit the battery counts as full in learning: near the top it charges slower and PV may already be curtailed. Default 5.",
+                "full_margin": "From this many percent points below the upper limit the battery counts as full in learning: near the top it charges slower and PV may already be curtailed. Default 3.",
                 "min_soc_entity": "Optional: the current discharge limit from the device.",
                 "reserve": "Percent points above the lower limit where discharging stops in practice, e.g. a feed-in stop rule."
               }

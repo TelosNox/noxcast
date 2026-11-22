@@ -182,7 +182,7 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     arrays = {"south": ["pv.s"], "roof": ["pv.r"]}
     free = inst.build(arrays, {}, systems, BATTERIES, "free")
     # the Ultra follows the load together with the AC Pro: both batteries; the roof delivers everything
-    assert set(free.stores_of("south")) == {inst.Store("soc.u", 95.0), inst.Store("soc.a", 85.0)}
+    assert set(free.stores_of("south")) == {inst.Store("soc.u", 97.0), inst.Store("soc.a", 87.0)}
     assert free.stores_of("roof") == ()
     # zero export: the roof's inverter holds the export at zero without knowing the battery at the house grid,
     # so that battery being full changes nothing for the roof
@@ -190,10 +190,10 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     assert zero.stores_of("roof") == () and set(zero.stores_of("south")) == set(free.stores_of("south"))
     assert free.soc_sensors() == ["soc.a", "soc.u"]
     # a battery's own margin below its upper limit sets when it counts as full
-    own = {**BATTERIES, "ba": {**BATTERIES["ba"], "full_margin": 3}}
-    assert inst.Store("soc.a", 87.0) in inst.build(arrays, {}, systems, own, "free").stores_of("south")
+    own = {**BATTERIES, "ba": {**BATTERIES["ba"], "full_margin": 8}}
+    assert inst.Store("soc.a", 82.0) in inst.build(arrays, {}, systems, own, "free").stores_of("south")
     # the Ultra's PV goes into its own battery first, then over AC to the AC Pro: only both full curtail it
-    soc = {"soc.u": {0.0: 96.0, 3600.0: 96.0, 7200.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 89.0}}
+    soc = {"soc.u": {0.0: 98.0, 3600.0: 98.0, 7200.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 89.0}}
     assert free.battery_hours("south", soc, {}, {})[0] == {3600.0}
     assert free.battery_hours("roof", soc, {}, {}) == (set(), set(), set())
     assert ct.cuts(free, ct.Observed({"pv.s": ct.Stat(300)}, soc={"soc.a": 90.0})) == {}
@@ -322,7 +322,7 @@ def test_a_pv_only_subsystem_under_a_shared_limit_depends_on_the_other_batteries
     built = inst.build({"south": ["pv.s"], "balcony": ["pv.b"]}, {}, systems, BATTERIES, "free",
                        max_soc={"bu": 80})
     # the shared 800 W may hold back the micro-inverter once the batteries are full; a limit from an entity counts
-    assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 85.0), inst.Store("soc.u", 75.0)}
+    assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 87.0), inst.Store("soc.u", 77.0)}
     effects = {(e["node"], e["setting"]): e for e in sy.effects({}, systems, micro)}
     # zero export (the default) adds nothing: the roof is no part of Stream
     assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 2

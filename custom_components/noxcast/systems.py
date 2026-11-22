@@ -263,8 +263,8 @@ def drop_old_soc(data: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
 def drop_soc_full(data: Mapping[str, Any], subs: Subs) -> tuple[dict[str, Any], Changes]:
     """1.9: the main entry without the household's "full" level. A battery counts as full from its own margin below
     its upper limit (CONF_FULL_MARGIN). A level the user changed from the default goes to every battery as the
-    margin that gives the same level as before, min(level, upper limit - 2); with the default each battery keeps
-    the default margin, which gives the same level at an upper limit of 100 % (the usual case)."""
+    margin that gives the same level as before, min(level, upper limit - 2); with the default each battery gets
+    the default margin (DEFAULT_FULL_MARGIN), which the backtest favours over the old fixed level."""
     out = _without(data, CONF_SOC_FULL)
     changes = Changes()
     level = data.get(CONF_SOC_FULL)

@@ -158,19 +158,21 @@ function simulateUnits(units, rows, now, end, feed) {
         if (took < surplus && room <= limit && r.units[i].full === null) r.units[i].full = start + (took / surplus) * (stop - start);
         lost[i] = surplus - took;
       }
-      gone[i] = Math.max(lost[i] - Math.max(capped[i] - took, 0), 0);
+      gone[i] = u.fixed_w ? 0 : Math.max(lost[i] - Math.max(capped[i] - took, 0), 0);   // a fixed power holds the output
       if (give[i] > 0) e[i] -= give[i] / eta[i];
       if (avail[i] <= power[i] && give[i] >= avail[i] - 1e-9 && (short[i] || (follow.includes(i) && grid > 0.5)) && r.units[i].empty === null) r.units[i].empty = stop;
     });
     out += gone.reduce((a, b) => a + b, 0);
     if (takers.length && out > 0) {
-      const rooms = takers.map((i) => Math.min(Math.max(eMax[i] - e[i], 0) / eta[i], st[i].max_charge_w ? st[i].max_charge_w * share : Infinity));
+      const limit = takers.map((i) => (st[i].max_charge_w ? st[i].max_charge_w * share : Infinity));
+      const rooms = takers.map((i, k) => Math.min(Math.max(eMax[i] - e[i], 0) / eta[i], limit[k]));
       fill(out, rooms).forEach((w, k) => {
         if (w <= 0) return;
-        const i = takers[k];
-        e[i] += w * eta[i];
+        e[takers[k]] += w * eta[takers[k]];
         out -= w;
-        if (w >= rooms[k] - 1e-9 && rooms[k] < (st[i].max_charge_w || Infinity) * share && r.units[i].full === null) r.units[i].full = stop;
+      });
+      takers.forEach((i, k) => {
+        if (rooms[k] < limit[k] && e[i] >= eMax[i] - 1e-6 && r.units[i].full === null) r.units[i].full = rooms[k] <= 1e-9 ? start : stop;
       });
     }
     const fed = out > 0 ? fedIn(feed, t, out, share) : 0;
@@ -234,7 +236,9 @@ class NoxcastBattery extends HTMLElement {
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e) body = `<section class="card pad">${t.noBattery}</section>`;
     else {
+      // a system can appear or go after the first load (a level sensor becomes available): keep what was set, add the rest
       if (e.storage && !this._v) this._v = this._defaults(e);
+      else if (e.storage) this._v = { ...this._defaults(e), ...Object.fromEntries(Object.entries(this._v).filter(([k]) => !k.startsWith("cap:") || k in this._defaults(e))) };
       body = `${e.storage ? this._whatIf(e) : `<section class="card pad">${t.noSim}</section>`}${this._predictions(e)}${this._review(e)}`;
     }
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${body}</div>`;

@@ -336,3 +336,33 @@ def test_batteries_of_one_system_stay_one_storage():
     assert "systems" not in same and same["sim"].hours == plain["sim"].hours
     names = {"s": "Roof"}
     assert bt.system_figures(same, names) == []
+
+
+def test_a_full_battery_behind_a_fixed_power_curtails_the_rest_of_its_pv():
+    # 400 W fixed, battery full, 2000 Wh PV: 400 Wh go to the house, the rest cannot pass the inverter
+    fixed = bt.Battery(2000, 1.0, efficiency=1.0, arrays=("f",), unit="f", fixed_w=400)
+    other = bt.Battery(5000, 0.5, efficiency=1.0, unit="o")
+    arrays = {"f": flat(2000, [12])}
+    sims, whole = bt.simulate_units(bt.units_of([fixed, other], arrays, [12 * H], True), flat(2000, [12]),
+                                    flat(100, [12]), 12 * H, 13 * H)
+    assert abs(whole.fed_in_wh - 300) < 1e-6 and abs(whole.curtailed_wh - 1600) < 1e-6
+    assert abs(sims["f"].curtailed_wh - 1600) < 1e-6 and sims["f"].fed_in_wh == 0
+
+
+def test_a_battery_at_the_house_grid_decides_what_a_full_system_loses():
+    pv_sys = bt.Battery(1000, 1.0, efficiency=1.0, arrays=("r",), unit="roof")
+    arrays = {"r": flat(2200, [12, 13])}
+    pv, load_ = flat(2200, [12, 13]), flat(200, [12, 13])
+    # room at the house grid: nothing leaves the house in the first hour, so no "full, surplus lost" there
+    ac = bt.Battery(2500, 0.2, efficiency=1.0, unit="ac", from_house=True)
+    out = bt.day_simulation([pv_sys, ac], pv, load_, None, 12 * H, 14 * H, arrays)
+    assert 12 * H not in out["lost_full"] and out["systems"]["ac"].full_at is not None
+    # in the second hour the battery at the house grid fills and what it cannot take leaves the house
+    assert abs(out["lost_full"][13 * H] - out["sim"].hours[13 * H]["lost"]) < 1e-6 and out["lost_full"][13 * H] > 0
+    # already at its limit: full from the start, and the surplus counts as lost
+    full_ac = bt.Battery(2500, 1.0, efficiency=1.0, unit="ac", from_house=True)
+    out = bt.day_simulation([pv_sys, full_ac], pv, load_, None, 12 * H, 14 * H, arrays)
+    assert out["systems"]["ac"].full_at == 12 * H and out["sim"].full_at == 12 * H
+    assert abs(out["lost_full"][12 * H] - 2000) < 1e-6
+    for sim in out["systems"].values():
+        assert sim.curtailed_wh >= -1e-6                                 # the feed-in never exceeds a system's loss

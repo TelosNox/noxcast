@@ -453,8 +453,9 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
                 sim.surplus_wh += surplus
                 took = _charge(sim, e, e_max, eta, i, surplus, u.storage.max_charge_w, share, start, stop)
                 lost[i] = surplus - took
-            # capped PV the battery left is curtailed; the rest of its surplus goes out to the house
-            gone[i] = max(lost[i] - max(capped[i] - took, 0.0), 0.0)
+            # capped PV the battery left is curtailed; the rest of its surplus goes out to the house, except behind a
+            # fixed power, which holds the output like a limit: what its battery cannot take is curtailed too
+            gone[i] = 0.0 if u.fixed_w else max(lost[i] - max(capped[i] - took, 0.0), 0.0)
             if give[i] > 0:
                 e[i] -= give[i] / eta[i]
             hour["battery"] = round(took - give[i], 1)
@@ -466,34 +467,39 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
             hours.append(hour)
         out += sum(gone)
         to_house = 0.0                                                  # taken by batteries at the house grid
+        left = [0.0] * n                                                # what a full one at the house grid lets go
         if takers and out > 0:
-            rooms = [min(max(e_max[i] - e[i], 0.0) / eta[i],
-                         units[i].storage.max_charge_w * share if units[i].storage.max_charge_w else math.inf)
-                     for i in takers]
+            limit = [units[i].storage.max_charge_w * share if units[i].storage.max_charge_w else math.inf for i in takers]
+            rooms = [min(max(e_max[i] - e[i], 0.0) / eta[i], c) for i, c in zip(takers, limit)]
             for i, w in zip(takers, _fill(out, rooms)):
-                if w <= 0:
-                    continue
-                e[i] += w * eta[i]
-                sim = sims[units[i].key]
-                sim.charged_wh += w
-                hours[i]["battery"] = round(hours[i]["battery"] + w, 1)
-                to_house += w
-                if w >= rooms[takers.index(i)] - 1e-9 and rooms[takers.index(i)] < (
-                        units[i].storage.max_charge_w or math.inf) * share and sim.full_at is None:
-                    sim.full_at = stop
+                if w > 0:
+                    e[i] += w * eta[i]
+                    sims[units[i].key].charged_wh += w
+                    hours[i]["battery"] = round(hours[i]["battery"] + w, 1)
+                    to_house += w
             out -= to_house
+            # full: its room, not its charge power, ended what it took while surplus still leaves the house
+            full = [i for k, i in enumerate(takers) if rooms[k] < limit[k] and e[i] >= e_max[i] - 1e-6]
+            for i in full:
+                sim = sims[units[i].key]
+                if sim.full_at is None:
+                    sim.full_at = start if rooms[takers.index(i)] <= 1e-9 else stop
+                if out > 0.5:
+                    left[i] = out / len(full)
         fed = grid.fed_in(t, out, share) if out > 0 else 0.0
         lost_sum = sum(lost)
+        sent = [g + x for g, x in zip(gone, left)]
         for i, u in enumerate(units):
             sim, hour = sims[u.key], hours[i]
-            if lost[i] > 0:
-                # the house's feed-in shared by what each system sent out
-                f = fed * gone[i] / (sum(gone) or 1.0) if gone[i] else 0.0
-                sim.lost_wh += lost[i]
+            lost_i = lost[i] + left[i]
+            if lost_i > 0:
+                # the house's feed-in shared by what each system sent out, never more than it lost
+                f = min(fed * sent[i] / (sum(sent) or 1.0), lost_i) if sent[i] else 0.0
+                sim.lost_wh += lost_i
                 sim.fed_in_wh += f
-                sim.curtailed_wh += lost[i] - f
-                hour.update(lost=round(lost[i], 1), fed_in=round(f, 1), curtailed=round(lost[i] - f, 1))
-                if lost[i] > 0.5 and sim.lost_from is None:
+                sim.curtailed_wh += lost_i - f
+                hour.update(lost=round(lost_i, 1), fed_in=round(f, 1), curtailed=round(lost_i - f, 1))
+                if lost_i > 0.5 and sim.lost_from is None:
                     sim.lost_from = start
             # the grid supplies what no battery covers, booked evenly where the systems shared it
             if i in follow and grid_wh > 0:
@@ -600,11 +606,10 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             return one, None, lost_when_full(one, storage.max_soc)
         units = units_of(batteries, arrays, hours, charging)
         per, whole = simulate_units(units, pv_, load_, now, until, grid)
-        # full per system: one full system loses its surplus even while the average level is below its limit
-        lost: dict[float, float] = {}
-        for u in units:
-            for t, wh in lost_when_full(per[u.key], u.storage.max_soc).items():
-                lost[t] = round(lost.get(t, 0.0) + wh, 1)
+        # full per system: one full system loses its surplus even while the average level is below its limit; what
+        # is lost then is what leaves the house, since a battery at the house grid may still take a full one's surplus
+        full = {t for u in units for t in lost_when_full(per[u.key], u.storage.max_soc)}
+        lost = {t: h["lost"] for t, h in whole.hours.items() if t in full and h["lost"] > 0}
         return whole, per, lost
 
     sim, systems, lost_full = run(pv, pv_arrays, load, start, caps)

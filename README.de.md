@@ -332,7 +332,7 @@ Ausgangsgrenze.
 | Ladestand-Sensor, Kapazität | Pflicht |
 | Lade-/Entladeleistung | Optional: Lade- und Entladeleistung für die Karte, positiv = Laden (sonst *umkehren*) |
 | Ladegrenze oben / Entladegrenze unten | Zahl oder Entität (z. B. Ladegrenze, Notstromreserve) |
-| Gilt als voll ab | Prozentpunkte unter der Ladegrenze, ab denen der Akku beim Lernen als voll gilt (Standard 5: bei einer Ladegrenze von 100 % ab 95 %). Kurz vor der Grenze lädt ein Akku langsamer, und PV kann schon abgeregelt werden |
+| Gilt als voll ab | Prozentpunkte unter der Ladegrenze, ab denen der Akku beim Lernen als voll gilt (Standard 3: bei einer Ladegrenze von 100 % ab 97 %). Kurz vor der Grenze lädt ein Akku langsamer, und PV kann schon abgeregelt werden |
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
 | Gehört zu | Das System, in dem der Akku steckt, ein Akku je System. Leer: das System, aus dessen Menü er geöffnet wurde |
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |

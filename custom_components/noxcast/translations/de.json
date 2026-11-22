@@ -283,7 +283,7 @@
               },
               "data_description": {
                 "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
-                "full_margin": "So viele Prozentpunkte unter der Ladegrenze gilt der Akku beim Lernen als voll: Kurz vor der Grenze lädt er langsamer, und PV kann schon abgeregelt werden. Standard 5.",
+                "full_margin": "So viele Prozentpunkte unter der Ladegrenze gilt der Akku beim Lernen als voll: Kurz vor der Grenze lädt er langsamer, und PV kann schon abgeregelt werden. Standard 3.",
                 "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
                 "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
               }

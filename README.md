@@ -326,7 +326,7 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | State of charge sensor, capacity | Required |
 | Battery power sensor | Optional: charge/discharge power for the card, positive = charging (*invert* otherwise) |
 | Max / min SOC | Number or entity (e.g. charge limit, backup reserve) |
-| Counts as full from | Percent points below the upper limit from which the battery counts as full in learning (default 5: at an upper limit of 100 % from 95 %). Near the top a battery charges slower and PV may already be curtailed |
+| Counts as full from | Percent points below the upper limit from which the battery counts as full in learning (default 3: at an upper limit of 100 % from 97 %). Near the top a battery charges slower and PV may already be curtailed |
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | Belongs to | The system the battery sits in, one battery per system. Empty: the system whose menu it was opened from |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |

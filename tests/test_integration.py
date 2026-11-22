@@ -171,6 +171,8 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
     await client.send_json_auto_id({"type": "noxcast/accuracy"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"][0]["arrays"][0]["name"] == "Roof"
+    band = msg["result"]["entries"][0]["band"]                # how often the range held: empty before the first days
+    assert band["min_days"] == 30 and band["target"] == [0.1, 0.8, 0.1]
     await client.send_json_auto_id({"type": "noxcast/load"})
     msg = await client.receive_json()
     assert msg["success"] and msg["result"]["entries"] == []          # no house load configured

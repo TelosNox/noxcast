@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
+  per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
+  only in the diagnostics download.
+
 ## [0.6.0] - 2026-11-22
 
 All changes since 0.5.0: the pre-releases 0.6.0b1 to 0.6.0b3 (their single steps are listed in

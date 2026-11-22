@@ -703,7 +703,10 @@ not types of their own. Independent devices are systems of their own, side by si
     computes the model once more for every past hour on the satellite irradiance and the measured air
     temperature (stored as `measured` per array, once, with the parameters of that night). Weather
     part = forecast − model on measured weather, model part = model on measured weather − actual;
-    both add up to the daily deviation, and a verdict names the larger source of error. The backtest
+    both add up to the daily deviation, and a verdict names the larger source of error. The range check
+    (`band.coverage`, also in the diagnostics download) counts how often the actual total fell below, inside or above the
+    published P10–P90 range, per weather class, for whole days and single hours; below 30 days a class says
+    "not enough data". The backtest
     (`noxcast/backtest`, see PV backtest under Architecture) sits below it: forecast then against today's
     model on the same days, unlearned against learned days, each with the model without the shading map.
   - **Load** (`noxcast/load`): rest of today and tomorrow, the correction now, the backtest against a

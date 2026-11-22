@@ -853,7 +853,9 @@ that time. `backtest.py` answers two further questions with the same pure functi
 Metrics per array and in total, relative to the actual energy: daily energy error, hourly absolute error
 and bias, plus the mean hourly error in Wh and the number of days and hours. All compared models use the
 same hours: those learning uses (`usable_samples`: validity, full battery, exclusions) with light, in the replay
-also without the archive's `curtailed` flag. Too little data (replay: 7 days; hold-out: 14 days and 60 hours in
+also without the archive's `curtailed` flag. Both cap the model at the fixed output limits as the forecast does
+(`curtailment.cap_group`): learning keeps the hours at a limit as lower bounds, so their measured value is the cut
+output, and an uncapped model would be scored against the cut, which favours one that learned it as shade. Too little data (replay: 7 days; hold-out: 14 days and 60 hours in
 each half; or no satellite irradiance) gives an explicit `not_enough_data` with the reason, not a number.
 
 **Scorecard (#247):** the overall hold-out error hardly moves when a change acts where little energy is: steady

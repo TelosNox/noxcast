@@ -45,6 +45,12 @@ breaking changes.
   a single bad day cannot widen it, the range now also leaves out what learning leaves out: days without output,
   hours under snow and excluded periods. The next learning run applies it.
 
+### Fixed
+- The backtest on *Unlearned days, measured weather* (*Accuracy*) now caps the model at the fixed output limits, as the forecast
+  and the replay do. Learning counts the hours at a limit as "at least this much", so the measured value there is the
+  cut output; scored uncapped, a correct model came out far worse than one that had learned the cut as shade. This
+  mattered most for a limit shared by several devices, such as one per phase.
+
 ## [0.6.0b1] - 2026-11-21
 
 ### Added

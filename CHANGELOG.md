@@ -11,8 +11,8 @@ breaking changes.
 
 All changes since 0.5.0: the pre-releases 0.6.0b1 to 0.6.0b3 (their single steps are listed in
 [CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). Systems, PV arrays and batteries can now
-be changed, added and removed in the *Installation* tab. Learning changes for systems with an output limit, per phase
-or with a battery, from the next nightly learning run on.
+be changed, added and removed in the *Installation* tab. From the next nightly learning run on, learning changes for systems with an output limit, per phase or with a
+battery, and the P10–P90 range of a day gets wider where it was too narrow.
 
 ### Added
 - New sensor *Battery lowest level (48 h)*: the battery forecast now also runs for the next 48 hours, past

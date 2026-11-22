@@ -227,7 +227,6 @@ counts:
 
 | Field | Meaning |
 |---|---|
-| Battery considered full at | SOC from which a battery entered with its system counts as full (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |
@@ -327,6 +326,7 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | State of charge sensor, capacity | Required |
 | Battery power sensor | Optional: charge/discharge power for the card, positive = charging (*invert* otherwise) |
 | Max / min SOC | Number or entity (e.g. charge limit, backup reserve) |
+| Counts as full from | Percent points below the upper limit from which the battery counts as full in learning (default 5: at an upper limit of 100 % from 95 %). Near the top a battery charges slower and PV may already be curtailed |
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | Belongs to | The system the battery sits in, one battery per system. Empty: the system whose menu it was opened from |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
@@ -341,8 +341,8 @@ Which batteries leave hours out of learning for an array follows from the system
 *covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
 under a shared output limit, the batteries of the other subsystems. A battery outside the array's system, also one at
 the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so it
-curtails the same with it or without. A battery counts as full from *Battery considered full at*, or 2 points below
-its upper limit if that is lower (with a limit from an entity, its current value). A battery that charges at its
+curtails the same with it or without. A battery counts as full from *Counts as full from* below its
+upper limit (with a limit from an entity, its current value). A battery that charges at its
 maximum power takes no more either: where the rest cannot go out (the system covers the house load or an output limit
 holds), learning counts these hours as "at least this much", like a fixed limit. Leaving them out would drop just the
 bright hours. Noxcast reads the charge power from means, since a single reading of a few seconds can lie far above

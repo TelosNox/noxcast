@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- *Battery considered full at* is no longer a setting of the household. Each battery counts as full from its own
+  *Counts as full from* below its upper limit, 5 percent points by default, so at an upper limit of 100 % from 95 %
+  as before. A battery with a lower upper limit now counts as full 5 instead of 2 points below it, which leaves a few
+  more hours with possibly curtailed PV out of learning. A value you had changed for the household is carried over
+  to each battery, so that it counts as full where it did before.
+
 ## [0.6.0] - 2026-11-22
 
 All changes since 0.5.0: the pre-releases 0.6.0b1 to 0.6.0b3 (their single steps are listed in

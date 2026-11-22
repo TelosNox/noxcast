@@ -35,12 +35,11 @@ from typing import Any
 
 from . import systems as sy
 from .const import (
-    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
-    CONF_SOC_SENSOR,
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_FULL_MARGIN, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
+    CONF_SOC_SENSOR, DEFAULT_FULL_MARGIN,
 )
 
 HOUR = 3600.0
-FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
 CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (5-minute mean)
 # an hour known only by its mean: from 85 % of the maximum the battery stood at it for most of the hour; from 70 % it
 # may have for a part of it (a ramp up to the maximum, a plateau broken by clouds), so the hour is left out; below,
@@ -357,13 +356,13 @@ def charge_power(chargers: Iterable[Charger | Meter], values: Mapping[str, Mappi
     return out
 
 
-def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], soc_full: float,
+def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]],
            max_soc: Mapping[str, float], ceilings: Mapping[str, float | None]) -> dict[str, Reach]:
     """Array -> the batteries that take its PV (systems.curtailed_arrays); ceilings: array -> the sum of its
     sensors' fixed limits, None where one is not known.
 
-    A battery counts as full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is
-    lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
+    A battery counts as full from its margin (CONF_FULL_MARGIN) below its own upper limit; max_soc: the current
+    upper limit per battery where it comes from an entity (its history is not kept).
     """
     own: dict[str, tuple[Store, str]] = {}
     others: dict[str, list[Store]] = {}
@@ -374,9 +373,9 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
         charger = (Charger(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT)), float(d[CONF_MAX_CHARGE]))
                    if d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE)
                    and sy.charge_curtails(systems, sid) else None)
-        store = Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(systems[sid].battery or "",
-                                                                            d.get(CONF_MAX_SOC) or 100))
-                                              - FULL_TOLERANCE), charger)
+        margin = d.get(CONF_FULL_MARGIN)
+        store = Store(d[CONF_SOC_SENSOR], float(max_soc.get(systems[sid].battery or "", d.get(CONF_MAX_SOC) or 100))
+                      - float(DEFAULT_FULL_MARGIN if margin is None else margin), charger)
         for a in arrays:
             if a in systems[sid].arrays:
                 own[a] = (store, sid)
@@ -438,7 +437,6 @@ def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
 
 
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
-          soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
           feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None,
           export_limit: tuple[Iterable[str], float] | None = None) -> Installation:
@@ -457,7 +455,7 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
         group = [i.limit_w for i in inputs.values() if i.array == array]
         ceilings[array] = sum(w for w in group if w is not None) if group and None not in group else None
     return Installation(inputs,
-                        _reach(systems, batteries or {}, float(soc_full_pct), max_soc or {}, ceilings),
+                        _reach(systems, batteries or {}, max_soc or {}, ceilings),
                         _caps(systems, arrays), _held(systems, export_limit),
                         _outlets(systems, arrays, batteries or {}))
 

@@ -87,7 +87,9 @@ def test_the_household_full_level_goes_to_each_battery_only_where_it_was_changed
     subs = {"s": ("system", "Roof", {"name": "Roof", "template": "pv_battery"}),
             "b": ("battery", "Home", {"system": "s", "soc_sensor": "sensor.soc", "capacity": 5, "max_soc": 100}),
             "c": ("battery", "Garage", {"system": "s", "soc_sensor": "sensor.c", "capacity": 2, "max_soc": 90}),
-            "d": ("battery", "Shed", {"system": "s", "soc_sensor": "sensor.d", "capacity": 2, "full_margin": 4})}
+            "d": ("battery", "Shed", {"system": "s", "soc_sensor": "sensor.d", "capacity": 2, "full_margin": 4}),
+            "e": ("battery", "Cellar", {"system": "s", "soc_sensor": "sensor.e", "capacity": 2, "max_soc": 100,
+                                        "max_soc_entity": "number.e"})}
     # the default: the setting just goes, each battery keeps the default margin (95 % at 100 %)
     data, changes = sy.drop_soc_full({"soc_full_pct": 95, "feed_in_mode": "free"}, subs)
     assert data == {"feed_in_mode": "free"} and not changes
@@ -96,6 +98,9 @@ def test_the_household_full_level_goes_to_each_battery_only_where_it_was_changed
     assert data == {} and set(changes.update) == {"b", "c"}
     assert changes.update["b"]["full_margin"] == 10 and changes.update["c"]["full_margin"] == 2
     assert changes.update["b"]["soc_sensor"] == "sensor.soc"          # the rest of the battery is kept
+    # an upper limit from an entity is not known in the migration: the default margin; and never above the form's limit
+    data, changes = sy.drop_soc_full({"soc_full_pct": 70}, subs)
+    assert "e" not in changes.update and changes.update["b"]["full_margin"] == 20
     assert sy.drop_soc_full({}, subs) == ({}, sy.Changes())
 
 

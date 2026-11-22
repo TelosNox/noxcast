@@ -130,7 +130,7 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
 1. Settings → Devices & services → *Add integration* → **Noxcast**. Choose the feed-in rule (what may go to the
    grid: free, limited or zero export); everything else can stay empty.
 2. The last step links to the *Installation* tab of the Noxcast panel. Tap *+ System* there and pick the template
-   that fits your device (e.g. an inverter without battery), then *+ PV array* beside it: pick the power sensor(s),
+   that fits your device (e.g. an inverter without battery), then *+ PV array* below it: pick the power sensor(s),
    enter tilt, azimuth and peak power. Add one array per group of modules that is measured together. The picture
    shows every part before you save it. (The same works on the integration page: ⋮ → *Add system*, then the
    system's menu.)

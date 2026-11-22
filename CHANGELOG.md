@@ -46,7 +46,7 @@ breaking changes.
   hours under snow and excluded periods. The next learning run applies it.
 
 ### Fixed
-- The backtest on *Unlearned days, measured weather* (*Accuracy*) now caps the model at the fixed output limits, as the forecast
+- The backtest on *Unlearned days, measured weather* (*Forecast accuracy*) now caps the model at the fixed output limits, as the forecast
   and the replay do. Learning counts the hours at a limit as "at least this much", so the measured value there is the
   cut output; scored uncapped, a correct model came out far worse than one that had learned the cut as shade. This
   mattered most for a limit shared by several devices, such as one per phase.

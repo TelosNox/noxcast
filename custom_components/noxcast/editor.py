@@ -140,12 +140,35 @@ async def _texts(hass: HomeAssistant, kind: str, lang: str) -> dict[str, dict[st
     return out
 
 
+def _place_free(entry: ConfigEntry, kind: str, to: str | None) -> bool:
+    """Whether a new part of this kind can still go into the system "to", which the dialog's menu decides by what
+    the system holds: arrays only beside no subsystems, one battery per system, subsystems only in a top-level
+    system without arrays or battery (a new system without "to" goes on the top level)."""
+    systems = sy.systems_of(store.flat(entry))
+    if kind == SUBENTRY_SYSTEM:
+        return not to or to in sy.parent_owners(systems, None)
+    return to in sy.part_owners(systems, "" if kind == SUBENTRY_BATTERY else None)
+
+
+def _schema_errors(schema: vol.Schema, user_input: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, str]]:
+    """The input as the form's schema takes it, as Home Assistant checks a dialog step before the step sees it:
+    ranges, required fields, choices. A field inside a section is named on top of the form."""
+    try:
+        return schema(user_input), {}
+    except vol.Invalid as err:
+        errors: dict[str, str] = {}
+        for one in getattr(err, "errors", [err]):
+            path = [str(p) for p in one.path]
+            errors["base" if len(path) != 1 else path[0]] = "invalid_value"
+        return None, errors
+
+
 async def async_form(hass: HomeAssistant, entry: ConfigEntry, part: str | None, kind: str | None = None,
                      to: str | None = None, draft: dict[str, Any] | None = None, lang: str = "en") -> dict[str, Any]:
     """The form of a part (part = its id, HOUSE for the household) or of a new one (kind, and to = the system it goes
     into, for a new subsystem its system): schema for ha-form, starting values, texts and the stored revision."""
     kind = _kind(entry, part, kind)
-    if part is None and kind != SUBENTRY_SYSTEM and to not in sy.part_owners(sy.systems_of(store.flat(entry))):
+    if part is None and not _place_free(entry, kind, to):
         raise EditError("not_possible")
     schema = _schema(entry, kind, part, to, draft)
     return {"kind": kind, "part": part, "to": to,
@@ -175,6 +198,8 @@ async def _check(hass: HomeAssistant, entry: ConfigEntry, kind: str, part: str |
         else:
             basics.pop(CONF_PARENT, None)
             if to:
+                if not _place_free(entry, SUBENTRY_SYSTEM, to):
+                    return None, {CONF_PARENT: "parent_not_possible"}
                 basics[CONF_PARENT] = to
         if not basics.get(CONF_PARENT):
             basics.pop(CONF_PARENT, None)
@@ -190,6 +215,9 @@ async def _check(hass: HomeAssistant, entry: ConfigEntry, kind: str, part: str |
     errors = cf._battery_errors(hass, user_input, choices)
     data = cf._battery_data(user_input)
     data.setdefault(CONF_SYSTEM, to or (flat[part][2].get(CONF_SYSTEM) if part else None))
+    # the system filled in from "to" has not been checked yet: it may have got a battery meanwhile
+    if not errors and data.get(CONF_SYSTEM) not in choices:
+        errors = {CONF_SYSTEM: "system_taken"}
     return data, errors
 
 
@@ -224,6 +252,9 @@ async def async_save(hass: HomeAssistant, entry: ConfigEntry, kind: str | None, 
     kind = _kind(entry, part, kind)
     if part and rev != revision(entry, part):
         return {"base": "changed"}
+    user_input, errors = _schema_errors(_schema(entry, kind, part, to, user_input), user_input)
+    if errors:
+        return errors
     data, errors = await _check(hass, entry, kind, part, to, user_input)
     if errors or data is None:
         return errors

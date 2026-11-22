@@ -78,7 +78,8 @@
       "sensor_unit": "Leistungssensoren müssen W oder kW liefern.",
       "sensor_state_class": "Leistungssensoren brauchen state_class „measurement“, damit Home Assistant Langzeitstatistik führt.",
       "feed_in_limit_needed": "Eine Vorgabe mit begrenzter Leistung braucht die Grenze in W.",
-      "feed_in_pct_needed": "Eine Vorgabe mit begrenztem Anteil braucht die Grenze in %."
+      "feed_in_pct_needed": "Eine Vorgabe mit begrenztem Anteil braucht die Grenze in %.",
+      "invalid_value": "Ein Wert fehlt oder liegt außerhalb des erlaubten Bereichs."
     },
     "abort": {
       "already_configured": "Noxcast ist bereits eingerichtet. Füge PV-Gruppen zum vorhandenen Eintrag hinzu.",
@@ -332,7 +333,8 @@
         "soc_unit": "Der Ladestand muss in % angegeben sein.",
         "system_taken": "Dieses System hat schon einen Akku. Ein zweiter ist ein eigenes Teilsystem.",
         "parent_not_possible": "Dieses System kann kein Teil sein: Es enthält selbst Teilsysteme, oder das gewählte System enthält PV-Gruppen oder einen Akku.",
-        "fixed_power_needed": "Die Regelung Feste Leistung braucht einen Wert unter Feste Leistung."
+        "fixed_power_needed": "Die Regelung Feste Leistung braucht einen Wert unter Feste Leistung.",
+        "invalid_value": "Ein Wert fehlt oder liegt außerhalb des erlaubten Bereichs."
       },
       "abort": {
         "saved": "Gespeichert."

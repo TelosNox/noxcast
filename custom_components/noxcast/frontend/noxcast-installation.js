@@ -126,7 +126,7 @@ class NoxcastInstallation extends HTMLElement {
         return;
       }
       const node = path.find((n) => n.getAttribute && n.getAttribute("data-node"));
-      if (node) { this._sel = node.getAttribute("data-node"); this._render(); }
+      if (node) { this._sel = node.getAttribute("data-node"); this._editError = null; this._render(); }
     });
   }
 
@@ -271,7 +271,11 @@ class NoxcastInstallation extends HTMLElement {
     let r;
     try {
       r = await ask(this._hass, { type: "noxcast/part_preview", ...this._which(e), input: e.input });
-    } catch (err) { return; }
+    } catch (err) {
+      // e.g. the part was removed elsewhere: the diagram is stale, so say why
+      if (seq === this._seq && this._edit === e) this._showErrors({ base: errorText(err, this._hass.language) });
+      return;
+    }
     if (seq !== this._seq || this._edit !== e) return;
     e.diagram = r.diagram;
     this._showErrors(r.errors);
@@ -300,11 +304,13 @@ class NoxcastInstallation extends HTMLElement {
         revision: e.form.revision });
     } catch (err) {
       e.saving = false;
+      if (this._edit !== e) return;
       e.base = errorText(err, this._hass.language);
       this._render();
       return;
     }
     e.saving = false;
+    if (this._edit !== e) return;
     if (r.errors) {
       if (r.errors.base === "changed") { this._stopEdit(); this._editError = this._t.changed; this._load(); return; }
       this._render();
@@ -378,7 +384,7 @@ class NoxcastInstallation extends HTMLElement {
       <div class="error small">${esc(ed.base || "")}</div>
       <p class="help">${ed.part ? t.previewHelp : t.addHelp}</p>
       <div class="row"><button class="chip primary" data-act="save-part" ${ed.saving ? "disabled" : ""}>${
-        ed.saving ? t.saving : t.saveChange}</button><button class="chip" data-act="cancel">${t.cancel}</button></div></div>`;
+        ed.saving ? t.saving : t.saveChange}</button><button class="chip" data-act="cancel" ${ed.saving ? "disabled" : ""}>${t.cancel}</button></div></div>`;
   }
 
   // a select for where a part belongs, only where it has somewhere else to go and the user may change it
@@ -460,10 +466,11 @@ class NoxcastInstallation extends HTMLElement {
         <p class="help">${t.removeWarn}</p>
         ${rm.error ? `<div class="error small">${esc(rm.error)}</div>` : ""}
         <div class="row actions"><button class="chip danger" data-act="remove-yes" ${rm.busy ? "disabled" : ""}>${
-          rm.busy ? t.removing : t.removeYes}</button><button class="chip" data-act="cancel">${t.cancel}</button></div>`;
+          rm.busy ? t.removing : t.removeYes}</button><button class="chip" data-act="cancel" ${rm.busy ? "disabled" : ""}>${t.cancel}</button></div>`;
     }
     const node = sel && this._find(e, sel);
-    if (!node) return `<div class="muted small">${t.pick}</div>`;
+    const err = this._editError ? `<div class="error small">${esc(this._editError)}</div>` : "";
+    if (!node) return `${err}<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
     const admin = this._admin;
     if (ed) return `<div class="head"><span class="title">${esc(node.title)}</span></div>${this._editor(e)}`;
@@ -472,7 +479,7 @@ class NoxcastInstallation extends HTMLElement {
       node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>${node.ids[0] === "house" ? ""
       : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}` : "";
     return `<div class="head"><span class="title">${esc(node.title)}</span>${change}</div>
-      ${this._editError ? `<div class="error small">${esc(this._editError)}</div>` : ""}
+      ${err}
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
       ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}
       ${moves ? `<div class="moves">${moves}

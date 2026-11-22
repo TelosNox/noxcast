@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
+  per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
+  only in the diagnostics download.
 - *Fixed power* now counts: it caps the PV forecast of a system without a battery like an output limit, and learning
   counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
   fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab

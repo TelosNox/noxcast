@@ -212,7 +212,12 @@ async def ws_accuracy(hass: HomeAssistant, connection: websocket_api.ActiveConne
         # the page offers up to 90 days; the whole archive would only make the answer larger
         recent = fc_archive.recent(c.forecast_archive, dt_util.now().date() - timedelta(days=EVAL_DAYS))
         days = await hass.async_add_executor_job(views.accuracy_days, recent, c.site)
-        entries.append({"arrays": views.array_names(c.arrays), "days": days})
+        try:
+            band = await hass.async_add_executor_job(views.band_coverage, c._eval_archive(), c.site)
+        except Exception:  # noqa: BLE001 – the rest of the view stays useful
+            _LOGGER.exception("Band coverage for the accuracy view failed")
+            band = None
+        entries.append({"arrays": views.array_names(c.arrays), "days": days, "band": band})
     _send(connection, msg, {"time_zone": hass.config.time_zone, "entries": entries})
 
 

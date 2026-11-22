@@ -19,6 +19,11 @@ const ACC_TEXT = {
     verdictModel: "Der größere Teil des Fehlers bleibt auch mit gemessenem Wetter. Hier lohnt ein Blick auf Verschattung, Ausrichtung und Wirkungsgrad.",
     verdictBoth: "Wettervorhersage und Modell tragen etwa gleich viel zum Fehler bei.",
     splitHelp: "Für jede vergangene Stunde rechnet Noxcast das Modell noch einmal mit der Einstrahlung aus dem Satellitenarchiv. Wetteranteil = Prognose − Modell mit gemessenem Wetter, Modellanteil = Modell mit gemessenem Wetter − Ist. Beide Balken zusammen ergeben die Tagesabweichung in kWh. Der Modellanteil enthält auch die Messfehler des Satelliten: Seine Werte sind Flächenmittel und keine Messung am Dach, bei Nebel oder Hochnebel liegen sie oft deutlich daneben. Ein einzelner Tag sagt deshalb wenig über das Modell; aussagekräftig ist der Modellanteil über viele Tage.",
+    band: "Trifft der Bereich P10–P90?", bandDays: "Ganze Tage", bandHours: "Einzelne Stunden",
+    below: "darunter", inside: "im Bereich", above: "darüber", target: "Ziel",
+    bandFew: (n, k) => `zu wenig Daten (${n} von ${k} Tagen)`, bandNone: "Noch keine Tage mit veröffentlichtem Bereich und Messwerten.",
+    bandLeftOut: (n) => `${n} Tage ausgelassen (Akku voll, Grenze erreicht oder Messwert fehlt).`,
+    bandHelp: "Der Bereich P10–P90 soll den Ist-Wert in etwa 8 von 10 Fällen einschließen, je etwa 1 von 10 darunter und darüber. Gezählt wird der Bereich, den die Tagesprognose am Vorabend veröffentlicht hat, für alle PV-Gruppen zusammen. Er wurde auf den Tagen davor gelernt, die Prüfung ist also ehrlich. Ausgelassen sind Stunden mit möglicher Abregelung oder an einer festen Grenze, und ein Tag mit solchen Stunden ganz. Unter 30 Tagen je Wetterlage sagt der Anteil wenig.",
     backtest: "Rückrechnung", hourError: "Stundenfehler",
     btSmaller: (p, vs) => `Fehler ${p} % kleiner als ${vs}`, btLarger: (p, vs) => `Fehler ${p} % größer als ${vs}`,
     btVsThen: "die Prognose damals", btVsNoMap: "ohne Verschattungskarte",
@@ -66,6 +71,11 @@ const ACC_TEXT = {
     verdictModel: "The larger part of the error remains even with measured weather. Shading, orientation and efficiency are worth a look.",
     verdictBoth: "Weather forecast and model contribute about equally to the error.",
     splitHelp: "For every past hour Noxcast runs the model again on the irradiance from the satellite archive. Weather part = forecast − model on measured weather, model part = model on measured weather − actual. Both bars together are the daily deviation in kWh. The model part also contains the satellite's measurement errors: its values are area means, not a measurement on the roof, and in fog or low stratus they are often far off. A single day therefore says little about the model; the model part over many days is what counts.",
+    band: "Does the P10–P90 range hold?", bandDays: "Whole days", bandHours: "Single hours",
+    below: "below", inside: "inside", above: "above", target: "Target",
+    bandFew: (n, k) => `not enough data (${n} of ${k} days)`, bandNone: "No days with a published range and measurements yet.",
+    bandLeftOut: (n) => `${n} days left out (battery full, a limit reached or a measurement missing).`,
+    bandHelp: "The P10–P90 range should hold the actual value in about 8 of 10 cases, with about 1 in 10 below and above. It counts the range the day-ahead forecast published the evening before, for all PV arrays together. It was learned on the days before, so the check is fair. Hours with possible curtailment or at a fixed limit are left out, and a day with such hours entirely. Below 30 days per weather class the share says little.",
     backtest: "Backtest", hourError: "Hourly error",
     btSmaller: (p, vs) => `Error ${p} % smaller than ${vs}`, btLarger: (p, vs) => `Error ${p} % larger than ${vs}`,
     btVsThen: "the forecast then", btVsNoMap: "without the shading map",
@@ -299,6 +309,7 @@ class NoxcastAccuracy extends HTMLElement {
       <section class="card pad"><div class="figs">${figs}</div><p class="help">${t.help}</p></section>
       <section class="card pad"><h3>${t.perDay}</h3>${this._bars(days)}</section>
       ${this._split(days)}
+      ${this._band()}
       ${this._backtest()}
       ${this._modelsSlot()}
       <section class="card pad">${sel ? this._hourly(sel) : `<h3>${t.hourly}</h3><p class="muted">${t.pick}</p>`}</section>
@@ -595,6 +606,30 @@ class NoxcastAccuracy extends HTMLElement {
     return `<table><thead><tr><th></th><th class="num">${t.days}</th><th class="num">${t.error}</th><th class="num">${t.bias}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
+  // how often the actual value fell below, inside or above the published range (band.coverage), per weather class
+  _band() {
+    const t = this._t, cov = ((this._data.entries || [])[0] || {}).band;
+    if (!cov) return "";
+    const head = `<thead><tr><th></th><th class="num">${t.days}</th><th class="num">${t.below}</th><th class="num">${t.inside}</th><th class="num">${t.above}</th></tr></thead>`;
+    const [lo, mid, hi] = cov.target;
+    const target = `<tr class="muted"><td>${t.target}</td><td></td><td class="num">${this._pct(lo)}</td><td class="num">${this._pct(mid)}</td><td class="num">${this._pct(hi)}</td></tr>`;
+    const table = (rows) => {
+      const body = ["all", "clear", "mixed", "overcast"].filter((k) => rows[k]).map((k) => {
+        const r = rows[k], name = k === "all" ? t.all : t[k];
+        if (r.days < cov.min_days) return `<tr><td>${name}</td><td class="num">${r.days}</td><td colspan="3" class="muted">${t.bandFew(r.days, cov.min_days)}</td></tr>`;
+        const cells = ["below", "inside", "above"].map((x) => `<td class="num">${this._pct(r[x] / r.n)}</td>`).join("");
+        return `<tr><td>${name}</td><td class="num">${r.days}</td>${cells}</tr>`;
+      }).join("");
+      return `<table>${head}<tbody>${body}${target}</tbody></table>`;
+    };
+    const parts = [[t.bandDays, cov.days], [t.bandHours, cov.hours]].filter(([, rows]) => Object.keys(rows || {}).length);
+    const content = parts.length
+      ? `<div class="split">${parts.map(([title, rows]) => `<div class="grow"><h4>${title}</h4>${table(rows)}</div>`).join("")}</div>`
+      : `<p class="muted">${t.bandNone}</p>`;
+    const left = cov.left_out ? `<p class="muted small">${t.bandLeftOut(cov.left_out)}</p>` : "";
+    return `<section class="card pad"><h3>${t.band}</h3>${content}${left}<p class="help">${t.bandHelp}</p></section>`;
+  }
+
   // each model on its own against the main source (their mean) on the days the model was archived
   _compare(days) {
     const t = this._t, shown = new Set(days.map((d) => d.date));
@@ -662,6 +697,7 @@ class NoxcastAccuracy extends HTMLElement {
         box-shadow: var(--ha-card-box-shadow, none); border: 1px solid var(--divider-color); }
       .pad { padding: 16px; }
       h3 { margin: 0 0 8px; font-size: 15px; font-weight: 500; display: flex; gap: 8px; align-items: baseline; }
+      h4 { margin: 0 0 6px; font-size: .9em; font-weight: 600; }
       .muted { color: var(--secondary-text-color); } .small { font-size: 12px; }
       .help { color: var(--secondary-text-color); font-size: 12px; margin: 12px 0 0; line-height: 1.45; }
       .controls { display: flex; flex-wrap: wrap; gap: 8px 20px; }

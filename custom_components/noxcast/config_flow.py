@@ -21,13 +21,14 @@ from .const import (
     CONF_API_KEY, CONF_ARCHIVE_TEMPERATURE, CONF_ARCHIVE_URL, CONF_SATELLITE, CONF_SATELLITE_MODEL, CONF_SATELLITE_URL,
     CONF_WEATHER_MODELS, DEFAULT_ARCHIVE_URL, DEFAULT_SATELLITE_MODEL, DEFAULT_SATELLITE_URL, DEFAULT_WEATHER_MODELS,
     WEATHER_MODEL_OPTIONS,
-    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_SOC_FULL, CONF_UNENTERED_SOC,
-    CONF_TILT, CONF_VALID_SINCE, DEFAULT_SOC_FULL, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
+    CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_UNENTERED_SOC,
+    CONF_TILT, CONF_VALID_SINCE, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_START_SHARE,
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
-    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY,
+    CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_FULL_MARGIN,
+    DEFAULT_FULL_MARGIN,
     CONF_BATTERY_POWER, CONF_BATTERY_INVERT, CONF_OUTPUT_LIMIT,
     CONF_FEED_IN_MODE, CONF_FEED_IN_LIMIT, CONF_FEED_IN_PCT, FEED_IN_OPTIONS, SUBENTRY_SYSTEM, CONF_SYSTEM, CONF_PARENT, CONF_TEMPLATE,
     TEMPLATE_OPTIONS, CONF_LIMIT_PER_PHASE, CONF_PHASE, PHASE_OPTIONS, CONF_REGULATION, REGULATION_OPTIONS,
@@ -53,8 +54,6 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
     limited = defaults.get(CONF_FEED_IN_MODE) in ("limited", "percent") or any(
         defaults.get(k) for k in (CONF_FEED_IN_LIMIT, CONF_FEED_IN_PCT))
     return vol.Schema({
-        vol.Required(CONF_SOC_FULL, default=defaults.get(CONF_SOC_FULL, DEFAULT_SOC_FULL)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")),
         vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Optional(CONF_GRID, description={"suggested_value": defaults.get(CONF_GRID)}):
@@ -250,10 +249,11 @@ async def _validate_main(flow, user_input: dict[str, Any]) -> dict[str, str]:
 
 class NoxcastConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 8              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
+    MINOR_VERSION = 9              # 1.2: Open-Meteo is the only weather source, 1.3: own weather entity,
                                    # 1.4: discontinued ICON models replaced, 1.5: systems, 1.6: one entry per
                                    # system with its parts inside, 1.7: feed-in deviation per system,
-                                   # 1.8: the household's old state-of-charge sensors gone (migrations in __init__)
+                                   # 1.8: the household's old state-of-charge sensors gone, 1.9: the household's
+                                   # "full" level gone (migrations in __init__)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -498,7 +498,7 @@ class NoxcastOptionsFlow(OptionsFlow):
 
 # the battery form: what is needed on top, the rest in sections that open when they hold a value
 BATTERY_SECTIONS = ("limits", "power")
-BATTERY_DEFAULTS = {CONF_MAX_SOC: 100, CONF_MIN_SOC: 0, CONF_RESERVE: 0}
+BATTERY_DEFAULTS = {CONF_MAX_SOC: 100, CONF_FULL_MARGIN: DEFAULT_FULL_MARGIN, CONF_MIN_SOC: 0, CONF_RESERVE: 0}
 
 
 def _battery_schema(d: dict[str, Any], choices: dict[str, str]) -> vol.Schema:
@@ -509,6 +509,8 @@ def _battery_schema(d: dict[str, Any], choices: dict[str, str]) -> vol.Schema:
     limits = dict([
         (vol.Required(CONF_MAX_SOC, default=d.get(CONF_MAX_SOC, 100)), selector.NumberSelector(pct)),
         _entity(d, CONF_MAX_SOC_ENTITY, soc_entity),
+        (vol.Required(CONF_FULL_MARGIN, default=d.get(CONF_FULL_MARGIN, DEFAULT_FULL_MARGIN)),
+         selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=1, unit_of_measurement="%", mode=box))),
         (vol.Required(CONF_MIN_SOC, default=d.get(CONF_MIN_SOC, 0)), selector.NumberSelector(pct)),
         _entity(d, CONF_MIN_SOC_ENTITY, soc_entity),
         (vol.Required(CONF_RESERVE, default=d.get(CONF_RESERVE, 0)),

@@ -50,6 +50,7 @@ CONF_MIN_SOC_ENTITY = "min_soc_entity"
 CONF_RESERVE = "reserve"                  # percent points above min_soc where discharging stops in practice
 CONF_FULL_MARGIN = "full_margin"          # percent points below max_soc from which it counts as full in learning
 DEFAULT_FULL_MARGIN = 3                   # near the top a battery charges slower and PV is curtailed (backtest, 0.7.0)
+MAX_FULL_MARGIN = 20                      # the most the battery form allows
 CONF_COUPLING = "coupling"                # dc / ac
 COUPLING_OPTIONS = ("dc", "ac")
 CONF_EFFICIENCY = "efficiency"            # round trip %, empty = default of the coupling

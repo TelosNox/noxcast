@@ -701,6 +701,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self.learning_changes = await self.hass.async_add_executor_job(
                     self._learning_changes, previous, learned, dt_util.now().year)
             except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
+                self.learning_changes = {}        # the last comparison is a run older now: not shown as the last run
                 _LOGGER.exception("Noxcast could not compare the learned state with the last run")
             try:
                 # only the window's days of the 5-minute archive, which holds years; expanded in the executor

@@ -340,8 +340,14 @@ Ausgangsgrenze.
 
 Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
 nur den Akku laden. Teilsysteme mit Akkus unter einer gemeinsamen Grenze geben zusammen höchstens diese Grenze ab.
-Alle Akkus werden weiter als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet); eine
-Prognose je System, das sich nicht mit anderen ausgleicht, folgt in einer späteren Version.
+Die Akkus eines Systems werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet).
+Getrennte Systeme, jedes mit eigenem Wechselrichter am Haus, werden je für sich simuliert: Jedes lädt aus seiner
+eigenen PV, ein Akku am Hausnetz auch aus dem, was die anderen abgeben. Den Verbrauch teilen sie sich gleichmäßig,
+jedes höchstens bis zu seiner Entladeleistung; was eines nicht liefern kann, übernehmen die anderen. Ein System mit
+*feste Leistung* liefert sie, egal wie viel das Haus bezieht. *Akku voll um*, *Akku leer um* und *Akku höchster
+Stand* zeigen dann das früheste System (den Ladestand: alle Akkus nach Kapazität gewichtet) und nennen jedes
+System im Attribut `systems`; der Reiter *Akku & Überschuss* zeigt sie je System. Der Reiter *Anlage* zeigt die gleichmäßige
+Aufteilung als vereinfacht, da sich nicht jedes System so einpendelt.
 
 Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;
 mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
@@ -750,8 +756,8 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
   gemeinsamen Grenze: Ihre PV und Akkus geben zusammen höchstens die Grenze ab.
 - Überschuss ohne Platz geht ins Netz, soweit die Einspeisevorgabe es erlaubt: bis zur Einspeisegrenze des Haushalts,
   bei Nulleinspeisung nichts; der Rest wird abgeregelt, ebenso PV über einer Ausgangsgrenze. Ein System mit eigener
-  Abweichung (speist immer oder nie ein) zählt mit seinem Anteil an der PV der Stunde, da alle Akkus ein Speicher
-  sind; was es ohnehin einspeist, zählt gegen die Grenze des Haushalts. Die Grenze gilt für die mittlere Leistung
+  Abweichung (speist immer oder nie ein) zählt mit seinem Anteil an der PV der Stunde; was es ohnehin einspeist,
+  zählt gegen die Grenze des Haushalts. Die Grenze gilt für die mittlere Leistung
   der Stunde: Kurze Spitzen darüber zählen nicht als abgeregelt.
 - Dieselbe Simulation läuft auch für die nächsten 48 Stunden, über den Ladebeginn hinaus, so weit die PV-Prognose
   reicht: *Akku tiefster Stand (48 h)*, für Tarif- und Ladeplaner.

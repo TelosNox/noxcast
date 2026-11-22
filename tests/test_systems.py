@@ -395,3 +395,21 @@ def test_feed_in_rule_for_the_battery_forecast():
     status = {(e["node"], e["setting"]): e["status"]
               for e in sy.effects(house, sy.systems_of(with_battery), with_battery)}
     assert status[("house", "feed_in")] == status[("h", "feed_in_rule")] == sy.SIMPLIFIED
+
+
+def test_batteries_of_one_system_are_one_storage_and_separate_systems_share_the_load():
+    subs = {"s": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "load"}),
+            "u": ("system", "Ultra", {"name": "Ultra", "template": "pv_battery", "parent": "s"}),
+            "v": ("system", "Pro", {"name": "Pro", "template": "pv_battery", "parent": "s"}),
+            "bu": ("battery", "Ultra battery", {"system": "u"}), "bv": ("battery", "Pro battery", {"system": "v"})}
+    rows = {(e["node"], e["setting"]): e for e in sy.effects({}, sy.systems_of(subs), subs)}
+    assert rows[("s", "one_storage")]["status"] == sy.SIMPLIFIED and rows[("s", "one_storage")]["value"] == 2
+    assert ("house", "battery_split") not in rows
+    balanced = {**subs, "s": ("system", "Stream", {**subs["s"][2], "balance": True})}
+    assert {(e["node"], e["setting"]): e for e in sy.effects({}, sy.systems_of(balanced), balanced)}[
+        ("s", "one_storage")]["status"] == sy.EXACT
+    apart = {**subs, "h": ("system", "House battery", {"name": "House battery", "template": "ac_battery"}),
+             "bh": ("battery", "House battery", {"system": "h"})}
+    rows = {(e["node"], e["setting"]): e for e in sy.effects({}, sy.systems_of(apart), apart)}
+    assert rows[("house", "battery_split")] == {"node": "house", "setting": "battery_split", "status": sy.SIMPLIFIED,
+                                                "value": 2}

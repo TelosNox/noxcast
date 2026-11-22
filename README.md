@@ -334,8 +334,13 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 
 With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
 above it can only charge the battery. Subsystems with batteries under a shared limit deliver together at most that
-limit. All batteries are still simulated as one storage (capacities add up, limits weighted by capacity); one
-forecast per system that does not balance with others follows in a later version.
+limit. The batteries of one system are simulated as one storage (capacities add up, limits weighted by capacity).
+Separate systems, each with its own inverter at the house, are simulated each on its own: each charges from its own
+PV, a battery at the house grid also from what the others send out. They share the consumption evenly, each up to
+its discharge power; what one cannot give, the others take over. A system with *fixed power* delivers it whatever
+the house draws. *Battery full at*, *Battery empty at* and *Battery highest level* then show the earliest system (the
+level: all batteries weighted by capacity) and list each system in the `systems` attribute; the *Battery & surplus* tab shows
+them per system. The *Installation* tab shows the even split as simplified, since not every system settles that way.
 
 Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
 *covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
@@ -734,8 +739,8 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
   shared limit: their PV and batteries together deliver at most the limit.
 - Surplus without room goes into the grid as far as the feed-in rule allows: up to the household's feed-in limit,
   nothing under zero export; the rest is curtailed, as is PV above an output limit. A system with a deviation of its
-  own (always or never feeds in) counts with its share of the hour's PV, since all batteries are one storage; what
-  it feeds in anyway counts against the household's limit. The limit is compared with the hour's mean power: short
+  own (always or never feeds in) counts with its share of the hour's PV; what it feeds in anyway counts against the
+  household's limit. The limit is compared with the hour's mean power: short
   peaks above it do not count as curtailed.
 - The same simulation also runs for the next 48 hours, past the charge start, as far as the PV forecast reaches:
   *Battery lowest level (48 h)*, for tariff and charge planners.

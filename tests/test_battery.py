@@ -261,3 +261,77 @@ def test_outlook_runs_48_hours_past_the_charge_start_but_not_past_the_pv_forecas
     short = bt.day_simulation([b], pv, load_, None, now, 24 * H, ahead=(load_, 40 * H))
     assert short["ahead"].points[-1][0] == 40 * H
     assert "ahead" not in bt.day_simulation([b], pv, load_, None, now, 24 * H)
+
+
+def test_one_system_full_loses_its_surplus_while_the_other_still_charges():
+    # roof: small battery, much PV; balcony: big battery, little PV. As one storage the balcony's room would
+    # take the roof's surplus; as separate systems it cannot reach it
+    roof = bt.Battery(1000, 0.5, efficiency=1.0, arrays=("r",), unit="roof")
+    balcony = bt.Battery(5000, 0.2, efficiency=1.0, arrays=("b",), unit="balcony")
+    arrays = {"r": flat(1500, [11, 12]), "b": flat(300, [11, 12])}
+    pv, load_ = flat(1800, [11, 12]), flat(300, [11, 12])
+    out = bt.day_simulation([roof, balcony], pv, load_, None, 11 * H, 13 * H, arrays)
+    per, sim = out["systems"], out["sim"]
+    # the load is covered by both systems' PV in proportion: roof 250, balcony 50 Wh per hour
+    assert per["roof"].full_at is not None and abs(per["roof"].lost_wh - (2 * 1250 - 500)) < 1e-6
+    assert per["balcony"].full_at is None and abs(per["balcony"].charged_wh - 2 * 250) < 1e-6
+    assert abs(sim.lost_wh - per["roof"].lost_wh) < 1e-6 and sim.full_at == per["roof"].full_at
+    assert out["lost_full"] and min(out["lost_full"]) == 11 * H
+    one = bt.day_simulation([bt.Battery(1000, 0.5, efficiency=1.0), bt.Battery(5000, 0.2, efficiency=1.0)],
+                            pv, load_, None, 11 * H, 13 * H)
+    assert one["sim"].lost_wh == 0 and "systems" not in one
+
+
+def test_systems_share_the_discharge_evenly_up_to_what_each_can_give():
+    a = bt.Battery(5000, 0.5, efficiency=1.0, max_discharge_w=200, unit="a")
+    b = bt.Battery(5000, 0.5, efficiency=1.0, unit="b")
+    sims, whole = bt.simulate_units(bt.units_of([a, b], {}, [20 * H], False), {}, flat(600, [20]), 20 * H, 21 * H)
+    assert abs(sims["a"].hours[20 * H]["battery"] + 200) < 1e-6 and abs(sims["b"].hours[20 * H]["battery"] + 400) < 1e-6
+    assert whole.grid_wh == 0 and abs(whole.hours[20 * H]["soc"] - 0.44) < 1e-6
+    # one runs empty: the other takes over, then the grid
+    low = bt.Battery(5000, 0.02, efficiency=1.0, unit="a")
+    sims, whole = bt.simulate_units(bt.units_of([low, b], {}, [20 * H], False), {}, flat(600, [20]), 20 * H, 21 * H)
+    assert abs(sims["a"].hours[20 * H]["battery"] + 100) < 1e-6 and abs(sims["b"].hours[20 * H]["battery"] + 500) < 1e-6
+    assert sims["a"].empty_at is None and whole.grid_wh == 0
+    tiny = bt.Battery(1000, 0.2, efficiency=1.0, unit="b")
+    sims, whole = bt.simulate_units(bt.units_of([low, tiny], {}, [20 * H], False), {}, flat(600, [20]), 20 * H, 21 * H)
+    assert abs(whole.grid_wh - 600 + 100 + 200) < 1e-6 and sims["a"].empty_at == sims["b"].empty_at == 21 * H
+
+
+def test_a_fixed_power_system_delivers_it_whatever_the_load():
+    fixed = bt.Battery(2000, 0.5, efficiency=1.0, unit="f", fixed_w=200)
+    other = bt.Battery(5000, 0.5, efficiency=1.0, unit="o")
+    sims, whole = bt.simulate_units(bt.units_of([fixed, other], {}, [2 * H], False), {}, flat(100, [2]), 2 * H, 3 * H)
+    assert abs(sims["f"].hours[2 * H]["battery"] + 200) < 1e-6 and sims["o"].hours[2 * H]["battery"] == 0
+    assert abs(whole.lost_wh - 100) < 1e-6 and abs(whole.fed_in_wh - 100) < 1e-6   # above the load: out to the grid
+
+
+def test_a_battery_at_the_house_grid_charges_from_what_the_others_send_out():
+    pv_sys = bt.Battery(1000, 1.0, efficiency=1.0, arrays=("r",), unit="roof")
+    ac = bt.Battery(2000, 0.5, efficiency=1.0, unit="ac", from_house=True)
+    arrays = {"r": flat(1000, [12])}
+    sims, whole = bt.simulate_units(bt.units_of([pv_sys, ac], arrays, [12 * H], True), flat(1000, [12]),
+                                    flat(200, [12]), 12 * H, 13 * H)
+    assert abs(sims["roof"].lost_wh - 800) < 1e-6 and abs(sims["ac"].charged_wh - 800) < 1e-6
+    assert whole.lost_wh == 0 and abs(whole.hours[12 * H]["soc"] - (1000 + 1800) / 3000) < 1e-4
+
+
+def test_pv_of_systems_without_a_battery_covers_the_load_first_and_counts_as_lost_for_the_house():
+    a = bt.Battery(1000, 1.0, efficiency=1.0, unit="a")
+    b = bt.Battery(1000, 1.0, efficiency=1.0, unit="b")
+    sims, whole = bt.simulate_units(bt.units_of([a, b], {}, [12 * H], True), flat(500, [12]), flat(200, [12]),
+                                    12 * H, 13 * H)
+    assert sims["a"].lost_wh == sims["b"].lost_wh == 0
+    assert abs(whole.lost_wh - 300) < 1e-6 and abs(whole.hours[12 * H]["surplus"] - 300) < 1e-6
+
+
+def test_batteries_of_one_system_stay_one_storage():
+    a = bt.Battery(1000, 0.5, efficiency=1.0, unit="s")
+    b = bt.Battery(5000, 0.2, efficiency=1.0, unit="s")
+    pv, load_ = flat(1800, [11, 12]), flat(300, [11, 12])
+    same = bt.day_simulation([a, b], pv, load_, None, 11 * H, 13 * H)
+    plain = bt.day_simulation([bt.Battery(1000, 0.5, efficiency=1.0), bt.Battery(5000, 0.2, efficiency=1.0)],
+                              pv, load_, None, 11 * H, 13 * H)
+    assert "systems" not in same and same["sim"].hours == plain["sim"].hours
+    names = {"s": "Roof"}
+    assert bt.system_figures(same, names) == []

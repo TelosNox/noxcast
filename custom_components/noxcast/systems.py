@@ -667,12 +667,17 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         _rule_value(household, subs))
     if limited and limit_w and export_limited_arrays(household, systems):
         add("house", "limit_learning", SIMPLIFIED if grid else NOT_YET, round(limit_w) if grid else None)
-    # every battery is simulated in one storage: exact only where they all balance in one system
-    with_battery = [s for s in systems.values() if s.battery]
-    if len(with_battery) > 1:
-        parents = {s.parent for s in with_battery}
-        one = len(parents) == 1 and None not in parents and systems[next(iter(parents))].get(CONF_BALANCE)
-        add("house", "one_storage", EXACT if one else SIMPLIFIED, len(with_battery))
+    # the batteries of one system are simulated as one storage: exact only where they balance; separate systems
+    # each on their own, the load shared evenly between them, which is how most of them settle but not all
+    by_system: dict[str, int] = {}
+    for s in systems.values():
+        if s.battery:
+            by_system[s.parent or s.id] = by_system.get(s.parent or s.id, 0) + 1
+    for top, n in sorted(by_system.items()):
+        if n > 1:
+            add(top, "one_storage", EXACT if systems[top].get(CONF_BALANCE) else SIMPLIFIED, n)
+    if len(by_system) > 1:
+        add("house", "battery_split", SIMPLIFIED, len(by_system))
     for aid, (_, d) in sorted(arrays.items()):
         if d.get(CONF_SENSOR_LIMITS):
             add(aid, "sensor_limit", EXACT, sorted(set(d[CONF_SENSOR_LIMITS].values())))

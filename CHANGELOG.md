@@ -11,10 +11,16 @@ breaking changes.
 - *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
   per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
   only in the diagnostics download.
+- The battery forecast simulates separate systems each on its own: each charges from its own PV, so a full balcony
+  battery loses its surplus even while the house battery still has room, and a battery at the house grid charges
+  from what the others send out. They share the consumption evenly, each up to its discharge power, and a system
+  with *fixed power* delivers it whatever the house draws. *Battery full at* and *Battery empty at* show the earliest
+  system, and the `systems` attribute of these sensors and of *Battery highest level* lists each system; the
+  *Battery & surplus* tab shows them per system. Batteries of one system stay one storage as before.
 - *Fixed power* now counts: it caps the PV forecast of a system without a battery like an output limit, and learning
   counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
   fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab
-  shows the setting as computed (with a battery as simplified: the battery forecast still follows the house load).
+  shows the setting as computed (with a battery as simplified).
 - The shading map under *Learned* has a layer *Certainty*: per cell whether its value is sure, fairly sure, unsure
   or derived, and on click how many hours it rests on, where it comes from and how far those hours scatter. It fills
   after the next nightly learning run.

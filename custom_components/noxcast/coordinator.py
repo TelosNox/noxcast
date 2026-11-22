@@ -993,7 +993,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 max_discharge_w=float(d[CONF_MAX_DISCHARGE]) if d.get(CONF_MAX_DISCHARGE) else None,
                 output_w=float(system.get(CONF_OUTPUT_LIMIT)) if system and system.get(CONF_OUTPUT_LIMIT) else None,
                 arrays=system.arrays if system and not house else (),
-                shared=self._shared_cap(system)))
+                shared=self._shared_cap(system),
+                # the top-level system: its batteries are one storage, separate systems each their own
+                unit=(system.parent or system.id) if system else None,
+                fixed_w=sy.fixed_power(self.systems[system.parent or system.id]) if system else None,
+                from_house=house))
         return units
 
     def _shared_cap(self, system: sy.System | None) -> tuple[str, float, tuple[str, ...]] | None:
@@ -1500,6 +1504,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         await self.hass.async_add_executor_job(
             fc.surplus, result, self.site, self.band, self._battery_units(), runs, now, day_end, self.feed_in,
             (load.hours, horizon) if load is not None else None)
+        if result.battery and result.battery.get("systems"):
+            result.battery["system_names"] = {sid: s.name for sid, s in self.systems.items()}
         self._log_battery(result.battery, local_now, now)
 
         alt = {m: ({w.start: w.ghi for w in hours}, alt_forecasts[m]) for m, hours in models.items()}

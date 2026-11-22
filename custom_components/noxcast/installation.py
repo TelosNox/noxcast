@@ -35,8 +35,7 @@ from typing import Any
 
 from . import systems as sy
 from .const import (
-    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
-    CONF_SOC_SENSOR,
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_SOC_SENSOR,
 )
 
 HOUR = 3600.0
@@ -391,7 +390,7 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
         rest = tuple(s for s in dict.fromkeys(others.get(a, ())) if s != store)
         parts = [ceilings.get(x) for x in systems[sid].arrays]
         ceiling = sum(p for p in parts if p is not None) if parts and None not in parts else None
-        limit = systems[sid].get(CONF_OUTPUT_LIMIT)
+        limit = next((w for p, _, w in sy.ceiling_groups(systems, sid) if p is None), None)
         out[a] = Reach((store,), rest,
                        own_charge=store.charger is None or ceiling is None or ceiling > store.charger.max_w,
                        overflow=bool(limit) and (ceiling is None or ceiling > float(limit)))
@@ -399,20 +398,18 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
 
 
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
-    """The output limits that are fixed: no battery in the system or its subsystems. A limit per phase holds for
-    each phase's subsystems (systems.limit_groups), fixed where none of them has a battery."""
+    """The output limits and fixed powers that are fixed caps: no battery in the system or its subsystems
+    (systems.ceiling_groups). A limit per phase holds for each phase's subsystems, fixed where none of them has a
+    battery."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit:
-            continue
-        for phase, tree in sy.limit_groups(systems, s.id):
+        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
             if any(x.battery for x in tree):
                 continue
             members = tuple(a for x in tree for a in x.arrays if a in known)
             if members:
-                out.append(Cap(s.id, members, float(limit), phase))
+                out.append(Cap(s.id, members, limit, phase))
     return tuple(out)
 
 
@@ -423,17 +420,14 @@ def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit:
-            continue
-        for phase, tree in sy.limit_groups(systems, s.id):
+        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
             found = [batteries.get(x.battery) or {} for x in tree if x.battery]
             if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
                 continue
             members = tuple(a for x in tree for a in x.arrays if a in known)
             if members:
                 meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
-                out.append(Outlet(s.id, members, float(limit), meters, phase))
+                out.append(Outlet(s.id, members, limit, meters, phase))
     return tuple(out)
 
 

@@ -1146,7 +1146,7 @@ scorecard. The open work is tracked in GitHub issues:
    and model.
 2. **Light model** (#249): C1, C2 and C3 were falsified on real data, and the cause of the low-sun error is still
    open; C6 (the band's P10 / P90 as ranks) is built, C5, C7 and C8 follow on the hindcast.
-3. **Installation model, rest** (#250): battery forecast per independent system, fixed power, balancing.
+3. **Installation model, rest** (#250): battery forecast per independent system, balancing. Fixed power counts since 0.7.0 as a ceiling like the output limit (`systems.ceiling_groups`): a fixed cap without a battery, an outlet with one; the battery forecast still follows the house load.
 4. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.
 

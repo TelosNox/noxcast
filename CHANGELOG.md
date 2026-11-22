@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- *Fixed power* now counts: it caps the PV forecast of a system without a battery like an output limit, and learning
+  counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
+  fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab
+  shows the setting as computed (with a battery as simplified: the battery forecast still follows the house load).
+
 ## [0.6.0] - 2026-11-22
 
 All changes since 0.5.0: the pre-releases 0.6.0b1 to 0.6.0b3 (their single steps are listed in

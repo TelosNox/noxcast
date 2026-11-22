@@ -491,12 +491,12 @@ def charges_from_house(systems: Mapping[str, System], sid: str | None) -> bool:
 
 def charge_curtails(systems: Mapping[str, System], sid: str) -> bool:
     """A battery charging at its maximum power curtails PV only where the rest cannot go out: its system follows
-    the house load or an output limit holds above it (its own or its system's). The household's zero export does
+    the house load or delivers a fixed power, or an output limit holds above it (its own or its system's). The household's zero export does
     not count on its own: what holds the export at zero is the system's regulation, and one that delivers
     everything lets the rest go out."""
     s = systems[sid]
     above = [s, *([systems[s.parent]] if s.parent is not None else [])]
-    return behaviour(systems, sid, CONF_REGULATION) == "load" or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
+    return behaviour(systems, sid, CONF_REGULATION) in ("load", "fixed") or any(x.get(CONF_OUTPUT_LIMIT) for x in above)
 
 
 def coordinated(systems: Mapping[str, System], sid: str) -> bool:
@@ -553,6 +553,27 @@ def _share_limit(parent: System, a: System, b: System) -> bool:
 
 # How far Noxcast computes each setting (shown in the Installation tab): exact, simplified (with how) or not yet.
 EXACT, SIMPLIFIED, NOT_YET = "exact", "simplified", "not_yet"
+
+
+def fixed_power(s: System) -> float | None:
+    """The power a system set to fixed power delivers at most (W); None for another regulation. It is set on the
+    system, whose control holds its subsystems together at it."""
+    w = s.get(CONF_FIXED_POWER) if s.get(CONF_REGULATION) == "fixed" else None
+    return float(w) if w else None
+
+
+def ceiling_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | None, tuple[System, ...], float]]:
+    """The fixed ceilings on a system's output, as (phase, the systems below it, W): the output limit
+    (limit_groups) and the fixed power, which holds the output at it as a limit does. Both on the whole system: the
+    tighter one. A limit per phase stays per phase, and the fixed power holds for the whole system on top."""
+    s = systems[sid]
+    limit = float(s.get(CONF_OUTPUT_LIMIT) or 0) or None
+    fixed = fixed_power(s)
+    whole = (s, *(systems[c] for c in s.children))
+    if limit and s.get(CONF_LIMIT_PER_PHASE):
+        return [(p, tree, limit) for p, tree in limit_groups(systems, sid)] + ([(None, whole, fixed)] if fixed else [])
+    found = [w for w in (limit, fixed) if w]
+    return [(None, whole, min(found))] if found else []
 
 
 def limit_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | None, tuple[System, ...]]]:
@@ -657,10 +678,16 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
             # following the load: learning leaves out the hours with a full battery it coordinates with; without
             # one, hours in which the household stopped importing count as "at least" (needs the grid sensor)
             follows = regulation == "load" and (coordinated(systems, sid) or bool(household.get(CONF_GRID)))
-            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if follows else NOT_YET,
+            # a fixed power holds the output as a limit does (ceiling_groups): exact without a battery; with one it
+            # counts in learning as an output limit with a battery, while the battery forecast still follows the
+            # house load
+            fixed = SIMPLIFIED if any(x.battery for x in below) or (
+                sub and any(systems[c].battery for c in systems[s.parent].children)) else EXACT
+            add(sid, "regulation", EXACT if regulation == "all" else SIMPLIFIED if follows else
+                fixed if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER) else NOT_YET,
                 regulation, sub)
-        if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER):
-            add(sid, "fixed_power", NOT_YET, behaviour(systems, sid, CONF_FIXED_POWER), sub)
+            if regulation == "fixed" and behaviour(systems, sid, CONF_FIXED_POWER):
+                add(sid, "fixed_power", fixed, behaviour(systems, sid, CONF_FIXED_POWER), sub)
         # the feed-in rule it follows: the household's, or its own deviation (a subsystem: its system's).
         # Feeding in what is left is what Noxcast has always assumed; holding it at zero counts through the
         # battery whose full hours learning leaves out; a limit through the hours at it (house row limit_learning)

@@ -153,6 +153,8 @@ For the dashboard: *Add card* → *Noxcast*.
 - **Efficiency above 100 % or *Check* on the array:** the configuration does not fit the measurements. Most often
   the peak power is too low, the azimuth is mirrored (east and west swapped), or a sensor is missing from the
   array. *Learned* → the array → *Does the configuration fit?* says what to check.
+- **More PV than in the energy dashboard, on days the battery charges from the grid:** the power sensor measures the
+  output of an inverter with a battery instead of PV only. Choose a sensor of the PV or MPPT power.
 - **Shading map mostly grey:** not enough clear hours yet. It fills over the weeks.
 - **Forecast too high on days the battery was full:** enter the battery with its system, then call the service
   `noxcast.relearn`.
@@ -277,7 +279,7 @@ An array is what is measured together, usually one MPPT input or one inverter.
 | Field | Meaning |
 |---|---|
 | Belongs to | The system the array sits in. Empty: the system whose menu it was opened from |
-| Power sensors | One or more; they are summed |
+| Power sensors | One or more; they are summed. Only what the modules generate (PV or MPPT power), not the output of an inverter with a battery behind it: that also counts what the battery delivers, including energy charged from the grid, as sun. If a sensor shows power while the sun is down, Noxcast reports it under [Repairs](#repairs) |
 | Tilt, azimuth, peak power | Of the modules (azimuth 180° = south) |
 | Further orientations 2–4 | Optional: modules on the same sensors that face another way (e.g. east + south + west on one input, vertical east + west). Each with tilt, azimuth and its own peak power; the array's peak is the sum |
 | Valid since (*Advanced*) | Optional: ignore history before this date (e.g. after a rebuild) |
@@ -558,7 +560,7 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | No PV array yet | The integration is set up, but no PV array is added |
 | Sensors missing | A configured entity does not exist (renamed or removed) |
 | No weather forecast | Open-Meteo could not be reached for more than a day |
-| Configuration does not fit | A PV array delivers more than its configured modules can: peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
+| Configuration does not fit | A PV array delivers more than its configured modules can, or its sensor shows power while the sun is down (it measures more than PV, such as a battery behind the inverter): peak power, sensor, tilt or azimuth are probably wrong (the *Check* badge under *Learned*) |
 | Which PV arrays charge the battery? | A battery charges before the output of a device with PV, but no array belongs to its system (after the update: its former settings did not name its array). Choose its system in those arrays, or change the system to *Battery at the house grid*. Until then it computes as before |
 | Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at or near its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
 | System: output seems to be limited | The PV arrays of a system without battery and without *Output limit* stayed flat together at or near their highest sum on at least 3 days of the last 60, in the 5-minute values, at times when the learned clear sky would have changed that sum and lay clearly above it (east and west on one inverter, where no sensor is flat alone). Not for a system that covers the house load or delivers a fixed power. Noxcast suggests that maximum as the system's output limit, as the sensors measure it: *Set output limit*, *Other value* (both write it into the system's settings) or *There is no limit*, as above |

@@ -188,6 +188,7 @@
             "system": "Belongs to"
           },
           "data_description": {
+            "power_sensors": "Only what the modules generate (PV or MPPT power), several are added up. Not the output of an inverter with a battery behind it: it also counts what the battery delivers, including energy charged from the grid, as sun.",
             "tilt": "0° = horizontal, 90° = vertical.",
             "azimuth": "Compass direction the modules face: 90° east, 180° south, 270° west.",
             "peak_power": "Sum of module nameplate power. With further orientations: only the modules of this first orientation.",

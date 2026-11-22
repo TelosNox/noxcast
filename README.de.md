@@ -154,6 +154,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 - **Wirkungsgrad über 100 % oder *Prüfen* an der PV-Gruppe:** Die Konfiguration passt nicht zu den Messwerten. Meist
   ist die Spitzenleistung zu niedrig, der Azimut gespiegelt (Ost und West vertauscht) oder ein Sensor fehlt in der
   PV-Gruppe. *Gelerntes* → die PV-Gruppe → *Passt die Konfiguration?* sagt, was zu prüfen ist.
+- **Mehr PV als im Energie-Dashboard, an Tagen mit Akkuladung aus dem Netz:** Der Leistungssensor misst die Ausgangsleistung
+  eines Wechselrichters mit Akku statt nur die PV. Einen Sensor der PV- oder MPPT-Leistung wählen.
 - **Schattenkarte größtenteils grau:** noch zu wenige klare Stunden. Sie füllt sich über die Wochen.
 - **Prognose zu hoch an Tagen mit vollem Akku:** den Akku mit seinem System eintragen, dann den Dienst
   `noxcast.relearn` aufrufen.
@@ -280,7 +282,7 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 | Feld | Bedeutung |
 |---|---|
 | Gehört zu | Das System, in dem die PV-Gruppe steckt. Leer: das System, aus dessen Menü sie geöffnet wurde |
-| Leistungssensoren | Einer oder mehrere; sie werden addiert |
+| Leistungssensoren | Einer oder mehrere; sie werden addiert. Nur was die Module erzeugen (PV- oder MPPT-Leistung), nicht die Ausgangsleistung eines Wechselrichters mit Akku dahinter: Sie zählt auch, was der Akku abgibt, samt Strom aus dem Netz, als Sonne. Zeigt ein Sensor Leistung, während die Sonne untergegangen ist, meldet Noxcast das unter [Reparaturen](#reparaturen) |
 | Neigung, Azimut, Spitzenleistung | Der Module (Azimut 180° = Süd) |
 | Weitere Ausrichtung 2–4 | Optional: Module an denselben Sensoren, die in eine andere Richtung zeigen (z. B. Ost + Süd + West an einem Eingang, senkrecht Ost + West). Jede mit Neigung, Azimut und eigener Spitzenleistung; die Spitzenleistung der PV-Gruppe ist die Summe |
 | Konfiguration gültig seit (*Erweitert*) | Optional: Verlauf vor diesem Datum ignorieren (z. B. nach einem Umbau) |
@@ -568,7 +570,7 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Noch keine PV-Gruppe | Die Integration ist eingerichtet, aber keine PV-Gruppe hinzugefügt |
 | Sensoren fehlen | Eine eingetragene Entität existiert nicht (umbenannt oder entfernt) |
 | Keine Wettervorhersage | Open-Meteo war seit über einem Tag nicht erreichbar |
-| Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können: Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
+| Konfiguration passt nicht | Eine PV-Gruppe liefert mehr, als die eingetragenen Module können, oder ihr Sensor zeigt Leistung, während die Sonne untergegangen ist (er misst mehr als die PV, etwa einen Akku hinter dem Wechselrichter): Spitzenleistung, Sensor, Neigung oder Azimut stimmen wahrscheinlich nicht (das Badge *Prüfen* unter *Gelerntes*) |
 | Welche PV-Gruppen laden den Akku? | Ein Akku lädt vor dem Ausgang eines Geräts mit PV, aber zu seinem System gehört keine PV-Gruppe (nach dem Update: seine bisherigen Einstellungen nannten keine PV-Gruppe). In diesen PV-Gruppen sein System wählen, oder das System auf *Akku am Hausnetz* umstellen. Bis dahin rechnet es wie bisher |
 | Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 | System: Leistung scheint begrenzt | Die PV-Gruppen eines Systems ohne Akku und ohne *Ausgangsgrenze* blieben zusammen an mindestens 3 der letzten 60 Tage flach auf oder nahe ihrer höchsten Summe, in den 5-Minuten-Werten, zu Zeiten, in denen der gelernte klare Himmel diese Summe verändert hätte und deutlich darüber lag (Ost und West an einem Wechselrichter, wo kein Sensor allein flach bleibt). Nicht für ein System, das den Hausverbrauch deckt oder eine feste Leistung abgibt. Noxcast schlägt diesen Höchstwert als Ausgangsgrenze des Systems vor, so wie die Sensoren messen: *Ausgangsgrenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen des Systems ein) oder *Es gibt keine Grenze*, wie oben |

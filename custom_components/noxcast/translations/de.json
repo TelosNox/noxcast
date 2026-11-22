@@ -188,6 +188,7 @@
             "system": "Gehört zu"
           },
           "data_description": {
+            "power_sensors": "Nur was die Module erzeugen (PV- oder MPPT-Leistung), mehrere werden addiert. Nicht die Ausgangsleistung eines Wechselrichters mit Akku dahinter: Sie zählt auch, was der Akku abgibt, samt Strom aus dem Netz, als Sonne.",
             "tilt": "0° = waagerecht, 90° = senkrecht.",
             "azimuth": "Himmelsrichtung der Module: 90° Ost, 180° Süd, 270° West.",
             "peak_power": "Summe der Modul-Nennleistung. Mit weiteren Ausrichtungen: nur die Module dieser ersten Ausrichtung.",

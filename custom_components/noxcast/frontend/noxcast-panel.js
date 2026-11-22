@@ -71,7 +71,7 @@ const TEXT = {
       clearSame: "Klare Tage: unverändert", top: "Größte Änderungen", topRow: (r) => `Richtung ${r.azimuth[0]}–${r.azimuth[1]}°, Höhe ${r.elevation[0]}–${r.elevation[1]}°`,
       notLearned: "nicht gelernt", showMap: "Auf der Karte zeigen",
       help: "Vergleich mit dem Stand vor dem letzten nächtlichen Lernlauf. Werte ändern sich, weil neue Stunden dazukommen, alte aus dem Lernzeitraum fallen oder Tage ausgelassen werden. Der klare Tag rechnet jeden Monat mit dem alten und dem neuen Stand: So zeigt sich in kWh, was alle Änderungen zusammen ausmachen." },
-    certainty: { sure: "sicher", fair: "ziemlich sicher", unsure: "unsicher", derived: "abgeleitet" },
+    certainty: { sure: "sicher", fair: "ziemlich sicher", unsure: "unsicher", derived: "abgeleitet", pending: "noch nicht bewertet (nach dem nächsten Lernlauf)" },
     basis: "Grundlage", basisHours: (n) => `${n} Stunden`, spread: (v) => `Streuung ±${v}`,
     origin: { all: "alle Stunden", clear: "klare Stunden", fit: "angepasst an den Stundenverlauf", shaped: "aus den Nachbarfeldern", limit: "an der Leistungsgrenze" },
     efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
@@ -183,7 +183,7 @@ const TEXT = {
       clearSame: "Clear days: unchanged", top: "Largest changes", topRow: (r) => `Direction ${r.azimuth[0]}–${r.azimuth[1]}°, height ${r.elevation[0]}–${r.elevation[1]}°`,
       notLearned: "not learned", showMap: "Show on the map",
       help: "Compared with the state before the last nightly learning run. Values change because new hours come in, old ones drop out of the learning period or days are left out. The clear day computes each month with the old and the new state: that shows in kWh what all changes together amount to." },
-    certainty: { sure: "sure", fair: "fairly sure", unsure: "unsure", derived: "derived" },
+    certainty: { sure: "sure", fair: "fairly sure", unsure: "unsure", derived: "derived", pending: "not rated yet (after the next learning run)" },
     basis: "Basis", basisHours: (n) => `${n} hours`, spread: (v) => `spread ±${v}`,
     origin: { all: "all hours", clear: "clear hours", fit: "fitted to the hourly course", shaped: "from the neighbouring cells", limit: "at the power limit" },
     efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
@@ -275,7 +275,7 @@ const PALETTE = {
     free: [233, 243, 226], mid: [214, 120, 72], shade: [122, 24, 24],
     base: [243, 241, 236], refl: [[243, 241, 236], [244, 190, 120], [209, 104, 22]],
     dir: [[47, 111, 176], [243, 241, 236], [217, 130, 43]],
-    sure: { sure: "#2F7D4F", fair: "#8DC49B", unsure: "#E3A23B", derived: "#B7B9BD" },
+    sure: { sure: "#2F7D4F", fair: "#8DC49B", unsure: "#E3A23B", derived: "#B7B9BD", pending: "#DCE3EA" },
     change: [[122, 24, 24], [243, 241, 236], [47, 125, 79]],
     unlearned: "#D6D6D2", hatch: "rgba(255,255,255,0.6)", behind: "#EDEDEA", mapBg: "#FFFFFF", path: "#1D2125",
     pano: { sky: "#DCEAF7", partial: "#B9C6D2", obstacle: "#3F4246", facadeBg: "#9A9C9F", plane: "#6E7176", dot: "#9EA1A6", sun: "#E8890C",
@@ -285,7 +285,7 @@ const PALETTE = {
     free: [118, 168, 108], mid: [214, 132, 72], shade: [150, 36, 36],
     base: [66, 70, 74], refl: [[66, 70, 74], [176, 110, 50], [240, 150, 60]],
     dir: [[90, 150, 220], [66, 70, 74], [235, 150, 60]],
-    sure: { sure: "#4FB477", fair: "#2F6B45", unsure: "#D9952E", derived: "#5A5E63" },
+    sure: { sure: "#4FB477", fair: "#2F6B45", unsure: "#D9952E", derived: "#5A5E63", pending: "#3A4249" },
     change: [[190, 70, 70], [66, 70, 74], [79, 180, 119]],
     unlearned: "#34373A", hatch: "rgba(255,255,255,0.14)", behind: "#2B2D30", mapBg: "#1E2022", path: "#E4E6E8",
     pano: { sky: "#25313D", partial: "#3A4652", obstacle: "#C9CCD0", facadeBg: "#7C8085", plane: "#5A5E63", dot: "#7E8389", sun: "#F5A524",
@@ -731,7 +731,7 @@ class NoxcastPanel extends HTMLElement {
     if (c.kind === "night") return "transparent";
     if (layer === "refl") return scale(P.refl, c.refl / 0.06);
     if (layer === "dir") return scale(P.dir, (c.dir - 0.9) / 0.2);
-    if (layer === "sure") return c.sure ? P.sure[c.sure] : "url(#nx-hatch)";
+    if (layer === "sure") return P.sure[c.sure || "pending"];      // learned, but rated only by the next learning run
     if (layer === "change") return scale(P.change, ((c.change || 0) + 0.5));
     const t = c.shade;
     return rgb(t < 0.5 ? lerp(P.shade, P.mid, t / 0.5) : lerp(P.mid, P.free, (t - 0.5) / 0.5));
@@ -901,6 +901,7 @@ class NoxcastPanel extends HTMLElement {
 
   _renderArray(arr) {
     const t = this._t, s = this._state;
+    if (s.layer === "change" && !(arr.changes && !arr.changes.first)) s.layer = "shade";    // this array has no change layer
     const modeTabs = ["map", "grid", "pano"].map((m) => `<button role="tab" aria-selected="${s.mode === m}" class="tab ${s.mode === m ? "on" : ""}" data-action="mode" data-mode="${m}">${t[m]}</button>`).join("");
     const layerTabs = ["shade", "refl", "dir", "sure", ...(arr.changes && !arr.changes.first ? ["change"] : [])].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
     const main = s.mode === "map" ? `
@@ -1581,7 +1582,7 @@ class NoxcastPanel extends HTMLElement {
   _legend(layer, limit = false) {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
-    const items = layer === "sure" ? ["sure", "fair", "unsure", "derived"].map((k) => [P.sure[k], t.certainty[k]])
+    const items = layer === "sure" ? ["sure", "fair", "unsure", "derived", "pending"].map((k) => [P.sure[k], t.certainty[k]])
       : layer === "change" ? [[rgb(P.change[0]), `−0,5 ${t.darker}`], [rgb(P.change[1]), t.unchanged], [rgb(P.change[2]), `+0,5 ${t.lighter}`]]
       : layer === "refl" ? [[rgb(P.refl[0]), t.none], [rgb(P.refl[1]), "+3 %"], [rgb(P.refl[2]), "+6 %"]]
       : layer === "dir" ? [[rgb(P.dir[0]), `0,90 ${t.less}`], [rgb(P.dir[1]), "1,00"], [rgb(P.dir[2]), `1,10 ${t.more}`]]

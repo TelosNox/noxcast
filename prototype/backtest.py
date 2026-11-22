@@ -10,6 +10,9 @@ JSON. To compare two model versions, run this script from both checkouts on the 
               id (the array id used in the archive), heating, temp_coeff (per K), valid_since (ISO date),
               limits ({sensor: fixed limit in W}, e.g. the inputs of an inverter) and
               extra ([{tilt, azimuth, peak_w}]; peak_w of the array is that of its first plane).
+              Optionally output_limits: [{arrays: [array ids], limit_w}], the fixed output limits of systems
+              without a battery (installation.Cap), one entry per phase where a limit holds per phase: learning
+              counts the hours at them as lower bounds, and both backtests cap the forecast at them.
 --statistics  recorder/statistics_during_period answer: {sensor: [{start (ms), mean, min, max}]}, power in W.
 --satellite   Open-Meteo archive answer (or its "hourly" block) with shortwave_radiation; optional.
 --temperature Open-Meteo archive answer (or its "hourly" block) with temperature_2m and optionally snowfall
@@ -25,6 +28,7 @@ All these files hold personal data and stay out of the repository (*.local.json,
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib
 import json
 import pathlib
@@ -118,6 +122,13 @@ def main() -> None:
     tz = ZoneInfo(loc.get("timezone", "UTC"))
     site = solar.Site(loc["latitude"], loc["longitude"], loc.get("altitude", 0.0))
     arrays = dict(_array(a, tz) for a in config["arrays"])
+    caps = [(tuple(c["arrays"]), float(c["limit_w"])) for c in config.get("output_limits", ())]
+    arrays = {sid: dataclasses.replace(arr, caps=tuple((tuple(s for a in members for s in arrays[a].sensors), w)
+                                                       for members, w in caps if sid in members))
+              for sid, arr in arrays.items()}
+    # as installation.limited_arrays and forecast_caps: a limit over one array alone caps it, the others the sum
+    limits = {sid: arr.limit_w for sid, arr in arrays.items() if arr.limit_w is not None}
+    shared = [(members, w) for members, w in caps if len(members) > 1]
     raw = json.loads(pathlib.Path(args.statistics).read_text(encoding="utf-8"))
     curtailment = config.get("curtailment", {})
     socs = _statistics({s: raw[s] for s in curtailment.get("soc_sensors", []) if s in raw}, "max")
@@ -140,7 +151,8 @@ def main() -> None:
     start = time.monotonic()
     learned = ln.learn_arrays(site, arrays, history, now, soc_full, exclusions)
     learning = time.monotonic() - start
-    result = backtest.run(site, arrays, learned, history, days, now, soc_full, exclusions, tz)
+    result = backtest.run(site, arrays, learned, history, days, now, soc_full, exclusions, tz, limits=limits,
+                          caps=shared)
     if args.fine:
         fine = json.loads(pathlib.Path(args.fine).read_text(encoding="utf-8"))
         fine = fine.get("data", fine).get("days", {})

@@ -88,6 +88,24 @@ def test_baseline_shows_what_a_real_shadow_map_contributes():
     assert abs(r["holdout"]["hour_error"] - r["in_sample"]["hour_error"]) < 0.02
 
 
+def test_holdout_caps_the_forecast_at_a_shared_limit_like_the_live_one():
+    """Two arrays on one phase share 800 W: the hours at it are lower bounds in learning, and the measured value
+    there is the cut output. Scored uncapped, the right model would lose to one that learned the cut as shade."""
+    ts = hours()
+    sat = {t: model.clearsky_weather(SITE, t).ghi for t in ts}
+    fc = model.forecast(SITE, GEO, TRUE, [model.WeatherHour(t, sat[t], temp=15.0) for t in ts])
+    cut = {t: min(fc[t], 400.0) for t in ts}                 # both alike: each gets half of the 800 W
+    power = {"pv1": cut, "pv2": dict(cut)}
+    history = ln.PvHistory(power, {}, power, {}, {}, {t: 15.0 for t in ts}, sat)
+    caps = ((("pv1", "pv2"), 800.0),)
+    arrays = {a: ln.ArrayConfig(a, a, (f"pv{i}",), GEO, None, caps=caps) for i, a in enumerate(("a", "b"), 1)}
+    capped = backtest.run(SITE, arrays, {}, history, {}, NOW, 95, [], UTC, caps=[(("a", "b"), 800.0)])["holdout"]
+    uncapped = backtest.run(SITE, arrays, {}, history, {}, NOW, 95, [], UTC)["holdout"]
+    assert sum(1 for t in ts if fc[t] > 400) > 300            # the limit cuts most of the hours around noon
+    assert capped["arrays"]["a"]["holdout"]["hour_error"] < 0.03
+    assert uncapped["arrays"]["a"]["holdout"]["hour_error"] > 0.2
+
+
 def test_replay_compares_the_forecast_then_with_todays_model():
     hist = history()
     learned = {"roof": ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, 95, [])["roof"]}

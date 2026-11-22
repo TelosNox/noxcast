@@ -204,7 +204,8 @@ def scorecard(runs: dict[str, Pairs], sets: dict[str, set[float]], day_of: Calla
 
 def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, now: float, soc_full: float,
             exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
-            near_limit: NearLimit | None = None) -> dict:
+            near_limit: NearLimit | None = None, limits: dict[str, float] | None = None,
+            caps: list[tuple[tuple[str, ...], float]] | None = None) -> dict:
     """{"arrays": {id: result}, "total": result}: result = {"status", "holdout", "in_sample", "baseline"} or not enough data.
 
     holdout: every day by the model learned on the other days; in_sample: by the model learned on its
@@ -212,6 +213,9 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     learning uses, with measured irradiance. Without satellite irradiance there is no such test.
     An array's result also holds its "scorecard" (scorecard(), subsets()); above_clear compares with the
     clear-sky output of the hold-out model. near_limit: the hours near a power limit, a further subset.
+    limits, caps: as in replay. The forecasts are capped like the live one: learning keeps the hours at a limit as
+    lower bounds, so the measured value there is the cut output, and an uncapped model would be scored against
+    the cut. Without the cap, a model that learned the cut as shade would win.
     """
     sat = history.satellite_ghi
     if not sat:
@@ -237,12 +241,23 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     for even in (True, False):
         models = ln.learn_arrays(site, good, history, now, soc_full, exclusions,
                                  keep=lambda t, even=even: _even(t, day_of) == even)
+        # every array on the hours any array is tested in: a shared limit caps their sum
+        tested = sorted(set().union(*(tests[sid] for sid in good)))
+        hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tested]
+        fcs = {sid: measured_forecast(site, arr.geometry, models[sid], hours) for sid, arr in good.items()}
+        bases = {sid: measured_forecast(site, arr.geometry, without_map(models[sid]), hours)
+                 for sid, arr in good.items()}
+        if limits or caps:
+            for t in tested:
+                for series in (fcs, bases):
+                    capped = ct.cap_group({sid: series[sid][t] for sid in good}, lambda sid: None, limits or {},
+                                          caps or [])
+                    for sid in good:
+                        series[sid][t] = capped.get(sid, series[sid][t])
         for sid, arr in good.items():
-            hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tests[sid]]
-            fc = measured_forecast(site, arr.geometry, models[sid], hours)
-            base = measured_forecast(site, arr.geometry, without_map(models[sid]), hours)
+            fc, base = fcs[sid], bases[sid]
             clear[sid].update(forecast(site, arr.geometry, models[sid],
-                                       [clearsky_weather(site, t, temp) for t, _, temp in hours
+                                       [clearsky_weather(site, t, air.get(t)) for t in tests[sid]
                                         if _even(t, day_of) != even]))
             for t, p in tests[sid].items():
                 if _even(t, day_of) == even:
@@ -345,12 +360,12 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
     """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing.
 
     near_limit: (array id, hour start) -> whether the hour was near a power limit; adds that scorecard subset.
-    limits: arrays with a fixed limit (W), caps: limits shared by several arrays, for the replay.
+    limits: arrays with a fixed limit (W), caps: limits shared by several arrays, for the replay and the hold-out.
     """
     day_of = local_day(tz)
     return {"version": VERSION, "computed_at": now,
             "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of, limits, caps),
-            "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit)}
+            "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit, limits, caps)}
 
 
 # Unlearned days' hour error this far above the learned days' (relative): the model still memorises chance where

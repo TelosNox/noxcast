@@ -29,11 +29,11 @@ def _hours(factor=lambda t: 1.0, keep=lambda t: True) -> list:
 
 def _history() -> "ln.PvHistory":
     actual = model.forecast(SITE, GEO, TRUE, _hours())
-    return ln.PvHistory({"pv": actual}, {}, {}, {}, {}, None, None)
+    return ln.PvHistory({"pv": actual}, {}, {}, {}, None, None)
 
 
 def _run(weather: dict, current: list[str], history=None) -> dict:
-    return hindcast.run(SITE, ARRAYS, {"roof": TRUE}, history or _history(), weather, current, 95.0, [],
+    return hindcast.run(SITE, ARRAYS, {"roof": TRUE}, history or _history(), weather, current, [],
                         timezone.utc, TS[-1])
 
 
@@ -102,7 +102,7 @@ def test_too_few_days_and_nothing_learned():
     weather = {"a": _hours(keep=lambda t: t < DAY0 + 30 * 86400)}
     result = _run(weather, ["a"])
     assert result["status"] == "not_enough_data" and result["needed"] == hindcast.MIN_DAYS and result["days"] == 30
-    assert hindcast.run(SITE, ARRAYS, {}, _history(), weather, ["a"], 95.0, [], timezone.utc, TS[-1])["status"] == "not_learned"
+    assert hindcast.run(SITE, ARRAYS, {}, _history(), weather, ["a"], [], timezone.utc, TS[-1])["status"] == "not_learned"
 
 
 def test_every_combination_is_scored_on_the_same_hours_and_inputs_stay_unchanged():
@@ -118,8 +118,9 @@ def test_every_combination_is_scored_on_the_same_hours_and_inputs_stay_unchanged
 def test_excluded_and_full_battery_hours_do_not_count():
     weather = {"a": _hours(), "b": _hours(lambda t: 1.1)}
     history = _history()
-    full = ln.PvHistory(history.power, {}, {}, {}, {t: 100.0 for t in TS if t < DAY0 + 10 * 86400}, None, None)
-    result = hindcast.run(SITE, ARRAYS, {"roof": TRUE}, full, weather, ["a"], 95.0,
+    full = ln.PvHistory(history.power, {}, {}, {}, None, None,
+                        {"roof": frozenset(t for t in TS if t < DAY0 + 10 * 86400)})
+    result = hindcast.run(SITE, ARRAYS, {"roof": TRUE}, full, weather, ["a"],
                           [(DAY0 + 20 * 86400, DAY0 + 25 * 86400)], timezone.utc, TS[-1])
     assert result["days"] == DAYS - 10 - 5
 

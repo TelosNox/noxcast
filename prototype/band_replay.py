@@ -115,11 +115,14 @@ def main() -> None:
     inst = P._hourly(args.temperature, "temperature_2m")
     air = {t: (v + inst[t + 3600]) / 2 for t, v in inst.items() if t + 3600 in inst}
     snow = {t - 3600: max(v, 0.0) for t, v in P._snowfall(args.temperature).items()}
+    soc_full = float(cur.get("soc_full_pct", 95))
+    # without the battery configuration every array counts as curtailed while the highest state of charge is full
+    full = frozenset(t for t, v in P.ln.highest(socs).items() if v >= soc_full)
     history = P.ln.PvHistory(P._statistics(raw, "mean"), P._statistics(raw, "min"), P._statistics(raw, "max"), {},
-                             P.ln.highest(socs), air or None, sat or None, snowfall=snow or None)
+                             air or None, sat or None, {arr.subentry_id: full for arr in arrays.values()},
+                             snowfall=snow or None)
     first = min(t for s in arrays.values() for sensor in s.sensors for t in history.power.get(sensor, {}))
     last = max(t for s in arrays.values() for sensor in s.sensors for t in history.power.get(sensor, {}))
-    soc_full = float(cur.get("soc_full_pct", 95))
     excl = [(datetime.combine(date.fromisoformat(a), datetime.min.time(), tz).timestamp(),
              datetime.combine(date.fromisoformat(b), datetime.max.time(), tz).timestamp())
             for a, b in cur.get("exclude_periods", [])]
@@ -127,7 +130,7 @@ def main() -> None:
     if args.fetch:
         fetch(previous, args.fetch.split(","), loc, datetime.fromtimestamp(first, tz).date(),
               datetime.fromtimestamp(last, tz).date())
-    learned = P.ln.learn_arrays(site, arrays, history, last + 3600, soc_full, excl)
+    learned = P.ln.learn_arrays(site, arrays, history, last + 3600, excl)
 
     models = [weather(c) for c in json.loads(previous.read_text(encoding="utf-8")).values()]
     common = sorted(set.intersection(*(set(m) for m in models)))
@@ -136,7 +139,7 @@ def main() -> None:
     sky = {sid: mdl.forecast(site, a.geometry, learned[sid], [mdl.clearsky_weather(site, t) for t in common])
            for sid, a in arrays.items()}
     clear_ghi = {t: mdl.clearsky_weather(site, t).ghi for t in common}
-    use = {sid: bt.usable(a, history, soc_full, excl, site) for sid, a in arrays.items()}
+    use = {sid: bt.usable(a, history, excl, site) for sid, a in arrays.items()}
     limit = {sid: sum(w for _, w in a.limits) if a.limits else None for sid, a in arrays.items()}
     day_of = bt.local_day(tz)
 

@@ -40,7 +40,7 @@ def history(days: int = 90, dip=lambda t: 1.0, satellite: bool = True) -> "ln.Pv
     ts = hours(days)
     sat = {t: model.clearsky_weather(SITE, t).ghi for t in ts}
     fc = model.forecast(SITE, GEO, TRUE, [model.WeatherHour(t, sat[t], temp=15.0) for t in ts])
-    return ln.PvHistory({"pv": {t: fc[t] * dip(t) for t in ts}}, {}, {}, {}, {}, {t: 15.0 for t in ts}, sat if satellite else None)
+    return ln.PvHistory({"pv": {t: fc[t] * dip(t) for t in ts}}, {}, {}, {}, {t: 15.0 for t in ts}, sat if satellite else None)
 
 
 def _archive(days: int, factor: float = 1.5, first: float = DAY0 + 60 * 86400, truth=None) -> dict:
@@ -70,8 +70,8 @@ def test_score_is_relative_to_the_actual_energy():
 def test_noise_cells_show_as_a_worse_holdout_than_in_sample():
     """A dip only on even days is learned by that half as a shadow, which the other days do not have."""
     noisy = backtest.run(SITE, {"roof": ARRAY}, {}, history(dip=lambda t: 0.6 if even(t) and noon(t) else 1.0), {},
-                         NOW, 95, [], UTC)["holdout"]
-    clean = backtest.run(SITE, {"roof": ARRAY}, {}, history(), {}, NOW, 95, [], UTC)["holdout"]
+                         NOW, [], UTC)["holdout"]
+    clean = backtest.run(SITE, {"roof": ARRAY}, {}, history(), {}, NOW, [], UTC)["holdout"]
     r = noisy["arrays"]["roof"]
     assert r["status"] == "ok" and r["holdout"]["hours"] == r["in_sample"]["hours"] > 500
     assert r["holdout"]["hour_error"] > 1.5 * r["in_sample"]["hour_error"]
@@ -82,7 +82,7 @@ def test_noise_cells_show_as_a_worse_holdout_than_in_sample():
 
 def test_baseline_shows_what_a_real_shadow_map_contributes():
     """A shadow on all days at the same hours: the map holds on unlearned days, without it the error is large."""
-    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(dip=lambda t: 0.5 if noon(t) else 1.0), {}, NOW, 95, [], UTC)["holdout"]["arrays"]["roof"]
+    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(dip=lambda t: 0.5 if noon(t) else 1.0), {}, NOW, [], UTC)["holdout"]["arrays"]["roof"]
     assert r["baseline"]["hour_error"] > 2 * r["holdout"]["hour_error"]
     assert r["baseline"]["bias"] > 2 * abs(r["holdout"]["bias"])
     assert abs(r["holdout"]["hour_error"] - r["in_sample"]["hour_error"]) < 0.02
@@ -96,11 +96,11 @@ def test_holdout_caps_the_forecast_at_a_shared_limit_like_the_live_one():
     fc = model.forecast(SITE, GEO, TRUE, [model.WeatherHour(t, sat[t], temp=15.0) for t in ts])
     cut = {t: min(fc[t], 400.0) for t in ts}                 # both alike: each gets half of the 800 W
     power = {"pv1": cut, "pv2": dict(cut)}
-    history = ln.PvHistory(power, {}, power, {}, {}, {t: 15.0 for t in ts}, sat)
+    history = ln.PvHistory(power, {}, power, {}, {t: 15.0 for t in ts}, sat)
     caps = ((("pv1", "pv2"), 800.0),)
     arrays = {a: ln.ArrayConfig(a, a, (f"pv{i}",), GEO, None, caps=caps) for i, a in enumerate(("a", "b"), 1)}
-    capped = backtest.run(SITE, arrays, {}, history, {}, NOW, 95, [], UTC, caps=[(("a", "b"), 800.0)])["holdout"]
-    uncapped = backtest.run(SITE, arrays, {}, history, {}, NOW, 95, [], UTC)["holdout"]
+    capped = backtest.run(SITE, arrays, {}, history, {}, NOW, [], UTC, caps=[(("a", "b"), 800.0)])["holdout"]
+    uncapped = backtest.run(SITE, arrays, {}, history, {}, NOW, [], UTC)["holdout"]
     assert sum(1 for t in ts if fc[t] > 400) > 300            # the limit cuts most of the hours around noon
     assert capped["arrays"]["a"]["holdout"]["hour_error"] < 0.03
     assert uncapped["arrays"]["a"]["holdout"]["hour_error"] > 0.2
@@ -108,8 +108,8 @@ def test_holdout_caps_the_forecast_at_a_shared_limit_like_the_live_one():
 
 def test_replay_compares_the_forecast_then_with_todays_model():
     hist = history()
-    learned = {"roof": ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, 95, [])["roof"]}
-    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, _archive(10), NOW, 95, [], UTC)["replay"]
+    learned = {"roof": ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, [])["roof"]}
+    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, _archive(10), NOW, [], UTC)["replay"]
     roof = r["arrays"]["roof"]
     assert roof["status"] == "ok" and roof["now"]["days"] == roof["then"]["days"] == 10
     assert abs(roof["then"]["bias"] - 0.5) < 0.01 and roof["then"]["day_error"] > 0.45  # issued 50 % too high
@@ -119,42 +119,42 @@ def test_replay_compares_the_forecast_then_with_todays_model():
 
 def test_filters_are_those_of_learning_plus_the_archives_curtailed_flag():
     hist = history()
-    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, 95, [])
+    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, [])
     arc = _archive(10)
-    plain = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, 95, [], UTC)
+    plain = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, [], UTC)
     lit = plain["replay"]["arrays"]["roof"]["now"]["hours"]
 
     # a full battery in one hour (usable_samples and the flag written with it) and a whole excluded day
     first = DAY0 + 60 * 86400
     noon_hour = first + 11 * 3600
-    full = ln.PvHistory(hist.power, {}, {}, {}, {noon_hour: 100.0}, hist.air_temp, hist.satellite_ghi)
+    full = ln.PvHistory(hist.power, {}, {}, {}, hist.air_temp, hist.satellite_ghi, {"roof": frozenset({noon_hour})})
     flagged = copy.deepcopy(arc)
     flagged[datetime.fromtimestamp(first, UTC).date().isoformat()]["hours"][str(int(noon_hour))]["curtailed"] = True
-    r = backtest.run(SITE, {"roof": ARRAY}, learned, full, flagged, NOW, 95, [], UTC)
+    r = backtest.run(SITE, {"roof": ARRAY}, learned, full, flagged, NOW, [], UTC)
     assert r["replay"]["arrays"]["roof"]["now"]["hours"] == lit - 1
     assert r["holdout"]["arrays"]["roof"]["holdout"]["hours"] == plain["holdout"]["arrays"]["roof"]["holdout"]["hours"] - 1
 
     excluded = [(first + 86400, first + 2 * 86400)]
-    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, 95, excluded, UTC)
+    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, excluded, UTC)
     assert r["replay"]["arrays"]["roof"]["now"]["days"] == 9
     assert r["holdout"]["arrays"]["roof"]["holdout"]["days"] == plain["holdout"]["arrays"]["roof"]["holdout"]["days"] - 1
 
     # flagged only in the archive: not counted either, and an incomplete day is left out
-    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, flagged, NOW, 95, [], UTC)
+    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, flagged, NOW, [], UTC)
     assert r["replay"]["arrays"]["roof"]["now"]["hours"] == lit - 1
     partial = copy.deepcopy(arc)
     day = partial[datetime.fromtimestamp(first, UTC).date().isoformat()]["hours"]
     del day[str(int(first + 12 * 3600))]["actual"]
-    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, partial, NOW, 95, [], UTC)
+    r = backtest.run(SITE, {"roof": ARRAY}, learned, hist, partial, NOW, [], UTC)
     assert r["replay"]["arrays"]["roof"]["now"]["days"] == 9
 
 
 def test_a_run_changes_nothing():
     hist = history(dip=lambda t: 0.6 if even(t) and noon(t) else 1.0)
-    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, 95, [])
+    learned = ln.learn_arrays(SITE, {"roof": ARRAY}, hist, NOW, [])
     arc = _archive(10)
     before = copy.deepcopy((learned, arc, hist))
-    result = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, 95, [], UTC)
+    result = backtest.run(SITE, {"roof": ARRAY}, learned, hist, arc, NOW, [], UTC)
     assert result["holdout"]["total"]["status"] == result["replay"]["total"]["status"] == "ok"
     assert (learned, arc, hist) == before
 
@@ -162,7 +162,7 @@ def test_a_run_changes_nothing():
 def test_too_little_data_gives_no_number():
     hist = history(days=20)                                 # ten days per half, fourteen needed
     with patch.object(ln, "learn_arrays", side_effect=AssertionError("nothing to learn on")):
-        r = backtest.run(SITE, {"roof": ARRAY}, {"roof": TRUE}, hist, _archive(3, first=DAY0), NOW, 95, [], UTC)
+        r = backtest.run(SITE, {"roof": ARRAY}, {"roof": TRUE}, hist, _archive(3, first=DAY0), NOW, [], UTC)
     for part, needed in ((r["holdout"], 2 * backtest.MIN_FOLD_DAYS), (r["replay"], backtest.MIN_REPLAY_DAYS)):
         for res in (part["arrays"]["roof"], part["total"]):
             assert res["status"] == "not_enough_data" and res["reason"] == "few_days" and res["needed"] == needed
@@ -171,13 +171,13 @@ def test_too_little_data_gives_no_number():
 
 
 def test_holdout_needs_measured_irradiance():
-    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(satellite=False), {}, NOW, 95, [], UTC)["holdout"]
+    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(satellite=False), {}, NOW, [], UTC)["holdout"]
     assert r["total"]["status"] == "not_enough_data" and r["total"]["reason"] == "no_satellite"
 
 
 def test_total_holds_the_arrays_with_enough_data():
     young = ln.ArrayConfig("new", "New", ("pv",), GEO, NOW - 10 * 86400)
-    r = backtest.run(SITE, {"roof": ARRAY, "new": young}, {}, history(), {}, NOW, 95, [], UTC)["holdout"]
+    r = backtest.run(SITE, {"roof": ARRAY, "new": young}, {}, history(), {}, NOW, [], UTC)["holdout"]
     assert r["arrays"]["new"]["status"] == "not_enough_data" and r["arrays"]["roof"]["status"] == "ok"
     assert r["total"]["holdout"] == r["arrays"]["roof"]["holdout"]
 
@@ -185,7 +185,7 @@ def test_total_holds_the_arrays_with_enough_data():
 def test_days_are_local_days():
     """A day runs from local midnight: a fixed offset of 12 h moves the hours of a test day."""
     tz = timezone(timedelta(hours=12))
-    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(), {}, NOW, 95, [], tz)["holdout"]["arrays"]["roof"]
+    r = backtest.run(SITE, {"roof": ARRAY}, {}, history(), {}, NOW, [], tz)["holdout"]["arrays"]["roof"]
     assert r["holdout"]["days"] + r["in_sample"]["days"] == 2 * r["holdout"]["days"]
     assert r["holdout"]["days"] == 91                        # the light of a UTC day spreads over two local days
 
@@ -217,7 +217,7 @@ def _mast_data(days: int = 44):
     mean = {t: sum(r) / 12 for t, r in rows.items()}
     sat = {t: model.clearsky_weather(SITE, t).ghi for t in rows}
     hist = ln.PvHistory({"pv": mean}, {"pv": {t: min(r) for t, r in rows.items()}}, {"pv": {t: max(r) for t, r in rows.items()}},
-                        {}, {}, {t: 15.0 for t in rows}, sat)
+                        {}, {t: 15.0 for t in rows}, sat)
     store: dict = {}
     for d in range(days):
         a = DAY0 + d * 86400
@@ -239,7 +239,7 @@ def test_fine_history_keeps_the_hour_and_its_clearness():
 def test_fine_holdout_compares_the_resolutions_on_the_same_hours():
     hist, store = _mast_data()
     before = copy.deepcopy(store)
-    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 44 * 86400, 95, [], UTC)
+    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 44 * 86400, [], UTC)
     assert store == before
     a = r["arrays"]["roof"]
     assert a["status"] == "ok" and r["total"]["status"] == "ok"
@@ -249,7 +249,7 @@ def test_fine_holdout_compares_the_resolutions_on_the_same_hours():
 
 def test_fine_holdout_needs_days_in_the_archive():
     hist, store = _mast_data(10)
-    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 10 * 86400, 95, [], UTC)
+    r = backtest.fine_holdout(SITE, {"roof": ARRAY_MAST}, hist, store, DAY0 + 10 * 86400, [], UTC)
     assert r["arrays"]["roof"] == {"status": "not_enough_data", "reason": "few_days", "days": 10, "needed": 28}
 
 
@@ -271,7 +271,7 @@ def _site_history(days: int = 150) -> "ln.PvHistory":
     power = {t: fc[t] * factor(t) for t in ts}
     spread = {t: 0.05 if kt[t] >= 0.85 else 0.4 for t in ts}
     return ln.PvHistory({"pv": power}, {"pv": {t: p * (1 - spread[t]) for t, p in power.items()}},
-                        {"pv": {t: p * (1 + spread[t]) for t, p in power.items()}}, {}, {},
+                        {"pv": {t: p * (1 + spread[t]) for t, p in power.items()}}, {},
                         {t: 5.0 for t in ts}, sat)
 
 
@@ -279,7 +279,7 @@ def test_scorecard_of_the_synthetic_site_is_pinned(request):
     """The scorecard on a winter site; its diff shows what a model change does where."""
     hist = _site_history()
     now = WINTER0 + 150 * 86400
-    r = backtest.run(SITE, {"roof": ARRAY}, {}, hist, {}, now, 95, [], UTC,
+    r = backtest.run(SITE, {"roof": ARRAY}, {}, hist, {}, now, [], UTC,
                      near_limit=lambda sid, t: hist.power["pv"][t] > 600)["holdout"]["arrays"]["roof"]
     card = r["scorecard"]
     assert list(card) == [*backtest.SUBSETS, "near_limit"]

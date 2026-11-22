@@ -81,7 +81,7 @@ def _not_enough(reason: str, days: int = 0, needed: int = 0) -> dict:
     return {"status": NOT_ENOUGH, "reason": reason, "days": days, "needed": needed}
 
 
-def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
+def usable(arr: ln.ArrayConfig, history: ln.PvHistory, exclusions: list[tuple[float, float]],
            site: Site | None = None) -> Series:
     """The array's hours learning would use, with the mean power (W = Wh per hour). An hour at a battery's charge
     ceiling, or one a system following the load may have held back, is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing.
@@ -92,7 +92,7 @@ def usable(arr: ln.ArrayConfig, history: ln.PvHistory, soc_full: float, exclusio
             | history.output.get(arr.subentry_id, frozenset()))
     if site is not None:
         full |= ln.left_out(site, arr, history).hours
-    return dict(usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
+    return dict(usable_samples(summed, exclusions=exclusions,
                                valid_since=arr.valid_since, full=full))
 
 
@@ -112,7 +112,7 @@ def summed(parts: list[Pairs]) -> Pairs:
 
 
 def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-           archive: dict, soc_full: float, exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
+           archive: dict, exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
            limits: dict[str, float] | None = None, caps: list[tuple[tuple[str, ...], float]] | None = None) -> dict:
     """{"arrays": {id: result}, "total": result}: result = {"status", "then", "now", "baseline"} or not enough data.
 
@@ -122,7 +122,7 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
     """
     known = {sid: arr for sid, arr in arrays.items() if sid in learned}
     geometries = {sid: arr.geometry for sid, arr in known.items()}
-    hours_of = {sid: usable(arr, history, soc_full, exclusions, site) for sid, arr in known.items()}
+    hours_of = {sid: usable(arr, history, exclusions, site) for sid, arr in known.items()}
     bare = {sid: without_map(learned[sid]) for sid in known}
     runs: dict[str, dict[str, Pairs]] = {sid: {"then": {}, "now": {}, "baseline": {}} for sid in known}
     for day in fc_archive.days(archive):
@@ -202,7 +202,7 @@ def scorecard(runs: dict[str, Pairs], sets: dict[str, set[float]], day_of: Calla
                    for part in ("holdout", "in_sample")} for name, hours in sets.items()}
 
 
-def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, now: float, soc_full: float,
+def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, now: float,
             exclusions: list[tuple[float, float]], day_of: Callable[[float], date],
             near_limit: NearLimit | None = None, limits: dict[str, float] | None = None,
             caps: list[tuple[tuple[str, ...], float]] | None = None) -> dict:
@@ -225,7 +225,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     tests: dict[str, Series] = {}
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
-        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions, site).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, exclusions, site).items()
                       if t in sat and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]
@@ -239,7 +239,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
     runs: dict[str, dict[str, Pairs]] = {sid: {"holdout": {}, "in_sample": {}, "baseline": {}} for sid in good}
     clear: dict[str, dict[float, float]] = {sid: {} for sid in good}
     for even in (True, False):
-        models = ln.learn_arrays(site, good, history, now, soc_full, exclusions,
+        models = ln.learn_arrays(site, good, history, now, exclusions,
                                  keep=lambda t, even=even: _even(t, day_of) == even)
         # every array on the hours any array is tested in: a shared limit caps their sum
         tested = sorted(set().union(*(tests[sid] for sid in good)))
@@ -281,7 +281,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
 
 
 def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, store: dict, now: float,
-                 soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
+                 exclusions: list[tuple[float, float]], tz: tzinfo) -> dict:
     """Would the 5-minute archive (fine.py) make a better model? {"arrays": {id: result}, "total": result}.
 
     result = {"status", "today", "same_days", "fine", "merged"} or not enough data. All four on the same
@@ -303,7 +303,7 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
         covered[sid] = {day_of(t) for t in ln.scaled_sum(fine.power, arr.sensors, {})}
-        tests[sid] = {t: p for t, p in usable(arr, history, soc_full, exclusions, site).items()
+        tests[sid] = {t: p for t, p in usable(arr, history, exclusions, site).items()
                       if t in sat and day_of(t) in covered[sid] and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]
         days = [len({day_of(t) for t in fold}) for fold in folds]
@@ -324,9 +324,9 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
             def in_archive(t: float, even: bool = even, days: set[date] = covered[sid]) -> bool:
                 return half(t, even) and day_of(t) in days
 
-            today = ln.learn_array(site, arr, history, now, soc_full, exclusions, half)
-            same = ln.learn_array(site, arr, history, now, soc_full, exclusions, in_archive)
-            sharp = ln.learn_array(site, arr, fine, now, soc_full, exclusions, in_archive, fn.STEP)
+            today = ln.learn_array(site, arr, history, now, exclusions, half)
+            same = ln.learn_array(site, arr, history, now, exclusions, in_archive)
+            sharp = ln.learn_array(site, arr, fine, now, exclusions, in_archive, fn.STEP)
             merged = LearnedArray(**{**today.__dict__, "cells": {**today.cells, **sharp.cells}})
             hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tests[sid] if not half(t)]
             for name, model in zip(names, (today, same, sharp, merged)):
@@ -354,7 +354,7 @@ def local_day(tz: tzinfo) -> Callable[[float], date]:
 
 @sun_path_cache
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-        archive: dict, now: float, soc_full: float, exclusions: list[tuple[float, float]], tz: tzinfo,
+        archive: dict, now: float, exclusions: list[tuple[float, float]], tz: tzinfo,
         near_limit: NearLimit | None = None, limits: dict[str, float] | None = None,
         caps: list[tuple[tuple[str, ...], float]] | None = None) -> dict:
     """The whole backtest; tz: the local time zone, days are local days. Reads its inputs, changes nothing.
@@ -364,8 +364,8 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
     """
     day_of = local_day(tz)
     return {"version": VERSION, "computed_at": now,
-            "replay": replay(site, arrays, learned, history, archive, soc_full, exclusions, day_of, limits, caps),
-            "holdout": holdout(site, arrays, history, now, soc_full, exclusions, day_of, near_limit, limits, caps)}
+            "replay": replay(site, arrays, learned, history, archive, exclusions, day_of, limits, caps),
+            "holdout": holdout(site, arrays, history, now, exclusions, day_of, near_limit, limits, caps)}
 
 
 # Unlearned days' hour error this far above the learned days' (relative): the model still memorises chance where

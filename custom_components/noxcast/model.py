@@ -670,22 +670,19 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
     return out, capped
 
 
-def usable_samples(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
-                   exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
+def usable_samples(power: Series, *, exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
                    full: Collection[float] = frozenset()) -> list[tuple[float, float]]:
     """Filter hourly mean power (W) for learning: commissioning, validity, curtailment, exclusions.
 
     full: hour starts in which no battery that takes the array's PV took more and one was full
-    (installation.battery_hours); a period in such an hour is left out like one with the household's state of
-    charge at soc_full.
+    (installation.battery_hours).
     """
-    reasons = sample_reasons(power, soc=soc, soc_full=soc_full, exclusions=exclusions, valid_since=valid_since,
+    reasons = sample_reasons(power, exclusions=exclusions, valid_since=valid_since,
                              left={"full": full} if full else {})
     return [(t, power[t]) for t, why in reasons.items() if not why]
 
 
-def sample_reasons(power: Series, *, soc: Series | None = None, soc_full: float = 95.0,
-                   exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
+def sample_reasons(power: Series, *, exclusions: list[tuple[float, float]] = (), valid_since: float | None = None,
                    left: dict[str, Collection[float]] | None = None) -> dict[float, tuple[str, ...]]:
     """Per period with a value, oldest first: every reason learning leaves it out for; empty = used.
 
@@ -702,8 +699,6 @@ def sample_reasons(power: Series, *, soc: Series | None = None, soc_full: float 
             why.append("before_use")
         if p < 0:
             why.append("negative")
-        if soc and soc.get(t) is not None and soc[t] >= soc_full:
-            why.append("soc_full")
         hour = t - t % HOUR
         why += [name for name, hours in (left or {}).items() if hour in hours]
         if any(a <= t < b for a, b in exclusions):

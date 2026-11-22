@@ -528,12 +528,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 self.hass, self._async_backtest(*inputs), "noxcast backtest")
         return True
 
-    async def _async_backtest(self, history: ln.PvHistory, now: float, soc_full: float,
+    async def _async_backtest(self, history: ln.PvHistory, now: float,
                               exclusions: list[tuple[float, float]]) -> None:
         """Compare the model with the past (backtest.py); a failure leaves the last result in place."""
         try:
             result = await self.hass.async_add_executor_job(
-                self._run_backtest, dict(self.learned), self._eval_archive(), history, now, soc_full, exclusions)
+                self._run_backtest, dict(self.learned), self._eval_archive(), history, now, exclusions)
         except Exception:  # noqa: BLE001 – learning and forecast do not depend on it
             _LOGGER.exception("Noxcast backtest failed; keeping the last result")
             return
@@ -561,7 +561,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         hours = {sid: ct.limited_hours(self.installation, sid, peaks) for sid in limited}
         return lambda sid, t: t in hours.get(sid, ())
 
-    def _detect_limits(self, history: ln.PvHistory, now: float, soc_full: float,
+    def _detect_limits(self, history: ln.PvHistory, now: float,
                        exclusions: list[tuple[float, float]], fine_days: dict) -> dict[str, dict]:
         """Executor. Sensor -> limit seen in its measurements (plateau.py), for every array's sensors.
 
@@ -570,7 +570,6 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         fine_days: the days of the 5-minute archive within the window.
         """
         day_of = pv_backtest.local_day(dt_util.get_default_time_zone())
-        full = {t for t, v in history.soc.items() if v is not None and v >= soc_full}
         out = {}
         for arr in self.arrays.values():
             change = pt.clear_change(self.site, arr.geometry)
@@ -580,7 +579,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      | history.held.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
                      | history.unsure.get(arr.subentry_id, frozenset())
                      | history.output.get(arr.subentry_id, frozenset())) -> bool:
-                return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
+                return ((since is None or t >= since) and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
             for s in arr.sensors:
@@ -593,7 +592,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     out[s] = found.as_dict()
         return out
 
-    def _detect_system_limits(self, history: ln.PvHistory, now: float, soc_full: float,
+    def _detect_system_limits(self, history: ln.PvHistory, now: float,
                               exclusions: list[tuple[float, float]], fine_days: dict) -> dict[str, dict]:
         """Executor. System id -> output limit seen in the summed 5-minute means of its PV sensors (plateau.detect_sum),
         for systems without a battery below them and without an output limit, with two sensors or more (one alone is
@@ -602,7 +601,6 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         PV all sits in one subsystem: the subsystem gets the suggestion. The same hours are left out as in
         _detect_limits."""
         day_of = pv_backtest.local_day(dt_util.get_default_time_zone())
-        full = {t for t, v in history.soc.items() if v is not None and v >= soc_full}
         out = {}
         def members(x: sy.System) -> set[str]:
             return {a for y in (x, *(self.systems[c] for c in x.children)) for a in y.arrays if a in self.arrays}
@@ -623,7 +621,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                       | history.unsure.get(arr.subentry_id, frozenset()) for arr in arrays))
 
             def keep(t: float, since=since, own=own) -> bool:
-                return ((since is None or t >= since) and t - t % 3600 not in full and t - t % 3600 not in own
+                return ((since is None or t >= since) and t - t % 3600 not in own
                         and not any(a <= t < b for a, b in exclusions))
 
             steps = pt.summed_steps({x: {t: v for t, v in fn.series(fine_days, x).items() if keep(t)} for x in sensors})
@@ -652,11 +650,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.async_update_listeners()
 
     def _run_backtest(self, learned: dict[str, LearnedArray], archive: dict, history: ln.PvHistory, now: float,
-                      soc_full: float, exclusions: list[tuple[float, float]]) -> dict:
+                      exclusions: list[tuple[float, float]]) -> dict:
         """Executor. On copies: whatever happens here cannot reach the learned state or the archive."""
         start = time.monotonic()
         result = pv_backtest.run(self.site, self.arrays, copy.deepcopy(learned), history, copy.deepcopy(archive), now,
-                                 soc_full, exclusions, dt_util.get_default_time_zone(),
+                                 exclusions, dt_util.get_default_time_zone(),
                                  limits=self.installation.limited_arrays(), caps=self.installation.forecast_caps(),
                                  near_limit=self._near_limit(history))
         seconds = round(time.monotonic() - start, 1)
@@ -664,32 +662,31 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                      result["holdout"]["total"])
         return {**result, "seconds": seconds}
 
-    def _basis(self, learned: dict[str, LearnedArray], history: ln.PvHistory, soc_full: float,
+    def _basis(self, learned: dict[str, LearnedArray], history: ln.PvHistory,
                exclusions: list[tuple[float, float]]) -> None:
         """Executor. What learning saw per array (databasis.summary), on the history it learned from."""
         for sid, la in learned.items():
             arr = self.arrays[sid]
-            table = databasis.hour_table(self.site, arr, la, history, soc_full, exclusions)
+            table = databasis.hour_table(self.site, arr, la, history, exclusions)
             la.basis = databasis.summary(self.site, table, arr.geometry.peak_w,
                                          ln.left_out(self.site, arr, history).snow_capped)
 
-    async def _async_learn(self) -> tuple[ln.PvHistory, float, float, list[tuple[float, float]]]:
-        """Learn everything; returns what the backtest needs: history, time, full state of charge, exclusions."""
+    async def _async_learn(self) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
+        """Learn everything; returns what the backtest needs: history, time, exclusions."""
         now = dt_util.utcnow()
         # one sun path cache for the whole run: basis, archive, limits and band go over the same hours again
         with sun_paths_kept():
-            history, soc_full, exclusions = await self._async_pv_history(now)
+            history, exclusions = await self._async_pv_history(now)
             air_temp = history.air_temp
             learned = await self.hass.async_add_executor_job(
-                ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), soc_full, exclusions)
+                ln.learn_arrays, self.site, self.arrays, history, now.timestamp(), exclusions)
             try:
-                await self.hass.async_add_executor_job(self._basis, learned, history, soc_full, exclusions)
+                await self.hass.async_add_executor_job(self._basis, learned, history, exclusions)
             except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
                 _LOGGER.exception("Noxcast could not summarise the data basis")
             # a copy: add_history replaces days of the live dict, and merged() tells those by identity
             base = dict(self.forecast_archive)
-            work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp(),
-                                                          soc_full)
+            work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp())
             # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
             self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
             self.learned.update(learned)          # applied in one step on the event loop
@@ -698,9 +695,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 first = (dt_util.now() - timedelta(days=pt.WINDOW_DAYS + 1)).date().isoformat()
                 fine_days = {d: dict(v) for d, v in self.fine.items() if d >= first}
                 self.limits["detected"] = await self.hass.async_add_executor_job(
-                    self._detect_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
+                    self._detect_limits, history, now.timestamp(), exclusions, fine_days)
                 self.limits["systems"] = await self.hass.async_add_executor_job(
-                    self._detect_system_limits, history, now.timestamp(), soc_full, exclusions, fine_days)
+                    self._detect_system_limits, history, now.timestamp(), exclusions, fine_days)
             except Exception:  # noqa: BLE001 – only a suggestion; learning and forecast do not depend on it
                 _LOGGER.exception("Noxcast could not look for power limits; keeping the last result")
             self.band = await self.hass.async_add_executor_job(self._learn_band, history, exclusions)
@@ -709,17 +706,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             await self._async_learn_load(now, air_temp)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
-        return history, now.timestamp(), soc_full, exclusions
+        return history, now.timestamp(), exclusions
 
     async def _async_pv_history(self, now: datetime, start: datetime | None = None, archives: bool = True,
-                                record: bool = True) -> tuple[ln.PvHistory, float, list[tuple[float, float]]]:
-        """The arrays' history as learning sees it, the full state of charge and the exclusions.
+                                record: bool = True) -> tuple[ln.PvHistory, list[tuple[float, float]]]:
+        """The arrays' history as learning sees it and the exclusions.
 
         start: from when (default: the whole learning history); archives: also fetch the temperature and
         satellite archives, which only learning needs; record: see _async_archives.
         """
         start = start or now - timedelta(days=365 * HISTORY_YEARS)
-        options = self.config_entry.data
         sensor_ids = sorted({s for a in self.arrays.values() for s in a.sensors})
         factors = await async_power_factors(self.hass, sensor_ids)
         self._factors = factors
@@ -746,10 +742,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         unsure = {sid: frozenset(u) for sid, (_, _, u) in blocked.items() if u}
         grid_low = await self._async_grid_low(installation, start)
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
-        history = ln.PvHistory(power, power_min, power_max, factors, {},
+        history = ln.PvHistory(power, power_min, power_max, factors,
                                air_temp, satellite_ghi, full, charge, held, unsure, snowfall, output=output)
-        soc_full = float(options.get(CONF_SOC_FULL, DEFAULT_SOC_FULL))
-        return history, soc_full, [(e["start"], e["end"]) for e in self.exclusions]
+        return history, [(e["start"], e["end"]) for e in self.exclusions]
 
     async def async_hour_tables(self, only: str | None = None) -> dict[str, dict]:
         """Per learned array (or only that one) every daylight hour with its status and reasons (databasis.py), for
@@ -759,11 +754,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if not arrays:
             return {}
         async with self._hours_lock:
-            history, soc_full, exclusions = await self._async_pv_history(dt_util.utcnow(), record=False)
+            history, exclusions = await self._async_pv_history(dt_util.utcnow(), record=False)
             learned = dict(self.learned)
 
             def tables() -> dict[str, dict]:
-                return {sid: databasis.hour_table(self.site, arr, learned[sid], history, soc_full, exclusions)
+                return {sid: databasis.hour_table(self.site, arr, learned[sid], history, exclusions)
                         for sid, arr in arrays.items()}
             return await self.hass.async_add_executor_job(tables)
 
@@ -806,11 +801,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             # a diagnostic figure: it must not stop setup or the rest of the learning run
             _LOGGER.warning("Forecast error could not be computed from the archive", exc_info=True)
 
-    def _record_archive(self, base: dict, learned: dict[str, LearnedArray], history: ln.PvHistory, now: float,
-                        soc_full: float) -> dict:
+    def _record_archive(self, base: dict, learned: dict[str, LearnedArray], history: ln.PvHistory, now: float) -> dict:
         """Executor. On a copy: the event loop reads and stores the live archive meanwhile."""
         work = copy.deepcopy(base)
-        ln.record_archive(work, self.site, self.arrays, learned, history, now, soc_full, self.installation)
+        ln.record_archive(work, self.site, self.arrays, learned, history, now, self.installation)
         return work
 
     def _eval_archive(self) -> dict:
@@ -1166,11 +1160,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             if len(refused) == len(candidates):
                 raise SourceError(next(iter(refused.values())))
             now = dt_util.utcnow()
-            history, soc_full, exclusions = await self._async_pv_history(
+            history, exclusions = await self._async_pv_history(
                 now, dt_util.start_of_local_day(start), archives=False)
             result = await self.hass.async_add_executor_job(
                 hc.run, self.site, self.arrays, copy.deepcopy(dict(self.learned)), history, weather,
-                self.weather_models, soc_full, exclusions, dt_util.get_default_time_zone(), now.timestamp())
+                self.weather_models, exclusions, dt_util.get_default_time_zone(), now.timestamp())
         except SourceError as err:
             state.update(running=False, error=str(err), limited=err.limited)
             _LOGGER.warning("Weather model comparison stopped: %s", err)

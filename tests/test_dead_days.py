@@ -66,7 +66,7 @@ def test_a_solar_day_keeps_its_daylight_together():
 
 
 def _history(power: dict[float, float]) -> ln.PvHistory:
-    return ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {}, {})
+    return ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {})
 
 
 def test_learning_leaves_dead_days_out_as_if_excluded_by_hand():
@@ -77,23 +77,23 @@ def test_learning_leaves_dead_days_out_as_if_excluded_by_hand():
     power = _days(kinds)
     arr = ln.ArrayConfig("a", "Roof", ("s",), GEO, None)
     now = START + 61 * 86400
-    filtered = ln.learn_array(SITE, arr, _history(power), now, 95.0, [])
+    filtered = ln.learn_array(SITE, arr, _history(power), now, [])
     start, end = START + 20 * 86400 - 6 * 3600, START + 30 * 86400 - 6 * 3600
-    by_hand = ln.learn_array(SITE, arr, _history(power), now, 95.0, [(start, end)])
+    by_hand = ln.learn_array(SITE, arr, _history(power), now, [(start, end)])
     assert (filtered.efficiency, filtered.cells, filtered.sky_view) == (by_hand.efficiency, by_hand.cells,
                                                                          by_hand.sky_view)
     assert len(filtered.dead_days) == 10
     assert filtered.dead_days == [model.solar_date(_day(d)) for d in range(20, 30)]   # dates, not noon times
-    kept = ln.learn_array(SITE, arr, _history(power), now, 95.0, [], keep=lambda t: t < start)
+    kept = ln.learn_array(SITE, arr, _history(power), now, [], keep=lambda t: t < start)
     assert len(kept.dead_days) == 10                                     # the list does not depend on the half learned
 
 
 def test_backtest_scores_the_hours_learning_uses():
     power = _days(["clear", "dead", "clear"])
     arr = ln.ArrayConfig("a", "Roof", ("s",), GEO, None)
-    hours = bt.usable(arr, _history(power), 95.0, [], SITE)
+    hours = bt.usable(arr, _history(power), [], SITE)
     assert not any(model.solar_day(SITE, t) == _day(1) for t in hours)
-    assert any(model.solar_day(SITE, t) == _day(1) for t in bt.usable(arr, _history(power), 95.0, []))
+    assert any(model.solar_day(SITE, t) == _day(1) for t in bt.usable(arr, _history(power), []))
 
 
 # ---------------------------------------------------------------------------- snow
@@ -170,11 +170,11 @@ def test_learning_and_backtest_leave_snow_out():
     snowfall = {START + 20 * 86400: 5.0}
     power = _snow_power(40, {20: 0.2, 21: 0.3})
     arr = ln.ArrayConfig("a", "Roof", ("s",), GEO, None)
-    history = ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {}, {}, _cold(40), snowfall=snowfall)
-    learned = ln.learn_array(SITE, arr, history, START + 41 * 86400, 95.0, [])
+    history = ln.PvHistory({"s": power}, {"s": dict(power)}, {"s": dict(power)}, {}, _cold(40), snowfall=snowfall)
+    learned = ln.learn_array(SITE, arr, history, START + 41 * 86400, [])
     # the third day holds the dawn hours before the first strong hour ends the window
     assert len(learned.snow_days) == 3 and not learned.dead_days
-    lit = {t for t, w in bt.usable(arr, history, 95.0, [], SITE).items() if w > 0}
+    lit = {t for t, w in bt.usable(arr, history, [], SITE).items() if w > 0}
     assert not _on(lit, 21) and _on(lit, 19)
 
 

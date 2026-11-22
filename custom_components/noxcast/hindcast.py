@@ -79,7 +79,7 @@ def _beats(best: Days, current: Days, rng: random.Random) -> float:
 
 @sun_path_cache
 def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, LearnedArray], history: ln.PvHistory,
-        weather: dict[str, list[WeatherHour]], current: list[str], soc_full: float,
+        weather: dict[str, list[WeatherHour]], current: list[str],
         exclusions: list[tuple[float, float]], tz: tzinfo, now: float) -> dict:
     """The comparison; weather: per model its day-ahead forecast by hour. Reads its inputs, changes nothing.
 
@@ -101,7 +101,7 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
     actual: dict[str, Series] = {}
     clear: dict[str, Series] = {}
     for sid, arr in known.items():
-        hours = {t: p for t, p in bt.usable(arr, history, soc_full, exclusions, site).items() if lo <= t <= hi}
+        hours = {t: p for t, p in bt.usable(arr, history, exclusions, site).items() if lo <= t <= hi}
         sky = forecast(site, arr.geometry, learned[sid], [clearsky_weather(site, t) for t in sorted(hours)])
         actual[sid] = {t: p for t, p in hours.items() if max(p, sky.get(t, 0.0)) > bt.MIN_WH}
         clear[sid] = {t: sky.get(t, 0.0) for t in actual[sid]}

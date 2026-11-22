@@ -113,7 +113,7 @@ def test_hours_at_a_limit_neither_lower_the_efficiency_nor_darken_the_map():
 def test_floor_hours_from_the_period_maximum():
     history = ln.PvHistory(power={"a": {0.0: 100.0, 3600.0: 190.0}, "b": {0.0: 50.0, 3600.0: 50.0}},
                            power_min={}, power_max={"a": {0.0: 180.0, 3600.0: 199.0}, "b": {0.0: 60.0}},
-                           factors={"a": 1000.0}, soc={})
+                           factors={"a": 1000.0})
     arr = ln.ArrayConfig("x", "X", ("a", "b"), GEO, None, limits=(("a", 199_000.0),))
     assert ln.floor_hours(arr, history) == {3600.0}          # 180 kW is below 95 % of 199 kW
     assert arr.limit_w is None                               # sensor b has no limit: no array limit
@@ -128,7 +128,7 @@ def test_a_short_peak_at_the_limit_keeps_the_hour_as_measured():
 
     def floors(mean: float, limit: float = 1.3 * free, site=SITE) -> set[float]:
         history = ln.PvHistory(power={"a": {noon: mean}}, power_min={}, power_max={"a": {noon: limit}}, factors={},
-                               soc={}, satellite_ghi={noon: ghi})
+                               satellite_ghi={noon: ghi})
         return ln.floor_hours(ln.ArrayConfig("x", "X", ("a",), GEO, None, limits=(("a", limit),)), history, site)
 
     assert floors(0.95 * free) == set()                      # a cloud edge peaked at the limit, the mean lacks nothing

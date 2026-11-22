@@ -85,7 +85,6 @@ class PvHistory:
     power_min: dict[str, dict[float, float | None]]      # hourly minimum and maximum: steady hours
     power_max: dict[str, dict[float, float | None]]
     factors: dict[str, float]                            # sensor unit -> W
-    soc: Series                                          # highest state of charge of the household's batteries (%)
     air_temp: Series | None = None                       # temperature archive (°C, middle of the hour)
     satellite_ghi: Series | None = None                  # satellite archive (W/m²)
     # per array the hour starts in which no battery that takes its PV took more and one of them was full
@@ -163,7 +162,7 @@ def _only(series: Series, keep: Keep | None) -> Series:
 def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
     """The history at the 5-minute archive's periods (fine.py), for learning with period=fine.STEP.
 
-    The archive holds power in W. State of charge and temperature keep the value of their hour. The
+    The archive holds power in W. Temperature keeps the value of its hour. The
     satellite's hour keeps its clearness, so that its mean stays the same and a low sun does not look
     brighter than the clear sky. Hours without a satellite value stay without one.
     """
@@ -172,13 +171,10 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
     bands = {s: fn.steady_band(series) for s, series in power.items()}
     hours = {t - t % HOUR for series in power.values() for t in series}
     steps = [k * fn.STEP for k in range(int(HOUR // fn.STEP))]
-    soc: Series = {}
     air: Series = {}
     satellite: Series = {}
     for hour in hours:
         for step in steps:
-            if hour in history.soc:
-                soc[hour + step] = history.soc[hour]
             if history.air_temp and hour in history.air_temp:
                 air[hour + step] = history.air_temp[hour]
         if history.satellite_ghi and hour in history.satellite_ghi:
@@ -186,7 +182,7 @@ def fine_history(site: Site, history: PvHistory, store: dict) -> PvHistory:
             mean = sum(clear) / len(clear)
             for step, ghi in zip(steps, clear):
                 satellite[hour + step] = history.satellite_ghi[hour] * ghi / mean if mean > 0 else 0.0
-    return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {}, soc,
+    return PvHistory(power, {s: b[0] for s, b in bands.items()}, {s: b[1] for s, b in bands.items()}, {},
                      air or None, satellite or None, history.full, history.charge, history.held, history.unsure,
                      history.snowfall, output=history.output)
 
@@ -285,7 +281,7 @@ def solar_dates(days: Collection[int]) -> list[str]:
     return [solar_date(d) for d in sorted(days)]
 
 
-def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusions: list[tuple[float, float]],
+def array_samples(arr: ArrayConfig, history: PvHistory, exclusions: list[tuple[float, float]],
                   keep: Keep | None = None, skip: frozenset[float] = frozenset(), site: Site | None = None
                   ) -> tuple[list[tuple[float, float]], set[float], set[float]]:
     """An array's usable (period start, mean W) samples, its steady hours and its hours at a fixed limit: what
@@ -293,7 +289,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     only a short peak brought to a limit (floor_hours)."""
     power = history.power
     summed = scaled_sum(power, arr.sensors, history.factors)
-    samples = usable_samples(summed, soc=history.soc, soc_full=soc_full, exclusions=exclusions,
+    samples = usable_samples(summed, exclusions=exclusions,
                              valid_since=arr.valid_since,
                              full=history.full.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset())
                              | skip)
@@ -309,7 +305,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, soc_full: float, exclusi
     return samples, steady, floors
 
 
-def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: float,
+def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory,
                  exclusions: list[tuple[float, float]]) -> dict[float, tuple[tuple[str, ...], tuple[str, ...]]]:
     """Per period with a value: (why learning leaves it out, why it counts only as a lower bound).
 
@@ -321,8 +317,8 @@ def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: flo
     dead = set(out.dead)
     left = {"battery_full": history.full.get(sid, frozenset()), "maybe_charging": history.unsure.get(sid, frozenset()),
             "no_output": {t for t in out.hours if solar_day(site, t) in dead}, "snow": out.snow}
-    reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors), soc=history.soc,
-                             soc_full=soc_full, exclusions=exclusions, valid_since=arr.valid_since,
+    reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors),
+                             exclusions=exclusions, valid_since=arr.valid_since,
                              left={k: v for k, v in left.items() if v})
     output = history.output.get(sid, frozenset())
     limit = floor_hours(arr, history, site) | {t for t in reasons if t - t % HOUR in output}
@@ -336,7 +332,7 @@ def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory, soc_full: flo
     return result
 
 
-def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, soc_full: float,
+def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float,
                 exclusions: list[tuple[float, float]], keep: Keep | None = None, period: float = HOUR) -> LearnedArray:
     """Learn one array from its usable hours, with the panel explanations (arraycheck.annotate).
 
@@ -347,7 +343,7 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
         _LOGGER.warning("%s: no long-term statistics for %s (state_class measurement required)",
                         arr.name, ", ".join(missing))
     out = left_out(site, arr, history, period)
-    samples, steady, floors = array_samples(arr, history, soc_full, exclusions, keep, out.hours,
+    samples, steady, floors = array_samples(arr, history, exclusions, keep, out.hours,
                                             site if period == HOUR else None)
     result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
                    datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
@@ -376,28 +372,27 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float, so
 
 
 @sun_path_cache
-def learn_arrays(site: Site, arrays: dict[str, ArrayConfig], history: PvHistory, now: float, soc_full: float,
+def learn_arrays(site: Site, arrays: dict[str, ArrayConfig], history: PvHistory, now: float,
                  exclusions: list[tuple[float, float]], keep: Keep | None = None,
                  period: float = HOUR) -> dict[str, LearnedArray]:
     """Learn every array (subentry id -> LearnedArray); now: UNIX seconds, the reference for ageing."""
-    return {sid: learn_array(site, arr, history, now, soc_full, exclusions, keep, period) for sid, arr in arrays.items()}
+    return {sid: learn_array(site, arr, history, now, exclusions, keep, period) for sid, arr in arrays.items()}
 
 
 def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArray],
-                   history: PvHistory, now: float, soc_full: float, inst: Installation | None = None) -> None:
+                   history: PvHistory, now: float, inst: Installation | None = None) -> None:
     """Add the measured hours to the day-ahead archive, and the model on measured weather (satellite).
 
     inst: the installation; hours in which an array was at a fixed limit are flagged, and the model on measured
     weather is capped like the forecast, so the split into weather and model error stays fair.
     """
-    full = {t for t, v in history.soc.items() if v >= soc_full}
     peaks = {s: {t: v * history.factors.get(s, 1.0) for t, v in values.items() if v is not None}
              for s, values in history.power_max.items()} if inst and (inst.limited_arrays() or inst.caps) else {}
     for sid, arr in arrays.items():
         limited = ct.limited_hours(inst, sid, peaks) if peaks else set()
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
         fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
-                               full | history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
+                               history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
                                | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset())
                                | history.output.get(sid, frozenset()),
                                limited)

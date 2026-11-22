@@ -78,7 +78,8 @@
       "sensor_unit": "Power sensors must report W or kW.",
       "sensor_state_class": "Power sensors need state_class 'measurement' so Home Assistant keeps long-term statistics.",
       "feed_in_limit_needed": "A feed-in rule limited to a power needs the limit in W.",
-      "feed_in_pct_needed": "A feed-in rule limited to a share needs the limit in %."
+      "feed_in_pct_needed": "A feed-in rule limited to a share needs the limit in %.",
+      "invalid_value": "A value is missing or outside the allowed range."
     },
     "abort": {
       "already_configured": "Noxcast is already set up. Add PV arrays to the existing entry.",
@@ -332,7 +333,8 @@
         "soc_unit": "The state of charge must be in %.",
         "system_taken": "This system already has a battery. A second one is a subsystem of its own.",
         "parent_not_possible": "This system cannot be a part: it holds subsystems itself, or the chosen system holds PV arrays or a battery.",
-        "fixed_power_needed": "The regulation Fixed power needs a value under Fixed power."
+        "fixed_power_needed": "The regulation Fixed power needs a value under Fixed power.",
+        "invalid_value": "A value is missing or outside the allowed range."
       },
       "abort": {
         "saved": "Saved."

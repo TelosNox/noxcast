@@ -184,3 +184,30 @@ async def test_a_part_is_removed_only_after_what_goes_with_it_was_shown(hass: Ho
     assert msg["success"] and not parts_of(hass, entry, "system") and not parts_of(hass, entry, "array")
     msg = await ask("part_remove", part="house")
     assert not msg["success"] and msg["error"]["code"] == "not_found"
+
+
+async def test_saving_checks_the_form_and_the_place_as_the_dialog_does(hass: HomeAssistant, setup) -> None:
+    entry, ask = setup
+    system = parts_of(hass, entry, "array")["roof"]["system"]
+    # out of range or unknown, as Home Assistant refuses it before a dialog step: nothing is stored
+    form = (await ask("part_form", part="roof"))["result"]
+    msg = await ask("part_save", part="roof", input={**form["data"], "peak_power": -5}, revision=form["revision"])
+    assert msg["result"]["errors"] == {"peak_power": "invalid_value"}
+    msg = await ask("part_save", part="roof", input={**form["data"], "spare": 1}, revision=form["revision"])
+    assert msg["result"]["errors"] == {"spare": "invalid_value"}
+    assert form["errors"]["invalid_value"]
+    assert parts_of(hass, entry, "array")["roof"]["peak_power"] == 1000
+    # a form opened while the system had room: it got a battery meanwhile, so a second one is refused
+    form = (await ask("part_form", kind="battery", to=system))["result"]
+    battery = {**form["data"], "name": "Cellar", "soc_sensor": "sensor.soc", "capacity": 5}
+    assert (await ask("part_save", kind="battery", to=system, input=battery))["success"]
+    battery = {k: v for k, v in {**battery, "name": "Attic"}.items() if k != "system"}
+    msg = await ask("part_save", kind="battery", to=system, input=battery)
+    assert msg["result"]["errors"] == {"system": "system_taken"}
+    assert len(parts_of(hass, entry, "battery")) == 1
+    # a system with a PV array cannot take a subsystem
+    msg = await ask("part_form", kind="system", to=system)
+    assert not msg["success"] and msg["error"]["code"] == "not_possible"
+    msg = await ask("part_save", kind="system", to=system, input={"name": "Unit", "template": "pv_battery"})
+    assert msg["result"]["errors"] == {"parent": "parent_not_possible"}
+    assert all(d["name"] != "Unit" for d in parts_of(hass, entry, "system").values())

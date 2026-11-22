@@ -10,7 +10,7 @@ TOTAL = None                             # key of the sum of all arrays in the s
 # main entry
 CONF_SOC_SENSORS = "soc_sensors"       # until 1.8: batteries whose full state left every array out of learning
 CONF_UNENTERED_SOC = "unentered_soc_sensors"  # from 1.8: those of them no battery had (a repair asks for the battery)
-CONF_SOC_FULL = "soc_full_pct"            # from what % a battery counts as full (unless its upper limit is lower)
+CONF_SOC_FULL = "soc_full_pct"            # until 1.9: from what % every battery counted as full (systems.drop_soc_full)
 DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
@@ -48,6 +48,8 @@ CONF_MAX_SOC_ENTITY = "max_soc_entity"
 CONF_MIN_SOC = "min_soc"
 CONF_MIN_SOC_ENTITY = "min_soc_entity"
 CONF_RESERVE = "reserve"                  # percent points above min_soc where discharging stops in practice
+CONF_FULL_MARGIN = "full_margin"          # percent points below max_soc from which it counts as full in learning
+DEFAULT_FULL_MARGIN = 5                   # near the top a battery charges slower and PV is curtailed (backtest, 0.7.0)
 CONF_COUPLING = "coupling"                # dc / ac
 COUPLING_OPTIONS = ("dc", "ac")
 CONF_EFFICIENCY = "efficiency"            # round trip %, empty = default of the coupling

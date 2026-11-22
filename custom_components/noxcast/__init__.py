@@ -75,12 +75,13 @@ def _apply(hass: HomeAssistant, entry: NoxcastConfigEntry, changes: systems.Chan
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) -> bool:
-    """1.1 -> 1.8: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
+    """1.1 -> 1.9: Open-Meteo is the only weather source, Noxcast's own weather entity feeds the cards (1.3),
     the ICON models Open-Meteo discontinues become ICON (icon_seamless, 1.4), the installation becomes
     systems (1.5, see systems.migrate), and each system of the top level one entry with its parts inside
     (1.6, store.async_store; the devices and entities of the arrays move along), and "when the battery is full"
     a deviation from the household's feed-in rule (1.7, systems.feed_in_rules), and the household's old
-    state-of-charge sensors gone (1.8, systems.drop_old_soc)."""
+    state-of-charge sensors gone (1.8, systems.drop_old_soc), and the household's "full" level a margin per
+    battery (1.9, systems.drop_soc_full)."""
     if entry.version > 1:
         return False
     if entry.minor_version < 3:
@@ -108,6 +109,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: NoxcastConfigEntry) ->
     if entry.minor_version < 8:
         data = systems.drop_old_soc(entry.data, store.flat(entry))
         hass.config_entries.async_update_entry(entry, data=data, minor_version=8)
+    if entry.minor_version < 9:
+        data, changes = systems.drop_soc_full(entry.data, store.flat(entry))
+        _apply(hass, entry, changes)
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=9)
     return True
 
 

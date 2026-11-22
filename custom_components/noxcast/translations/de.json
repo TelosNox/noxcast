@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "Noxcast",
-        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: ab wann ein Akku als voll gilt, Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du danach hinzu, am einfachsten im Reiter Anlage des Noxcast-Panels, der jede Änderung im Bild zeigt.",
+        "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du danach hinzu, am einfachsten im Reiter Anlage des Noxcast-Panels, der jede Änderung im Bild zeigt.",
         "data": {
-          "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
@@ -14,7 +13,6 @@
           "feed_in_mode": "Einspeisevorgabe"
         },
         "data_description": {
-          "soc_full_pct": "Ladezustand, ab dem Abregelung angenommen wird.",
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
@@ -41,7 +39,6 @@
         "title": "Noxcast",
         "description": "Der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du auf der Seite der Integration hinzu.\n\n{concept}",
         "data": {
-          "soc_full_pct": "Akku gilt als voll ab",
           "house_load": "Hausverbrauch",
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
@@ -279,12 +276,14 @@
               "data": {
                 "max_soc": "Ladegrenze oben",
                 "max_soc_entity": "Ladegrenze als Entität",
+                "full_margin": "Gilt als voll ab (Punkte unter der Ladegrenze)",
                 "min_soc": "Entladegrenze unten",
                 "min_soc_entity": "Entladegrenze als Entität",
                 "reserve": "Reserve über der Entladegrenze"
               },
               "data_description": {
                 "max_soc_entity": "Optional: die aktuelle Ladegrenze aus dem Gerät; sie hat Vorrang vor der Zahl.",
+                "full_margin": "So viele Prozentpunkte unter der Ladegrenze gilt der Akku beim Lernen als voll: Kurz vor der Grenze lädt er langsamer, und PV kann schon abgeregelt werden. Standard 5.",
                 "min_soc_entity": "Optional: die aktuelle Entladegrenze aus dem Gerät.",
                 "reserve": "Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet, z. B. durch einen Einspeisestopp."
               }

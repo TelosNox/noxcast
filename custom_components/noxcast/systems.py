@@ -31,6 +31,7 @@ from .const import (
     CONF_FEED_IN_MODE, CONF_FIXED_POWER, CONF_LIMIT_PER_PHASE, CONF_MAX_CHARGE, CONF_NAME, CONF_OUTPUT_LIMIT, CONF_PARENT,
     CONF_PHASE, CONF_POWER_SENSORS, CONF_REGULATION, CONF_SENSOR_LIMITS, CONF_SOC_SENSOR, CONF_SOC_SENSORS, CONF_SYSTEM,
     CONF_TEMPLATE, CONF_UNENTERED_SOC, CONF_WHEN_FULL, CONF_OWN_FEED_IN, CONF_FEED_IN_PCT, CONF_ORIENTATIONS, CONF_PEAK_POWER, CONF_TILT, CONF_AZIMUTH, CONF_CAPACITY, CONF_HOUSE_LOAD, SUBENTRY_ARRAY, SUBENTRY_BATTERY, SUBENTRY_SYSTEM,
+    CONF_FULL_MARGIN, CONF_MAX_SOC, CONF_SOC_FULL, DEFAULT_SOC_FULL,
 )
 
 type Subs = Mapping[str, tuple[str, str, Mapping[str, Any]]]     # subentry id -> (type, title, data)
@@ -257,6 +258,24 @@ def drop_old_soc(data: Mapping[str, Any], subs: Subs) -> dict[str, Any]:
     if left:
         out[CONF_UNENTERED_SOC] = left
     return out
+
+
+def drop_soc_full(data: Mapping[str, Any], subs: Subs) -> tuple[dict[str, Any], Changes]:
+    """1.9: the main entry without the household's "full" level. A battery counts as full from its own margin below
+    its upper limit (CONF_FULL_MARGIN). A level the user changed from the default goes to every battery as the
+    margin that gives the same level as before, min(level, upper limit - 2); with the default each battery keeps
+    the default margin, which gives the same level at an upper limit of 100 % (the usual case)."""
+    out = _without(data, CONF_SOC_FULL)
+    changes = Changes()
+    level = data.get(CONF_SOC_FULL)
+    if level is None or float(level) == DEFAULT_SOC_FULL:
+        return out, changes
+    for bid, (_, d) in _of(subs, SUBENTRY_BATTERY).items():
+        if CONF_FULL_MARGIN in d:
+            continue
+        top = float(d.get(CONF_MAX_SOC) or 100)
+        changes.update[bid] = {**d, CONF_FULL_MARGIN: round(max(2.0, top - float(level)))}
+    return out, changes
 
 
 def unentered_soc(data: Mapping[str, Any], subs: Subs) -> list[str]:

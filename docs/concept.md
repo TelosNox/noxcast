@@ -1036,31 +1036,39 @@ above load), not until midnight, so "battery empty at" is part of the result:
 - Output limit of the inverter (balcony systems, e.g. 800 W or 1600 W with several phases), optionally
   with the PV array behind the same inverter: PV and battery together deliver at most the limit. Per
   hour the battery may deliver the limit minus the array's PV, and PV above the limit can only charge
-  the battery (or is curtailed), even while the house draws from the grid. All batteries stay one
-  storage; the caps of the systems add up per hour. One battery per array, so no PV counts twice.
+  the battery (or is curtailed), even while the house draws from the grid. The batteries of one system are one
+  storage; the caps of its subsystems add up per hour. One battery per array, so no PV counts twice.
 - Feed-in: surplus without room goes into the grid up to the household's feed-in limit (none under zero
   export, compared with the hour's mean power); the rest is curtailed, as is PV above an output limit. Systems with
-  an own deviation (always or never feed in) count by their share of the hour's PV after the output limits, since
-  one storage has no surplus per system; what they feed in anyway counts against the household's limit.
+  an own deviation (always or never feed in) count by their share of the hour's PV after the output limits; what they
+  feed in anyway counts against the household's limit.
 - Round-trip efficiency by coupling: DC-coupled batteries lose little (default about 95 %),
   AC-coupled ones more (about 90 %); configurable. Inverter losses are already inside the
   measured PV and house load and are not counted again.
 
-**Open: coupling of several storage systems.** "All batteries stay one storage" is a simplification that
-only holds where energy can flow freely between them. Two cases depend on how the systems are built and
-are not modelled yet:
+**Several storage systems.** "All batteries are one storage" only holds where energy flows freely between them:
+within one system (its subsystems behind a shared output, which mostly balance). Separate systems, each a top-level
+system with its own output to the house, are simulated each on its own and together against the one house load
+(`battery.simulate_units`), hour by hour:
 
-- PV above the output limit of one system (e.g. a balcony system) can only charge that system's own
-  battery. The combined storage lets it charge every battery, so with a full balcony battery and an empty
-  house battery the simulation books energy as charged that is really curtailed. Whether one system can
-  charge another depends on whether the energy can flow AC through the house grid.
-- Whether a battery behind a balcony inverter can charge from the house's surplus (AC charging) depends
-  on the system; many cannot, some are built exactly that way. The simulation assumes they can.
+1. The PV of systems without a battery covers the load first; it cannot be stored.
+2. A system with *fixed power* delivers it whatever the house draws, from its PV first, then from its battery; what
+   exceeds the load leaves the house.
+3. The PV of the other systems covers the rest of the load, in proportion to each one's PV (none can hold its PV
+   back while the house draws).
+4. What is still missing is shared evenly by their batteries, each up to what it can deliver in the hour (energy
+   above its lower limit, discharge power, its output cap); what one cannot give, the others take over (water
+   filling). Most systems that each follow the house load settle near an even split; one that reacts faster takes
+   more. That is why the Installation tab shows it as simplified.
+5. Each system charges from its own PV what it does not deliver, PV above its output cap included. Only a battery at
+   the house grid (AC, charges from the household) takes what the others send out, evenly over several of them.
+6. What then still leaves the house follows the feed-in rule; the systems' shares of it follow what each sent out.
 
-Modelling this means configuring each storage system with what it can take in (own PV only, AC from the
-house, from which other system) and simulating the systems separately, coupled where that is possible.
-Until then the combined storage is kept; the error affects installations with an output limit and a
-second battery, and is visible as a too-early "full" and too little curtailment.
+A system's simulation counts as "lost" the surplus its own battery cannot take; the whole counts what leaves the
+house, as the single storage did, so planning consumers sees the same surplus. The whole's full, empty and first
+loss are the earliest system's: one full system already loses its surplus, however much room the others have. Its
+level is all batteries weighted by capacity. With one system (or batteries without a system) the single storage runs
+as before, so its results do not change.
 
 ### Planning flexible consumers
 

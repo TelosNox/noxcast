@@ -16,7 +16,8 @@ const BAT_TEXT = {
     socBase: "Ladestand wie geplant", socEnd: "Im Akku morgen 24 Uhr",
     review: "Rückblick", reviewHelp: "Tiefster und höchster Ladestand je Tag aus der Langzeitstatistik der Ladestand-Sensoren. Voll = obere Grenze erreicht, leer = untere Grenze plus Reserve erreicht.",
     daysFull: "Tage voll", daysEmpty: "Tage leer", noStats: "Noch keine Statistik für die Ladestand-Sensoren.",
-    help: "Alle Akkus zählen als ein Speicher. Überschuss ohne Platz wird eingespeist, soweit die Einspeisevorgabe es erlaubt (bis zur Einspeisegrenze; Systeme mit eigener Abweichung nach ihrem Anteil an der PV), der Rest und PV über einer Ausgangsgrenze werden abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
+    perSystem: "Je System", system: "System",
+    help: "Die Akkus eines Systems zählen als ein Speicher. Getrennte Systeme rechnet die Prognose je für sich: jedes lädt aus seiner eigenen PV, den Verbrauch teilen sie sich gleichmäßig, jedes höchstens bis zu seiner Entladeleistung. Die Was-wäre-wenn-Rechnung zählt alle Akkus als einen Speicher. Überschuss ohne Platz wird eingespeist, soweit die Einspeisevorgabe es erlaubt (bis zur Einspeisegrenze; Systeme mit eigener Abweichung nach ihrem Anteil an der PV), der Rest und PV über einer Ausgangsgrenze werden abgeregelt. Die Variante rechnet mit derselben Prognose; nur Kapazität und der zusätzliche Verbraucher ändern sich.",
     horizon: "(bis morgen 24 Uhr)", kwh: "kWh", h: "h", today: "heute", tomorrow: "morgen",
     pred: "Vorhersage und Wirklichkeit", predFull: "Voll: Abweichung", predEmpty: "Leer für die Nacht: Abweichung", predHit: "Voll ja/nein getroffen",
     predHitEmpty: "Nacht getroffen", notCharged: "nicht geladen", holds: "hält",
@@ -36,7 +37,8 @@ const BAT_TEXT = {
     socBase: "State of charge as planned", socEnd: "In the battery tomorrow midnight",
     review: "Review", reviewHelp: "Lowest and highest state of charge per day from the long-term statistics of the state of charge sensors. Full = upper limit reached, empty = lower limit plus reserve reached.",
     daysFull: "days full", daysEmpty: "days empty", noStats: "No statistics for the state of charge sensors yet.",
-    help: "All batteries count as one storage. Surplus without room is fed in as far as the feed-in rule allows (up to the feed-in limit; systems with a deviation of their own by their share of the PV); the rest and PV above an output limit are curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
+    perSystem: "Per system", system: "System",
+    help: "The batteries of one system count as one storage. Separate systems are forecast each on its own: each charges from its own PV, they share the consumption evenly, each up to its discharge power. The what-if counts all batteries as one storage. Surplus without room is fed in as far as the feed-in rule allows (up to the feed-in limit; systems with a deviation of their own by their share of the PV); the rest and PV above an output limit are curtailed. The variant uses the same forecast; only the capacity and the additional consumer change.",
     horizon: "(until tomorrow midnight)", kwh: "kWh", h: "h", today: "today", tomorrow: "tomorrow",
     pred: "Prediction and reality", predFull: "Full: deviation", predEmpty: "Empty for the night: deviation", predHit: "Full yes/no right",
     predHitEmpty: "Night right", notCharged: "not charged", holds: "lasts",
@@ -200,12 +202,17 @@ class NoxcastBattery extends HTMLElement {
       ...(e.sim.fed_in_wh !== undefined ? [[t.fedIn, `${this._kwh(e.sim.fed_in_wh)} ${t.kwh}`], [t.curtailed, `${this._kwh(e.sim.curtailed_wh)} ${t.kwh}`]] : []),
       [t.grid, `${this._kwh(e.sim.grid_wh)} ${t.kwh}`],
     ].map(([k, val]) => `<div class="fig"><span class="muted small">${k}</span><span class="big">${val}</span></div>`).join("");
+    // several separate systems: when each one is full and empty (the figures above are the earliest)
+    const systems = (e.systems || []).length ? `<table class="systems"><thead><tr><th>${t.perSystem}</th><th class="num">${t.fullAt}</th>
+      <th class="num">${t.emptyAt}</th><th class="num">${t.maxSoc}</th></tr></thead><tbody>${e.systems.map((y) => `<tr><td>${esc(y.name)}</td>
+      <td class="num">${y.full ? this._when(y.full) : t.never}</td><td class="num">${y.empty ? this._when(y.empty) : t.never}</td>
+      <td class="num">${Math.round(y.max_soc * 100)} %</td></tr>`).join("")}</tbody></table>` : "";
     const lastStart = Math.max(now, this._end(e) - 900);
     const res = this._results(e);
     const slider = (k, label, min, max, step, out) => `<label class="ctl"><span>${label}</span>
       <input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v[k]}"><output id="o-${k}">${out}</output></label>`;
     return `
-      <section class="card pad"><div class="figs">${figs}</div><p class="help">${t.until}: ${this._when(e.charge_start)}. ${t.help}</p></section>
+      <section class="card pad"><div class="figs">${figs}</div>${systems}<p class="help">${t.until}: ${this._when(e.charge_start)}. ${t.help}</p></section>
       <section class="card pad"><div class="head"><h3>${t.whatIf} <span class="muted small">${t.horizon}</span></h3><button id="reset">${t.reset}</button></div>
         <div class="ctls">
           ${slider("capacity_wh", t.capacity, 0, Math.max(30000, st.capacity_wh * 3), 500, `${this._kwh(v.capacity_wh)} ${t.kwh}`)}
@@ -399,6 +406,7 @@ class NoxcastBattery extends HTMLElement {
       .legend i { display: inline-block; } .legend i.ln { width: 16px; height: 0; } .legend i.sw { width: 12px; height: 10px; border-radius: 2px; }
       .pvsw { background: var(--nx-pv); border: 1px solid var(--nx-pv-line); }
       table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.systems { margin: 4px 0 8px; }
       th { text-align: left; font-weight: 500; color: var(--secondary-text-color); font-size: 12px; padding: 4px 6px; }
       td { padding: 6px; border-top: 1px solid var(--divider-color); }
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

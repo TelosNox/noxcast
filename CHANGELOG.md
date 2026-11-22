@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.6.0b2] - 2026-11-22
+
 ### Added
 - An output limit that holds per phase now counts (*Limit holds per phase*, e.g. EcoFlow Stream in three-phase
   mode): the devices on one phase share its limit, a device alone on a phase gets the whole limit. Without a battery

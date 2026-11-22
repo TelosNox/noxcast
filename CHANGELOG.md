@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- *Learned* shows per array what the last nightly learning run changed: a card with hours, efficiency and the other
+  values before and after, how many shading cells got darker or lighter, the largest of them with their hours, and
+  per month what a clear day yields with the old and the new state. A layer *Change* colours the shading map by how
+  each cell moved. It fills after the second learning run with this version.
 - *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
   per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
   only in the diagnostics download.

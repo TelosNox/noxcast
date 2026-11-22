@@ -51,6 +51,7 @@ from . import systems as sy
 from . import forecasting as fc
 from . import hindcast as hc
 from . import learning as ln
+from . import learnchange as lc
 from . import load as lf
 from . import plan as pl
 from . import plateau as pt
@@ -196,6 +197,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.learned: dict[str, LearnedArray] = {}
         self.exclusions: list[dict] = []          # {"start": ts, "end": ts, "note": str}
         self.last_learning: datetime | None = None
+        # per array: what the last learning run changed (learnchange.changes), for the panel
+        self.learning_changes: dict[str, dict] = {}
         self.last_learning_seconds: float | None = None  # duration of the last successful run, fetches included
         self.last_learning_error: str | None = None
         self.archive_errors: dict[str, str] = {}         # archive name -> error of the last learning run
@@ -240,6 +243,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
             self.model_compare = hc.valid(stored.get("model_compare"))
             self.battery_log = dict(stored.get("battery_log") or {})
+            self.learning_changes = {sid: c for sid, c in (stored.get("learning_changes") or {}).items()
+                                     if sid in self.learned}
             limits = stored.get("limits") or {}
             self.limits = {"detected": dict(limits.get("detected") or {}),
                            "dismissed": {s: float(w) for s, w in (limits.get("dismissed") or {}).items()},
@@ -467,6 +472,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "pv_backtest": self.pv_backtest,
             "model_compare": self.model_compare,
             "battery_log": self.battery_log,
+            "learning_changes": {sid: c for sid, c in self.learning_changes.items() if sid in self.arrays},
             "limits": self.limits,
             "exclusions": self.exclusions,
             "last_learning": self.last_learning.isoformat() if self.last_learning else None,
@@ -689,7 +695,13 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             work = await self.hass.async_add_executor_job(self._record_archive, base, learned, history, now.timestamp())
             # the forecast may have stored a new snapshot or history stamp in the meantime (archive.py, merged)
             self.forecast_archive = fc_archive.merged(self.forecast_archive, base, work)
+            previous = {sid: la for sid, la in self.learned.items() if sid in learned}
             self.learned.update(learned)          # applied in one step on the event loop
+            try:
+                self.learning_changes = await self.hass.async_add_executor_job(
+                    self._learning_changes, previous, learned, dt_util.now().year)
+            except Exception:  # noqa: BLE001 – only for the panel; learning and forecast do not depend on it
+                _LOGGER.exception("Noxcast could not compare the learned state with the last run")
             try:
                 # only the window's days of the 5-minute archive, which holds years; expanded in the executor
                 first = (dt_util.now() - timedelta(days=pt.WINDOW_DAYS + 1)).date().isoformat()
@@ -707,6 +719,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
         return history, now.timestamp(), exclusions
+
+    def _learning_changes(self, previous: dict[str, LearnedArray], learned: dict[str, LearnedArray],
+                          year: int) -> dict[str, dict]:
+        """Per array what this run changed against the last one (learnchange.changes)."""
+        return {sid: lc.changes(self.site, self.arrays[sid].geometry, previous.get(sid), la, year)
+                for sid, la in learned.items() if sid in self.arrays}
 
     async def _async_pv_history(self, now: datetime, start: datetime | None = None, archives: bool = True,
                                 record: bool = True) -> tuple[ln.PvHistory, list[tuple[float, float]]]:

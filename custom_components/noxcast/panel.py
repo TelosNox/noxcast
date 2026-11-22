@@ -176,7 +176,7 @@ def ws_frontend(hass: HomeAssistant, connection: websocket_api.ActiveConnection,
 def ws_learned(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Learned state of all arrays of all Noxcast entries (the site is the Home Assistant location)."""
     coordinators = _coordinators(hass)
-    arrays = [a for c in coordinators for a in views.learned_arrays(c.arrays, c.learned, c.last_learning)]
+    arrays = [a for c in coordinators for a in views.learned_arrays(c.arrays, c.learned, c.last_learning, c.learning_changes)]
     _send(connection, msg, {
         "latitude": hass.config.latitude, "longitude": hass.config.longitude,
         "time_zone": hass.config.time_zone, "arrays": arrays,

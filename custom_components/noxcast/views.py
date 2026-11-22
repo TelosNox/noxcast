@@ -63,8 +63,10 @@ def band_series(band: dict | None, a: float = float("-inf"), b: float = float("i
 
 # ---------------------------------------------------------------- noxcast/learned
 
-def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning: datetime | None) -> list[dict]:
-    """Geometry and learned state per array, with the facade cells filled for display."""
+def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning: datetime | None,
+                   changes: dict[str, dict] | None = None) -> list[dict]:
+    """Geometry and learned state per array, with the facade cells filled for display and what the last learning
+    run changed (learnchange.changes)."""
     out = []
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id)
@@ -75,6 +77,7 @@ def learned_arrays(arrays: dict, learned: dict[str, LearnedArray], last_learning
             "facade_cells": facade_cells(la) if la else {},
             "cell_certainty": cell_certainty(la) if la else {},
             "last_learning": last_learning.isoformat() if last_learning else None,
+            "changes": (changes or {}).get(sub_id),
         })
     return out
 

@@ -604,7 +604,10 @@ not types of their own. Independent devices are systems of their own, side by si
   details per cell (values, when the sun is there) and a year grid of month × hour for those who do
   not think in sun angles. A layer *Certainty* shows per cell how well it is backed (`views.cell_certainty` from
   `LearnedArray.cell_info`: hours, origin, P75 − P25 of their transmission), stored by learning for the panel only
-  and never read by the forecast. Follows the Home Assistant theme (light and dark). Data comes from the
+  and never read by the forecast. A card *Last learning run* and a layer *Change* show what the last run changed
+  (`learnchange.changes`, kept by the coordinator with the state before the run): parameters before and after, the
+  cells that moved by 0.05 or more with their value before, and per month the energy of a clear day (the 15th) with
+  the old and the new state, so every change is told in the same unit. Also only for the panel. Follows the Home Assistant theme (light and dark). Data comes from the
   websocket command `noxcast/learned`, not from attributes, so the maps do not grow the database.
   Further sections are tabs in the panel header, each a module of its own. One shared stylesheet
   (`noxcast-theme.js`, adopted into the panel and every section) gives all pages the same look:

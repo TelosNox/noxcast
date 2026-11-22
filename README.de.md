@@ -666,6 +666,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   Leistungsgrenze) und wie weit diese Stunden streuen. *Sicher* braucht mindestens 12 klare Stunden innerhalb ±0,05
   (ohne Satellitenfilter 30 Stunden), *ziemlich sicher* 6 klare Stunden innerhalb ±0,12 (oder 12 Stunden);
   *abgeleitete* Felder haben keine eigenen Stunden.
+- **Was der letzte Lernlauf geändert hat** (Karte *Letzter Lernlauf* und Ebene *Änderung* unter Gelerntes, ab dem
+  zweiten Lauf): Stunden, Wirkungsgrad, Himmelssicht, Abdeckung der Karte und die Schattenfelder, die um 0,05 oder mehr
+  dunkler oder heller wurden, mit ihrem Wert vorher, die größten davon mit den Stunden, auf denen sie beruhen, und neu
+  ausgelassene Tage. Ein klarer Tag am 15. jedes Monats, gerechnet mit dem alten und dem neuen Stand, zeigt in kWh,
+  was alle Änderungen zusammen ausmachen.
 - **Richtungsfaktor** (grobe Bereiche, 0,8–1,2): was an unverschatteten Positionen übrig bleibt – Geometrie- und
   Modellfehler.
 - **Reflexion:** Licht von hellen Flächen, wo das Modul selbst wenig Direktlicht bekommt.

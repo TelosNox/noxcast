@@ -61,7 +61,16 @@ const TEXT = {
       never: "hier steht die Sonne nie", ground: "unter dem Horizont" },
     panoIdle: "Ziehen schwenkt den Blick, Mausrad oder zwei Finger zoomen. Zeiger auf dem Bild: Richtung und Höhe.",
     panoAt: "Richtung {a}° ({d}) · Höhe {e}° · {k}", panoHome: "Blickrichtung Modul", panoFace: "Modul",
-    shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor", sure: "Sicherheit",
+    shade: "Schatten", refl: "Reflexion", dir: "Richtungsfaktor", sure: "Sicherheit", change: "Änderung",
+    darker: "dunkler", lighter: "heller", unchanged: "unverändert",
+    chg: { title: "Letzter Lernlauf", first: "Erster Lernlauf dieser PV-Gruppe: noch nichts zum Vergleichen.", hours: "Stunden",
+      efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
+      cells: "Schattenfelder", cellsText: (c) => [c.down && `${c.down} dunkler`, c.up && `${c.up} heller`, c.added && `${c.added} neu`, c.removed && `${c.removed} entfallen`].filter(Boolean).join(", ") || "keine verändert",
+      facade: "Horizontlinie", facadeNew: "neu erkannt", facadeGone: "entfallen", limit: "Felder an der Leistungsgrenze",
+      deadDays: "Neu ausgelassene Tage", clear: "Klarer Tag am 15. (kWh)", month: "Monat", before: "vorher", after: "nachher", diff: "Änderung",
+      clearSame: "Klare Tage: unverändert", top: "Größte Änderungen", topRow: (r) => `Richtung ${r.azimuth[0]}–${r.azimuth[1]}°, Höhe ${r.elevation[0]}–${r.elevation[1]}°`,
+      notLearned: "nicht gelernt", showMap: "Auf der Karte zeigen",
+      help: "Vergleich mit dem Stand vor dem letzten nächtlichen Lernlauf. Werte ändern sich, weil neue Stunden dazukommen, alte aus dem Lernzeitraum fallen oder Tage ausgelassen werden. Der klare Tag rechnet jeden Monat mit dem alten und dem neuen Stand: So zeigt sich in kWh, was alle Änderungen zusammen ausmachen." },
     certainty: { sure: "sicher", fair: "ziemlich sicher", unsure: "unsicher", derived: "abgeleitet" },
     basis: "Grundlage", basisHours: (n) => `${n} Stunden`, spread: (v) => `Streuung ±${v}`,
     origin: { all: "alle Stunden", clear: "klare Stunden", fit: "angepasst an den Stundenverlauf", shaped: "aus den Nachbarfeldern", limit: "an der Leistungsgrenze" },
@@ -82,6 +91,7 @@ const TEXT = {
       dir: "Was nach Schatten und Reflexion übrig bleibt: Geometrie- und Modellfehler. Werte nahe 1 sind gut.",
       sure: "Wie gut jedes Feld der Schattenkarte belegt ist. Sicher: mindestens 12 klare Stunden, die eng beieinander liegen (Streuung höchstens ±0,05), oder ohne Satellitenfilter mindestens 30 Stunden. Ziemlich sicher: mindestens 6 klare Stunden mit Streuung bis ±0,12, oder 12 Stunden. Abgeleitet: Der Wert kommt aus den Formregeln der Karte (Nachbarfelder) oder liegt an der Leistungsgrenze, nicht aus eigenen Stunden. Ein Klick auf ein Feld zeigt Stunden, Herkunft und Streuung.",
       grid: "Jede Zeile ein Monat, jede Spalte eine Stunde (Ortszeit). Dieselben Daten wie die Karte, ohne Sonnenwinkel.",
+      change: "Wie sich jedes Feld der Schattenkarte im letzten Lernlauf verändert hat: rot dunkler, grün heller, ab 0,05. Ein Klick auf ein Feld zeigt den Wert vorher.",
       pano: [
         "Das Bild zeigt, was eine Kamera auf dem Modul sähe, die in Blickrichtung des Moduls fotografiert. Wie auf einem Foto bleiben gerade Kanten gerade: Hauswände, Dachkanten und Ecken sehen so aus wie vor Ort. Ziehen schwenkt den Blick nach links und rechts oder schiebt ihn nach oben und unten, Mausrad oder zwei Finger ändern den Bildwinkel. Das Dreieck am Horizont zeigt, wohin das Modul schaut.",
         "Noxcast sieht die Umgebung nur über die Sonne: wo sie stand und wie viel Licht ankam. Gemessen ist deshalb nur der Streifen zwischen der Dezember- und der Junibahn. Über der Junibahn steht die Sonne nie; ein Hindernis kann dort weitergehen, ohne dass Noxcast es sieht. Ein Hindernis zeigt das Bild, wo weniger als die Hälfte des Direktlichts ankommt, Teilschatten, wo es mehr ist; die Abstufungen zeigt die Karte.",
@@ -163,7 +173,16 @@ const TEXT = {
       never: "the sun is never here", ground: "below the horizon" },
     panoIdle: "Drag to swivel the view, mouse wheel or two fingers to zoom. Pointer on the picture: direction and height.",
     panoAt: "Direction {a}° ({d}) · height {e}° · {k}", panoHome: "Module direction", panoFace: "Module",
-    shade: "Shade", refl: "Reflection", dir: "Direction factor", sure: "Certainty",
+    shade: "Shade", refl: "Reflection", dir: "Direction factor", sure: "Certainty", change: "Change",
+    darker: "darker", lighter: "lighter", unchanged: "unchanged",
+    chg: { title: "Last learning run", first: "First learning run of this array: nothing to compare yet.", hours: "Hours",
+      efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
+      cells: "Shading cells", cellsText: (c) => [c.down && `${c.down} darker`, c.up && `${c.up} lighter`, c.added && `${c.added} new`, c.removed && `${c.removed} dropped`].filter(Boolean).join(", ") || "none changed",
+      facade: "Horizon line", facadeNew: "newly found", facadeGone: "dropped", limit: "Cells at the power limit",
+      deadDays: "Days newly left out", clear: "Clear day on the 15th (kWh)", month: "Month", before: "before", after: "after", diff: "change",
+      clearSame: "Clear days: unchanged", top: "Largest changes", topRow: (r) => `Direction ${r.azimuth[0]}–${r.azimuth[1]}°, height ${r.elevation[0]}–${r.elevation[1]}°`,
+      notLearned: "not learned", showMap: "Show on the map",
+      help: "Compared with the state before the last nightly learning run. Values change because new hours come in, old ones drop out of the learning period or days are left out. The clear day computes each month with the old and the new state: that shows in kWh what all changes together amount to." },
     certainty: { sure: "sure", fair: "fairly sure", unsure: "unsure", derived: "derived" },
     basis: "Basis", basisHours: (n) => `${n} hours`, spread: (v) => `spread ±${v}`,
     origin: { all: "all hours", clear: "clear hours", fit: "fitted to the hourly course", shaped: "from the neighbouring cells", limit: "at the power limit" },
@@ -184,6 +203,7 @@ const TEXT = {
       dir: "What remains after shade and reflection: geometry and model errors. Values close to 1 are good.",
       sure: "How well each cell of the shading map is backed. Sure: at least 12 clear hours that lie close together (spread at most ±0.05), or without the satellite filter at least 30 hours. Fairly sure: at least 6 clear hours with a spread up to ±0.12, or 12 hours. Derived: the value comes from the map's shape rules (neighbouring cells) or sits at the power limit, not from hours of its own. Click a cell for hours, origin and spread.",
       grid: "Each row a month, each column an hour (local time). The same data as the map, without sun angles.",
+      change: "How each cell of the shading map changed in the last learning run: red darker, green lighter, from 0.05. Click a cell for its value before.",
       pano: [
         "The picture shows what a camera on the module would see, taking a photo in the direction the module faces. As on a photo, straight edges stay straight: house walls, roof edges and corners look as they do on site. Drag to swivel the view left and right or to move it up and down; the mouse wheel or two fingers change the angle of view. The triangle on the horizon marks where the module faces.",
         "Noxcast sees the surroundings only through the sun: where it stood and how much light arrived. So only the band between the December and the June path is measured. Above the June path the sun never stands; an obstacle may go on there without Noxcast seeing it. The picture shows an obstacle where less than half of the direct light arrives, partial shade where more does; the map shows the shades in between.",
@@ -256,6 +276,7 @@ const PALETTE = {
     base: [243, 241, 236], refl: [[243, 241, 236], [244, 190, 120], [209, 104, 22]],
     dir: [[47, 111, 176], [243, 241, 236], [217, 130, 43]],
     sure: { sure: "#2F7D4F", fair: "#8DC49B", unsure: "#E3A23B", derived: "#B7B9BD" },
+    change: [[122, 24, 24], [243, 241, 236], [47, 125, 79]],
     unlearned: "#D6D6D2", hatch: "rgba(255,255,255,0.6)", behind: "#EDEDEA", mapBg: "#FFFFFF", path: "#1D2125",
     pano: { sky: "#DCEAF7", partial: "#B9C6D2", obstacle: "#3F4246", facadeBg: "#9A9C9F", plane: "#6E7176", dot: "#9EA1A6", sun: "#E8890C",
       ground: "#D8D0C4", grid: "rgba(0,0,0,0.12)" },
@@ -265,6 +286,7 @@ const PALETTE = {
     base: [66, 70, 74], refl: [[66, 70, 74], [176, 110, 50], [240, 150, 60]],
     dir: [[90, 150, 220], [66, 70, 74], [235, 150, 60]],
     sure: { sure: "#4FB477", fair: "#2F6B45", unsure: "#D9952E", derived: "#5A5E63" },
+    change: [[190, 70, 70], [66, 70, 74], [79, 180, 119]],
     unlearned: "#34373A", hatch: "rgba(255,255,255,0.14)", behind: "#2B2D30", mapBg: "#1E2022", path: "#E4E6E8",
     pano: { sky: "#25313D", partial: "#3A4652", obstacle: "#C9CCD0", facadeBg: "#7C8085", plane: "#5A5E63", dot: "#7E8389", sun: "#F5A524",
       ground: "#2E2A26", grid: "rgba(255,255,255,0.13)" },
@@ -675,6 +697,9 @@ class NoxcastPanel extends HTMLElement {
       // a cell from the horizon line has no hours of its own; a map learned before 0.7.0 has no certainty yet
       sure: (arr.cell_certainty || {})[`${ai},${ei}`] || (`${ai},${ei}` in (la.cells || {}) ? null : "derived"),
       info: (la.cell_info || {})[`${ai},${ei}`] || null,
+      // the last learning run: value before (undefined: unchanged, null: not learned before) and the change
+      before: ((arr.changes || {}).cell_before || {})[`${ai},${ei}`],
+      change: this._change(arr, `${ai},${ei}`),
       refl: coarse(la.reflection, az, el, 0),
       dir: coarse(la.direction, az, el, 1),
     };
@@ -689,7 +714,14 @@ class NoxcastPanel extends HTMLElement {
     if (shade === null) return { kind: "unlearned" };
     const key = `${ai},${ei}`;
     return { kind: "value", shade, refl: coarse(la.reflection, az, el, 0), dir: coarse(la.direction, az, el, 1),
-      sure: (arr.cell_certainty || {})[key] || (key in (la.cells || {}) ? null : "derived") };
+      sure: (arr.cell_certainty || {})[key] || (key in (la.cells || {}) ? null : "derived"), change: this._change(arr, key) };
+  }
+
+  _change(arr, key) {
+    const before = ((arr.changes || {}).cell_before || {})[key];
+    if (before === undefined) return 0;
+    const now = ((arr.learned || {}).cells || {})[key];
+    return (now ?? 1) - (before ?? 1);
   }
 
   _fill(c, layer) {
@@ -700,6 +732,7 @@ class NoxcastPanel extends HTMLElement {
     if (layer === "refl") return scale(P.refl, c.refl / 0.06);
     if (layer === "dir") return scale(P.dir, (c.dir - 0.9) / 0.2);
     if (layer === "sure") return c.sure ? P.sure[c.sure] : "url(#nx-hatch)";
+    if (layer === "change") return scale(P.change, ((c.change || 0) + 0.5));
     const t = c.shade;
     return rgb(t < 0.5 ? lerp(P.shade, P.mid, t / 0.5) : lerp(P.mid, P.free, (t - 0.5) / 0.5));
   }
@@ -815,6 +848,35 @@ class NoxcastPanel extends HTMLElement {
     ];
   }
 
+  // what the last learning run changed (learnchange.changes)
+  _changesCard(arr) {
+    const c = arr.changes, t = this._t, x = t.chg;
+    if (!c) return "";
+    const date = c.at ? new Date(c.at * 1000).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" }) : "";
+    if (c.first) return `<section class="card pad"><h3>${x.title} <span class="muted small">${date}</span></h3><p class="help">${x.first}</p></section>`;
+    const num = (v, d = 2) => v.toLocaleString(this._lang, { minimumFractionDigits: d, maximumFractionDigits: d });
+    const pct = (v, d = 1) => `${(v * 100).toLocaleString(this._lang, { maximumFractionDigits: d })} %`;
+    const pair = ([a, b], f) => a === null || a === undefined || a === b ? f(b) : `${f(a)} → ${f(b)}`;
+    const rows = [
+      [x.hours, pair(c.samples, (v) => (v || 0).toLocaleString(this._lang)) + (c.samples[0] !== null && c.samples[1] !== c.samples[0] ? ` (${c.samples[1] > c.samples[0] ? "+" : ""}${(c.samples[1] - c.samples[0]).toLocaleString(this._lang)})` : "")],
+      // the other values only where they moved: the figures above show them as they are now
+      ...(c.efficiency[0] !== c.efficiency[1] ? [[x.efficiency, pair(c.efficiency, (v) => pct(v))]] : []),
+      ...(c.sky_view[0] !== c.sky_view[1] ? [[x.skyView, pair(c.sky_view, (v) => pct(v, 0))]] : []),
+      ...(c.temp_coeff[0] !== c.temp_coeff[1] ? [[x.tempCoeff, pair(c.temp_coeff, (v) => `${num(v * 100)} %/K`)]] : []),
+      ...(c.coverage[0] !== c.coverage[1] ? [[x.coverage, pair(c.coverage, (v) => pct(v, 0))]] : []),
+      [x.cells, x.cellsText(c.cells)],
+      ...(c.facade[0] !== c.facade[1] ? [[x.facade, c.facade[1] ? x.facadeNew : x.facadeGone]] : []),
+      ...(c.limit_cells[0] !== c.limit_cells[1] ? [[x.limit, pair(c.limit_cells, String)]] : []),
+      ...(c.dead_days.length ? [[x.deadDays, c.dead_days.map((d) => new Date(d).toLocaleDateString(this._lang, { timeZone: "UTC" })).join(", ")]] : []),
+    ].map(([k, v]) => `<div class="fig"><span class="muted">${k}</span><span class="mono">${v}</span></div>`).join("");
+    const months = (c.clear_days || []).filter((d) => d.before !== null && Math.abs(d.after - d.before) >= 0.005);
+    const month = (m) => new Date(Date.UTC(2026, m - 1, 15)).toLocaleDateString(this._lang, { month: "short", timeZone: "UTC" });
+    const clear = months.length ? `<h4>${x.clear}</h4><table class="chg"><thead><tr><th>${x.month}</th><th class="num">${x.before}</th><th class="num">${x.after}</th><th class="num">${x.diff}</th></tr></thead><tbody>${months.map((d) => `<tr><td>${month(d.month)}</td><td class="num">${num(d.before)}</td><td class="num">${num(d.after)}</td><td class="num">${d.after > d.before ? "+" : ""}${num(d.after - d.before)}</td></tr>`).join("")}</tbody></table>` : `<p class="small muted">${x.clearSame}</p>`;
+    const top = (c.top || []).length ? `<h4>${x.top}</h4><ul class="chg">${c.top.map((r) => `<li>${x.topRow(r)}: <span class="mono">${r.before === null ? x.notLearned : num(r.before)} → ${r.after === null ? x.notLearned : num(r.after)}</span>${r.hours ? ` <span class="muted small">(${t.basisHours(r.hours)}${r.origin ? `, ${t.origin[r.origin]}` : ""})</span>` : ""}</li>`).join("")}</ul>` : "";
+    const show = this._state.layer !== "change" && c.cells.moved + c.cells.added + c.cells.removed ? `<button class="link" data-action="layer" data-layer="change">${x.showMap}</button>` : "";
+    return `<section class="card pad"><h3>${x.title} <span class="muted small">${date}</span></h3>${rows}${clear}${top}${show}<p class="help">${x.help}</p></section>`;
+  }
+
   _renderOverview() {
     const t = this._t;
     const cards = this._data.arrays.map((arr) => {
@@ -840,7 +902,7 @@ class NoxcastPanel extends HTMLElement {
   _renderArray(arr) {
     const t = this._t, s = this._state;
     const modeTabs = ["map", "grid", "pano"].map((m) => `<button role="tab" aria-selected="${s.mode === m}" class="tab ${s.mode === m ? "on" : ""}" data-action="mode" data-mode="${m}">${t[m]}</button>`).join("");
-    const layerTabs = ["shade", "refl", "dir", "sure"].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
+    const layerTabs = ["shade", "refl", "dir", "sure", ...(arr.changes && !arr.changes.first ? ["change"] : [])].map((l) => `<button class="chip ${s.layer === l ? "on" : ""}" data-action="layer" data-layer="${l}">${t[l]}</button>`).join("");
     const main = s.mode === "map" ? `
         <div class="card mapcard">${this._mapSvg(arr, s.layer, {})}</div>
         ${this._slider(arr)}` : s.mode === "pano" ? this._panoHtml(arr)
@@ -858,6 +920,7 @@ class NoxcastPanel extends HTMLElement {
         <aside class="side">
           ${s.sel ? this._detail(arr) : ""}
           <section class="card pad"><h2>${esc(arr.name)}</h2>${figs}</section>
+          ${this._changesCard(arr)}
           <section class="card pad"><h3>${s.mode === "pano" ? t.pano : s.mode === "grid" ? t.grid : t[s.layer]}</h3>${[].concat(s.mode === "pano" ? t.help.pano : s.mode === "grid" ? t.help.grid : t.help[s.layer]).map((x) => `<p class="help">${x}</p>`).join("")}${(s.layer === "shade" || s.mode === "pano") && (arr.learned || {}).facade ? `<p class="help">${t.help.facade}</p>` : ""}${s.mode !== "pano" && s.layer === "shade" && ((arr.learned || {}).limit_cells || []).length ? `<p class="help">${t.help.limit}</p>` : ""}</section>
         </aside>
       </div>`;
@@ -1012,6 +1075,7 @@ class NoxcastPanel extends HTMLElement {
           c.info && c.info[0] ? t.basisHours(c.info[0]) : null,
           c.info ? t.origin[c.info[1]] : c.facade ? t.fromFacade : null,
           c.info && c.info[2] !== null && c.info[0] ? t.spread(num(c.info[2] / 2)) : null].filter(Boolean).join(" · ")}</span></div>` : ""}
+        ${c.before !== undefined ? `<div class="tile"><span class="muted small">${t.chg.title}</span><b class="mono">${c.before === null ? t.chg.notLearned : num(c.before)} → ${num(c.shade)}</b><span class="small">${c.change < 0 ? t.darker : t.lighter}</span></div>` : ""}
       </div>`;
     }
     return `<section class="card pad">
@@ -1518,6 +1582,7 @@ class NoxcastPanel extends HTMLElement {
     const t = this._t, P = this._pal;
     const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
     const items = layer === "sure" ? ["sure", "fair", "unsure", "derived"].map((k) => [P.sure[k], t.certainty[k]])
+      : layer === "change" ? [[rgb(P.change[0]), `−0,5 ${t.darker}`], [rgb(P.change[1]), t.unchanged], [rgb(P.change[2]), `+0,5 ${t.lighter}`]]
       : layer === "refl" ? [[rgb(P.refl[0]), t.none], [rgb(P.refl[1]), "+3 %"], [rgb(P.refl[2]), "+6 %"]]
       : layer === "dir" ? [[rgb(P.dir[0]), `0,90 ${t.less}`], [rgb(P.dir[1]), "1,00"], [rgb(P.dir[2]), `1,10 ${t.more}`]]
         : [[rgb(P.free), t.free], [rgb(P.mid), t.partial], [rgb(P.shade), t.shaded]];
@@ -1544,7 +1609,7 @@ class NoxcastPanel extends HTMLElement {
     else if (a === "open") { s.view = "array"; s.arrayId = el.dataset.id; s.layer = el.dataset.layer || "shade"; s.mode = "map"; s.sel = null; }
     else if (a === "mode") { s.mode = el.dataset.mode; if (s.mode !== "map") this._stop(); }
     else if (a === "panohome") { this._pv = null; this._drawPano(); return; }
-    else if (a === "layer") s.layer = el.dataset.layer;
+    else if (a === "layer") { s.layer = el.dataset.layer; if (s.mode === "pano") s.mode = "map"; }
     else if (a === "cell") s.sel = [Number(el.dataset.ai), Number(el.dataset.ei)];
     else if (a === "close") s.sel = null;
     else if (a === "today") { s.doy = dayOfYear(new Date()); this._stop(); }
@@ -1660,6 +1725,9 @@ class NoxcastPanel extends HTMLElement {
       h3 { margin: 0 0 6px; font-size: 14px; font-weight: 500; }
       h4 { margin: 14px 0 4px; font-size: 13px; font-weight: 500; } .dhead h4 { margin: 0; }
       .fig { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--divider-color); font-size: 13px; }
+      table.chg { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.chg th, table.chg td { padding: 3px 0; text-align: left; border-top: 1px solid var(--divider-color); font-weight: 400; }
+      table.chg .num { text-align: right; padding-left: 8px; } ul.chg { margin: 0; padding-left: 18px; font-size: 13px; }
       .minis { flex: 999 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
       .mini { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
       .mini:focus-visible, .cell:focus-visible { outline: 2px solid var(--primary-color); }

@@ -15,6 +15,7 @@
     "band": null,
     "model_compare": null,
     "battery_log": {},
+    "learning_changes": {},
     "limits": {"detected": {}, "dismissed": {}, "systems": {}, "dismissed_systems": {}},
     "exclusions": [{"start": 1778655600.0, "end": 1778742000.0, "note": "x"}],
     "last_learning": null,
@@ -8721,6 +8722,68 @@
     },
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "learning_changes": {
+     "S": {
+      "at": 1781094600.0,
+      "first": true,
+      "samples": [null, 618],
+      "efficiency": [null, 0.8912],
+      "efficiency_source": [null, "learned"],
+      "temp_coeff": [null, -0.0035],
+      "sky_view": [null, 1.0],
+      "coverage": [null, 0.213],
+      "facade": [null, false],
+      "limit_cells": [null, 0],
+      "dead_days": [],
+      "cells": {"moved": 0, "up": 0, "down": 0, "added": 0, "removed": 0},
+      "cell_before": {},
+      "top": [],
+      "clear_days": [
+       {"month": 1, "before": null, "after": 15.226},
+       {"month": 2, "before": null, "after": 17.252},
+       {"month": 3, "before": null, "after": 18.802},
+       {"month": 4, "before": null, "after": 19.406},
+       {"month": 5, "before": null, "after": 19.114},
+       {"month": 6, "before": null, "after": 18.716},
+       {"month": 7, "before": null, "after": 18.812},
+       {"month": 8, "before": null, "after": 19.141},
+       {"month": 9, "before": null, "after": 18.904},
+       {"month": 10, "before": null, "after": 17.678},
+       {"month": 11, "before": null, "after": 15.728},
+       {"month": 12, "before": null, "after": 14.525}
+      ]
+     },
+     "EW": {
+      "at": 1781094600.0,
+      "first": true,
+      "samples": [null, 1037],
+      "efficiency": [null, 0.7191],
+      "efficiency_source": [null, "learned"],
+      "temp_coeff": [null, -0.0035],
+      "sky_view": [null, 0.83],
+      "coverage": [null, 0.589],
+      "facade": [null, true],
+      "limit_cells": [null, 0],
+      "dead_days": [],
+      "cells": {"moved": 0, "up": 0, "down": 0, "added": 0, "removed": 0},
+      "cell_before": {},
+      "top": [],
+      "clear_days": [
+       {"month": 1, "before": null, "after": 7.123},
+       {"month": 2, "before": null, "after": 9.673},
+       {"month": 3, "before": null, "after": 13.736},
+       {"month": 4, "before": null, "after": 15.923},
+       {"month": 5, "before": null, "after": 17.265},
+       {"month": 6, "before": null, "after": 18.028},
+       {"month": 7, "before": null, "after": 17.57},
+       {"month": 8, "before": null, "after": 16.273},
+       {"month": 9, "before": null, "after": 14.481},
+       {"month": 10, "before": null, "after": 10.841},
+       {"month": 11, "before": null, "after": 7.765},
+       {"month": 12, "before": null, "after": 6.416}
+      ]
+     }
+    },
     "limits": "= previous",
     "exclusions": "= previous",
     "last_learning": "2026-06-10T12:30:00+00:00",
@@ -19085,6 +19148,7 @@
       "min": 0.164286
      }
     },
+    "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
     "last_learning": "= previous",
@@ -20723,6 +20787,7 @@
     "band": "= previous",
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
     "last_learning": "= previous",
@@ -22695,6 +22760,68 @@
     "band": "= previous",
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "learning_changes": {
+     "S": {
+      "at": 1781166600.0,
+      "first": false,
+      "samples": [618, 631],
+      "efficiency": [0.8912, 0.8912],
+      "efficiency_source": ["learned", "learned"],
+      "temp_coeff": [-0.0035, -0.0035],
+      "sky_view": [1.0, 1.0],
+      "coverage": [0.213, 0.213],
+      "facade": [false, false],
+      "limit_cells": [0, 0],
+      "dead_days": "= previous",
+      "cells": "= previous",
+      "cell_before": "= previous",
+      "top": "= previous",
+      "clear_days": [
+       {"month": "= previous", "before": 15.226, "after": "= previous"},
+       {"month": "= previous", "before": 17.252, "after": "= previous"},
+       {"month": "= previous", "before": 18.802, "after": "= previous"},
+       {"month": "= previous", "before": 19.406, "after": "= previous"},
+       {"month": "= previous", "before": 19.114, "after": "= previous"},
+       {"month": "= previous", "before": 18.716, "after": "= previous"},
+       {"month": "= previous", "before": 18.812, "after": "= previous"},
+       {"month": "= previous", "before": 19.141, "after": "= previous"},
+       {"month": "= previous", "before": 18.904, "after": "= previous"},
+       {"month": "= previous", "before": 17.678, "after": "= previous"},
+       {"month": "= previous", "before": 15.728, "after": "= previous"},
+       {"month": "= previous", "before": 14.525, "after": "= previous"}
+      ]
+     },
+     "EW": {
+      "at": 1781166600.0,
+      "first": false,
+      "samples": [1037, 1052],
+      "efficiency": [0.7191, 0.7191],
+      "efficiency_source": ["learned", "learned"],
+      "temp_coeff": [-0.0035, -0.0035],
+      "sky_view": [0.83, 0.83],
+      "coverage": [0.589, 0.589],
+      "facade": [true, true],
+      "limit_cells": [0, 0],
+      "dead_days": "= previous",
+      "cells": "= previous",
+      "cell_before": "= previous",
+      "top": "= previous",
+      "clear_days": [
+       {"month": "= previous", "before": 7.123, "after": "= previous"},
+       {"month": "= previous", "before": 9.673, "after": "= previous"},
+       {"month": "= previous", "before": 13.736, "after": "= previous"},
+       {"month": "= previous", "before": 15.923, "after": "= previous"},
+       {"month": "= previous", "before": 17.265, "after": "= previous"},
+       {"month": "= previous", "before": 18.028, "after": "= previous"},
+       {"month": "= previous", "before": 17.57, "after": "= previous"},
+       {"month": "= previous", "before": 16.273, "after": "= previous"},
+       {"month": "= previous", "before": 14.481, "after": "= previous"},
+       {"month": "= previous", "before": 10.841, "after": "= previous"},
+       {"month": "= previous", "before": 7.765, "after": "= previous"},
+       {"month": "= previous", "before": 6.416, "after": "= previous"}
+      ]
+     }
+    },
     "limits": "= previous",
     "exclusions": "= previous",
     "last_learning": "2026-06-11T08:30:00+00:00",
@@ -30829,6 +30956,7 @@
       "min": 0.164286
      }
     },
+    "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
     "last_learning": "= previous",
@@ -33006,7 +33134,37 @@
        "10,14": "derived",
        "11,15": "derived"
       },
-      "last_learning": "2026-06-10T12:30:00+00:00"
+      "last_learning": "2026-06-10T12:30:00+00:00",
+      "changes": {
+       "at": 1781094600.0,
+       "first": true,
+       "samples": [null, 618],
+       "efficiency": [null, 0.8912],
+       "efficiency_source": [null, "learned"],
+       "temp_coeff": [null, -0.0035],
+       "sky_view": [null, 1.0],
+       "coverage": [null, 0.213],
+       "facade": [null, false],
+       "limit_cells": [null, 0],
+       "dead_days": [],
+       "cells": {"moved": 0, "up": 0, "down": 0, "added": 0, "removed": 0},
+       "cell_before": {},
+       "top": [],
+       "clear_days": [
+        {"month": 1, "before": null, "after": 15.226},
+        {"month": 2, "before": null, "after": 17.252},
+        {"month": 3, "before": null, "after": 18.802},
+        {"month": 4, "before": null, "after": 19.406},
+        {"month": 5, "before": null, "after": 19.114},
+        {"month": 6, "before": null, "after": 18.716},
+        {"month": 7, "before": null, "after": 18.812},
+        {"month": 8, "before": null, "after": 19.141},
+        {"month": 9, "before": null, "after": 18.904},
+        {"month": 10, "before": null, "after": 17.678},
+        {"month": 11, "before": null, "after": 15.728},
+        {"month": 12, "before": null, "after": 14.525}
+       ]
+      }
      },
      {
       "id": "EW",
@@ -33884,7 +34042,37 @@
        "25,14": "derived",
        "29,4": "derived"
       },
-      "last_learning": "2026-06-10T12:30:00+00:00"
+      "last_learning": "2026-06-10T12:30:00+00:00",
+      "changes": {
+       "at": 1781094600.0,
+       "first": true,
+       "samples": [null, 1037],
+       "efficiency": [null, 0.7191],
+       "efficiency_source": [null, "learned"],
+       "temp_coeff": [null, -0.0035],
+       "sky_view": [null, 0.83],
+       "coverage": [null, 0.589],
+       "facade": [null, true],
+       "limit_cells": [null, 0],
+       "dead_days": [],
+       "cells": {"moved": 0, "up": 0, "down": 0, "added": 0, "removed": 0},
+       "cell_before": {},
+       "top": [],
+       "clear_days": [
+        {"month": 1, "before": null, "after": 7.123},
+        {"month": 2, "before": null, "after": 9.673},
+        {"month": 3, "before": null, "after": 13.736},
+        {"month": 4, "before": null, "after": 15.923},
+        {"month": 5, "before": null, "after": 17.265},
+        {"month": 6, "before": null, "after": 18.028},
+        {"month": 7, "before": null, "after": 17.57},
+        {"month": 8, "before": null, "after": 16.273},
+        {"month": 9, "before": null, "after": 14.481},
+        {"month": 10, "before": null, "after": 10.841},
+        {"month": 11, "before": null, "after": 7.765},
+        {"month": 12, "before": null, "after": 6.416}
+       ]
+      }
      }
     ],
     "sections": {"load": true, "battery": true}
@@ -46930,7 +47118,37 @@
       },
       "facade_cells": "= previous",
       "cell_certainty": "= previous",
-      "last_learning": "2026-06-11T08:30:00+00:00"
+      "last_learning": "2026-06-11T08:30:00+00:00",
+      "changes": {
+       "at": 1781166600.0,
+       "first": false,
+       "samples": [618, 631],
+       "efficiency": [0.8912, 0.8912],
+       "efficiency_source": ["learned", "learned"],
+       "temp_coeff": [-0.0035, -0.0035],
+       "sky_view": [1.0, 1.0],
+       "coverage": [0.213, 0.213],
+       "facade": [false, false],
+       "limit_cells": [0, 0],
+       "dead_days": "= previous",
+       "cells": "= previous",
+       "cell_before": "= previous",
+       "top": "= previous",
+       "clear_days": [
+        {"month": 1, "before": 15.226, "after": 15.226},
+        {"month": 2, "before": 17.252, "after": 17.252},
+        {"month": 3, "before": 18.802, "after": 18.802},
+        {"month": 4, "before": 19.406, "after": 19.406},
+        {"month": 5, "before": 19.114, "after": 19.114},
+        {"month": 6, "before": 18.716, "after": 18.716},
+        {"month": 7, "before": 18.812, "after": 18.812},
+        {"month": 8, "before": 19.141, "after": 19.141},
+        {"month": 9, "before": 18.904, "after": 18.904},
+        {"month": 10, "before": 17.678, "after": 17.678},
+        {"month": 11, "before": 15.728, "after": 15.728},
+        {"month": 12, "before": 14.525, "after": 14.525}
+       ]
+      }
      },
      {
       "id": "= previous",
@@ -47218,7 +47436,37 @@
       },
       "facade_cells": "= previous",
       "cell_certainty": "= previous",
-      "last_learning": "2026-06-11T08:30:00+00:00"
+      "last_learning": "2026-06-11T08:30:00+00:00",
+      "changes": {
+       "at": 1781166600.0,
+       "first": false,
+       "samples": [1037, 1052],
+       "efficiency": [0.7191, 0.7191],
+       "efficiency_source": ["learned", "learned"],
+       "temp_coeff": [-0.0035, -0.0035],
+       "sky_view": [0.83, 0.83],
+       "coverage": [0.589, 0.589],
+       "facade": [true, true],
+       "limit_cells": [0, 0],
+       "dead_days": "= previous",
+       "cells": "= previous",
+       "cell_before": "= previous",
+       "top": "= previous",
+       "clear_days": [
+        {"month": 1, "before": 7.123, "after": 7.123},
+        {"month": 2, "before": 9.673, "after": 9.673},
+        {"month": 3, "before": 13.736, "after": 13.736},
+        {"month": 4, "before": 15.923, "after": 15.923},
+        {"month": 5, "before": 17.265, "after": 17.265},
+        {"month": 6, "before": 18.028, "after": 18.028},
+        {"month": 7, "before": 17.57, "after": 17.57},
+        {"month": 8, "before": 16.273, "after": 16.273},
+        {"month": 9, "before": 14.481, "after": 14.481},
+        {"month": 10, "before": 10.841, "after": 10.841},
+        {"month": 11, "before": 7.765, "after": 7.765},
+        {"month": 12, "before": 6.416, "after": 6.416}
+       ]
+      }
      }
     ],
     "sections": "= previous"

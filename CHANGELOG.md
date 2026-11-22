@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.7.0b1] - 2026-11-22
+
 ### Added
 - *Learned* shows per array what the last nightly learning run changed: a card with hours, efficiency and the other
   values before and after, how many shading cells got darker or lighter, the largest of them with their hours, and

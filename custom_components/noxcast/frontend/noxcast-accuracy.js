@@ -6,7 +6,7 @@ const ACC_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     title: "Prognosegüte", days: "Tage", error: "Tagesfehler", bias: "Abweichung", noData: "Noch keine abgeschlossenen Tage im Archiv. Die Tagesprognose wird jeden Abend archiviert und nachts mit den Messwerten ergänzt.",
-    source: "Wetterquelle", primary: "Ausgegebene Prognose", primaryOf: (m) => `Ausgegeben (${m})`, open_meteo: "Open-Meteo (früherer Vergleich)", all: "Alle Gruppen",
+    source: "Wetterquelle", primary: "Ausgegebene Prognose", primaryOf: (m) => `Ausgegeben (${m})`, open_meteo: "Open-Meteo (früherer Vergleich)", all: "Alle Gruppen", allDays: "Alle Tage",
     switched: (d, a, b) => `Modelle gewechselt am ${d}: ${a} → ${b}`,
     range: "Zeitraum", perDay: "Prognose und Ist pro Tag", forecast: "Prognose", actual: "Ist", calendar: "Kalender",
     byWeather: "Nach Wetterlage", clear: "klar", mixed: "wechselhaft", overcast: "bedeckt", compare: "Modelle einzeln",
@@ -58,7 +58,7 @@ const ACC_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page",
     title: "Forecast accuracy", days: "days", error: "Daily error", bias: "Bias", noData: "No completed days in the archive yet. The day-ahead forecast is archived every evening and completed with measurements at night.",
-    source: "Weather source", primary: "Issued forecast", primaryOf: (m) => `Issued (${m})`, open_meteo: "Open-Meteo (earlier comparison)", all: "All arrays",
+    source: "Weather source", primary: "Issued forecast", primaryOf: (m) => `Issued (${m})`, open_meteo: "Open-Meteo (earlier comparison)", all: "All arrays", allDays: "All days",
     switched: (d, a, b) => `Models changed on ${d}: ${a} → ${b}`,
     range: "Period", perDay: "Forecast and actual per day", forecast: "Forecast", actual: "Actual", calendar: "Calendar",
     byWeather: "By weather", clear: "clear", mixed: "mixed", overcast: "overcast", compare: "Models on their own",
@@ -615,7 +615,7 @@ class NoxcastAccuracy extends HTMLElement {
     const target = `<tr class="muted"><td>${t.target}</td><td></td><td class="num">${this._pct(lo)}</td><td class="num">${this._pct(mid)}</td><td class="num">${this._pct(hi)}</td></tr>`;
     const table = (rows) => {
       const body = ["all", "clear", "mixed", "overcast"].filter((k) => rows[k]).map((k) => {
-        const r = rows[k], name = k === "all" ? t.all : t[k];
+        const r = rows[k], name = k === "all" ? t.allDays : t[k];
         if (r.days < cov.min_days) return `<tr><td>${name}</td><td class="num">${r.days}</td><td colspan="3" class="muted">${t.bandFew(r.days, cov.min_days)}</td></tr>`;
         const cells = ["below", "inside", "above"].map((x) => `<td class="num">${this._pct(r[x] / r.n)}</td>`).join("");
         return `<tr><td>${name}</td><td class="num">${r.days}</td>${cells}</tr>`;

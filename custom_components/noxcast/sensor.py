@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from . import battery as bt
 from . import load as lf
 from .const import ATTR_SCHEMA_VERSION, DOMAIN, MAX_FORECAST_DAYS, TOTAL, Series
 from .coordinator import NoxcastConfigEntry, NoxcastCoordinator
@@ -377,6 +378,12 @@ def _iso(ts: float | None) -> str | None:
     return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat() if ts is not None else None
 
 
+def _systems(b: dict, key: str, fmt) -> dict:
+    """With several independent systems: {"systems": {name: value}}, the whole value is the earliest (or average)."""
+    figures = bt.system_figures(b, b.get("system_names") or {})
+    return {"systems": {f["name"]: fmt(f[key]) if f[key] is not None else None for f in figures}} if figures else {}
+
+
 def _today(b: dict, key: str) -> float:
     """Sum of an hourly simulation value over the rest of today, in kWh."""
     return round(sum(h[key] for t, h in b["sim"].hours.items() if t < b["day_end"] and h[key] > 0) / 1000, 3)
@@ -419,14 +426,16 @@ BATTERY_SENSORS = (
     BatteryDescription(key="battery_full_at", translation_key="battery_full_at", device_class=SensorDeviceClass.TIMESTAMP,
                        icon="mdi:battery-charging-100",
                        value=lambda b: dt_util.utc_from_timestamp(b["sim"].full_at) if b["sim"].full_at else None,
-                       attrs=lambda b: {"p10_pv": _iso(b["band"]["full_at"][0]), "p90_pv": _iso(b["band"]["full_at"][1])} if b.get("band") else {}),
+                       attrs=lambda b: ({"p10_pv": _iso(b["band"]["full_at"][0]), "p90_pv": _iso(b["band"]["full_at"][1])} if b.get("band") else {})
+                       | _systems(b, "full", _iso)),
     BatteryDescription(key="battery_max_soc", translation_key="battery_max_soc", native_unit_of_measurement=PERCENTAGE,
                        icon="mdi:battery-arrow-up",
                        value=lambda b: round(b["sim"].max_soc * 100),
-                       attrs=lambda b: {"at": _iso(b["sim"].max_soc_at)}),
+                       attrs=lambda b: {"at": _iso(b["sim"].max_soc_at)} | _systems(b, "max_soc", lambda v: round(v * 100))),
     BatteryDescription(key="battery_empty_at", translation_key="battery_empty_at", device_class=SensorDeviceClass.TIMESTAMP,
                        icon="mdi:battery-alert-variant-outline",
-                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].empty_at) if b["sim"].empty_at else None),
+                       value=lambda b: dt_util.utc_from_timestamp(b["sim"].empty_at) if b["sim"].empty_at else None,
+                       attrs=lambda b: _systems(b, "empty", _iso)),
     BatteryDescription(key="battery_soc_at_charge_start", translation_key="battery_soc_at_charge_start",
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock",
                        value=lambda b: round((b["sim"].soc_at(b["charge_start"]) or 0) * 100),

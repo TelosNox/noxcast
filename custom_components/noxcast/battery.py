@@ -1,7 +1,10 @@
 """Battery simulation: expected PV against the load forecast, hour by hour, until tomorrow's charge start.
 
-Pure functions, no Home Assistant imports. All batteries are simulated as one storage: capacities
-add up, limits and efficiencies are weighted by capacity, power limits add up.
+Pure functions, no Home Assistant imports. The batteries of one system are simulated as one storage: capacities
+add up, limits and efficiencies are weighted by capacity, power limits add up. Independent systems (each top-level
+system with its own inverter) are simulated each on its own and together against the house load (simulate_units):
+each charges from its own PV, the load is shared evenly by their batteries, a system with a fixed power delivers it
+whatever the load. Batteries without a system, or all of one system, stay one storage (simulate).
 
 Energy flow per hour (Wh, for the part of the hour from now on):
   surplus = PV - load. A surplus charges the battery up to the upper limit and the charge power;
@@ -55,6 +58,11 @@ class Battery:
     # the output limit shared with the other subsystems of its system: (system id, W, the arrays of the
     # subsystems without a battery); the arrays of the batteries' own systems count through `arrays`
     shared: tuple[str, float, tuple[str, ...]] | None = None
+    # the independent system it belongs to (its top-level system): batteries of one system are one storage,
+    # those of different systems are simulated each on their own (simulate_units); None = all one storage
+    unit: str | None = None
+    fixed_w: float | None = None      # the system delivers this power regardless of the load (regulation fixed)
+    from_house: bool = False          # charges from the household's surplus (a battery at the house grid)
 
 
 @dataclass(frozen=True)
@@ -310,6 +318,246 @@ def lost_when_full(sim: Simulation, max_soc: float) -> dict[float, float]:
     return {t: h["lost"] for t, h in sim.hours.items() if h["lost"] > 0 and h.get("soc", 0.0) >= max_soc - LIMIT_TOLERANCE}
 
 
+@dataclass(frozen=True)
+class Unit:
+    """An independent system with its batteries as one storage (simulate_units)."""
+    key: str
+    storage: Battery
+    pv: Series                        # Wh per hour start of its own arrays
+    caps: Limits
+    held_wh: float = 0.0
+    fixed_w: float | None = None
+    from_house: bool = False
+
+
+def units_of(batteries: list[Battery], pv_arrays: dict[str, Series], hours: list[float],
+             charging: bool) -> list[Unit]:
+    """The independent systems among the batteries with a known state of charge, each as one storage.
+
+    charging: the current hour has surplus, so a level near the limit counts as full (held_back)."""
+    known = [b for b in batteries if b.capacity_wh > 0 and b.soc is not None]
+    groups: dict[str, list[Battery]] = {}
+    for b in known:
+        groups.setdefault(b.unit or "", []).append(b)
+    out = []
+    for key, members in sorted(groups.items()):
+        storage = combine(members)
+        if storage is None:
+            continue
+        # the arrays of subsystems without a battery behind a shared cap belong to the system too
+        arrays = tuple(dict.fromkeys([a for b in members for a in b.arrays]
+                                     + [a for b in members if b.shared for a in b.shared[2]]))
+        pv = {t: sum(pv_arrays.get(a, {}).get(t, 0.0) for a in arrays) for t in hours} if arrays else {}
+        out.append(Unit(key, storage, pv, limits(members, pv_arrays, hours), held_back(members) if charging else 0.0,
+                        next((b.fixed_w for b in members if b.fixed_w), None), all(b.from_house for b in members)))
+    return out
+
+
+def _fill(need: float, caps: list[float]) -> list[float]:
+    """need split evenly over the parts, none above its cap; what a part cannot take goes to the others."""
+    out = [0.0] * len(caps)
+    open_ = [i for i, c in enumerate(caps) if c > 0]
+    while need > 1e-9 and open_:
+        each = need / len(open_)
+        full = [i for i in open_ if caps[i] - out[i] <= each]
+        if not full:
+            for i in open_:
+                out[i] += each
+            return out
+        for i in full:
+            need -= caps[i] - out[i]
+            out[i] = caps[i]
+        open_ = [i for i in open_ if i not in full]
+    return out
+
+
+def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end: float,
+                   grid: FeedIn | None = None) -> tuple[dict[str, Simulation], Simulation]:
+    """Independent systems simulated together, hour by hour, against one house load.
+
+    The house load is covered by PV first: the PV of systems without a battery, then each system's own PV (in
+    proportion to it). What is left is shared evenly by the systems' batteries, each up to what it can deliver in
+    the hour; what one cannot give, the others take over. A system with a fixed power delivers that power whatever
+    the load. Each system charges from its own PV what it does not deliver; a battery at the house grid charges
+    from what goes out of the house. What then still goes out follows the feed-in rule (FeedIn).
+
+    Returns each system's simulation and the whole. A system's "lost" is the surplus its own battery cannot take;
+    the whole's is what leaves the house (also the PV of systems without a battery, and what a battery at the house
+    grid did not take), as the single storage counts it. The whole's level is weighted by capacity; full, empty and
+    loss come from the earliest system, so an early full one is not hidden behind the average.
+    """
+    grid = grid or FeedIn()
+    n = len(units)
+    sims = {u.key: Simulation() for u in units}
+    whole = Simulation()
+    caps_wh = [u.storage.capacity_wh for u in units]
+    e = [(u.storage.soc if u.storage.soc is not None else u.storage.min_soc) * c for u, c in zip(units, caps_wh)]
+    e_max = [max(u.storage.max_soc * c - u.held_wh, 0.0) for u, c in zip(units, caps_wh)]
+    e_min = [u.storage.min_soc * c for u, c in zip(units, caps_wh)]
+    eta = [math.sqrt(max(0.01, min(1.0, u.storage.efficiency))) for u in units]
+    follow = [i for i, u in enumerate(units) if not u.fixed_w]
+    takers = [i for i, u in enumerate(units) if u.from_house]
+    for u, x, c in zip(units, e, caps_wh):
+        sims[u.key].points.append((now, x / c))
+        sims[u.key].max_soc, sims[u.key].max_soc_at = x / c, now
+    t = now - now % H
+    while t < end:
+        start = max(t, now)
+        share = (min(t + H, end) - start) / H
+        if share <= 0:
+            t += H
+            continue
+        stop = min(t + H, end)
+        own = [u.pv.get(t, 0.0) * share for u in units]
+        capped = [min(u.caps.capped.get(t, 0.0) * share, o) for u, o in zip(units, own)]   # battery only
+        deliverable = [o - c for o, c in zip(own, capped)]
+        free = max(pv.get(t, 0.0) * share - sum(own), 0.0)              # PV of systems without a battery
+        power, avail = [], []
+        for i, u in enumerate(units):
+            w = u.caps.discharge.get(t, u.storage.max_discharge_w) if u.caps.discharge else u.storage.max_discharge_w
+            power.append(w * share if w is not None else math.inf)
+            avail.append(max(e[i] - e_min[i], 0.0) * eta[i])
+        give_max = [min(a, p) for a, p in zip(avail, power)]
+        need = load.get(t, 0.0) * share - free
+        out = max(-need, 0.0)                                           # leaves the house before the batteries
+        need = max(need, 0.0)
+        from_pv, give = [0.0] * n, [0.0] * n
+        # a fixed power goes out whatever the house draws: PV first, then the battery
+        short = [False] * n
+        for i, u in enumerate(units):
+            if u.fixed_w:
+                target = u.fixed_w * share
+                from_pv[i] = min(deliverable[i], target)
+                give[i] = min(target - from_pv[i], give_max[i])
+                short[i] = from_pv[i] + give[i] < target - 0.5
+        fixed_out = sum(from_pv) + sum(give)
+        out += max(fixed_out - need, 0.0)
+        need = max(need - fixed_out, 0.0)
+        pv_left = sum(deliverable[i] for i in follow)
+        if pv_left > 0 and need > 0:
+            part = min(need / pv_left, 1.0)
+            for i in follow:
+                from_pv[i] = deliverable[i] * part
+            need -= pv_left * part
+        for i, g in zip(follow, _fill(need, [give_max[i] for i in follow])):
+            give[i] = g
+        grid_wh = max(need - sum(give[i] for i in follow), 0.0)
+        hours, lost, gone = [], [0.0] * n, [0.0] * n
+        for i, u in enumerate(units):
+            sim = sims[u.key]
+            surplus = deliverable[i] - from_pv[i] + capped[i]
+            hour = {"surplus": round(surplus, 1), "battery": 0.0, "lost": 0.0, "grid": 0.0, "fed_in": 0.0,
+                    "curtailed": 0.0}
+            took = 0.0
+            if surplus > 0:
+                sim.surplus_wh += surplus
+                took = _charge(sim, e, e_max, eta, i, surplus, u.storage.max_charge_w, share, start, stop)
+                lost[i] = surplus - took
+            # capped PV the battery left is curtailed; the rest of its surplus goes out to the house
+            gone[i] = max(lost[i] - max(capped[i] - took, 0.0), 0.0)
+            if give[i] > 0:
+                e[i] -= give[i] / eta[i]
+            hour["battery"] = round(took - give[i], 1)
+            # empty: the battery gave all it had left, below its power, with load (or fixed power) left over
+            if avail[i] <= power[i] and give[i] >= avail[i] - 1e-9 and (short[i] or (i in follow and grid_wh > 0.5)):
+                sim.empties.append(stop)
+                if sim.empty_at is None:
+                    sim.empty_at = stop
+            hours.append(hour)
+        out += sum(gone)
+        to_house = 0.0                                                  # taken by batteries at the house grid
+        if takers and out > 0:
+            rooms = [min(max(e_max[i] - e[i], 0.0) / eta[i],
+                         units[i].storage.max_charge_w * share if units[i].storage.max_charge_w else math.inf)
+                     for i in takers]
+            for i, w in zip(takers, _fill(out, rooms)):
+                if w <= 0:
+                    continue
+                e[i] += w * eta[i]
+                sim = sims[units[i].key]
+                sim.charged_wh += w
+                hours[i]["battery"] = round(hours[i]["battery"] + w, 1)
+                to_house += w
+                if w >= rooms[takers.index(i)] - 1e-9 and rooms[takers.index(i)] < (
+                        units[i].storage.max_charge_w or math.inf) * share and sim.full_at is None:
+                    sim.full_at = stop
+            out -= to_house
+        fed = grid.fed_in(t, out, share) if out > 0 else 0.0
+        lost_sum = sum(lost)
+        for i, u in enumerate(units):
+            sim, hour = sims[u.key], hours[i]
+            if lost[i] > 0:
+                # the house's feed-in shared by what each system sent out
+                f = fed * gone[i] / (sum(gone) or 1.0) if gone[i] else 0.0
+                sim.lost_wh += lost[i]
+                sim.fed_in_wh += f
+                sim.curtailed_wh += lost[i] - f
+                hour.update(lost=round(lost[i], 1), fed_in=round(f, 1), curtailed=round(lost[i] - f, 1))
+                if lost[i] > 0.5 and sim.lost_from is None:
+                    sim.lost_from = start
+            # the grid supplies what no battery covers, booked evenly where the systems shared it
+            if i in follow and grid_wh > 0:
+                g = grid_wh / len(follow)
+                sim.grid_wh += g
+                hour["grid"] = round(g, 1)
+            sim.points.append((stop, e[i] / caps_wh[i]))
+            if e[i] / caps_wh[i] > sim.max_soc + 1e-9:
+                sim.max_soc, sim.max_soc_at = e[i] / caps_wh[i], stop
+            hour["soc"] = round(e[i] / caps_wh[i], 4)
+            sim.hours[t] = hour
+        # the whole as the house sees it: what leaves it, and what is curtailed before (capped PV without room)
+        curtailed_capped = lost_sum - sum(gone)
+        leaves = out + curtailed_capped
+        surplus = sum(max(deliverable[i] - from_pv[i], 0.0) + capped[i] for i in range(n)) + max(free - load.get(t, 0.0) * share, 0.0)
+        whole.surplus_wh += surplus
+        whole.charged_wh += sum(max(h["battery"], 0.0) for h in hours)
+        whole.lost_wh += leaves
+        whole.fed_in_wh += fed
+        whole.curtailed_wh += leaves - fed
+        whole.grid_wh += grid_wh
+        if leaves > 0.5 and whole.lost_from is None:
+            whole.lost_from = start
+        whole.hours[t] = {"surplus": round(surplus, 1), "battery": round(sum(h["battery"] for h in hours), 1),
+                          "lost": round(leaves, 1), "grid": round(grid_wh, 1), "fed_in": round(fed, 1),
+                          "curtailed": round(leaves - fed, 1),
+                          "soc": round(sum(x for x in e) / sum(caps_wh), 4)}
+        t += H
+    for sim in sims.values():
+        if sim.full_at is not None and sim.max_soc_at is not None and sim.full_at < sim.max_soc_at:
+            sim.max_soc_at = sim.full_at
+    return sims, _whole(units, sims, whole)
+
+
+def _charge(sim: Simulation, e: list[float], e_max: list[float], eta: list[float], i: int, surplus: float,
+            max_charge_w: float | None, share: float, start: float, stop: float) -> float:
+    """Charge battery i from its own surplus; the part taken (Wh before losses)."""
+    room = max(e_max[i] - e[i], 0.0) / eta[i]
+    limit = max_charge_w * share if max_charge_w else math.inf
+    take = min(surplus, room, limit)
+    e[i] += take * eta[i]
+    sim.charged_wh += take
+    if take < surplus and room <= limit and sim.full_at is None:
+        sim.full_at = start + (take / surplus) * (stop - start)
+    return take
+
+
+def _whole(units: list[Unit], sims: dict[str, Simulation], whole: Simulation) -> Simulation:
+    """The whole (energies and hours from simulate_units): the level weighted by capacity, events from the
+    earliest system."""
+    cap = sum(u.storage.capacity_wh for u in units)
+    parts = [(sims[u.key], u.storage.capacity_wh) for u in units]
+    for k in range(min(len(s.points) for s, _ in parts)):
+        whole.points.append((parts[0][0].points[k][0], sum(s.points[k][1] * c for s, c in parts) / cap))
+    for attr in ("full_at", "empty_at"):
+        found = [getattr(s, attr) for s, _ in parts if getattr(s, attr) is not None]
+        setattr(whole, attr, min(found) if found else None)
+    whole.empties = sorted(t for s, _ in parts for t in s.empties)
+    if whole.points:
+        best = max(whole.points, key=lambda p: p[1])
+        whole.max_soc, whole.max_soc_at = best[1], best[0]
+    return whole
+
+
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
                    pv_arrays: dict[str, Series] | None = None,
@@ -338,13 +586,34 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     caps = limits(batteries, pv_arrays, hours)
     # a level near the limit only says "it stops here" while it has surplus to take, not after a discharge
     hour = now - now % H
-    held = held_back(batteries) if pv.get(hour, 0.0) > load.get(hour, math.inf) else 0.0
+    charging = pv.get(hour, 0.0) > load.get(hour, math.inf)
+    held = held_back(batteries) if charging else 0.0
     grid = feed_in(*rule, pv_arrays, hours, output_ceilings(batteries)) if rule else FeedIn()
-    sim = simulate(storage, pv, load, now, start, caps, held, grid)
+    # independent systems are simulated each on its own; one system (or all batteries without one) stays one storage
+    several = len({b.unit for b in batteries if b.capacity_wh > 0 and b.soc is not None}) > 1
+
+    def run(pv_: Series, arrays: dict[str, Series], load_: Series, until: float,
+            caps_: Limits) -> tuple[Simulation, dict[str, Simulation] | None, dict[float, float]]:
+        """The simulation, each system's (None for one storage) and the surplus lost per hour with a full battery."""
+        if not several:
+            one = simulate(storage, pv_, load_, now, until, caps_, held, grid)
+            return one, None, lost_when_full(one, storage.max_soc)
+        units = units_of(batteries, arrays, hours, charging)
+        per, whole = simulate_units(units, pv_, load_, now, until, grid)
+        # full per system: one full system loses its surplus even while the average level is below its limit
+        lost: dict[float, float] = {}
+        for u in units:
+            for t, wh in lost_when_full(per[u.key], u.storage.max_soc).items():
+                lost[t] = round(lost.get(t, 0.0) + wh, 1)
+        return whole, per, lost
+
+    sim, systems, lost_full = run(pv, pv_arrays, load, start, caps)
     out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held,
-           "feed_in": grid}
+           "feed_in": grid, "lost_full": lost_full}
+    if systems is not None:
+        out["systems"] = systems
     if ahead and (until := min(now + AHEAD_HOURS * H, ahead[1])) > now:
-        out["ahead"] = simulate(storage, pv, ahead[0], now, until, caps, held, grid)
+        out["ahead"] = run(pv, pv_arrays, ahead[0], until, caps)[0]
     if band_hours:
         # the same simulation with PV at P10 and at P90: how much surplus is lost, and when full, in a weak and a strong case
         sims = []
@@ -354,12 +623,18 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             scale = {t: variant[t] / pv[t] for t in band_hours if pv.get(t)}
             arrays = {a: {t: v * scale.get(t, 1.0) for t, v in s.items()} for a, s in pv_arrays.items()}
             # every array scaled alike keeps the systems' shares of the PV, so the same feed-in split holds
-            sims.append(simulate(storage, variant, load, now, start, limits(batteries, arrays, hours), held, grid))
+            sims.append(run(variant, arrays, load, start, limits(batteries, arrays, hours)))
         out["band"] = {"lost_today": [round(sum(h["lost"] for t, h in s.hours.items() if t < day_end) / 1000, 3)
-                                      for s in sims],
-                       "full_at": [s.full_at for s in sims],
-                       "lost_p90": lost_when_full(sims[1], storage.max_soc)}   # per hour, in the strong case
+                                      for s, _, _ in sims],
+                       "full_at": [s.full_at for s, _, _ in sims],
+                       "lost_p90": sims[1][2]}   # per hour, in the strong case
     return out
+
+
+def system_figures(battery: dict, names: dict[str, str]) -> list[dict]:
+    """Per independent system (see day_simulation): name, full at, empty at and highest level; empty for one."""
+    return [{"name": names.get(key, key), "full": sim.full_at, "empty": sim.empty_at, "max_soc": round(sim.max_soc, 4)}
+            for key, sim in sorted((battery.get("systems") or {}).items(), key=lambda kv: names.get(kv[0], kv[0]))]
 
 
 def soc_days(series: list[tuple[float, list[tuple[float, float, float]]]], day_of) -> list[dict]:

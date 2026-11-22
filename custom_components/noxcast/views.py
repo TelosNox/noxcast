@@ -151,7 +151,9 @@ def today_totals(data, consumers: dict, days: int, today: date, day_start: Calla
     if b:
         sim, storage = b["sim"], b["storage"]
         p90 = (b.get("band") or {}).get("lost_p90", {})
-        full = bt.lost_when_full(sim, storage.max_soc)
+        full = b.get("lost_full")
+        if full is None:
+            full = bt.lost_when_full(sim, storage.max_soc)
         out["battery"] = {
             "points": columns(((t, round(f, 4)) for t, f in sim.points), "soc"),
             "full": sim.full_at, "empty": sim.empty_at,
@@ -162,6 +164,9 @@ def today_totals(data, consumers: dict, days: int, today: date, day_start: Calla
             # surplus lost with a full battery per hour (Wh), expected and with PV at P90: the card's warning
             "lost": columns(((t, full.get(t, 0.0), p90.get(t, 0.0)) for t in sorted(set(full) | set(p90))), "wh", "p90"),
         }
+        # several independent systems: each one's full, empty and highest level (battery.system_figures)
+        if systems := bt.system_figures(b, b.get("system_names") or {}):
+            out["battery"]["systems"] = systems
     names = {sid: c.name for sid, c in consumers.items()}
     out["plan"] = [{"name": names.get(sid, sid), "now": round(p["now"].pv_share, 3),
                     "start": p["today"].start if p["today"] else None, "end": p["today"].end if p["today"] else None,
@@ -407,6 +412,9 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
                         "hours": columns(((t, round(grid.free.get(t, 0.0), 4), round(grid.never.get(t, 0.0), 4))
                                           for t in hours if t in grid.free or t in grid.never), "free", "never")},
         })
+        # several independent systems, simulated each on its own (the what-if counts them as one storage)
+        if systems := bt.system_figures(b, b.get("system_names") or {}):
+            out["systems"] = systems
     return out
 
 

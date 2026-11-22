@@ -9,6 +9,8 @@ const SECTIONS = [["overview", "noxcast-overview", "./noxcast-overview.js"], ["d
   ["diagnostics", "noxcast-diagnostics", "./noxcast-diagnostics.js"]];
 // shared look of the panel and its sections, loaded with this module's cache buster
 const { adoptTheme, LOGO, ORBIT } = await import(new URL("./noxcast-theme.js" + new URL(import.meta.url).search, import.meta.url).href);
+// the cache buster this page loaded the scripts with; Home Assistant names the current one (noxcast/frontend)
+const OWN_VERSION = new URL(import.meta.url).searchParams.get("v");
 
 const SECTION_LEADS = {
   de: { overview: "Was heute und in den nächsten Tagen ansteht. Jede Zahl führt in den Bereich, der sie erklärt.",
@@ -44,6 +46,8 @@ const RAD = Math.PI / 180;
 const TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
+    updated: "Noxcast wurde aktualisiert. Diese Seite läuft noch mit der alten Oberfläche; lade sie neu, damit alles wie beschrieben funktioniert.",
+    reload: "Neu laden",
     status: { title: "Lernstand", running: "Lernlauf läuft – das dauert einige Minuten.", last: "Letzter Lernlauf {t}, Dauer {d}",
       never: "Noch kein Lernlauf.", failed: "Letzter Lernlauf fehlgeschlagen: {e}", next: "Nächster automatisch {t}",
       relearn: "Jetzt neu lernen", busy: "Läuft …",
@@ -140,6 +144,8 @@ const TEXT = {
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
+    updated: "Noxcast was updated. This page still runs the old interface; reload it so that everything works as described.",
+    reload: "Reload",
     status: { title: "Learning", running: "Learning run in progress – this takes a few minutes.", last: "Last learning run {t}, took {d}",
       never: "No learning run yet.", failed: "Last learning run failed: {e}", next: "Next one automatically {t}",
       relearn: "Learn again now", busy: "Running …",
@@ -465,7 +471,7 @@ class NoxcastPanel extends HTMLElement {
     this._hass = hass;
     this.toggleAttribute("dark", !!(hass.themes && hass.themes.darkMode));
     for (const el of Object.values(this._sections)) { el.toggleAttribute("dark", this.hasAttribute("dark")); el.hass = hass; }
-    if (first) { this._render(); this._load(); }
+    if (first) { this._render(); this._load(); this._checkVersion(); }
     else if ((hass.themes && hass.themes.darkMode) !== dark) this._render();
   }
 
@@ -482,9 +488,23 @@ class NoxcastPanel extends HTMLElement {
   // a reconnect (Home Assistant restarted, the app came back from the background) loads again
   _listenReady(conn) {
     if (this._conn) this._conn.removeEventListener("ready", this._onReady);
-    this._onReady = this._onReady || (() => { if (!this._data || this._error) this._load(); });
+    this._onReady = this._onReady || (() => { this._checkVersion(); if (!this._data || this._error) this._load(); });
     this._conn = conn;
     if (conn) conn.addEventListener("ready", this._onReady);
+  }
+
+  // Home Assistant keeps an open tab across a restart: after an update it would go on with the old scripts, whose
+  // payloads may still match (WS_SCHEMA) while new controls are missing; so the page compares the scripts themselves
+  async _checkVersion() {
+    let r;
+    try { r = await ask(this._hass, { type: "noxcast/frontend" }); } catch (err) { return; }   // older backend: unknown
+    const stale = !!(r && r.version && OWN_VERSION && String(r.version) !== OWN_VERSION);
+    if (stale !== !!this._stale) { this._stale = stale; this._render(); }
+  }
+
+  _staleNote() {
+    return this._stale ? `<div class="card pad stale"><span>${this._t.updated}</span>
+      <button class="btn" data-action="reload">${this._t.reload}</button></div>` : "";
   }
 
   get _t() { return TEXT[(this._hass && this._hass.language || "en").slice(0, 2)] || TEXT.en; }
@@ -712,7 +732,7 @@ class NoxcastPanel extends HTMLElement {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}
         <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}<span>Noxcast</span></div><nav class="navtabs">${tabs}</nav></div>
-        <div class="content">${hero}<div id="section"></div></div>`;
+        <div class="content">${this._staleNote()}${hero}<div id="section"></div></div>`;
       const section = this._section(s.section);
       if (section) this.shadowRoot.getElementById("section").appendChild(section);
       this._afterRender();
@@ -734,7 +754,7 @@ class NoxcastPanel extends HTMLElement {
         <div class="brand">${LOGO}<span>Noxcast</span></div>
         <nav class="navtabs">${tabs}</nav>
       </div>
-      <div class="content">${crumbs}${this._state.view === "array" ? "" : hero}${body}</div>`;
+      <div class="content">${this._staleNote()}${crumbs}${this._state.view === "array" ? "" : hero}${body}</div>`;
     this._afterRender();
   }
 
@@ -1487,6 +1507,7 @@ class NoxcastPanel extends HTMLElement {
     const el = ev.composedPath().find((n) => n.dataset && n.dataset.action);
     if (!el) return;
     const s = this._state, a = el.dataset.action;
+    if (a === "reload") { window.location.reload(); return; }
     if (a === "section") { s.section = el.dataset.section; s.sel = null; }
     else if (a === "overview") { s.view = "overview"; s.sel = null; this._stop(); }
     else if (a === "open") { s.view = "array"; s.arrayId = el.dataset.id; s.layer = el.dataset.layer || "shade"; s.mode = "map"; s.sel = null; }
@@ -1597,6 +1618,9 @@ class NoxcastPanel extends HTMLElement {
       .card { background: var(--card-background-color, var(--ha-card-background)); border-radius: var(--ha-card-border-radius, 12px);
         border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color)); box-shadow: var(--ha-card-box-shadow, none); }
       .pad { padding: 16px; }
+      .stale { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 16px;
+        border-color: var(--warning-color, #c98a12); }
+      .stale .btn { margin-top: 0; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
       .status-slot { display: contents; }
       .row { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }

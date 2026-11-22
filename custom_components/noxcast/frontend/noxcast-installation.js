@@ -535,7 +535,9 @@ class NoxcastInstallation extends HTMLElement {
         --nx-card: var(--card-background-color);
         ${d ? "--nx-pv: #3d2f16; --nx-pv-line: #e0a43c; --nx-sys: #15362c; --nx-sys-line: #4cc7a0; --nx-limit: #43231a; --nx-limit-line: #e88a68; --nx-bat: #1a2747; --nx-bat-line: #7d9ae6;"
             : "--nx-pv: #fbf1df; --nx-pv-line: #c98a12; --nx-sys: #e3f4ee; --nx-sys-line: #2e9e7b; --nx-limit: #fae8e2; --nx-limit-line: #d0603a; --nx-bat: #e8eefb; --nx-bat-line: #4b6fc4;"} }
-      .flow svg { display: block; width: 100%; max-width: 862px; height: auto; }
+      /* the diagram is drawn 862 wide: it grows with the card up to half as large again, where the boxes still fit a
+         wide screen; on a phone it keeps text readable and scrolls sideways instead of shrinking to a few pixels */
+      .flow svg { display: block; width: 100%; min-width: 720px; max-width: 1300px; height: auto; }
       .detail { border-top: 1px solid var(--divider-color); margin-top: 12px; padding-top: 12px; }
       .settings { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
       .settings li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }

@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The Noxcast panel notices when Noxcast was updated while it was open, also across a restart of Home Assistant,
+  and offers *Reload*. Until now such a page went on with the old interface, so that for example the "+" boxes
+  and the *Change* button of the *Installation* tab were missing or did nothing until the page was reloaded by hand.
+
 ## [0.6.0b2] - 2026-11-22
 
 ### Added

@@ -49,6 +49,9 @@ WS_PART_FORM = f"{DOMAIN}/part_form"
 WS_PART_PREVIEW = f"{DOMAIN}/part_preview"
 WS_PART_SAVE = f"{DOMAIN}/part_save"
 WS_PART_REMOVE = f"{DOMAIN}/part_remove"
+WS_FRONTEND = f"{DOMAIN}/frontend"
+# the cache buster the panel was registered with (hass.data): a tab that runs another one has old scripts
+FRONTEND_KEY = f"{DOMAIN}_frontend"
 DIAG_DAYS = 30
 REVIEW_DAYS = 30
 
@@ -56,6 +59,7 @@ REVIEW_DAYS = 30
 async def async_setup_panel(hass: HomeAssistant) -> None:
     """Register the websocket commands and, where the frontend is loaded, the panel and the day card."""
     websocket_api.async_register_command(hass, ws_learned)
+    websocket_api.async_register_command(hass, ws_frontend)
     websocket_api.async_register_command(hass, ws_today)
     websocket_api.async_register_command(hass, ws_accuracy)
     websocket_api.async_register_command(hass, ws_backtest)
@@ -90,6 +94,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     version = await hass.async_add_executor_job(_version, "noxcast-common.js", "noxcast-panel.js", "noxcast-accuracy.js", "noxcast-load.js",
                                          "noxcast-diagnostics.js", "noxcast-battery.js", "noxcast-installation.js",
                                          "noxcast-theme.js", "noxcast-day.js", "noxcast-overview.js")
+    hass.data[FRONTEND_KEY] = version
     card_version = await hass.async_add_executor_job(_version, "noxcast-card.js", "noxcast-common.js")
     weather_version = await hass.async_add_executor_job(_version, "noxcast-weather-card.js", "noxcast-common.js")
     await hass.http.async_register_static_paths(
@@ -153,6 +158,17 @@ def _day_start(day: date) -> float:
 
 def _local_date(ts: float) -> str:
     return dt_util.as_local(dt_util.utc_from_timestamp(ts)).date().isoformat()
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_FRONTEND})
+@callback
+def ws_frontend(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The version of the panel scripts Home Assistant serves now.
+
+    Home Assistant keeps an open tab running across a restart: after an update it still runs the old scripts
+    against the new backend, and the panel compares this with its own version to ask for a reload.
+    """
+    _send(connection, msg, {"version": hass.data.get(FRONTEND_KEY)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LEARNED})

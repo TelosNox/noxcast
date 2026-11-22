@@ -7,6 +7,82 @@ breaking changes.
 
 ## Unreleased
 
+## [0.6.0] - 2026-11-22
+
+All changes since 0.5.0: the pre-releases 0.6.0b1 to 0.6.0b3 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). Systems, PV arrays and batteries can now
+be changed, added and removed in the *Installation* tab. Learning changes for systems with an output limit, per phase
+or with a battery, from the next nightly learning run on.
+
+### Added
+- New sensor *Battery lowest level (48 h)*: the battery forecast now also runs for the next 48 hours, past
+  tomorrow's charge start, as far as the PV forecast reaches. Its attribute `hourly` holds the expected level at
+  every full hour in %, for tariff and charge planners.
+- The forecast sensors carry the forecast also in 15-minute steps (attribute `quarter_hourly`, kWh per step), for
+  planners with 15-minute tariffs. The four steps add up to the hourly value and stay under a power limit. The
+  weather forecast comes in hours, so each step gets its hour's cloudiness and follows the course of the sun within
+  the hour. The README templates for Predbat and
+  EMHASS use them.
+- The README shows how to feed the forecast to EVCC, Predbat and EMHASS.
+- An output limit that holds per phase now counts (*Limit holds per phase*, e.g. EcoFlow Stream in three-phase
+  mode): the devices on one phase share its limit, a device alone on a phase gets the whole limit. Without a battery
+  it caps the PV forecast of each phase, and learning counts the hours in which a phase reached it as "at least this
+  much"; with a battery, hours in which a phase's output reached it count the same, and the battery forecast shares
+  the limit only with the devices on the same phase. Until now such a limit was not used at all. A three-phase
+  device, or one without a phase, is left out of the phase limits; the *Installation* tab shows this as simplified.
+- The array check flags a power sensor that showed power while the sun was down in the last 60 days: it measures more
+  than PV, usually the output of an inverter with a battery, and so counts battery energy, even energy charged from
+  the grid, as sun in the actual value and in learning. The array gets the *Check* badge and a notice under Repairs.
+  The description of the power sensors now says that they should measure PV only.
+- The installation diagram (*Installation* tab and the forms of systems, PV arrays and batteries) shows every setting
+  where it acts: each array's orientation as a compass needle with tilt, direction and peak power, its power sensors,
+  a power limit per sensor on the line from the array, each battery as a box of its own with its capacity and where it
+  charges from, a system's output limit and its deviation from the feed-in rule on its output, a subsystem's phase,
+  the house load and grid sensors, and the feed-in rule between house and grid. Tapping a battery shows its settings.
+- Systems, PV arrays, batteries and the household can be changed in the *Installation* tab: *Change* opens the same
+  form as the configuration dialog beside the diagram, the diagram shows each change before it is saved, and *Save*
+  checks and stores it as the dialog does. A change made elsewhere in the meantime is not overwritten; the tab then
+  reloads it. Administrators only.
+- Parts can be added and removed in the *Installation* tab: dashed boxes in the diagram add a PV array, a battery, a
+  subsystem or a system where one fits, with the same form as the configuration dialog, and the new part is drawn in
+  the diagram before it is saved. A new system's template is picked on a picture of the four templates. *Remove*
+  first names what goes with the part and shows the diagram without it; nothing is removed before you confirm.
+  Administrators only.
+- The first setup ends with a link to the *Installation* tab, which opens with a *+ System* box and a short hint for
+  an installation without systems. The system dialogs point to the tab as well.
+- The diagnostics download contains the learned range and how often the actual value fell inside the range that
+  was published, per weather class.
+- The Noxcast panel notices when Noxcast was updated while it was open, also across a restart of Home Assistant,
+  and offers *Reload*. Until now such a page went on with the old interface, so that for example the "+" boxes
+  and the *Change* button of the *Installation* tab were missing or did nothing until the page was reloaded by hand.
+
+### Changed
+- Nightly learning and the backtest need about a third less computing time: during a run, the sun's path through an
+  hour is computed once instead of again in every step. The results stay the same; the run holds up to about 18 MB
+  more memory while it lasts.
+- The P10–P90 range of a day is wider where it was too narrow. It is learned from the past days of the same weather,
+  and with few such days it now reaches their largest deviations instead of cutting them off. Replayed over a year
+  of day-ahead forecasts on one installation, the actual value of a day fell inside the range on 73 % of the days
+  instead of 66 % (target 80 %), with a better balance of width and misses. The hourly range hardly changes. So that
+  a single bad day cannot widen it, the range now also leaves out what learning leaves out: days without output,
+  hours under snow and excluded periods. The next learning run applies it.
+- The installation diagram in the *Installation* tab grows with the width of the page, up to half as large again,
+  so boxes and text stay readable on a wide screen. On a phone it keeps a readable size and scrolls sideways.
+- The data basis in the panel names a full battery just "battery full": the separate "battery full (household)" reason
+  never applied any more, since a full battery is detected per system. The hour table and its CSV
+  download no longer have the state of charge column, which stayed empty.
+
+### Fixed
+- A system with a battery and an output limit no longer teaches the cut at its limit as shade. When the PV
+  less what the battery charges reached the output limit, the hour counts as "at least this much" in learning,
+  however much the battery took, and the intraday correction no longer reads it as clouds. Before, only a full
+  battery or one charging at its maximum power marked such hours. This needs the battery's *Charge / discharge
+  power* sensor; the next learning run applies it to the whole history.
+- The backtest on *Unlearned days, measured weather* (*Forecast accuracy*) now caps the model at the fixed output limits, as the forecast
+  and the replay do. Learning counts the hours at a limit as "at least this much", so the measured value there is the
+  cut output; scored uncapped, a correct model came out far worse than one that had learned the cut as shade. This
+  mattered most for a limit shared by several devices, such as one per phase.
+
 ## [0.6.0b3] - 2026-11-22
 
 ### Added

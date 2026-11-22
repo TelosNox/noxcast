@@ -21,6 +21,9 @@ breaking changes.
   counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
   fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab
   shows the setting as computed (with a battery as simplified).
+- The shading map under *Learned* has a layer *Certainty*: per cell whether its value is sure, fairly sure, unsure
+  or derived, and on click how many hours it rests on, where it comes from and how far those hours scatter. It fills
+  after the next nightly learning run.
 
 ### Changed
 - *Battery considered full at* is no longer a setting of the household. Each battery counts as full from its own

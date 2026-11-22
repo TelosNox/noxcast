@@ -73,6 +73,7 @@ SUBSTEPS = 6                     # 10-minute sub-steps per hour
 MIN_BEAM_W = 60.0                # expected beam power (W) needed to observe shading
 MIN_CELL_SAMPLES = 4
 RECENT_DAYS = 60                 # window for change detection per cell
+CELL_INFO_MOVED = 0.005          # a later step that moves a cell by more names that step as its origin (cell_info)
 CHANGE_THRESHOLD = 0.25
 DEFAULT_EFFICIENCY = 0.9
 EFFICIENCY_PLAUSIBLE = (0.5, 1.2)  # outside: peak power or sensor unit wrong, or (with a limit) too few hours show it
@@ -206,6 +207,11 @@ class LearnedArray:
     # cells whose hours were mostly at a power limit: shade there is hidden down to the limit, so the cell holds
     # the physics default (no shade, 1.0) instead of a learned value
     limit_cells: list[str] = field(default_factory=list)
+    # per learned cell, for the panel only: [hours, origin, spread]. hours: the hours its value rests on; origin:
+    # "all" (P90 of all hours), "clear" (median of clear hours), "fit" (moved by the sub-step fit), "shaped" (set by
+    # the shape rules), "limit" (hidden by a power limit, held at 1.0); spread: P75 − P25 of its hours' transmission,
+    # None where no hours of its own
+    cell_info: dict[str, list] = field(default_factory=dict)
     # learned | typical: hours at a power limit hid the efficiency, or the few hours below it gave an implausible one
     efficiency_source: str = "learned"
     # days left out of learning because the array delivered almost nothing (dead_days), as solar days in ISO form
@@ -916,14 +922,17 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         return obs
 
     hidden: set[str] = set()                             # cells whose quantile the hours at a limit hide
+    info: dict[str, list] = {}                           # key -> [hours, origin, spread] (LearnedArray.cell_info)
 
-    def cell_values(obs, q: float) -> dict[str, float]:
+    def cell_values(obs, q: float, origin: str) -> dict[str, float]:
         """Quantile per cell; a cell the bounds hide gets 1.0 (no shade down to the limit) and goes to hidden."""
         out = {}
         for (ai, ei), items in obs.items():
             if len(items) < _periods(MIN_CELL_SAMPLES, period):
                 continue
             key = _key(ai, ei)
+            values = [v for v, _, _, _ in items]
+            info[key] = [len(items), origin, round(_quantile(values, 0.75) - _quantile(values, 0.25), 3)]
             value = censored_quantile([v for v, _, _, _ in items], [w for _, w, _, _ in items],
                                       [f for _, _, _, f in items], q)
             if value is None:
@@ -950,7 +959,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
         """P90 over all hours; with the satellite only in cells that also have clear hours, since
         in a cell with hardly any clear hour (winter noon) the P90 is a cloud, not a shadow."""
         hidden.clear()
-        out = cell_values(observe(rows, scaled=False), 0.9)
+        out = cell_values(observe(rows, scaled=False), 0.9, "all")
         if not clear_filter:
             return out
         seen = {_key(*c) for c, items in observe(basis, scaled=False).items()
@@ -982,12 +991,23 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
             if limited and not EFFICIENCY_PLAUSIBLE[0] <= efficiency <= EFFICIENCY_PLAUSIBLE[1]:
                 efficiency, typical[0] = DEFAULT_EFFICIENCY, True
             cells = envelope()
-        cells.update(cell_values(observe(calm, scaled=True), 0.5))
+        cells.update(cell_values(observe(calm, scaled=True), 0.5, "clear"))
         if steady_filter:
+            before = dict(cells)
             cells = _fit_cells(site, geo, calm, cells, lambda r: efficiency * f_temp(r), scale, period, hidden)
+            for k, v in cells.items():
+                if k not in before or abs(v - before[k]) > CELL_INFO_MOVED:
+                    info.setdefault(k, [0, "fit", None])[1] = "fit"
 
+    before = dict(cells)
     cells = shape_cells(cells)
     hidden &= set(cells)
+    for k, v in cells.items():
+        if k in hidden:
+            info.setdefault(k, [0, "limit", None])[1] = "limit"
+        elif k not in before or abs(v - before[k]) > CELL_INFO_MOVED:
+            info.setdefault(k, [0, "shaped", None])[1] = "shaped"
+    info = {k: v for k, v in info.items() if k in cells}
     direction: dict[str, float] = {}
     reflection: dict[str, float] = {}
     if clear_filter:
@@ -1033,7 +1053,7 @@ def _learn(site: Site, geo: ArrayGeometry, samples: list[tuple[float, float]], n
                            temp_source=temp_source,
                            cells=cells, direction=direction, reflection=reflection, sky_view=sky_view,
                            samples=len(rows), clear_filter=clear_filter, steady_filter=steady_filter,
-                           first_sample=rows[0][0], learned_at=now, limit_cells=sorted(hidden),
+                           first_sample=rows[0][0], learned_at=now, limit_cells=sorted(hidden), cell_info=info,
                            efficiency_source="typical" if typical[0] else "learned")
 
     # agreement between satellite clearness and the installation's own clearness (unshaded hours)

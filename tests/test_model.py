@@ -53,6 +53,10 @@ def test_learn_recovers_mask_and_efficiency():
     assert shaded and max(shaded) < 0.2
     assert free and sum(free) / len(free) > 0.9
     assert learned.coverage > 0.8
+    # every learned cell says what its value rests on, for the panel's certainty layer
+    assert set(learned.cell_info) == set(learned.cells)
+    assert {origin for _, origin, _ in learned.cell_info.values()} <= {"all", "clear", "fit", "shaped", "limit"}
+    assert all(hours > 0 and spread >= 0 for hours, origin, spread in learned.cell_info.values() if origin == "all")
 
 
 def test_forecast_matches_clear_day():

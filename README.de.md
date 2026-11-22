@@ -661,6 +661,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   Ein einzelnes höheres Gebäude oder ein Baum zeigt sich nur in gelernten Feldern. Behalten wird sie nur, wenn sie den
   Schatten in ihrem Bereich klar erklärt; sie steht unter Gelerntes, und Felder, die sie füllt, sind in der Karte
   markiert.
+- **Sicherheit der Schattenkarte** (Ebene *Sicherheit* unter Gelerntes): je Feld, auf wie vielen Stunden sein Wert
+  beruht, woher er kommt (klare Stunden, alle Stunden, angepasst an den Stundenverlauf, aus den Nachbarfeldern, an der
+  Leistungsgrenze) und wie weit diese Stunden streuen. *Sicher* braucht mindestens 12 klare Stunden innerhalb ±0,05
+  (ohne Satellitenfilter 30 Stunden), *ziemlich sicher* 6 klare Stunden innerhalb ±0,12 (oder 12 Stunden);
+  *abgeleitete* Felder haben keine eigenen Stunden.
 - **Richtungsfaktor** (grobe Bereiche, 0,8–1,2): was an unverschatteten Positionen übrig bleibt – Geometrie- und
   Modellfehler.
 - **Reflexion:** Licht von hellen Flächen, wo das Modul selbst wenig Direktlicht bekommt.

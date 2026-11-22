@@ -230,7 +230,6 @@ Ebene, die engere zählt:
 
 | Feld | Bedeutung |
 |---|---|
-| Akku gilt als voll ab | Ladezustand, ab dem ein mit seinem System eingetragener Akku als voll gilt (Standard 95 %); an deine Ladegrenze anpassen |
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist). Ein System mit *Eigenverbrauch* ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog (unter 100 W), zählen beim Lernen als „mindestens so viel“, weil das Gerät PV zurückgehalten haben kann |
@@ -267,7 +266,7 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 |---|---|
 | Ausgangsgrenze | Was das System höchstens abgibt (z. B. 800 W). Mit Teilsystemen: was sie zusammen abgeben; jedes Teilsystem behält zusätzlich seine eigene Grenze, die engere gilt. Ohne Akku darunter ist die Grenze fest: Das Lernen zählt Stunden an ihr als „mindestens so viel“, und sie deckelt die PV-Prognose; bei mehreren PV-Gruppen ihre Summe, jede gibt ihren Anteil an der Leistung darüber ab. Mit Akku darunter und dessen Sensor *Lade-/Entladeleistung* zählen Stunden, in denen die Abgabe (PV minus Ladeleistung) die Grenze erreichte, im Lernen als „mindestens so viel“, egal wie viel der Akku nahm. Ohne Akku so eintragen, wie die PV-Leistungssensoren an der Grenze messen: Sensoren der DC-Leistung zeigen einige Prozent mehr als die AC-Leistung. Zeigen die Messwerte eine Grenze, schlägt Noxcast sie unter [Reparaturen](#reparaturen) vor |
 | Grenze gilt pro Phase, Phase | Für Geräte, deren Grenze für jede Phase einzeln gilt statt für die Summe (z. B. EcoFlow Stream im Dreiphasen-Modus): Jedes Teilsystem nennt seine Phase, die Geräte an einer Phase teilen sich deren Grenze, und ein Gerät allein an einer Phase bekommt die ganze Grenze. Ohne diese Einstellung gilt die Grenze für alle Teilsysteme zusammen, egal an welcher Phase sie einspeisen (ein klassisches Balkonkraftwerk: höchstens 800 W insgesamt). Ein *dreiphasiges* Gerät oder eines ohne Phase bleibt bei den Phasengrenzen außen vor, weil nicht bekannt ist, wie viel es von einer Phase nimmt |
-| Regelung | *Volle Leistung* gibt alles ab, was die PV liefert (einfacher Wechselrichter), *Eigenverbrauch* richtet sich nach einem Smart Meter und deckt den Hausverbrauch, *Feste Leistung* gibt eine eingestellte Leistung ab. Bei einer Leistung, die nach Zeitplan wechselt, Eigenverbrauch wählen, oder feste Leistung mit dem Durchschnitt. Nur am System: Seine Teilsysteme sind Geräte, die eine Steuerung gemeinsam regelt, und folgen ihm, auch bei der Einspeisung. Ein Gerät, das dieser Steuerung nicht folgt, ist ein eigenes System |
+| Regelung | *Volle Leistung* gibt alles ab, was die PV liefert (einfacher Wechselrichter), *Eigenverbrauch* richtet sich nach einem Smart Meter und deckt den Hausverbrauch, *Feste Leistung* gibt eine eingestellte Leistung ab. Eine feste Leistung wirkt wie eine *Ausgangsgrenze*: Ohne Akku begrenzt sie die Prognose, und das Lernen zählt Stunden an ihr als „mindestens so viel“; mit Akku lädt PV darüber den Akku, und Stunden mit vollem Akku oder größter Ladeleistung fallen heraus oder zählen als „mindestens“. Bei einer Leistung, die nach Zeitplan wechselt, Eigenverbrauch wählen, oder feste Leistung mit dem Durchschnitt. Nur am System: Seine Teilsysteme sind Geräte, die eine Steuerung gemeinsam regelt, und folgen ihm, auch bei der Einspeisung. Ein Gerät, das dieser Steuerung nicht folgt, ist ein eigenes System |
 | Abweichung von der Einspeisevorgabe | Optional, meist leer: Das System folgt der Einspeisevorgabe des Haushalts. *Speist den Rest trotzdem ein*: ein Wechselrichter mit voller Leistung, der keine Nulleinspeisung einhalten kann, oder ein Gerät, dessen Einspeisekontrolle aus ist. *Speist nie ein*: ein Gerät, das bei vollem Akku weiter nur den Verbrauch deckt, während der Haushalt einspeisen darf. Der Reiter *Anlage* zeigt je System, welcher Regel es folgt |
 | Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
@@ -333,6 +332,7 @@ Ausgangsgrenze.
 | Ladestand-Sensor, Kapazität | Pflicht |
 | Lade-/Entladeleistung | Optional: Lade- und Entladeleistung für die Karte, positiv = Laden (sonst *umkehren*) |
 | Ladegrenze oben / Entladegrenze unten | Zahl oder Entität (z. B. Ladegrenze, Notstromreserve) |
+| Gilt als voll ab | Prozentpunkte unter der Ladegrenze, ab denen der Akku beim Lernen als voll gilt (Standard 5: bei einer Ladegrenze von 100 % ab 95 %). Kurz vor der Grenze lädt ein Akku langsamer, und PV kann schon abgeregelt werden |
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
 | Gehört zu | Das System, in dem der Akku steckt, ein Akku je System. Leer: das System, aus dessen Menü er geöffnet wurde |
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
@@ -347,9 +347,8 @@ Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den System
 mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
 Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme. Ein Akku außerhalb des Systems der
 PV-Gruppe, auch einer am Hausnetz bei Nulleinspeisung, zählt nicht: Der Wechselrichter, der die Einspeisung auf null
-hält, kennt ihn nicht und regelt mit ihm genauso ab wie ohne ihn. Ein Akku gilt als voll ab *Akku gilt als voll ab*,
-oder 2 Punkte unter seiner oberen Grenze, wenn das niedriger ist (bei einer Grenze aus einer Entität ihr aktueller
-Wert). Ein Akku, der mit seiner größten Leistung lädt, nimmt
+hält, kennt ihn nicht und regelt mit ihm genauso ab wie ohne ihn. Ein Akku gilt als voll ab *Gilt als voll ab* unter seiner
+Ladegrenze (bei einer Grenze aus einer Entität ihr aktueller Wert). Ein Akku, der mit seiner größten Leistung lädt, nimmt
 ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann (das System deckt den Hausverbrauch, oder eine
 Ausgangsgrenze gilt), zählt das Lernen diese Stunden als „mindestens so viel“, wie bei einer festen Grenze. Sie
 auszulassen würde gerade die hellen Stunden entfernen. Noxcast liest die Ladeleistung aus Mittelwerten, weil ein

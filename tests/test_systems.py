@@ -83,6 +83,22 @@ def test_the_old_soc_sensors_go_and_those_without_a_battery_wait_for_one():
     assert sy.drop_old_soc({"soc_full_pct": 95}, subs) == {"soc_full_pct": 95}
 
 
+def test_the_household_full_level_goes_to_each_battery_only_where_it_was_changed():
+    subs = {"s": ("system", "Roof", {"name": "Roof", "template": "pv_battery"}),
+            "b": ("battery", "Home", {"system": "s", "soc_sensor": "sensor.soc", "capacity": 5, "max_soc": 100}),
+            "c": ("battery", "Garage", {"system": "s", "soc_sensor": "sensor.c", "capacity": 2, "max_soc": 90}),
+            "d": ("battery", "Shed", {"system": "s", "soc_sensor": "sensor.d", "capacity": 2, "full_margin": 4})}
+    # the default: the setting just goes, each battery keeps the default margin (95 % at 100 %)
+    data, changes = sy.drop_soc_full({"soc_full_pct": 95, "feed_in_mode": "free"}, subs)
+    assert data == {"feed_in_mode": "free"} and not changes
+    # changed: the same level as before, min(level, upper limit - 2); a margin already set stays
+    data, changes = sy.drop_soc_full({"soc_full_pct": 90}, subs)
+    assert data == {} and set(changes.update) == {"b", "c"}
+    assert changes.update["b"]["full_margin"] == 10 and changes.update["c"]["full_margin"] == 2
+    assert changes.update["b"]["soc_sensor"] == "sensor.soc"          # the rest of the battery is kept
+    assert sy.drop_soc_full({}, subs) == ({}, sy.Changes())
+
+
 def test_ac_battery_with_its_array_keeps_its_efficiency():
     """An array behind the battery's inverter means it charges before the output; the AC default stays a number."""
     subs = {"roof": ROOF, "b": ("battery", "B", {"capacity": 2, "coupling": "ac", "array": "roof", "output_limit_w": 800})}

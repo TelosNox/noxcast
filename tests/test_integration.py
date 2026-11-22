@@ -303,8 +303,8 @@ async def test_migration_drops_the_weather_source(hass: HomeAssistant) -> None:
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 8
-    assert dict(entry.data) == {"soc_full_pct": 95, "feed_in_mode": "none"}
+    assert entry.minor_version == 9
+    assert dict(entry.data) == {"feed_in_mode": "none"}
     assert dict(entry.options) == {"satellite": False}
 
 
@@ -319,7 +319,7 @@ async def test_migration_replaces_discontinued_icon_models(hass: HomeAssistant) 
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})) as fetch:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 8 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
+    assert entry.minor_version == 9 and entry.options["weather_models"] == ["icon_seamless", "ecmwf_ifs"]
     assert fetch.call_args.args[-1] == ["icon_seamless", "ecmwf_ifs"]
 
 
@@ -1032,7 +1032,7 @@ async def test_migration_to_systems(hass: HomeAssistant, hass_ws_client) -> None
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    assert entry.minor_version == 8 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
+    assert entry.minor_version == 9 and entry.data["feed_in_mode"] == "free" and "feed_in" not in entry.data
     kept = er.async_get(hass).async_get(legacy.entity_id)
     assert kept is not None and kept.id == legacy.id and kept.config_subentry_id in entry.subentries
     assert dr.async_get(hass).async_get(device.id).config_subentry_id == kept.config_subentry_id

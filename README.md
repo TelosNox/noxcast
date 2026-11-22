@@ -227,7 +227,6 @@ counts:
 
 | Field | Meaning |
 |---|---|
-| Battery considered full at | SOC from which a battery entered with its system counts as full (default 95 %); match your charge limit |
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |
@@ -264,7 +263,7 @@ entries shows what sits inside what.
 |---|---|
 | Output limit | What the system delivers at most (e.g. 800 W). With subsystems: what they deliver together; every subsystem keeps its own limit as well, the tighter one wins. Without a battery below it the limit is fixed: learning counts hours at it as "at least this much", and it caps the PV forecast; with several PV arrays their sum, each array giving up its share of the power above. With a battery below it and its *Charge / discharge power* sensor, hours in which the output (PV less what the battery charged) reached the limit count as "at least this much" in learning, however much the battery took. Without a battery, enter it as the PV power sensors measure it at the limit: sensors of DC power show a few percent more than the AC rating. When the measurements show a limit, Noxcast suggests it under [Repairs](#repairs) |
 | Limit holds per phase, phase | For devices whose limit holds for each phase on its own, not for the total (e.g. EcoFlow Stream in three-phase mode): each subsystem names its phase, and the devices on one phase share its limit, while a device alone on a phase gets the whole limit. Without it the limit holds for all subsystems together, whatever phase they feed into (a classic balcony system: at most 800 W in total). A *three-phase* device, or one without a phase, is left out of the phase limits, because how much of a phase it takes is not known |
-| Regulation | *Full power* delivers everything the PV gives (plain inverter), *Self-consumption* follows a smart meter and covers the house load, *Fixed power* delivers a set power. For a power that changes by a schedule, choose self-consumption, or fixed power with the average. Set on the system only: its subsystems are devices one control coordinates and follow it, also in the feed-in. A device that does not follow that control is a system of its own |
+| Regulation | *Full power* delivers everything the PV gives (plain inverter), *Self-consumption* follows a smart meter and covers the house load, *Fixed power* delivers a set power. A fixed power acts like an *Output limit*: without a battery it caps the forecast, and learning counts the hours at it as "at least this much"; with a battery, PV above it charges the battery, and hours with the battery full or charging at its maximum are left out or count as "at least". For a power that changes by a schedule, choose self-consumption, or fixed power with the average. Set on the system only: its subsystems are devices one control coordinates and follow it, also in the feed-in. A device that does not follow that control is a system of its own |
 | Deviation from the feed-in rule | Optional, empty in most cases: the system follows the household's feed-in rule. *Feeds the rest in anyway*: an inverter at full power that cannot hold zero export, or a device whose feed-in control is off. *Never feeds in*: a device that keeps covering only the load when its battery is full, while the household may feed in. The *Installation* tab shows per system which rule it follows |
 | Battery charges from | Own PV (before the output) or the household (own inverter at the house grid) |
 | Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |
@@ -327,6 +326,7 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | State of charge sensor, capacity | Required |
 | Battery power sensor | Optional: charge/discharge power for the card, positive = charging (*invert* otherwise) |
 | Max / min SOC | Number or entity (e.g. charge limit, backup reserve) |
+| Counts as full from | Percent points below the upper limit from which the battery counts as full in learning (default 5: at an upper limit of 100 % from 95 %). Near the top a battery charges slower and PV may already be curtailed |
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | Belongs to | The system the battery sits in, one battery per system. Empty: the system whose menu it was opened from |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
@@ -341,8 +341,8 @@ Which batteries leave hours out of learning for an array follows from the system
 *covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
 under a shared output limit, the batteries of the other subsystems. A battery outside the array's system, also one at
 the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so it
-curtails the same with it or without. A battery counts as full from *Battery considered full at*, or 2 points below
-its upper limit if that is lower (with a limit from an entity, its current value). A battery that charges at its
+curtails the same with it or without. A battery counts as full from *Counts as full from* below its
+upper limit (with a limit from an entity, its current value). A battery that charges at its
 maximum power takes no more either: where the rest cannot go out (the system covers the house load or an output limit
 holds), learning counts these hours as "at least this much", like a fixed limit. Leaving them out would drop just the
 bright hours. Noxcast reads the charge power from means, since a single reading of a few seconds can lie far above

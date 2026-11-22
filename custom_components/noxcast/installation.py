@@ -35,12 +35,11 @@ from typing import Any
 
 from . import systems as sy
 from .const import (
-    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_OUTPUT_LIMIT,
-    CONF_SOC_SENSOR,
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_FULL_MARGIN, CONF_MAX_CHARGE, CONF_MAX_SOC, CONF_SOC_SENSOR,
+    DEFAULT_FULL_MARGIN,
 )
 
 HOUR = 3600.0
-FULL_TOLERANCE = 2.0             # percent points below its upper limit from which a battery counts as full
 CHARGE_MARGIN = 0.05             # a battery charges at its maximum from 95 % of it (5-minute mean)
 # an hour known only by its mean: from 85 % of the maximum the battery stood at it for most of the hour; from 70 % it
 # may have for a part of it (a ramp up to the maximum, a plateau broken by clouds), so the hour is left out; below,
@@ -357,13 +356,13 @@ def charge_power(chargers: Iterable[Charger | Meter], values: Mapping[str, Mappi
     return out
 
 
-def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]], soc_full: float,
+def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str, Any]],
            max_soc: Mapping[str, float], ceilings: Mapping[str, float | None]) -> dict[str, Reach]:
     """Array -> the batteries that take its PV (systems.curtailed_arrays); ceilings: array -> the sum of its
     sensors' fixed limits, None where one is not known.
 
-    A battery counts as full from the household's "full" level, or FULL_TOLERANCE below its upper limit if that is
-    lower; max_soc: the current upper limit per battery where it comes from an entity (its history is not kept).
+    A battery counts as full from its margin (CONF_FULL_MARGIN) below its own upper limit; max_soc: the current
+    upper limit per battery where it comes from an entity (its history is not kept).
     """
     own: dict[str, tuple[Store, str]] = {}
     others: dict[str, list[Store]] = {}
@@ -374,9 +373,9 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
         charger = (Charger(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT)), float(d[CONF_MAX_CHARGE]))
                    if d.get(CONF_BATTERY_POWER) and d.get(CONF_MAX_CHARGE)
                    and sy.charge_curtails(systems, sid) else None)
-        store = Store(d[CONF_SOC_SENSOR], min(soc_full, float(max_soc.get(systems[sid].battery or "",
-                                                                            d.get(CONF_MAX_SOC) or 100))
-                                              - FULL_TOLERANCE), charger)
+        margin = d.get(CONF_FULL_MARGIN)
+        store = Store(d[CONF_SOC_SENSOR], float(max_soc.get(systems[sid].battery or "", d.get(CONF_MAX_SOC) or 100))
+                      - float(DEFAULT_FULL_MARGIN if margin is None else margin), charger)
         for a in arrays:
             if a in systems[sid].arrays:
                 own[a] = (store, sid)
@@ -391,7 +390,7 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
         rest = tuple(s for s in dict.fromkeys(others.get(a, ())) if s != store)
         parts = [ceilings.get(x) for x in systems[sid].arrays]
         ceiling = sum(p for p in parts if p is not None) if parts and None not in parts else None
-        limit = systems[sid].get(CONF_OUTPUT_LIMIT)
+        limit = next((w for p, _, w in sy.ceiling_groups(systems, sid) if p is None), None)
         out[a] = Reach((store,), rest,
                        own_charge=store.charger is None or ceiling is None or ceiling > store.charger.max_w,
                        overflow=bool(limit) and (ceiling is None or ceiling > float(limit)))
@@ -399,20 +398,18 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
 
 
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
-    """The output limits that are fixed: no battery in the system or its subsystems. A limit per phase holds for
-    each phase's subsystems (systems.limit_groups), fixed where none of them has a battery."""
+    """The output limits and fixed powers that are fixed caps: no battery in the system or its subsystems
+    (systems.ceiling_groups). A limit per phase holds for each phase's subsystems, fixed where none of them has a
+    battery."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit:
-            continue
-        for phase, tree in sy.limit_groups(systems, s.id):
+        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
             if any(x.battery for x in tree):
                 continue
             members = tuple(a for x in tree for a in x.arrays if a in known)
             if members:
-                out.append(Cap(s.id, members, float(limit), phase))
+                out.append(Cap(s.id, members, limit, phase))
     return tuple(out)
 
 
@@ -423,22 +420,18 @@ def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        limit = s.get(CONF_OUTPUT_LIMIT)
-        if not limit:
-            continue
-        for phase, tree in sy.limit_groups(systems, s.id):
+        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
             found = [batteries.get(x.battery) or {} for x in tree if x.battery]
             if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
                 continue
             members = tuple(a for x in tree for a in x.arrays if a in known)
             if members:
                 meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
-                out.append(Outlet(s.id, members, float(limit), meters, phase))
+                out.append(Outlet(s.id, members, limit, meters, phase))
     return tuple(out)
 
 
 def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | None = None,
-          soc_full_pct: float = 95.0,
           systems: Mapping[str, sy.System] | None = None, batteries: Mapping[str, Mapping[str, Any]] | None = None,
           feed_in_mode: str = "free", max_soc: Mapping[str, float] | None = None,
           export_limit: tuple[Iterable[str], float] | None = None) -> Installation:
@@ -457,7 +450,7 @@ def build(arrays: Mapping[str, Iterable[str]], limits: Mapping[str, float] | Non
         group = [i.limit_w for i in inputs.values() if i.array == array]
         ceilings[array] = sum(w for w in group if w is not None) if group and None not in group else None
     return Installation(inputs,
-                        _reach(systems, batteries or {}, float(soc_full_pct), max_soc or {}, ceilings),
+                        _reach(systems, batteries or {}, max_soc or {}, ceilings),
                         _caps(systems, arrays), _held(systems, export_limit),
                         _outlets(systems, arrays, batteries or {}))
 

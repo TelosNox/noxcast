@@ -437,7 +437,10 @@ not types of their own. Independent devices are systems of their own, side by si
 
 - Curtailment by a state (`curtailment.py`, `installation.py`): an hour in which the highest state of charge of a
   battery that can curtail the array reaches "full" is left out of learning and flagged `curtailed` in the
-  archive. The maximum is robust against saw-tooth charging when MPPTs throttle in steps; a constant state of
+  archive. "Full" is a margin per battery below its upper limit, 5 points by default: on the maintainer's data
+  (hold-out, 2026-11-13 export) a level of 95–96 % was best, from 97 % hours with curtailed PV slipped into
+  learning (Roof hour error 12.2 % at 95 %, 12.9 % at 97 %, 14.0 % at 98 %), since a battery charges slower near
+  the top. Until 0.6.0 the household set one level for all batteries. The maximum is robust against saw-tooth charging when MPPTs throttle in steps; a constant state of
   charge alone is not used, since it can also mean PV exactly covers the load. Hours in which such a battery
   charges at its maximum power (a 5-minute mean from 95 % of it where the 5-minute archive holds the battery's power
   sensor, else an hourly mean from 85 %; between 70 and 85 % the hour is left out; never a period's maximum, which a
@@ -1149,7 +1152,7 @@ scorecard. The open work is tracked in GitHub issues:
    and model.
 2. **Light model** (#249): C1, C2 and C3 were falsified on real data, and the cause of the low-sun error is still
    open; C6 (the band's P10 / P90 as ranks) is built, C5, C7 and C8 follow on the hindcast.
-3. **Installation model, rest** (#250): battery forecast per independent system, fixed power, balancing.
+3. **Installation model, rest** (#250): battery forecast per independent system, balancing. Fixed power counts since 0.7.0 as a ceiling like the output limit (`systems.ceiling_groups`): a fixed cap without a battery, an outlet with one; the battery forecast still follows the house load.
 4. **Finer data** (#130, #248 E6): 5-minute statistics for the shading map and the cap on broken-cloud days, from
    spring 2027 when the archive holds enough.
 

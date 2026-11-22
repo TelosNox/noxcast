@@ -11,6 +11,17 @@ breaking changes.
 - *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
   per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
   only in the diagnostics download.
+- *Fixed power* now counts: it caps the PV forecast of a system without a battery like an output limit, and learning
+  counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
+  fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab
+  shows the setting as computed (with a battery as simplified: the battery forecast still follows the house load).
+
+### Changed
+- *Battery considered full at* is no longer a setting of the household. Each battery counts as full from its own
+  *Counts as full from* below its upper limit, 5 percent points by default, so at an upper limit of 100 % from 95 %
+  as before. A battery with a lower upper limit now counts as full 5 instead of 2 points below it, which leaves a few
+  more hours with possibly curtailed PV out of learning. A value you had changed for the household is carried over
+  to each battery, so that it counts as full where it did before.
 
 ## [0.6.0] - 2026-11-22
 

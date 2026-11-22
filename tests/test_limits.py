@@ -45,7 +45,7 @@ def test_an_array_has_a_limit_only_when_every_sensor_has_one():
 def test_cuts_take_the_limit_closest_to_the_modules_first():
     subs = {"s": ("system", "S", {"name": "S", "template": "pv_battery"}), "b": ("array", "B", {"system": "s"}),
             "bat": ("battery", "Battery", {"system": "s", "soc_sensor": "soc", "max_soc": 100})}
-    house = inst.build({"a": ["pv1", "pv2"], "b": ["pv3"]}, {"pv1": 200, "pv2": 200}, 95, sy.systems_of(subs),
+    house = inst.build({"a": ["pv1", "pv2"], "b": ["pv3"]}, {"pv1": 200, "pv2": 200}, sy.systems_of(subs),
                        {"bat": subs["bat"][2]})
     obs = ct.Observed({"pv1": ct.Stat(150, 192), "pv2": ct.Stat(100, 120), "pv3": ct.Stat(300)}, soc={"soc": 97})
     cuts = ct.cuts(house, obs)
@@ -180,15 +180,18 @@ BATTERIES = {k: v[2] for k, v in STREAM.items() if v[0] == "battery"}
 def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     systems = sy.systems_of(STREAM)
     arrays = {"south": ["pv.s"], "roof": ["pv.r"]}
-    free = inst.build(arrays, {}, 95, systems, BATTERIES, "free")
+    free = inst.build(arrays, {}, systems, BATTERIES, "free")
     # the Ultra follows the load together with the AC Pro: both batteries; the roof delivers everything
-    assert set(free.stores_of("south")) == {inst.Store("soc.u", 95.0), inst.Store("soc.a", 88.0)}
+    assert set(free.stores_of("south")) == {inst.Store("soc.u", 95.0), inst.Store("soc.a", 85.0)}
     assert free.stores_of("roof") == ()
     # zero export: the roof's inverter holds the export at zero without knowing the battery at the house grid,
     # so that battery being full changes nothing for the roof
-    zero = inst.build(arrays, {}, 95, systems, BATTERIES, "none")
+    zero = inst.build(arrays, {}, systems, BATTERIES, "none")
     assert zero.stores_of("roof") == () and set(zero.stores_of("south")) == set(free.stores_of("south"))
     assert free.soc_sensors() == ["soc.a", "soc.u"]
+    # a battery's own margin below its upper limit sets when it counts as full
+    own = {**BATTERIES, "ba": {**BATTERIES["ba"], "full_margin": 3}}
+    assert inst.Store("soc.a", 87.0) in inst.build(arrays, {}, systems, own, "free").stores_of("south")
     # the Ultra's PV goes into its own battery first, then over AC to the AC Pro: only both full curtail it
     soc = {"soc.u": {0.0: 96.0, 3600.0: 96.0, 7200.0: 50.0}, "soc.a": {3600.0: 89.0, 7200.0: 89.0}}
     assert free.battery_hours("south", soc, {}, {})[0] == {3600.0}
@@ -199,7 +202,7 @@ def test_a_full_battery_counts_for_the_arrays_it_can_curtail():
     # an output limit below what the Ultra's PV can give keeps the rest from the AC Pro: its own full battery
     # curtails it alone
     capped = {**STREAM, "u": ("system", "Ultra", {**STREAM["u"][2], "output_limit_w": 400})}
-    narrow = inst.build(arrays, {"pv.s": 600}, 95, sy.systems_of(capped), BATTERIES, "free")
+    narrow = inst.build(arrays, {"pv.s": 600}, sy.systems_of(capped), BATTERIES, "free")
     assert narrow.battery_hours("south", soc, {}, {})[0] == {0.0, 3600.0}
 
 
@@ -223,6 +226,36 @@ def test_output_limit_without_battery_is_a_fixed_limit():
     assert inst.build({"x": ["pv1"]}, systems=sy.systems_of(phase)).caps == ()
 
 
+def test_a_fixed_power_holds_the_output_as_a_limit_does():
+    # a balcony inverter set to deliver 300 W, whatever the PV gives
+    fixed = {"s": ("system", "Balcony", {"name": "Balcony", "template": "inverter", "regulation": "fixed",
+                                         "fixed_power_w": 300}),
+             "x": ("array", "X", {"system": "s"}), "y": ("array", "Y", {"system": "s"})}
+    single = inst.build({"x": ["pv1"]}, systems=sy.systems_of({k: fixed[k] for k in ("s", "x")}))
+    assert single.array_limit("x") == 300 and single.limited_arrays() == {"x": 300}
+    shared = inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(fixed))
+    assert shared.forecast_caps() == [(("x", "y"), 300.0)]
+    # with an output limit as well, the tighter one holds
+    both = {**fixed, "s": ("system", "Balcony", {**fixed["s"][2], "output_limit_w": 250})}
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(both)).forecast_caps() == [(("x", "y"), 250.0)]
+    # another regulation, or a stray power, holds nothing
+    load = {**fixed, "s": ("system", "Balcony", {**fixed["s"][2], "regulation": "load"})}
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, systems=sy.systems_of(load)).caps == ()
+    # with a battery: an outlet where its power is known, and charging at its maximum holds PV back
+    battery = {**fixed, "b": ("battery", "B", {"system": "s", "soc_sensor": "soc", "battery_power": "p.b",
+                                               "max_charge_w": 800})}
+    systems = sy.systems_of(battery)
+    built = inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, systems, {"b": battery["b"][2]}, "free")
+    assert built.caps == () and [(o.arrays, o.limit_w) for o in built.outlets] == [(("x", "y"), 300.0)]
+    assert sy.charge_curtails(systems, "s")
+    status = {e["setting"]: e["status"] for e in sy.effects({"feed_in_mode": "free"}, systems, battery)
+              if e["node"] == "s"}
+    assert status["fixed_power"] == status["regulation"] == "simplified"
+    plain = {e["setting"]: e["status"] for e in sy.effects({"feed_in_mode": "free"}, sy.systems_of(fixed), fixed)
+             if e["node"] == "s"}
+    assert plain["fixed_power"] == plain["regulation"] == "exact"
+
+
 def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
     # a hybrid inverter: 11 kW out, two strings, a DC battery that charges below its maximum
     hybrid = {"s": ("system", "Hybrid", {"name": "Hybrid", "template": "pv_battery", "output_limit_w": 11000}),
@@ -231,7 +264,7 @@ def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
                                      "battery_power_invert": True, "max_charge_w": 5000})}
     systems = sy.systems_of(hybrid)
     batteries = {"b": hybrid["b"][2]}
-    built = inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, batteries, "free")
+    built = inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, systems, batteries, "free")
     assert built.caps == () and [(o.arrays, o.limit_w) for o in built.outlets] == [(("x", "y"), 11000.0)]
     assert [m.sensor for m in built.meters()] == ["p.b"] and built.outlet_sensors() == ["pv1", "pv2"]
     # hour 0: 13 kW of PV, 2 kW into the battery, 11 kW out: at the limit, although the battery is neither full nor
@@ -251,7 +284,7 @@ def test_an_output_limit_with_a_battery_bounds_the_hours_its_output_reached():
     assert built.output_hours("x", peak, charge, gaps, fine_charge) == {0.0}
     # without the battery's power sensor the output is not known
     blind = {**batteries, "b": {k: v for k, v in batteries["b"].items() if k != "battery_power"}}
-    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, 95, systems, blind, "free").outlets == ()
+    assert inst.build({"x": ["pv1"], "y": ["pv2"]}, {}, systems, blind, "free").outlets == ()
     # learning keeps the hour as a lower bound, the backtest leaves it out, the hour table names the limit
     arr = ln.ArrayConfig("x", "X", ("pv1",), model.ArrayGeometry(30, 180, 1000), None)
     history = ln.PvHistory({"pv1": {0.0: 6000.0, 3600.0: 5500.0}}, {}, {}, {}, output={"x": frozenset({0.0})})
@@ -286,10 +319,10 @@ def test_a_pv_only_subsystem_under_a_shared_limit_depends_on_the_other_batteries
                                                  "regulation": "all"}),
              "balcony": ("array", "Balcony", {"system": "m"})}
     systems = sy.systems_of(micro)
-    built = inst.build({"south": ["pv.s"], "balcony": ["pv.b"]}, {}, 95, systems, BATTERIES, "free",
+    built = inst.build({"south": ["pv.s"], "balcony": ["pv.b"]}, {}, systems, BATTERIES, "free",
                        max_soc={"bu": 80})
     # the shared 800 W may hold back the micro-inverter once the batteries are full; a limit from an entity counts
-    assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 88.0), inst.Store("soc.u", 78.0)}
+    assert set(built.stores_of("balcony")) == {inst.Store("soc.a", 85.0), inst.Store("soc.u", 75.0)}
     effects = {(e["node"], e["setting"]): e for e in sy.effects({}, systems, micro)}
     # zero export (the default) adds nothing: the roof is no part of Stream
     assert effects[("u", "full_learning")]["value"] == 2 and effects[("a", "full_learning")]["value"] == 2
@@ -351,7 +384,7 @@ def test_a_battery_shares_a_limit_per_phase_only_with_the_devices_on_its_phase()
     assert sy.shared_limit(systems, "m1") == ("p:l1", 800.0, ("a2", "a3"))
     # the battery is full: it may hold back the devices on L1 through their shared limit, not the one on L2
     assert set(sy.curtailed_arrays(systems)["m1"]) == {"a1", "a2", "a3"}
-    built = inst.build(PHASED_ARRAYS, {}, 95, systems, {"b1": subs["b1"][2]}, "free")
+    built = inst.build(PHASED_ARRAYS, {}, systems, {"b1": subs["b1"][2]}, "free")
     assert [c.arrays for c in built.caps] == [("a4",)]
     assert [(set(o.arrays), o.phase) for o in built.outlets] == [({"a1", "a2", "a3"}, "l1")]
     assert built.stores_of("a4") == ()
@@ -368,7 +401,7 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
                                                   "battery_power_invert": True, "max_charge_w": 500})}
     systems = sy.systems_of(power)
     batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
-    built = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {}, 95, systems, batteries, "free")
+    built = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {}, systems, batteries, "free")
     assert [c.sensor for c in built.chargers()] == ["p.a", "p.u"]
     # an inverted sensor reads charging as negative; kW to W
     means = inst.charge_power(built.chargers(), {"p.u": {0.0: 0.9, 3600.0: 0.9}, "p.a": {0.0: -0.45, 7200.0: -0.45}},
@@ -382,7 +415,7 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     assert cut["south"].reason is ct.Reason.CHARGE_LIMIT and cut["south"].fixed and cut["south"].node == "p.u"
     # its own PV cannot reach the maximum (600 W of inputs, 1000 W of charge power): what it charges beyond that
     # comes from elsewhere, so it holds none of the own PV back
-    small = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {"pv.s": 600}, 95, systems, batteries, "free")
+    small = inst.build({"south": ["pv.s"], "roof": ["pv.r"]}, {"pv.s": 600}, systems, batteries, "free")
     assert small.battery_hours("south", {}, means, {}) == (set(), set(), set())
     # learning keeps the hour as a lower bound instead of leaving it out
     arr = ln.ArrayConfig("south", "South", ("pv.s",), model.ArrayGeometry(30, 180, 1000), None)
@@ -391,9 +424,9 @@ def test_a_battery_charging_at_its_maximum_counts_like_a_full_one_where_the_rest
     assert [t for t, _ in samples] == [0.0, 3600.0] and floors == {0.0}
     # delivering everything without a limit, the rest goes out: charging at its maximum curtails nothing
     free = {**power, "p": ("system", "Stream", {"name": "Stream", "template": "coupled", "regulation": "all"})}
-    assert inst.build({"south": ["pv.s"]}, {}, 95, sy.systems_of(free), batteries, "free").chargers() == []
+    assert inst.build({"south": ["pv.s"]}, {}, sy.systems_of(free), batteries, "free").chargers() == []
     # the household's zero export alone changes nothing: a system that delivers everything lets the rest go out
-    assert inst.build({"south": ["pv.s"]}, {}, 95, sy.systems_of(free), batteries, "none").chargers() == []
+    assert inst.build({"south": ["pv.s"]}, {}, sy.systems_of(free), batteries, "none").chargers() == []
     effects = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, power)}
     assert effects[("u", "charge_learning")]["status"] == sy.SIMPLIFIED and effects[("u", "charge_learning")]["value"] == 1000
     unknown = {(e["node"], e["setting"]): e for e in sy.effects({"feed_in_mode": "free"}, systems, STREAM)}
@@ -406,7 +439,7 @@ def test_the_charge_maximum_is_read_from_means_not_from_spikes():
                                                  "battery_power": "p.u", "max_charge_w": 1000})}
     systems = sy.systems_of(power)
     batteries = {k: v[2] for k, v in power.items() if v[0] == "battery"}
-    built = inst.build({"south": ["pv.s"]}, {}, 95, systems, batteries, "free")
+    built = inst.build({"south": ["pv.s"]}, {}, systems, batteries, "free")
     h = 3600.0
     # hours known only by their mean: from 85 % at the maximum, from 70 % unsure, below free
     hourly = {"p.u": {0.0: 860.0, h: 750.0, 2 * h: 690.0, 3 * h: 400.0}}
@@ -530,7 +563,7 @@ def test_a_system_following_the_load_without_battery_counts_held_back_hours_as_a
     systems = sy.systems_of(subs)
     # only the system without a battery to take the rest; full power holds nothing back
     assert sy.held_back_arrays(systems) == ("bal",)
-    built = inst.build({"bal": ["pv.b"], "roof": ["pv.r"], "south": ["pv.s"]}, {}, 95, systems, {}, "none")
+    built = inst.build({"bal": ["pv.b"], "roof": ["pv.r"], "south": ["pv.s"]}, {}, systems, {}, "none")
     # the household stopped importing at some time in the hour (export negative): the device may have regulated
     low = {0.0: 400.0, 3600.0: 20.0, 7200.0: -150.0}
     assert built.held_hours("bal", low) == {3600.0, 7200.0} and built.held_hours("roof", low) == set()
@@ -561,13 +594,13 @@ def test_hours_with_the_export_at_the_feed_in_limit_count_as_at_least():
     systems = sy.systems_of(subs)
     # 6000 W: an hour counts from 5700 W export on (5 %); 800 W: from 700 W (at least 100 W)
     assert inst.limit_threshold(6000) == -5700 and inst.limit_threshold(800) == -700
-    built = inst.build({"roof": ["pv.r"], "bal": ["pv.b"]}, {}, 95, systems, {}, "limited",
+    built = inst.build({"roof": ["pv.r"], "bal": ["pv.b"]}, {}, systems, {}, "limited",
                        export_limit=(("roof", "bal"), 6000))
     low = {0.0: 300.0, 3600.0: 50.0, 7200.0: -5600.0, 10800.0: -5800.0}
     assert built.held_hours("roof", low) == {10800.0}
     # the balcony also follows the load: the threshold that marks more hours wins
     assert built.held_hours("bal", low) == {3600.0, 7200.0, 10800.0}
-    plain = inst.build({"roof": ["pv.r"]}, {}, 95, systems, {}, "limited")
+    plain = inst.build({"roof": ["pv.r"]}, {}, systems, {}, "limited")
     assert plain.held_hours("roof", low) == set() and "roof" not in plain.held
 
 
@@ -585,7 +618,7 @@ def test_two_balancing_devices_curtail_only_when_neither_battery_takes_more():
     batteries = {k: v[2] for k, v in subs.items() if v[0] == "battery"}
     arrays = {"ax": ["pv.x1", "pv.x2"], "ay": ["pv.y1", "pv.y2"]}
     limits = {s: 500 for group in arrays.values() for s in group}
-    built = inst.build(arrays, limits, 95, sy.systems_of(subs), batteries, "none")
+    built = inst.build(arrays, limits, sy.systems_of(subs), batteries, "none")
     h = 3600.0
     # Y charges at its maximum, partly from X's PV; X's battery has room: neither array is curtailed, whatever the
     # other battery does, since 1000 W of PV never fill 1050 W of charge power
@@ -598,7 +631,7 @@ def test_two_balancing_devices_curtail_only_when_neither_battery_takes_more():
     assert built.battery_hours("ay", soc, {}, {})[0] == set()
     # with room for all of it on the way out, X full still sends everything to Y: only both full curtail
     wide = {**subs, "x": ("system", "X", {**subs["x"][2], "output_limit_w": 1200})}
-    open_ = inst.build(arrays, limits, 95, sy.systems_of(wide), batteries, "none")
+    open_ = inst.build(arrays, limits, sy.systems_of(wide), batteries, "none")
     assert open_.battery_hours("ax", soc, {}, {})[0] == set()
     assert open_.battery_hours("ax", {**soc, "soc.y": {h: 99.0}}, {}, {})[0] == {h}
     # X full while Y charges at its maximum: nothing takes more, and a full battery took part
@@ -613,7 +646,7 @@ def test_another_battery_without_a_known_charge_power_leaves_the_hour_out():
             "bx": ("battery", "BX", {"system": "x", "soc_sensor": "soc.x", "battery_power": "p.x", "max_charge_w": 1000}),
             "by": ("battery", "BY", {"system": "y", "soc_sensor": "soc.y"})}
     batteries = {k: v[2] for k, v in subs.items() if v[0] == "battery"}
-    built = inst.build({"ax": ["pv.x"]}, {}, 95, sy.systems_of(subs), batteries, "none")
+    built = inst.build({"ax": ["pv.x"]}, {}, sy.systems_of(subs), batteries, "none")
     h = 3600.0
     # X at its maximum; Y may be at its own, nobody knows: left out, neither exact nor a lower bound
     assert built.battery_hours("ax", {}, {"p.x": {0.0: 990.0}}, {}) == (set(), set(), {0.0})

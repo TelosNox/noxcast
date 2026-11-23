@@ -124,3 +124,60 @@ def test_suggestions_take_the_new_device_and_the_same_role():
                                            "sensor.stream_battery_level": "sensor.stream_2_battery_level"}
     assert sw.suggest([c("sensor.grid", None, "W", "power")], [c("sensor.x_temperature", "new", "°C", None)]) == {
         "sensor.grid": None}
+def sky() -> dict[float, float]:
+    """Satellite irradiance of a clear sky, so that every hour counts as clear."""
+    return {t: model.clearsky_hour(SITE, GEO, t)[4] for t in HOURS}
+
+
+def better(step: float) -> tuple["ln.ArrayConfig", "ln.PvHistory"]:
+    """A swap to a device that converts step times as much of the same light."""
+    segment = ln.Segment(SWAP, RESUME, ("old",))
+    frozen = sw.freeze(SITE, "roof", before(), segment)
+    power = {"new": {t: clear(t) * step for t in HOURS if t >= RESUME}}
+    live = ln.PvHistory(power, power, power, {}, satellite_ghi=sky())
+    arr = ln.ArrayConfig("roof", "Roof", ("new",), GEO, None, segments=sw.segments([frozen]))
+    return arr, sw.merge(live, {"roof": [frozen]})
+
+
+def test_a_better_device_is_a_ratio_not_less_shade():
+    arr, history = better(1.05)
+    learned = ln.learn_array(SITE, arr, history, NOW, [])
+    old = before()
+    reference = ln.learn_array(SITE, OLD, ln.PvHistory(old.power, old.power, old.power, {}, satellite_ghi=sky()),
+                               NOW, [(SWAP, RESUME)])
+    [ratio] = learned.segment_ratios
+    assert ratio["learned"] and ratio["until"] == SWAP and abs(ratio["ratio"] - 1.05) < 0.005
+    assert abs(learned.efficiency - reference.efficiency * 1.05) < 0.005       # the newest device's
+    assert learned.cells.keys() == reference.cells.keys()
+    assert max(abs(learned.cells[k] - reference.cells[k]) for k in learned.cells) < 0.01
+    # the model of an old hour is the old device's
+    assert abs(ln.device_factor(arr, learned.segment_ratios, DAY0) - 1 / ratio["ratio"]) < 1e-9
+    assert ln.device_factor(arr, learned.segment_ratios, RESUME) == 1.0
+
+
+def test_the_ratio_waits_for_enough_hours_of_the_new_device():
+    arr, history = better(1.05)
+    few = {t: v for t, v in history.power["new"].items() if t < RESUME + 86400}       # one day of the new device
+    history = ln.PvHistory({**history.power, "new": few}, history.power_min, history.power_max, {},
+                           satellite_ghi=history.satellite_ghi)
+    [ratio] = ln.learn_array(SITE, arr, history, NOW, []).segment_ratios
+    assert ratio["ratio"] == 1.0 and not ratio["learned"] and ratio["hours"][1] < model.MIN_UNSHADED_HOURS
+
+
+def test_a_battery_swap_keeps_one_efficiency():
+    segment = ln.Segment(SWAP, RESUME, ("old",), device=False)
+    arr = ln.ArrayConfig("roof", "Roof", ("old",), GEO, None, segments=(segment,))
+    assert ln.devices(arr) == [(None, None)]
+    assert ln.learn_array(SITE, arr, before(), NOW, []).segment_ratios == []
+
+
+def test_the_hour_table_shows_each_hour_with_its_own_device():
+    databasis = load("databasis")
+    arr, history = better(1.05)
+    learned = ln.learn_array(SITE, arr, history, NOW, [])
+    table = databasis.hour_table(SITE, arr, learned, history, [])
+    col = {c: i for i, c in enumerate(table["columns"])}
+    noon = {row[col["start"]]: row for row in table["rows"] if row[col["start"]].endswith("T12:00:00+00:00")}
+    for day in ("2026-06-05", "2026-06-25"):                  # the old device's and the new one's
+        row = noon[f"{day}T12:00:00+00:00"]
+        assert abs(row[col["model_w"]] / row[col["power_w"]] - 1) < 0.02

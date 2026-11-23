@@ -20,13 +20,13 @@ from . import fine as fn
 from . import load as lf
 from . import plan as pl
 from .model import (
-    EFFICIENCY_PLAUSIBLE, HOUR, SUBSTEPS, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather,
-    forecast, learn, measured_forecast, sample_reasons, snow_windows, solar_date, solar_day, steady_hours, sun_path_cache,
-    usable_samples,
+    AZ_STEP, CLEAR_KT, EFFICIENCY_PLAUSIBLE, EL_STEP, HOUR, MIN_UNSHADED_HOURS, SUBSTEPS, ArrayGeometry, LearnedArray, WeatherHour,
+    clearsky_hour, clearsky_profile, clearsky_weather, forecast, known_free, learn, measured_forecast, sample_reasons,
+    snow_windows, solar_date, solar_day, steady_hours, sun_path_cache, usable_samples, weighted_quantile,
 )
 from .model import dead_days as model_dead_days
 from .installation import Installation
-from .solar import Site
+from .solar import Site, sun_position
 from .const import Series
 
 _LOGGER = logging.getLogger(__name__)
@@ -197,6 +197,98 @@ def array_power(arr: ArrayConfig, stats: dict[str, dict[float, float | None]], f
     return out
 
 
+def array_steady(arr: ArrayConfig, history: PvHistory) -> set[float]:
+    """The array's steady hours (model.steady_hours) across its swaps, each span from its own sensors."""
+    return {t for view, start, end in spans(arr)
+            for t in steady_hours([(history.power.get(s, {}), history.power_min.get(s, {}),
+                                    history.power_max.get(s, {})) for s in view.sensors])
+            if _within(t, start, end)}
+
+
+def devices(arr: ArrayConfig) -> list[tuple[float | None, float | None]]:
+    """The time ranges in which one device converted the array's power, oldest first, (start, end), None = open: a
+    swap that keeps the device (a battery swap) does not split them."""
+    out: list[tuple[float | None, float | None]] = []
+    start = None
+    for seg in arr.segments:
+        if seg.device:
+            out.append((start, seg.until))
+            start = seg.resume
+    out.append((start, None))
+    return out
+
+
+def device_factor(arr: ArrayConfig, ratios: list[dict], t: float) -> float:
+    """What the newest device's model is multiplied by for period t: 1 / the ratio of the device that ran then
+    (LearnedArray.segment_ratios), 1 for the newest device and without a swap."""
+    if not ratios:
+        return 1.0
+    for (start, end), r in zip(devices(arr), ratios):
+        if _within(t, start, end) and r["until"] == end and r["ratio"] > 0:
+            return 1.0 / r["ratio"]
+    return 1.0
+
+
+def _as_newest(arr: ArrayConfig, samples: list[tuple[float, float]], ratios: list[dict]) -> list[tuple[float, float]]:
+    """Samples of older devices scaled to the newest one: what the modules gave, measured with today's device."""
+    return [(t, p / device_factor(arr, ratios, t)) for t, p in samples]
+
+
+# A ratio outside this range is no inverter's step but a unit or a configuration error: it is held at the bound.
+RATIO_LIMITS = (0.75, 1.33)
+RATIO_FREE_W = 0.05             # a period counts for the ratio from this share of the peak power in the model
+
+
+def learn_ratios(site: Site, arr: ArrayConfig, learned: LearnedArray, samples: list[tuple[float, float]],
+                 history: PvHistory, steady: set[float], floors: set[float], period: float = HOUR) -> list[dict]:
+    """Per older device the newest device's efficiency over its own (LearnedArray.segment_ratios).
+
+    Measured over model on measured weather, in clear periods with the sun in a cell the map knows as free, per cell
+    where both devices have such periods: the median of the newest device's over that of the older one, then the
+    median over the cells weighted by the fewer side. Shared cells keep the model's errors at a low sun, which
+    differ by season, out of the ratio. Until each side has MIN_UNSHADED_HOURS such periods the ratio is 1."""
+    ranges = devices(arr)
+    if len(ranges) < 2:
+        return []
+    sat, air = history.satellite_ghi or {}, history.air_temp or {}
+    clear = []
+    for t, p in samples:
+        if t in floors or (period == HOUR and steady and t not in steady) or (ghi := sat.get(t)) is None:
+            continue
+        cs = clearsky_hour(site, arr.geometry, t, learned.sky_view, period)[4]
+        if cs > 50 and ghi / cs >= CLEAR_KT:
+            clear.append((t, p, ghi))
+    modeled = measured_forecast(site, arr.geometry, learned, [(t, ghi, air.get(t)) for t, _, ghi in clear], period)
+    cells: list[dict[tuple[int, int], list[float]]] = [{} for _ in ranges]
+    for t, p, _ in clear:
+        model_w = modeled.get(t, 0.0) * HOUR / period
+        if model_w < RATIO_FREE_W * arr.geometry.peak_w:
+            continue
+        sun = sun_position(site, t + period / 2)
+        if not known_free(learned, sun.azimuth, sun.elevation):
+            continue
+        i = next(i for i, (start, end) in enumerate(ranges) if _within(t, start, end))
+        cells[i].setdefault((int(sun.azimuth // AZ_STEP), int(sun.elevation // EL_STEP)), []).append(p / model_w)
+    newest, need = cells[-1], MIN_UNSHADED_HOURS * HOUR / period
+    out = []
+    for (_, end), own in zip(ranges[:-1], cells[:-1]):
+        shared = set(own) & set(newest)
+        old_n, new_n = sum(len(own[c]) for c in shared), sum(len(newest[c]) for c in shared)
+        ratio, enough = 1.0, old_n >= need and new_n >= need
+        if enough:
+            per_cell = [(_median(newest[c]) / m, min(len(own[c]), len(newest[c]))) for c in shared
+                        if (m := _median(own[c])) > 0]
+            ratio = weighted_quantile([r for r, _ in per_cell], [w for _, w in per_cell], 0.5) if per_cell else 1.0
+            ratio = min(max(ratio, RATIO_LIMITS[0]), RATIO_LIMITS[1])
+        out.append({"until": end, "ratio": round(ratio, 4), "learned": enough,
+                    "hours": [round(old_n * period / HOUR), round(new_n * period / HOUR)]})
+    return out
+
+
+def _median(values: list[float]) -> float:
+    return weighted_quantile(values, [1.0] * len(values), 0.5)
+
+
 def _only(series: Series, keep: Keep | None) -> Series:
     return series if keep is None else {t: v for t, v in series.items() if keep(t)}
 
@@ -344,10 +436,7 @@ def array_samples(arr: ArrayConfig, history: PvHistory, exclusions: list[tuple[f
                              | skip)
     if keep is not None:
         samples = [s for s in samples if keep(s[0])]
-    steady = {t for view, start, end in spans(arr)
-              for t in steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
-                                     for s in view.sensors])
-              if _within(t, start, end)}
+    steady = array_steady(arr, history)
     # an hour charging at the maximum, at an output limit with a battery below it, or one in which a system
     # following the load held PV back: every period in it delivered at least what was measured
     charge = (history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
@@ -396,9 +485,15 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float,
     out = left_out(site, arr, history, period)
     samples, steady, floors = array_samples(arr, history, exclusions, keep, out.hours,
                                             site if period == HOUR else None)
-    result = learn(site, arr.geometry, samples, now, air_temp=history.air_temp, satellite_ghi=history.satellite_ghi,
-                   datasheet_temp_coeff=arr.temp_coeff, steady=steady, period=period, floors=floors,
-                   limit_w=arr.limit_w)
+    args = dict(air_temp=history.air_temp, satellite_ghi=history.satellite_ghi, datasheet_temp_coeff=arr.temp_coeff,
+                steady=steady, period=period, floors=floors, limit_w=arr.limit_w)
+    result = learn(site, arr.geometry, samples, now, **args)
+    ratios = learn_ratios(site, arr, result, samples, history, steady, floors, period)
+    if any(r["ratio"] != 1.0 for r in ratios):
+        # once more on one device's scale: else a better inverter would read as less shade in every old cell
+        samples = _as_newest(arr, samples, ratios)
+        result = learn(site, arr.geometry, samples, now, **args)
+    result.segment_ratios = ratios
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",
                         arr.name, result.efficiency)
@@ -462,7 +557,9 @@ def _capped_measured(site: Site, arrays: dict[str, ArrayConfig], learned: dict[s
     group = {sid} | {a for members, _ in caps for a in members}
 
     def predict(hours: list[tuple[float, float, float | None]]) -> Series:
-        raw = {a: measured_forecast(site, arrays[a].geometry, learned[a], hours) for a in group}
+        # an hour of a device before a swap: each array's model at the efficiency of the device that ran then
+        raw = {a: {t: v * device_factor(arrays[a], learned[a].segment_ratios, t)
+                   for t, v in measured_forecast(site, arrays[a].geometry, learned[a], hours).items()} for a in group}
         if sid not in own and not caps:
             return raw[sid]
         temps = {t: temp for t, _, temp in hours}

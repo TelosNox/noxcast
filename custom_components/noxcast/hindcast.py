@@ -103,6 +103,8 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
     for sid, arr in known.items():
         hours = {t: p for t, p in bt.usable(arr, history, exclusions, site).items() if lo <= t <= hi}
         sky = forecast(site, arr.geometry, learned[sid], [clearsky_weather(site, t) for t in sorted(hours)])
+        # an hour of a device before a swap: the model at that device's efficiency
+        sky = {t: v * ln.device_factor(arr, learned[sid].segment_ratios, t) for t, v in sky.items()}
         actual[sid] = {t: p for t, p in hours.items() if max(p, sky.get(t, 0.0)) > bt.MIN_WH}
         clear[sid] = {t: sky.get(t, 0.0) for t in actual[sid]}
     wanted = set().union(*actual.values())
@@ -149,6 +151,7 @@ def run(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Learne
         parts = []
         for sid, arr in known.items():
             fc = forecast(site, arr.geometry, learned[sid], [w for w in hours if w.start in actual[sid]], paths=paths)
+            fc = {t: v * ln.device_factor(arr, learned[sid].segment_ratios, t) for t, v in fc.items()}
             parts.append({t: (fc.get(t, 0.0), a) for t, a in actual[sid].items() if t in common})
         pairs = bt.summed(parts)
         days = _days(pairs, day_of)

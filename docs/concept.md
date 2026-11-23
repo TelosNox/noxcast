@@ -433,6 +433,89 @@ not types of their own. Independent devices are systems of their own, side by si
   tab shows per setting "exact", "simplified" or "not yet" (`systems.effects`). What the migration cannot derive is
   asked through a repair; until answered it computes as before.
 
+## System swap (planned)
+
+The modules stay, the device they feed changes (a new inverter, compact device or battery system), and the old
+device's integration is deleted with its entities. Learning is recomputed every night from Home Assistant's
+long-term statistics, so the learned state lives only as long as the old power sensors stay readable, and the
+filters need the old battery, grid and output sensors to sort those hours (`installation.battery_hours`,
+`held_hours`, `_output_hours`). A swap must therefore keep the old hours readable without the old entities, and it
+must keep apart what belongs to the modules and what belongs to the device:
+
+- Modules (stay valid): shading map, direction factor, sky view, reflection, facade, temperature coefficient.
+- Device (learned anew): efficiency (inverter and MPPT losses, the meter of the power sensor), power limits,
+  curtailment by the battery and the output limit. Mixing old and new hours would bend the efficiency for as long
+  as the ageing half-life (one year) keeps the old ones.
+
+### Freezing the old hours
+
+A swap is an action on a system (*Installation* tab), done while the old entities still exist, best after the
+new device is set up: the user names the swap time (default now) and the new sensors (power per array, battery,
+output). Noxcast then writes, per array of that system, its history up to the swap time into a store of its own
+(`noxcast.<entry>.frozen`), written once and never fetched again:
+
+- per old power sensor the hourly mean, minimum and maximum (whole watts, sun in front of the modules only), with
+  its unit factor applied;
+- per hour the classification the filters gave it with the installation as it was: full, charge, held, unsure,
+  output, limit (lower bound), each as the set of hour starts, as in `PvHistory`;
+- the old sensor IDs and their fixed limits, so the 5-minute archive (`fine.py`, keyed by sensor) keeps serving
+  those days.
+
+The swap day itself is left out (part of it on each device). Size: about 4,400 daylight hours a year, three
+values per sensor; two years and four sensors stay near 1 MB, within the storage budget.
+
+Why frozen hours, not something else:
+
+- Keeping the orphaned statistics and pointing at the old sensor: Home Assistant keeps statistics of a deleted
+  entity, but lists them under *Statistics* as no longer provided, and one click on "fix" deletes them. An entity
+  selector also cannot offer a deleted entity. Too fragile for the only copy.
+- Giving the new sensor the old entity ID: the statistics run on without a seam, and nothing can tell the old
+  device's hours from the new one's; the efficiency would drift for a year.
+- Freezing the learned state as a prior: needs no raw data, but the prior never learns again. A model change
+  (a new filter, `LEARNED_VERSION`) could not reach the old hours, and learned state is only a cache of the
+  history (Architecture).
+- Frozen hours keep the raw data, so every later model change still learns from them, and the filters ran once
+  with the sensors they need. Nothing depends on Home Assistant keeping the old statistics.
+
+### Learning across a swap
+
+An array's history becomes segments: the frozen ones, then the live statistics of the current sensors from the
+last swap on. `PvHistory` is built from both; the filters' hour sets of a frozen segment are taken as stored.
+
+- Efficiency per segment: each segment learns its own efficiency from its own strong hours (same rules as now).
+  The forecast uses the newest segment's. Until it has enough strong measured hours (the same minimum as for an
+  array's first efficiency), the previous segment's value holds and the panel says so.
+- Before the shading fit and the other module parameters, an older segment's samples are scaled by the ratio of
+  the newest efficiency to theirs. The shading map is a transmission relative to the efficiency, so without the
+  scaling a new inverter 3 % better would show up as 3 % less shade on every cell learned from old hours. Lower
+  bounds are scaled the same way. While the new segment has no efficiency of its own the ratio is 1.
+- Ageing, change detection and the rest of learning work on the joined samples unchanged: a swap does not reset
+  the shading map.
+- The efficiency drift hint (soiling, degradation) compares within a segment only: a swap is not drift.
+- The forecast archive is keyed by array and runs on; the accuracy view marks the swap day.
+- Battery learning, load and limits start again with the new device; they are device properties.
+
+### What the user sees
+
+- Installation tab: the swap per system, with its date and the old sensors.
+- Data basis / panel: segment boundary in the day and month views, "efficiency since the swap: N hours (until
+  enough: the old value 0.91)", and the efficiency of each segment, so the device's effect is visible as a number.
+- Undo: removing the swap before the old integration is deleted restores the live old sensors; after it, the
+  frozen store is the only copy and is deleted only with the array.
+
+### Compatibility and proof
+
+- New keys in the array's config (segments) with a minor config entry version, a new store with its own version;
+  `LEARNED_VERSION` gains the efficiency per segment. Nothing existing is renamed.
+- Backtest before it is merged: on the maintainer's history, a synthetic swap (freeze at a date, scale the later
+  power by 0.95 and by 1.05) must give the same shading map and the scaled efficiency within the noise of the run
+  without a swap, and the hold-out error after the swap must not grow against relearning from scratch.
+- The real swap of the maintainer's two systems runs as a pre-release through at least one nightly learning run.
+
+Open: an array that moves to another system in the swap (a different topology), and a new device that measures
+the arrays with a different number of sensors (one sum instead of one per MPPT; partial shade per sensor is then
+lost for the new segment only).
+
 ## Data filters
 
 - Curtailment by a state (`curtailment.py`, `installation.py`): an hour in which the highest state of charge of a

@@ -99,3 +99,28 @@ def test_without_a_swap_nothing_changes():
     history = before()
     assert sw.merge(history, {}) is history and sw.merge(history, {"roof": []}) is history
     assert ln.array_power(OLD, history.power, history.factors) == ln.scaled_sum(history.power, ("old",), {})
+
+
+def test_entities_are_found_and_replaced_wherever_the_data_names_them():
+    data = {"power_sensors": ["sensor.a", "sensor.b"], "sensor_limits": {"sensor.a": 800}, "name": "Roof",
+            "soc_sensor": "sensor.soc", "tilt": 30, "max_soc_entity": "number.limit"}
+    assert sw.entities_in(data) == ["sensor.a", "sensor.b", "sensor.soc", "number.limit"]
+    out = sw.replaced(data, {"sensor.a": "sensor.x", "number.limit": "number.y"})
+    assert out["power_sensors"] == ["sensor.x", "sensor.b"] and out["sensor_limits"] == {"sensor.x": 800}
+    assert out["max_soc_entity"] == "number.y" and out["name"] == "Roof" and out["tilt"] == 30
+
+
+def test_suggestions_take_the_new_device_and_the_same_role():
+    c = sw.Candidate
+    old = [c("sensor.stream_pv1_power", "old", "W", "power"), c("sensor.stream_pv2_power", "old", "W", "power"),
+           c("sensor.stream_battery_level", "old", "%", "battery")]
+    candidates = [c("sensor.stream_pv1_power_2", "old", "W", "power"),          # still the old device
+                  c("sensor.stream_2_pv1_power", "new", "W", "power"), c("sensor.stream_2_pv2_power", "new", "W", "power"),
+                  c("sensor.stream_2_battery_level", "new", "%", "battery"),
+                  c("sensor.stream_2_pv2_energy", "new", "kWh", "energy"),       # another unit
+                  c("sensor.other_pv1_power", "other", "W", "power")]
+    assert sw.suggest(old, candidates) == {"sensor.stream_pv1_power": "sensor.stream_2_pv1_power",
+                                           "sensor.stream_pv2_power": "sensor.stream_2_pv2_power",
+                                           "sensor.stream_battery_level": "sensor.stream_2_battery_level"}
+    assert sw.suggest([c("sensor.grid", None, "W", "power")], [c("sensor.x_temperature", "new", "°C", None)]) == {
+        "sensor.grid": None}

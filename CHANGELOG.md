@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- *Swap device* in the *Installation* tab: when a system's device is replaced by a new one on the same modules, the
+  assistant suggests the new device's sensor for each one and swaps them in one step. Noxcast keeps the old device's
+  hours, so the shading map and what else belongs to the modules stay learned, and learns the new device's
+  efficiency as a ratio to the old one. The newest swap can be undone while the old statistics still exist. Do not
+  delete the old statistics under *Developer tools → Statistics* before the swap is saved.
+
 ## [0.7.0b1] - 2026-11-22
 
 ### Added

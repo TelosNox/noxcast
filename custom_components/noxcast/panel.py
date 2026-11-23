@@ -21,7 +21,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import archive as fc_archive
-from . import concepts, databasis, editor, flowchart, store, systems, views
+from . import concepts, databasis, editor, flowchart, store, swapflow, systems, views
 from .const import ARCHIVE_DAYS, CONF_GRID_INVERT, DOMAIN, EVAL_DAYS, LEARN_TIME, WS_SCHEMA_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +49,9 @@ WS_PART_FORM = f"{DOMAIN}/part_form"
 WS_PART_PREVIEW = f"{DOMAIN}/part_preview"
 WS_PART_SAVE = f"{DOMAIN}/part_save"
 WS_PART_REMOVE = f"{DOMAIN}/part_remove"
+WS_SWAP_FORM = f"{DOMAIN}/swap_form"
+WS_SWAP_SAVE = f"{DOMAIN}/swap_save"
+WS_SWAP_UNDO = f"{DOMAIN}/swap_undo"
 WS_FRONTEND = f"{DOMAIN}/frontend"
 # the cache buster the panel was registered with (hass.data): a tab that runs another one has old scripts
 FRONTEND_KEY = f"{DOMAIN}_frontend"
@@ -80,6 +83,9 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_part_preview)
     websocket_api.async_register_command(hass, ws_part_save)
     websocket_api.async_register_command(hass, ws_part_remove)
+    websocket_api.async_register_command(hass, ws_swap_form)
+    websocket_api.async_register_command(hass, ws_swap_save)
+    websocket_api.async_register_command(hass, ws_swap_undo)
     if "frontend" not in hass.config.components or getattr(hass, "http", None) is None:
         return                                           # e.g. tests without a frontend
     # after_dependencies only: imported where they are loaded
@@ -361,7 +367,7 @@ def _installation(entries: list, lang: str) -> dict[str, Any]:
         tree = installation_tree(e)
         # the "+" handles are drawn for everyone; the tab shows them to admins only, who may add parts
         out.append({"entry_id": e.entry_id, "title": e.title, **tree,
-                    "diagram": flowchart.render(tree, lang, handles=True)})
+                    "diagram": flowchart.render(tree, lang, handles=True), "swaps": swapflow.swaps(e)})
     return {"entries": out}
 
 
@@ -484,6 +490,60 @@ def ws_part_remove(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
         connection.send_error(msg["id"], str(err), "No such part of a Noxcast installation")
         return
     _send(connection, msg, {"errors": errors} if errors else _installation([entry], lang))
+
+
+_SWAP = {vol.Required("entry_id"): str, vol.Required("system"): str, vol.Optional("language"): str}
+
+
+def _loaded(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> Any:
+    """The entry, loaded: a swap needs its coordinator (the history and the frozen store)."""
+    entry = _editable(hass, connection, msg)
+    if entry is not None and getattr(entry, "runtime_data", None) is None:
+        connection.send_error(msg["id"], "not_loaded", "Noxcast is still starting")
+        return None
+    return entry
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_SWAP_FORM, **_SWAP})
+@websocket_api.async_response
+async def ws_swap_form(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The form of a system's device swap (swapflow.async_form), for ha-form in the Installation tab."""
+    if (entry := _loaded(hass, connection, msg)) is None:
+        return
+    try:
+        form = await swapflow.async_form(hass, entry, msg["system"], (msg.get("language") or hass.config.language or "en")[:2])
+    except editor.EditError as err:
+        connection.send_error(msg["id"], str(err), "No such system")
+        return
+    _send(connection, msg, form)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_SWAP_SAVE, **_SWAP, vol.Required("input"): dict,
+                                  vol.Optional("revision"): vol.Any(str, None)})
+@websocket_api.async_response
+async def ws_swap_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Swap the system's device: freeze its arrays' hours and put the new entities in place. Answers with the problems
+    ({"errors": …}) or with the installation as it is now; the entry reloads."""
+    if (entry := _loaded(hass, connection, msg)) is None:
+        return
+    errors = await swapflow.async_save(hass, entry, msg["system"], msg["input"], msg.get("revision"))
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    _send(connection, msg, {"errors": errors} if errors else _installation([entry], lang))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_SWAP_UNDO, **_SWAP})
+@websocket_api.async_response
+async def ws_swap_undo(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Turn the system's newest swap back while the old statistics exist (swapflow.async_undo)."""
+    if (entry := _loaded(hass, connection, msg)) is None:
+        return
+    errors = await swapflow.async_undo(hass, entry, msg["system"])
+    lang = (msg.get("language") or hass.config.language or "en")[:2]
+    message = swapflow.error_text(errors.get("base", ""), lang) if errors else ""
+    _send(connection, msg, {"errors": errors, "message": message} if errors else _installation([entry], lang))
 
 
 # no ".svg" ending: the Markdown filter of the forms might drop SVG images by their name; the content type says it

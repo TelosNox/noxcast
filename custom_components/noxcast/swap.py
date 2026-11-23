@@ -9,8 +9,11 @@ Pure functions, no Home Assistant imports; the coordinator loads and saves the s
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from .learning import PvHistory, Segment
 from .model import HOUR
@@ -143,3 +146,86 @@ def prune(store: dict[str, list], oldest: float) -> None:
             f["hours"] = {kind: [t for t in hours if t >= oldest] for kind, hours in f["hours"].items()}
             kept.append(f)
         store[sid] = kept
+
+
+# ---------------------------------------------------------------------------- the swap assistant
+
+ENTITY = re.compile(r"^(sensor|number|input_number|select|input_select)\.[a-z0-9_]+$")
+
+
+def entities_in(data: Any) -> list[str]:
+    """Every entity a part's stored data names, in order and once: values, list items and the keys of a mapping
+    (the sensor limits are keyed by sensor)."""
+    out: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            if ENTITY.match(value) and value not in out:
+                out.append(value)
+        elif isinstance(value, Mapping):
+            for k, v in value.items():
+                walk(k)
+                walk(v)
+        elif isinstance(value, (list, tuple)):
+            for v in value:
+                walk(v)
+    walk(data)
+    return out
+
+
+def replaced(data: Any, mapping: Mapping[str, str]) -> Any:
+    """The data with each entity of mapping replaced, wherever entities_in finds it."""
+    if isinstance(data, str):
+        return mapping.get(data, data)
+    if isinstance(data, Mapping):
+        return {replaced(k, mapping): replaced(v, mapping) for k, v in data.items()}
+    if isinstance(data, (list, tuple)):
+        return type(data)(replaced(v, mapping) for v in data)
+    return data
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """An entity a new device may have brought: its id, device, unit and device class."""
+
+    entity_id: str
+    device: str | None = None
+    unit: str | None = None
+    device_class: str | None = None
+
+
+def _tokens(entity_id: str) -> set[str]:
+    return set(re.split(r"[_.]+", entity_id.split(".", 1)[-1])) - {""}
+
+
+def suggest(old: list[Candidate], candidates: list[Candidate]) -> dict[str, str | None]:
+    """A new entity for each old one: same domain, unit and device class, not on the old one's device, the most
+    alike by the words of its id. A replaced device usually brings all its entities on one new device, so the device
+    most old entities point to first gets the others too, where it has a fitting one."""
+    def fits(o: Candidate, c: Candidate) -> bool:
+        return (c.entity_id.split(".")[0] == o.entity_id.split(".")[0] and c.unit == o.unit
+                and c.device_class == o.device_class and (o.device is None or c.device != o.device)
+                and c.entity_id != o.entity_id)
+
+    def score(o: Candidate, c: Candidate) -> float:
+        a, b = _tokens(o.entity_id), _tokens(c.entity_id)
+        return len(a & b) / len(a | b) if a | b else 0.0
+
+    best: dict[str, list[tuple[float, Candidate]]] = {
+        o.entity_id: sorted(((score(o, c), c) for c in candidates if fits(o, c)), key=lambda x: (-x[0], x[1].entity_id))
+        for o in old}
+    votes: dict[str | None, float] = {}
+    for ranked in best.values():
+        if ranked and ranked[0][1].device:
+            votes[ranked[0][1].device] = votes.get(ranked[0][1].device, 0.0) + ranked[0][0]
+    device = max(votes, key=lambda d: votes[d]) if votes else None
+    out: dict[str, str | None] = {}
+    taken: set[str] = set()
+    for o in old:
+        ranked = [(s, c) for s, c in best[o.entity_id] if c.entity_id not in taken and s > 0]
+        on_device = [x for x in ranked if x[1].device == device] if device else []
+        pick = (on_device or ranked or [(0.0, None)])[0][1]
+        out[o.entity_id] = pick.entity_id if pick else None
+        if pick:
+            taken.add(pick.entity_id)
+    return out

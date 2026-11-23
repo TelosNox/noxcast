@@ -283,6 +283,15 @@ part is drawn highlighted before *Save* creates it. *Remove* shows first what go
 without it, and removes nothing before *Remove for good*. The forms for systems, PV arrays and batteries show the same diagram
 on top. Later versions compute more of the settings without new input.
 
+*Swap device* on a system is for a new device on the same modules (a new inverter, compact device or battery). It
+lists every sensor the system uses, each with the sensor of the new device Noxcast suggests, the swap date (empty:
+the day the new PV sensors have their first values) and per PV array whether the new device converts its power.
+*Swap* keeps the old device's hours in a store of its own, so the shading map stays, and learns the new device's
+efficiency as a ratio to the old one; the day of the swap counts for neither device. Do not delete the old
+statistics under *Developer tools → Statistics* before the swap is saved. The system then lists the swap, and the
+newest one can be undone while the old statistics still exist. Check the new device's limits and battery with
+*Change* afterwards.
+
 ### 3. PV arrays (one per group of power sensors)
 
 An array is what is measured together, usually one MPPT input or one inverter.

@@ -288,6 +288,16 @@ hervorgehoben im Bild, bevor *Speichern* ihn anlegt. *Entfernen* zeigt erst, was
 ihn, und entfernt nichts vor *Endgültig entfernen*. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
+*Gerät tauschen* an einem System ist für ein neues Gerät an denselben Modulen (neuer Wechselrichter, neues
+Kompaktgerät oder neuer Akku). Es listet jeden Sensor, den das System nutzt, mit dem Sensor des neuen Geräts, den
+Noxcast vorschlägt, dazu das Datum des Tauschs (leer: der Tag, an dem die neuen PV-Sensoren ihre ersten Werte haben)
+und je PV-Gruppe, ob das neue Gerät ihre Leistung wandelt. *Tauschen* behält die Stunden des alten Geräts in einem
+eigenen Speicher, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts als Verhältnis zum
+alten; der Tag des Tauschs zählt für keines der Geräte. Die alten Statistiken unter *Entwicklerwerkzeuge →
+Statistiken* nicht löschen, bevor der Tausch gespeichert ist. Das System listet den Tausch danach, und der neueste
+lässt sich rückgängig machen, solange die alten Statistiken noch da sind. Prüfe danach mit *Ändern* die Grenzen und
+den Akku des neuen Geräts.
+
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 
 Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein Wechselrichter.

@@ -351,6 +351,28 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         await self.async_learn(backtest=True)
         self._prune_frozen()
 
+    @property
+    def frozen_writable(self) -> bool:
+        """Whether the frozen store was read: after a failed read it is never written, it may be the only copy."""
+        return self._frozen_ok
+
+    async def async_pv_history_now(self) -> tuple[ln.PvHistory, list[tuple[float, float]]]:
+        """The whole history as learning sees it now, for freezing it at a swap (swapflow.py)."""
+        async with self._hours_lock:
+            return await self._async_pv_history(dt_util.utcnow(), record=False)
+
+    async def async_add_frozen(self, frozen: dict[str, dict]) -> None:
+        """Keep a swap's frozen hours per array, written before the entry changes and reloads."""
+        for sid, f in frozen.items():
+            self.frozen.setdefault(sid, []).append(f)
+        await self._frozen_store.async_save({"arrays": self.frozen})
+
+    async def async_drop_frozen(self, until: dict[str, float]) -> None:
+        """Drop the frozen hours of the swap that ended at until, per array (an undone swap)."""
+        for sid, end in until.items():
+            self.frozen[sid] = [f for f in self.frozen.get(sid, []) if float(f["until"]) != end]
+        await self._frozen_store.async_save({"arrays": self.frozen})
+
     def _prune_frozen(self) -> None:
         """Frozen hours older than the learning window go, like the live history."""
         if not self._frozen_ok or not any(self.frozen.values()):

@@ -49,6 +49,12 @@ const INST_TEXT = {
     belongs: "Gehört zu", batteryBelongs: "Akku gehört zu", alone: "– eigenständig am Haushalt –",
     save: "Zuordnung speichern", saving: "Speichert …", notPossible: "Dorthin kann der Teil nicht.",
     moveHelp: "Noxcast lädt danach neu, wie nach dem Bearbeiten eines Eintrags.",
+    swap: "Gerät tauschen", swapTitle: "Gerät tauschen: {name}",
+    swapHelp: "Für ein neues Gerät an denselben Modulen: Noxcast schlägt für jeden Sensor den passenden des neuen Geräts vor. Beim Tauschen behält Noxcast die Stunden des alten Geräts, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts dazu. Die alten Statistiken unter Entwicklerwerkzeuge → Statistiken nicht löschen, bis der Tausch gespeichert ist.",
+    swapYes: "Tauschen", swapping: "Tauscht …",
+    swapped: "Getauscht. Prüfe jetzt mit „Ändern“ die Grenzen und den Akku des neuen Geräts.",
+    swapDone: "Gerät getauscht am {date}", swapDevices: "neuer Wirkungsgrad für: {list}", swapBattery: "nur Akku oder Zähler",
+    undo: "Rückgängig", undoing: "Macht rückgängig …",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -89,6 +95,12 @@ const INST_TEXT = {
     belongs: "Belongs to", batteryBelongs: "Battery belongs to", alone: "– on its own at the household –",
     save: "Save assignment", saving: "Saving …", notPossible: "The part cannot go there.",
     moveHelp: "Noxcast reloads afterwards, as after editing an entry.",
+    swap: "Swap device", swapTitle: "Swap device: {name}",
+    swapHelp: "For a new device on the same modules: Noxcast suggests the fitting sensor of the new device for each one. On swapping, Noxcast keeps the old device's hours, so that the shading map stays, and learns the new device's efficiency on top. Do not delete the old statistics under Developer tools → Statistics until the swap is saved.",
+    swapYes: "Swap", swapping: "Swapping …",
+    swapped: "Swapped. Now check the new device's limits and battery with “Change”.",
+    swapDone: "Device swapped on {date}", swapDevices: "new efficiency for: {list}", swapBattery: "battery or meter only",
+    undo: "Undo", undoing: "Undoing …",
   },
 };
 
@@ -105,16 +117,21 @@ class NoxcastInstallation extends HTMLElement {
       if (edit) { this._startEdit(edit.dataset.entry, edit.dataset.edit); return; }
       const remove = path.find((n) => n.dataset && n.dataset.remove);
       if (remove) { this._askRemove(remove.dataset.entry, remove.dataset.remove); return; }
+      const swap = path.find((n) => n.dataset && n.dataset.swap);
+      if (swap) { this._startSwap(swap.dataset.entry, swap.dataset.swap); return; }
+      const undo = path.find((n) => n.dataset && n.dataset.undo);
+      if (undo) { this._undoSwap(undo.dataset.entry, undo.dataset.undo); return; }
       const act = path.find((n) => n.dataset && n.dataset.act);
       if (act) {
         if (act.dataset.act === "save-part") this._savePart();
+        else if (act.dataset.act === "swap-yes") this._saveSwap();
         else if (act.dataset.act === "remove-yes") this._remove();
         else this._stopEdit();
         return;
       }
       const template = path.find((n) => n.getAttribute && n.getAttribute("data-template"));
       if (template && this._edit) { this._changed({ ...this._edit.input, template: template.getAttribute("data-template") }); return; }
-      if (this._edit || this._removal) return;  // the part being changed stays chosen until saved or cancelled
+      if (this._edit || this._removal || this._swap) return;  // the part being changed stays chosen until saved or cancelled
       const add = path.find((n) => n.getAttribute && n.getAttribute("data-add"));
       const flow = path.find((n) => n.classList && n.classList.contains("flow"));
       if (add && flow && this._admin) {
@@ -330,7 +347,103 @@ class NoxcastInstallation extends HTMLElement {
     this._edit = null;
     this._form = null;
     this._removal = null;
+    this._swap = null;
     this._render();
+  }
+
+  // a system's device swapped for a new one: the form lists its sensors with the new device's suggested
+  async _startSwap(entryId, system) {
+    this._editError = null;
+    this._info = null;
+    let form;
+    try {
+      if (!(await this._ensureForm())) throw new Error(this._t.noForm);
+      form = await ask(this._hass, { type: "noxcast/swap_form", entry_id: entryId, system, language: this._lang });
+    } catch (err) {
+      this._editError = errorText(err, this._hass.language);
+      this._render();
+      return;
+    }
+    this._swap = { entryId, system, form, input: form.data, errors: {}, saving: false, base: null };
+    const f = document.createElement("ha-form");
+    f.hass = this._hass;
+    this._formTexts(f, form);
+    f.addEventListener("value-changed", (ev) => {
+      ev.stopPropagation();
+      if (!this._swap) return;
+      this._swap.input = ev.detail.value;
+      f.data = ev.detail.value;
+    });
+    this._form = f;
+    this._sel = system;
+    this._render();
+  }
+
+  async _saveSwap() {
+    const w = this._swap;
+    if (!w || w.saving) return;
+    w.saving = true;
+    this._render();
+    let r;
+    try {
+      r = await ask(this._hass, { type: "noxcast/swap_save", entry_id: w.entryId, system: w.system, input: w.input,
+        revision: w.form.revision, language: this._lang });
+    } catch (err) {
+      w.saving = false;
+      w.base = errorText(err, this._hass.language);
+      this._render();
+      return;
+    }
+    w.saving = false;
+    if (this._swap !== w) return;
+    if (r.errors) {
+      const { base, ...fields } = r.errors;
+      w.base = base ? w.form.errors[base] || base : null;
+      w.errors = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v]));
+      this._render();
+      return;
+    }
+    this._merge(r);
+    this._stopEdit();
+    this._info = this._t.swapped;
+    this._render();
+  }
+
+  async _undoSwap(entryId, system) {
+    if (this._undoing) return;
+    this._undoing = system;
+    this._editError = null;
+    this._info = null;
+    this._render();
+    try {
+      const r = await ask(this._hass, { type: "noxcast/swap_undo", entry_id: entryId, system, language: this._lang });
+      if (r.errors) this._editError = r.message || r.errors.base;
+      else this._merge(r);
+    } catch (err) { this._editError = errorText(err, this._hass.language); }
+    this._undoing = null;
+    this._render();
+  }
+
+  _swapper(e) {
+    const t = this._t, w = this._swap;
+    return `<div class="head"><span class="title">${esc(t.swapTitle.replace("{name}", w.form.name))}</span></div>
+      <p class="help">${t.swapHelp}</p>
+      <div class="edit"><div class="slot"></div>
+      <div class="error small">${esc(w.base || "")}</div>
+      <div class="row"><button class="chip primary" data-act="swap-yes" ${w.saving ? "disabled" : ""}>${
+        w.saving ? t.swapping : t.swapYes}</button><button class="chip" data-act="cancel" ${w.saving ? "disabled" : ""}>${t.cancel}</button></div></div>`;
+  }
+
+  // the swaps of a system, newest first; the newest can be undone
+  _swaps(e, system) {
+    const t = this._t;
+    const list = (e.swaps || []).filter((s) => s.system === system);
+    if (!list.length) return "";
+    return `<ul class="settings">${list.map((s) => `<li><span class="val">${esc(t.swapDone.replace("{date}",
+      new Date(`${s.swapped}T12:00:00`).toLocaleDateString(this._lang)))}</span>
+      <span class="name">${esc(s.devices.length ? t.swapDevices.replace("{list}", s.devices.join(", ")) : t.swapBattery)}</span>
+      ${s.undo && this._admin ? `<button class="chip" data-undo="${esc(system)}" data-entry="${esc(e.entry_id)}" ${
+        this._undoing ? "disabled" : ""}>${this._undoing === system ? t.undoing : t.undo}</button>` : ""}</li>`).join("")}</ul>`;
   }
 
   // what removing a part takes with it, shown with the diagram without it before anything is removed
@@ -440,7 +553,8 @@ class NoxcastInstallation extends HTMLElement {
         if (s.id === id) {
           const sub = [parent ? `${t.sub} · ${parent.name}` : "", t.templates[s.template] || "",
             s.battery ? `${t.battery}: ${s.battery.name}` : ""].filter(Boolean).join(" · ");
-          return { title: s.name, sub, ids: [s.id], moves: [[s.id, t.belongs], ...(s.battery ? [[s.battery.id, t.batteryBelongs]] : [])] };
+          return { title: s.name, sub, ids: [s.id], system: true,
+            moves: [[s.id, t.belongs], ...(s.battery ? [[s.battery.id, t.batteryBelongs]] : [])] };
         }
         if (s.battery && s.battery.id === id) {
           return { title: s.battery.name, sub: `${t.battery} · ${s.name}`, ids: [id], moves: [[id, t.batteryBelongs]] };
@@ -462,6 +576,7 @@ class NoxcastInstallation extends HTMLElement {
       const kind = ed.form.kind === "system" && ed.form.to ? "sub" : ed.form.kind;
       return `<div class="head"><span class="title">${t.added[kind] || ""}</span></div>${this._editor(e)}`;
     }
+    if (this._swap && this._swap.entryId === e.entry_id) return this._swapper(e);
     const rm = this._removal && this._removal.entryId === e.entry_id ? this._removal : null;
     if (rm) {
       return `<div class="head"><span class="title">${esc(t.removeAsk.replace("{name}", rm.name))}</span></div>
@@ -472,7 +587,8 @@ class NoxcastInstallation extends HTMLElement {
           rm.busy ? t.removing : t.removeYes}</button><button class="chip" data-act="cancel" ${rm.busy ? "disabled" : ""}>${t.cancel}</button></div>`;
     }
     const node = sel && this._find(e, sel);
-    const err = this._editError ? `<div class="error small">${esc(this._editError)}</div>` : "";
+    const err = (this._editError ? `<div class="error small">${esc(this._editError)}</div>` : "")
+      + (this._info ? `<div class="small">${esc(this._info)}</div>` : "");
     if (!node) return `${err}<div class="muted small">${t.pick}</div>`;
     const rows = node.ids.map((id) => this._settings(id)).join("");
     const admin = this._admin;
@@ -480,11 +596,13 @@ class NoxcastInstallation extends HTMLElement {
     const moves = (node.moves || []).map(([id, label]) => this._belongs(e, id, label)).join("");
     const change = admin ? `<button class="chip" data-edit="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${
       node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>${node.ids[0] === "house" ? ""
-      : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}` : "";
+      : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}${
+      node.system ? `<button class="chip" data-swap="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.swap}</button>` : ""}` : "";
     return `<div class="head"><span class="title">${esc(node.title)}</span>${change}</div>
       ${err}
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
       ${rows || `<div class="muted small" style="margin-top:6px">${t.noSettings}</div>`}
+      ${node.system ? this._swaps(e, node.ids[0]) : ""}
       ${moves ? `<div class="moves">${moves}
         <div class="row"><button class="chip" data-save="${esc(e.entry_id)}" ${this._saving ? "disabled" : ""}>${
           this._saving ? t.saving : t.save}</button><span class="muted small">${t.moveHelp}</span></div>
@@ -502,7 +620,7 @@ class NoxcastInstallation extends HTMLElement {
       const removing = this._removal && this._removal.entryId === e.entry_id;
       const diagram = (removing && this._removal.diagram) || (editing && this._edit.diagram) || e.diagram || "";
       // the "+" boxes only for admins, and not while a part is changed or removed
-      const handles = this._admin && !this._edit && !this._removal ? "" : "<style>[data-add] { display: none; }</style>";
+      const handles = this._admin && !this._edit && !this._removal && !this._swap ? "" : "<style>[data-add] { display: none; }</style>";
       return `<section class="card pad">
         ${!e.systems.length && this._admin && !editing ? `<p class="start">${t.start}</p>` : ""}
         ${e.systems.length || this._admin ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${handles}${diagram}</div>`
@@ -515,7 +633,7 @@ class NoxcastInstallation extends HTMLElement {
       <div class="bar"><button class="chip" data-refresh="1">${t.refresh}</button></div>${body}</div>`;
     // the same form element each time, so that what is typed and the focus stay
     const slot = this.shadowRoot.querySelector(".edit .slot");
-    if (slot && this._form) { slot.appendChild(this._form); this._form.error = this._edit.errors; }
+    if (slot && this._form) { slot.appendChild(this._form); this._form.error = (this._edit || this._swap).errors; }
   }
 
   _style() {

@@ -512,9 +512,11 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
   its. The panel says whether the ratio is learned or still 1. Several swaps give each older segment its own ratio
   to the newest, not a chain.
 - Order inside a run (`learning.learn_array`, `learning.learn_ratios`): learn as today on the joined samples,
-  compute the ratios with that map, and when one is not 1 learn once more on the samples scaled by them. The cells
-  known free hardly depend on a few percent of scale, so a second round settles it; an array without a device swap
-  learns once as before. The ratio is the median over the shared cells of the per-cell ratio of medians, weighted by
+  compute the ratios with that map, and when one is not 1 learn again on the samples scaled by them and measure the
+  ratio once more, until it settles within 0.2 % (`RATIO_ROUNDS`, at most four rounds). The first map still holds
+  the step where an hour's sun path crosses cells that only one device saw, which biased a 5 % step to 3.8 % in the
+  synthetic swap (`prototype/backtest.py --swap`); the second round brings it to 5.0 %. An array without a device
+  swap learns once as before. The ratio is the median over the shared cells of the per-cell ratio of medians, weighted by
   the fewer side, so that a different mix of sun positions on the two devices does not enter it, and is held within
   0.75 to 1.33 (a unit or configuration error, not an inverter). The temperature coefficient is a module property and is learned on all hours. Limits: each segment's fixed-limit
   bounds come from its own limits; the strong hours and the typical-efficiency fallback (`limit_w`) use the

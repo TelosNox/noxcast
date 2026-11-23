@@ -8,6 +8,7 @@ odd ones. Without it everything available is used, as in production.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, tzinfo
@@ -236,6 +237,9 @@ def _as_newest(arr: ArrayConfig, samples: list[tuple[float, float]], ratios: lis
 
 # A ratio outside this range is no inverter's step but a unit or a configuration error: it is held at the bound.
 RATIO_LIMITS = (0.75, 1.33)
+RATIO_ROUNDS = 4                # learning rounds at most until the ratio settles ...
+RATIO_SETTLED = 0.002           # ... to within this
+RATIO_LIMIT_SHARE = 0.75       # ... and up to this share of the lowest fixed limit of the devices
 RATIO_FREE_W = 0.05             # a period counts for the ratio from this share of the peak power in the model
 
 
@@ -259,10 +263,15 @@ def learn_ratios(site: Site, arr: ArrayConfig, learned: LearnedArray, samples: l
         if cs > 50 and ghi / cs >= CLEAR_KT:
             clear.append((t, p, ghi))
     modeled = measured_forecast(site, arr.geometry, learned, [(t, ghi, air.get(t)) for t, _, ghi in clear], period)
+    # Near a fixed limit the device with more output loses its strong hours to the bounds and keeps its weaker
+    # ones, which pulls its median down and the ratio towards 1. The hours are chosen by the model instead, the same
+    # for both devices: none whose model comes near the lowest limit of any of them.
+    limits = [w for view, _, _ in spans(arr) if (w := view.limit_w) is not None]
+    ceiling = RATIO_LIMIT_SHARE * min(limits) if limits else math.inf
     cells: list[dict[tuple[int, int], list[float]]] = [{} for _ in ranges]
     for t, p, _ in clear:
         model_w = modeled.get(t, 0.0) * HOUR / period
-        if model_w < RATIO_FREE_W * arr.geometry.peak_w:
+        if model_w < RATIO_FREE_W * arr.geometry.peak_w or model_w > ceiling:
             continue
         sun = sun_position(site, t + period / 2)
         if not known_free(learned, sun.azimuth, sun.elevation):
@@ -489,10 +498,20 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float,
                 steady=steady, period=period, floors=floors, limit_w=arr.limit_w)
     result = learn(site, arr.geometry, samples, now, **args)
     ratios = learn_ratios(site, arr, result, samples, history, steady, floors, period)
-    if any(r["ratio"] != 1.0 for r in ratios):
-        # once more on one device's scale: else a better inverter would read as less shade in every old cell
-        samples = _as_newest(arr, samples, ratios)
+    measured = samples
+    for _ in range(RATIO_ROUNDS):
+        if all(r["ratio"] == 1.0 for r in ratios):
+            break
+        # again on one device's scale: else a better inverter would read as less shade in every old cell. The map
+        # the ratio was measured on still held the step at the edges of its cells, so it is measured again on the
+        # new map, until it settles
+        samples = _as_newest(arr, measured, ratios)
         result = learn(site, arr.geometry, samples, now, **args)
+        step = learn_ratios(site, arr, result, samples, history, steady, floors, period)
+        ratios = [{**r, "ratio": round(min(max(r["ratio"] * s["ratio"], RATIO_LIMITS[0]), RATIO_LIMITS[1]), 4)}
+                  for r, s in zip(ratios, step)]
+        if all(abs(s["ratio"] - 1.0) < RATIO_SETTLED for s in step):
+            break
     result.segment_ratios = ratios
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",

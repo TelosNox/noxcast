@@ -22,6 +22,11 @@ JSON. To compare two model versions, run this script from both checkouts on the 
               Adds "fine_holdout": would learning from it be better? Takes much longer than the rest.
 --now         ISO time of the run, the reference for ageing; default: the last hour of the statistics.
 --scorecard   print the hold-out scorecard as a Markdown table instead of the JSON, for a pull request.
+--swap        ISO date of a synthetic device swap (docs/concept.md, System swap, proof): every array is frozen up to
+              that day (swap.freeze), the later power comes from renamed sensors scaled by --swap-factor (default
+              0.95 with fixed limits, else 1.05, so that the limit bounds stay comparable), and learning and
+              hold-out run with and without the swap. Prints per array the efficiency against the expected one, the
+              ratio, how far the shading map moved and the hold-out error of both.
 
 All these files hold personal data and stay out of the repository (*.local.json, prototype/data/).
 """
@@ -105,6 +110,66 @@ def scorecard_table(holdout: dict, names: dict[str, str]) -> str:
     return "\n".join(rows + ["", "Hour error / bias in % of the actual energy."])
 
 
+def _swapped(site: solar.Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, until: float,
+             resume: float, factor: float) -> tuple[dict[str, ln.ArrayConfig], ln.PvHistory]:
+    """The installation and history after a synthetic swap: the hours up to until frozen, the later power on renamed
+    sensors, scaled by factor, as if a new device had delivered it."""
+    swap = importlib.import_module("noxcast.swap")
+    new = {s: f"{s}_new" for arr in arrays.values() for s in arr.sensors}
+    frozen = {sid: [swap.freeze(site, sid, history, ln.Segment(until, resume, arr.sensors, arr.limits, arr.caps))]
+              for sid, arr in arrays.items()}
+
+    def later(stats: dict[str, dict[float, float | None]]) -> dict[str, dict[float, float | None]]:
+        return {new[s]: {t: v * factor * history.factors.get(s, 1.0) for t, v in series.items()
+                         if t >= resume and v is not None} for s, series in stats.items() if s in new}
+
+    def kept(sets: dict[str, frozenset]) -> dict[str, frozenset]:
+        return {sid: frozenset(t for t in hours if t >= resume) for sid, hours in sets.items()}
+    live = ln.PvHistory(later(history.power), later(history.power_min), later(history.power_max), {},
+                        history.air_temp, history.satellite_ghi, kept(history.full), kept(history.charge),
+                        kept(history.held), kept(history.unsure), history.snowfall, output=kept(history.output))
+    after = {sid: dataclasses.replace(
+        arr, sensors=tuple(new[s] for s in arr.sensors), limits=tuple((new[s], w) for s, w in arr.limits),
+        caps=tuple((tuple(new[s] for s in sensors), w) for sensors, w in arr.caps),
+        segments=swap.segments(frozen[sid])) for sid, arr in arrays.items()}
+    return after, swap.merge(live, frozen)
+
+
+def synthetic_swap(site: solar.Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory, now: float,
+                   exclusions: list[tuple[float, float]], tz: ZoneInfo, day: date, factor: float | None) -> dict:
+    """Learning and hold-out with and without a synthetic swap on day (see --swap)."""
+    until = datetime.combine(day, datetime.min.time(), tz).timestamp()
+    resume = datetime.combine(date.fromordinal(day.toordinal() + 1), datetime.min.time(), tz).timestamp()
+    factor = factor or (0.95 if any(arr.limits or arr.caps for arr in arrays.values()) else 1.05)
+    after, swapped = _swapped(site, arrays, history, until, resume, factor)
+    # the reference leaves the swap day out too, so that both learn from the same hours
+    plain = exclusions + [(until, resume)]
+    day_of = backtest.local_day(tz)
+    out: dict = {"swap": day.isoformat(), "factor": factor, "arrays": {}}
+    before = ln.learn_arrays(site, arrays, history, now, plain)
+    learned = ln.learn_arrays(site, after, swapped, now, exclusions)
+    hold = {"reference": backtest.holdout(site, arrays, history, now, plain, day_of),
+            "swapped": backtest.holdout(site, after, swapped, now, exclusions, day_of)}
+    for sid, arr in arrays.items():
+        a, b = before[sid], learned[sid]
+        common = set(a.cells) & set(b.cells)
+        moved = sorted(abs(a.cells[k] - b.cells[k]) for k in common)
+
+        def error(name: str, sid: str = sid) -> float | None:
+            r = hold[name]["arrays"].get(sid, {})
+            return r.get("holdout", {}).get("hour_error") if r.get("status") == backtest.OK else None
+        out["arrays"][arr.name] = {
+            "efficiency": {"reference": round(a.efficiency, 4), "swapped": round(b.efficiency, 4),
+                           "expected": round(a.efficiency * factor, 4)},
+            "ratios": b.segment_ratios,
+            "cells": {"reference": len(a.cells), "swapped": len(b.cells), "common": len(common),
+                      "mean_moved": round(sum(moved) / len(moved), 4) if moved else None,
+                      "p90_moved": round(moved[int(0.9 * (len(moved) - 1))], 4) if moved else None},
+            "holdout_hour_error": {"reference": error("reference"), "swapped": error("swapped")},
+        }
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest of the PV model on exported data")
     parser.add_argument("--config", required=True)
@@ -115,6 +180,8 @@ def main() -> None:
     parser.add_argument("--fine")
     parser.add_argument("--now")
     parser.add_argument("--scorecard", action="store_true")
+    parser.add_argument("--swap")
+    parser.add_argument("--swap-factor", type=float)
     args = parser.parse_args()
 
     config = json.loads(pathlib.Path(args.config).read_text(encoding="utf-8"))
@@ -151,6 +218,10 @@ def main() -> None:
     stored = json.loads(pathlib.Path(args.archive).read_text(encoding="utf-8")) if args.archive else {}
     days = archive.from_store(stored) if "days" in stored else stored
 
+    if args.swap:
+        print(json.dumps(synthetic_swap(site, arrays, history, now, exclusions, tz, date.fromisoformat(args.swap),
+                                        args.swap_factor), indent=2))
+        return
     start = time.monotonic()
     learned = ln.learn_arrays(site, arrays, history, now, exclusions)
     learning = time.monotonic() - start

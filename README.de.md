@@ -288,15 +288,33 @@ hervorgehoben im Bild, bevor *Speichern* ihn anlegt. *Entfernen* zeigt erst, was
 ihn, und entfernt nichts vor *Endgültig entfernen*. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
-*Gerät tauschen* an einem System ist für ein neues Gerät an denselben Modulen (neuer Wechselrichter, neues
-Kompaktgerät oder neuer Akku). Es listet jeden Sensor, den das System nutzt, mit dem Sensor des neuen Geräts, den
-Noxcast vorschlägt, dazu das Datum des Tauschs (leer: der Tag, an dem die neuen PV-Sensoren ihre ersten Werte haben)
-und je PV-Gruppe, ob das neue Gerät ihre Leistung wandelt. *Tauschen* behält die Stunden des alten Geräts in einem
-eigenen Speicher, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts als Verhältnis zum
-alten; der Tag des Tauschs zählt für keines der Geräte. Die alten Statistiken unter *Entwicklerwerkzeuge →
-Statistiken* nicht löschen, bevor der Tausch gespeichert ist. Das System listet den Tausch danach, und der neueste
-lässt sich rückgängig machen, solange die alten Statistiken noch da sind. Prüfe danach mit *Ändern* die Grenzen und
-den Akku des neuen Geräts.
+*Gerät tauschen* an einem System ist für den Tag, an dem ein Gerät des Systems ersetzt wird und die PV-Module
+bleiben, wo sie sind. Nutze es, wenn
+
+- ein neuer Wechselrichter, Mikrowechselrichter oder ein neues Kompaktgerät (Wechselrichter, MPPTs und Akku in einem)
+  dieselben Module übernimmt, jedes Modul an derselben Art Eingang wie bisher;
+- nur ein neuer Akku oder ein neuer Zähler kommt, mit eigenen Sensoren (*neues Gerät wandelt die Leistung* aus);
+- dieselbe Hardware eine neue Integration bekommt, sodass ihre Sensoren neue Entitäts-IDs haben (ebenfalls aus).
+
+Nutze es nicht, wenn
+
+- Module dazukommen, wegfallen, umziehen, gedreht oder anders verschaltet werden: das ist eine geänderte PV-Gruppe,
+  dafür gibt es *Ändern* an der Gruppe (oder *Entfernen* und *+ PV-Gruppe*), und ihre Schattenkarte beginnt neu;
+- ein zweites Gerät zum System dazukommt: füge es mit *+ Teilsystem* oder *+ PV-Gruppe* hinzu;
+- sich nur eine Grenze, die Akkukapazität oder eine andere Einstellung ändert, bei denselben Sensoren: nimm *Ändern*;
+- die alten Statistiken schon gelöscht sind: dann lässt sich nichts Gelerntes mehr übernehmen, richte die neuen
+  Sensoren mit *Ändern* ein.
+
+Baue zuerst das neue Gerät ein und lass es laufen; der Assistent schlägt seine Sensoren vor, sobald Home Assistant sie
+kennt. Er listet jeden Sensor, den das System nutzt, mit dem Sensor des neuen Geräts, den Noxcast vorschlägt, dazu das
+Datum des Tauschs (leer: der Tag, an dem die neuen PV-Sensoren ihre ersten Werte haben) und je PV-Gruppe, ob das neue
+Gerät ihre Leistung wandelt. *Tauschen* behält die Stunden des alten Geräts in einem eigenen Speicher, damit die
+Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts als Verhältnis zum alten; der Tag des Tauschs zählt
+für keines der Geräte. Bis das neue Gerät etwa 20 klare Stunden bei Sonnenständen hat, die auch das alte gesehen hat,
+gilt sein Wirkungsgrad als der des alten (die Kennzahlen unter *Gelerntes* zeigen, wie viele noch fehlen). Die alten
+Statistiken unter *Entwicklerwerkzeuge → Statistiken* nicht löschen, bevor der Tausch gespeichert ist. Das System
+listet den Tausch danach, und der neueste lässt sich rückgängig machen, solange die alten Statistiken noch da sind.
+Prüfe danach mit *Ändern* die Grenzen und den Akku des neuen Geräts.
 
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 

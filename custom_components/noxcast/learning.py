@@ -557,7 +557,9 @@ def _capped_measured(site: Site, arrays: dict[str, ArrayConfig], learned: dict[s
     group = {sid} | {a for members, _ in caps for a in members}
 
     def predict(hours: list[tuple[float, float, float | None]]) -> Series:
-        raw = {a: measured_forecast(site, arrays[a].geometry, learned[a], hours) for a in group}
+        # an hour of a device before a swap: each array's model at the efficiency of the device that ran then
+        raw = {a: {t: v * device_factor(arrays[a], learned[a].segment_ratios, t)
+                   for t, v in measured_forecast(site, arrays[a].geometry, learned[a], hours).items()} for a in group}
         if sid not in own and not caps:
             return raw[sid]
         temps = {t: temp for t, _, temp in hours}

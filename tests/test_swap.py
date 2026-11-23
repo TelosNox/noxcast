@@ -228,3 +228,12 @@ def test_a_fixed_limit_does_not_pull_the_ratio_towards_one():
                          segments=sw.segments([frozen]))
     [ratio] = ln.learn_array(SITE, arr, history, DAY0 + 60 * 86400, []).segment_ratios
     assert ratio["learned"] and abs(ratio["ratio"] - 0.95) < 0.005
+
+
+def test_before_a_swap_only_the_old_device_says_which_hours_were_held():
+    # the new installation sees old hours as held (a grid sensor that stayed), the old device had none
+    segment = ln.Segment(SWAP, RESUME, ("old",))
+    frozen = sw.freeze(SITE, "roof", before(), segment)
+    live = after()
+    live = ln.PvHistory(live.power, live.power_min, live.power_max, live.factors, held={"roof": frozenset({DAY0 + 12 * 3600})})
+    assert sw.merge(live, {"roof": [frozen]}).held["roof"] == frozenset()

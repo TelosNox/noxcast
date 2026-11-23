@@ -113,7 +113,8 @@ def merge(history: PvHistory, store: Mapping[str, list]) -> PvHistory:
         for kind in KINDS:
             live = {t for t in sets[kind].get(sid, ()) if t >= last}
             frozen = {float(t) for f in entries for t in f["hours"].get(kind, ())}
-            if live or frozen:
+            # before the swap only the frozen sets count, also where the old device had none of a kind
+            if live or frozen or sid in sets[kind]:
                 sets[kind][sid] = frozenset(live | frozen)
         for f in entries:
             until, start = float(f["until"]), f.get("start")

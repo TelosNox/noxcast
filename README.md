@@ -283,14 +283,32 @@ part is drawn highlighted before *Save* creates it. *Remove* shows first what go
 without it, and removes nothing before *Remove for good*. The forms for systems, PV arrays and batteries show the same diagram
 on top. Later versions compute more of the settings without new input.
 
-*Swap device* on a system is for a new device on the same modules (a new inverter, compact device or battery). It
+*Swap device* on a system is for the day a device of the system is replaced and the PV modules stay where they
+are. Use it when
+
+- a new inverter, microinverter or compact device (inverter, MPPTs and battery in one) takes over the same modules,
+  each module on the same kind of input as before;
+- only a new battery or a new meter arrives, with sensors of its own (switch *a new device converts the power* off);
+- the same hardware gets a new integration, so that its sensors have new entity IDs (switch it off too).
+
+Do not use it when
+
+- modules are added, removed, moved or turned, or wired differently: that is a changed PV array, which *Change* on
+  the array (or *Remove* and *+ PV array*) handles, and its shading map starts anew;
+- a second device joins the system: add it with *+ Subsystem* or *+ PV array*;
+- only a limit, the battery capacity or another setting changes, with the same sensors: use *Change*;
+- the old statistics are already deleted: nothing learned can be carried over any more, so set up the new sensors
+  with *Change*.
+
+Install the new device first and let it run; the assistant suggests its sensors once Home Assistant has them. It
 lists every sensor the system uses, each with the sensor of the new device Noxcast suggests, the swap date (empty:
 the day the new PV sensors have their first values) and per PV array whether the new device converts its power.
 *Swap* keeps the old device's hours in a store of its own, so the shading map stays, and learns the new device's
-efficiency as a ratio to the old one; the day of the swap counts for neither device. Do not delete the old
-statistics under *Developer tools → Statistics* before the swap is saved. The system then lists the swap, and the
-newest one can be undone while the old statistics still exist. Check the new device's limits and battery with
-*Change* afterwards.
+efficiency as a ratio to the old one; the day of the swap counts for neither device. Until the new device has about
+20 clear hours at sun positions the old one also saw, its efficiency counts as the old one's (the *Learned* figures
+show how many are still missing). Do not delete the old statistics under *Developer tools → Statistics* before the swap
+is saved. The system then lists the swap, and the newest one can be undone while the old statistics still exist.
+Check the new device's limits and battery with *Change* afterwards.
 
 ### 3. PV arrays (one per group of power sensors)
 

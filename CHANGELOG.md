@@ -13,6 +13,8 @@ breaking changes.
   hours, so the shading map and what else belongs to the modules stay learned, and learns the new device's
   efficiency as a ratio to the old one. The newest swap can be undone while the old statistics still exist. Do not
   delete the old statistics under *Developer tools → Statistics* before the swap is saved.
+  Modules that are added, moved or wired differently are not a swap but a changed PV array (*Change*); the README
+  lists when to use which.
 
 ## [0.7.0b1] - 2026-11-22
 

@@ -28,6 +28,8 @@ from .sources import async_hourly_statistics
 
 WHEN = "when"
 NEW_STATS_DAYS = 90                      # how far back the first hour of the new sensors is looked for
+# undo looks this far back for the old sensors' statistics: an old device may have stopped days before the swap
+UNDO_DAYS = 30
 HOUSEHOLD = (CONF_HOUSE_LOAD, CONF_GRID)  # household entities an old device may have measured
 
 TEXTS = {
@@ -226,13 +228,15 @@ async def async_save(hass: HomeAssistant, entry: ConfigEntry, system: str, user_
     if not mapping:
         return {"base": "nothing_changed"}
     arrays = _arrays(flat, system)
-    new_pv = {mapping.get(s, s) for a in arrays for s in flat[a][2].get(CONF_POWER_SENSORS) or ()}
+    pv = {s for a in arrays for s in flat[a][2].get(CONF_POWER_SENSORS) or ()}
+    # without new PV sensors (only a battery or a meter swapped) the new ones show when the swap happened
+    new = {mapping.get(s, s) for s in pv} - pv or set(mapping.values())
     if user_input.get(WHEN):
         day = dt_util.parse_date(str(user_input[WHEN])[:10])
         if day is None:
             return {WHEN: "invalid_value"}
     else:
-        first = await _first_hour(hass, new_pv - {s for a in arrays for s in flat[a][2].get(CONF_POWER_SENSORS) or ()})
+        first = await _first_hour(hass, new)
         if first is None:
             return {WHEN: "no_new_statistics"}
         day = dt_util.as_local(dt_util.utc_from_timestamp(first)).date()
@@ -253,10 +257,18 @@ async def async_save(hass: HomeAssistant, entry: ConfigEntry, system: str, user_
     for a in arrays:
         arr = coordinator.arrays[a]
         segment = Segment(until, resume, arr.sensors, arr.limits, arr.caps, bool(user_input.get(f"d_{a}", True)))
-        frozen[a] = {**sw.freeze(coordinator.site, a, history, segment, starts[a]), "system": system,
-                     "mapping": mapping, "swapped": day.isoformat()}
+        hours = await hass.async_add_executor_job(sw.freeze, coordinator.site, a, history, segment, starts[a])
+        frozen[a] = {**hours, "system": system, "mapping": mapping, "swapped": day.isoformat()}
+    # a second save (another tab) passed the first check during the awaits: it must not freeze the hours twice
+    if rev != revision(entry, system):
+        return {"base": "changed"}
     await coordinator.async_add_frozen(frozen)
-    _replace(hass, entry, system, mapping)
+    try:
+        _replace(hass, entry, system, mapping)
+    except Exception:
+        # frozen hours of sensors that still run would count as an older device of the same modules
+        await coordinator.async_drop_frozen({a: until for a in frozen})
+        raise
     return {}
 
 
@@ -305,7 +317,8 @@ async def async_undo(hass: HomeAssistant, entry: ConfigEntry, system: str) -> di
     until = max(float(f["until"]) for _, f in mine)
     last = [(a, f) for a, f in mine if float(f["until"]) == until]
     old_pv = sorted({s for _, f in last for s in f["sensors"]})
-    stats = await async_hourly_statistics(hass, old_pv, dt_util.utc_from_timestamp(until) - timedelta(days=3), "mean",
+    stats = await async_hourly_statistics(hass, old_pv, dt_util.utc_from_timestamp(until) - timedelta(days=UNDO_DAYS),
+                                          "mean",
                                           end=dt_util.utc_from_timestamp(until))
     if not any(v is not None for series in stats.values() for v in series.values()):
         return {"base": "old_statistics_missing"}

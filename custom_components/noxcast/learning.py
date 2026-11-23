@@ -236,6 +236,8 @@ def _as_newest(arr: ArrayConfig, samples: list[tuple[float, float]], ratios: lis
 
 # A ratio outside this range is no inverter's step but a unit or a configuration error: it is held at the bound.
 RATIO_LIMITS = (0.75, 1.33)
+RATIO_ROUNDS = 4                # learning rounds at most until the ratio settles ...
+RATIO_SETTLED = 0.002           # ... to within this
 RATIO_FREE_W = 0.05             # a period counts for the ratio from this share of the peak power in the model
 
 
@@ -489,10 +491,20 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float,
                 steady=steady, period=period, floors=floors, limit_w=arr.limit_w)
     result = learn(site, arr.geometry, samples, now, **args)
     ratios = learn_ratios(site, arr, result, samples, history, steady, floors, period)
-    if any(r["ratio"] != 1.0 for r in ratios):
-        # once more on one device's scale: else a better inverter would read as less shade in every old cell
-        samples = _as_newest(arr, samples, ratios)
+    measured = samples
+    for _ in range(RATIO_ROUNDS):
+        if all(r["ratio"] == 1.0 for r in ratios):
+            break
+        # again on one device's scale: else a better inverter would read as less shade in every old cell. The map
+        # the ratio was measured on still held the step at the edges of its cells, so it is measured again on the
+        # new map, until it settles
+        samples = _as_newest(arr, measured, ratios)
         result = learn(site, arr.geometry, samples, now, **args)
+        step = learn_ratios(site, arr, result, samples, history, steady, floors, period)
+        ratios = [{**r, "ratio": round(min(max(r["ratio"] * s["ratio"], RATIO_LIMITS[0]), RATIO_LIMITS[1]), 4)}
+                  for r, s in zip(ratios, step)]
+        if all(abs(s["ratio"] - 1.0) < RATIO_SETTLED for s in step):
+            break
     result.segment_ratios = ratios
     if result.samples and not EFFICIENCY_PLAUSIBLE[0] <= result.efficiency <= EFFICIENCY_PLAUSIBLE[1]:
         _LOGGER.warning("%s: implausible system efficiency %.2f – check peak power and power sensor units",

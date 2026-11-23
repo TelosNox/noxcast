@@ -146,3 +146,19 @@ def test_a_battery_swap_keeps_one_efficiency():
     arr = ln.ArrayConfig("roof", "Roof", ("old",), GEO, None, segments=(segment,))
     assert ln.devices(arr) == [(None, None)]
     assert ln.learn_array(SITE, arr, before(), NOW, []).segment_ratios == []
+
+
+def test_the_ratio_settles_where_the_sun_paths_of_both_devices_differ():
+    # a month on each side: the sun crosses other cell edges after the swap, and the first map holds the step there
+    hours = [DAY0 + h * 3600 for h in range(60 * 24)]
+    until = DAY0 + 30 * 86400
+    old = {t: clear(t) for t in hours if t < until}
+    new = {t: clear(t) * 1.05 for t in hours if t >= until + 86400}
+    frozen = sw.freeze(SITE, "roof", ln.PvHistory({"old": old}, {"old": old}, {"old": old}, {}),
+                       ln.Segment(until, until + 86400, ("old",)))
+    sky = {t: model.clearsky_hour(SITE, GEO, t)[4] for t in hours}
+    live = {"new": new}
+    history = sw.merge(ln.PvHistory(live, live, live, {}, satellite_ghi=sky), {"roof": [frozen]})
+    arr = ln.ArrayConfig("roof", "Roof", ("new",), GEO, None, segments=sw.segments([frozen]))
+    [ratio] = ln.learn_array(SITE, arr, history, DAY0 + 60 * 86400, []).segment_ratios
+    assert ratio["learned"] and abs(ratio["ratio"] - 1.05) < 0.003

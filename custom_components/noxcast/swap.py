@@ -200,8 +200,9 @@ def _tokens(entity_id: str) -> set[str]:
 
 def suggest(old: list[Candidate], candidates: list[Candidate]) -> dict[str, str | None]:
     """A new entity for each old one: same domain, unit and device class, not on the old one's device, the most
-    alike by the words of its id. A replaced device usually brings all its entities on one new device, so the device
-    most old entities point to first gets the others too, where it has a fitting one."""
+    alike by the words of its id. A replaced device usually brings all its entities on one new device, so once the
+    old entities point to such a device, only its entities are suggested: an entity of a device that stays (a
+    battery of its own, a meter) keeps its own instead of a look-alike from elsewhere."""
     def fits(o: Candidate, c: Candidate) -> bool:
         return (c.entity_id.split(".")[0] == o.entity_id.split(".")[0] and c.unit == o.unit
                 and c.device_class == o.device_class and (o.device is None or c.device != o.device)
@@ -223,8 +224,8 @@ def suggest(old: list[Candidate], candidates: list[Candidate]) -> dict[str, str 
     taken: set[str] = set()
     for o in old:
         ranked = [(s, c) for s, c in best[o.entity_id] if c.entity_id not in taken and s > 0]
-        on_device = [x for x in ranked if x[1].device == device] if device else []
-        pick = (on_device or ranked or [(0.0, None)])[0][1]
+        pick = ([x for x in ranked if x[1].device == device] if device else ranked or [(0.0, None)])
+        pick = pick[0][1] if pick else None
         out[o.entity_id] = pick.entity_id if pick else None
         if pick:
             taken.add(pick.entity_id)

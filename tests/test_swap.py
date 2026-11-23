@@ -124,6 +124,19 @@ def test_suggestions_take_the_new_device_and_the_same_role():
                                            "sensor.stream_battery_level": "sensor.stream_2_battery_level"}
     assert sw.suggest([c("sensor.grid", None, "W", "power")], [c("sensor.x_temperature", "new", "°C", None)]) == {
         "sensor.grid": None}
+
+
+def test_an_entity_of_a_device_that_stays_keeps_its_own():
+    # a new inverter, the battery on a device of its own stays: a look-alike elsewhere is no suggestion for it
+    c = sw.Candidate
+    old = [c("sensor.inv_pv1_power", "inv", "W", "power"), c("sensor.inv_pv2_power", "inv", "W", "power"),
+           c("sensor.bat_soc", "bat", "%", "battery")]
+    candidates = [c("sensor.inv_2_pv1_power", "new", "W", "power"), c("sensor.inv_2_pv2_power", "new", "W", "power"),
+                  c("sensor.car_battery_soc", "car", "%", "battery")]
+    assert sw.suggest(old, candidates) == {"sensor.inv_pv1_power": "sensor.inv_2_pv1_power",
+                                           "sensor.inv_pv2_power": "sensor.inv_2_pv2_power", "sensor.bat_soc": None}
+
+
 def sky() -> dict[float, float]:
     """Satellite irradiance of a clear sky, so that every hour counts as clear."""
     return {t: model.clearsky_hour(SITE, GEO, t)[4] for t in HOURS}

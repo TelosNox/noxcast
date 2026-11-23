@@ -50,11 +50,12 @@ const INST_TEXT = {
     save: "Zuordnung speichern", saving: "Speichert …", notPossible: "Dorthin kann der Teil nicht.",
     moveHelp: "Noxcast lädt danach neu, wie nach dem Bearbeiten eines Eintrags.",
     swap: "Gerät tauschen", swapTitle: "Gerät tauschen: {name}",
-    swapHelp: "Für ein neues Gerät an denselben Modulen: neuer Wechselrichter oder neues Kompaktgerät, nur ein neuer Akku oder Zähler, oder neue Sensoren derselben Hardware. Nicht für Module, die dazukommen, wegfallen, umziehen oder anders verschaltet werden (dafür „Ändern“ an der PV-Gruppe), und nicht, wenn sich nur eine Einstellung ändert. Noxcast schlägt für jeden Sensor den passenden des neuen Geräts vor. Beim Tauschen behält Noxcast die Stunden des alten Geräts, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts dazu. Die alten Statistiken unter Entwicklerwerkzeuge → Statistiken nicht löschen, bis der Tausch gespeichert ist.",
+    swapHelp: "Für ein neues Gerät an denselben Modulen: neuer Wechselrichter oder neues Kompaktgerät, nur ein neuer Akku oder Zähler, oder neue Sensoren derselben Hardware. Nicht für Module, die dazukommen, wegfallen, umziehen oder anders verschaltet werden (dafür „Ändern“ an der PV-Gruppe), nicht für ein zusätzliches Gerät (dafür „+ Teilsystem“ oder „+ PV-Gruppe“) und nicht, wenn sich nur eine Einstellung ändert. Noxcast schlägt für jeden Sensor den passenden des neuen Geräts vor. Beim Tauschen behält Noxcast die Stunden des alten Geräts, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts dazu. Die alten Statistiken unter Entwicklerwerkzeuge → Statistiken nicht löschen, bis der Tausch gespeichert ist.",
     swapYes: "Tauschen", swapping: "Tauscht …",
     swapped: "Getauscht. Prüfe jetzt mit „Ändern“ die Grenzen und den Akku des neuen Geräts.",
     swapDone: "Gerät getauscht am {date}", swapDevices: "neuer Wirkungsgrad für: {list}", swapBattery: "nur Akku oder Zähler",
     undo: "Rückgängig", undoing: "Macht rückgängig …",
+    undoSure: "Wirklich rückgängig? Die alten Sensoren kommen zurück, die gespeicherten Stunden des alten Geräts werden verworfen.",
   },
   en: {
     outdated: "Noxcast was updated – please reload the page",
@@ -96,11 +97,12 @@ const INST_TEXT = {
     save: "Save assignment", saving: "Saving …", notPossible: "The part cannot go there.",
     moveHelp: "Noxcast reloads afterwards, as after editing an entry.",
     swap: "Swap device", swapTitle: "Swap device: {name}",
-    swapHelp: "For a new device on the same modules: a new inverter or compact device, only a new battery or meter, or new sensors of the same hardware. Not for modules that are added, removed, moved or wired differently (use “Change” on the PV array), and not when only a setting changes. Noxcast suggests the fitting sensor of the new device for each one. On swapping, Noxcast keeps the old device's hours, so that the shading map stays, and learns the new device's efficiency on top. Do not delete the old statistics under Developer tools → Statistics until the swap is saved.",
+    swapHelp: "For a new device on the same modules: a new inverter or compact device, only a new battery or meter, or new sensors of the same hardware. Not for modules that are added, removed, moved or wired differently (use “Change” on the PV array), not for an additional device (use “+ Subsystem” or “+ PV array”), and not when only a setting changes. Noxcast suggests the fitting sensor of the new device for each one. On swapping, Noxcast keeps the old device's hours, so that the shading map stays, and learns the new device's efficiency on top. Do not delete the old statistics under Developer tools → Statistics until the swap is saved.",
     swapYes: "Swap", swapping: "Swapping …",
     swapped: "Swapped. Now check the new device's limits and battery with “Change”.",
     swapDone: "Device swapped on {date}", swapDevices: "new efficiency for: {list}", swapBattery: "battery or meter only",
     undo: "Undo", undoing: "Undoing …",
+    undoSure: "Really undo? The old sensors come back, the stored hours of the old device are dropped.",
   },
 };
 
@@ -113,14 +115,20 @@ class NoxcastInstallation extends HTMLElement {
       if (path.some((n) => n.dataset && n.dataset.refresh)) { this._load(); return; }
       const save = path.find((n) => n.dataset && n.dataset.save);
       if (save) { this._move(save.dataset.save); return; }
+      // a swap is a mode of its own: nothing else starts while it or another form is being fetched or open
+      const busy = this._starting || this._edit || this._removal || this._swap;
       const edit = path.find((n) => n.dataset && n.dataset.edit);
+      if (edit && (this._starting || this._swap)) return;
       if (edit) { this._startEdit(edit.dataset.entry, edit.dataset.edit); return; }
       const remove = path.find((n) => n.dataset && n.dataset.remove);
+      if (remove && (this._starting || this._swap)) return;
       if (remove) { this._askRemove(remove.dataset.entry, remove.dataset.remove); return; }
       const swap = path.find((n) => n.dataset && n.dataset.swap);
+      if (swap && busy) return;
       if (swap) { this._startSwap(swap.dataset.entry, swap.dataset.swap); return; }
       const undo = path.find((n) => n.dataset && n.dataset.undo);
-      if (undo) { this._undoSwap(undo.dataset.entry, undo.dataset.undo); return; }
+      if (undo && busy) return;
+      if (undo) { this._askUndo(undo.dataset.entry, undo.dataset.undo); return; }
       const act = path.find((n) => n.dataset && n.dataset.act);
       if (act) {
         if (act.dataset.act === "save-part") this._savePart();
@@ -145,7 +153,7 @@ class NoxcastInstallation extends HTMLElement {
         return;
       }
       const node = path.find((n) => n.getAttribute && n.getAttribute("data-node"));
-      if (node) { this._sel = node.getAttribute("data-node"); this._editError = null; this._render(); }
+      if (node) { this._sel = node.getAttribute("data-node"); this._editError = null; this._info = null; this._undoAsk = null; this._render(); }
     });
   }
 
@@ -218,6 +226,9 @@ class NoxcastInstallation extends HTMLElement {
   async _startEdit(entryId, part, kind, to) {
     const t = this._t;
     this._editError = null;
+    this._info = null;
+    this._undoAsk = null;
+    this._starting = true;
     let form;
     try {
       if (!(await this._ensureForm())) throw new Error(t.noForm);
@@ -227,7 +238,7 @@ class NoxcastInstallation extends HTMLElement {
       this._editError = errorText(err, this._hass.language);
       this._render();
       return;
-    }
+    } finally { this._starting = false; }
     this._edit = { entryId, part, form, input: form.data, errors: {}, diagram: null, saving: false };
     this._form = this._makeForm(form);
     this._sel = part || "draft";
@@ -355,6 +366,8 @@ class NoxcastInstallation extends HTMLElement {
   async _startSwap(entryId, system) {
     this._editError = null;
     this._info = null;
+    this._undoAsk = null;
+    this._starting = true;
     let form;
     try {
       if (!(await this._ensureForm())) throw new Error(this._t.noForm);
@@ -363,7 +376,7 @@ class NoxcastInstallation extends HTMLElement {
       this._editError = errorText(err, this._hass.language);
       this._render();
       return;
-    }
+    } finally { this._starting = false; }
     this._swap = { entryId, system, form, input: form.data, errors: {}, saving: false, base: null };
     const f = document.createElement("ha-form");
     f.hass = this._hass;
@@ -399,6 +412,7 @@ class NoxcastInstallation extends HTMLElement {
     if (r.errors) {
       const { base, ...fields } = r.errors;
       w.base = base ? w.form.errors[base] || base : null;
+      if (base === "changed") this._load();
       w.errors = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v]));
       this._render();
       return;
@@ -406,6 +420,14 @@ class NoxcastInstallation extends HTMLElement {
     this._merge(r);
     this._stopEdit();
     this._info = this._t.swapped;
+    this._render();
+  }
+
+  // undo drops the old device's stored hours and puts its sensors back, so the first click only asks
+  _askUndo(entryId, system) {
+    if (this._undoAsk === system) { this._undoAsk = null; this._undoSwap(entryId, system); return; }
+    this._undoAsk = system;
+    this._info = null;
     this._render();
   }
 
@@ -426,7 +448,7 @@ class NoxcastInstallation extends HTMLElement {
 
   _swapper(e) {
     const t = this._t, w = this._swap;
-    return `<div class="head"><span class="title">${esc(t.swapTitle.replace("{name}", w.form.name))}</span></div>
+    return `<div class="head"><span class="title">${esc(t.swapTitle.replace("{name}", () => w.form.name))}</span></div>
       <p class="help">${t.swapHelp}</p>
       <div class="edit"><div class="slot"></div>
       <div class="error small">${esc(w.base || "")}</div>
@@ -441,18 +463,22 @@ class NoxcastInstallation extends HTMLElement {
     if (!list.length) return "";
     return `<ul class="settings">${list.map((s) => `<li><span class="val">${esc(t.swapDone.replace("{date}",
       new Date(`${s.swapped}T12:00:00`).toLocaleDateString(this._lang)))}</span>
-      <span class="name">${esc(s.devices.length ? t.swapDevices.replace("{list}", s.devices.join(", ")) : t.swapBattery)}</span>
+      <span class="name">${esc(s.devices.length ? t.swapDevices.replace("{list}", () => s.devices.join(", ")) : t.swapBattery)}</span>
       ${s.undo && this._admin ? `<button class="chip" data-undo="${esc(system)}" data-entry="${esc(e.entry_id)}" ${
-        this._undoing ? "disabled" : ""}>${this._undoing === system ? t.undoing : t.undo}</button>` : ""}</li>`).join("")}</ul>`;
+        this._undoing ? "disabled" : ""}>${this._undoing === system ? t.undoing : this._undoAsk === system ? t.undoSure : t.undo}</button>` : ""}</li>`).join("")}</ul>`;
   }
 
   // what removing a part takes with it, shown with the diagram without it before anything is removed
   async _askRemove(entryId, part) {
     this._editError = null;
+    this._info = null;
+    this._undoAsk = null;
+    this._starting = true;
     try {
       const r = await ask(this._hass, { type: "noxcast/part_remove", entry_id: entryId, part, language: this._lang });
       this._removal = { entryId, ...r, busy: false };
     } catch (err) { this._editError = errorText(err, this._hass.language); }
+    this._starting = false;
     this._render();
   }
 

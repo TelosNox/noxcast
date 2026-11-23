@@ -222,6 +222,10 @@ class LearnedArray:
     # what learning saw (databasis.summary): shares per category and anomalies, for the panel; never read by the
     # forecast. Set by the nightly run, not by learn_array (the hold-out learns many times)
     basis: dict | None = None
+    # per device before a system swap (learning.learn_ratios), oldest first: {"until": its last hour's end, "ratio":
+    # the newest device's efficiency over its own, "learned": False while too few shared free hours hold it at 1,
+    # "hours": [its hours, the newest device's hours] the ratio rests on}. The efficiency above is the newest's.
+    segment_ratios: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)

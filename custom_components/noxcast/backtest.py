@@ -31,7 +31,7 @@ from . import fine as fn
 from . import learning as ln
 from .band import CLEARNESS_MAX
 from .model import (
-    LearnedArray, clearsky_weather, forecast, measured_forecast, steady_hours, sun_path_cache, usable_samples,
+    LearnedArray, clearsky_weather, forecast, measured_forecast, sun_path_cache, usable_samples,
 )
 from .solar import Site, sun_position
 from .const import Series
@@ -141,7 +141,8 @@ def replay(site: Site, arrays: dict[str, ln.ArrayConfig], learned: dict[str, Lea
                 if h.ts not in hours_of[sid] or sid not in h.forecast or sid not in h.actual:
                     continue
                 then, actual = h.forecast[sid], h.actual[sid]
-                fc, bare_fc = fcs[sid], bares[sid]
+                factor = ln.device_factor(known[sid], learned[sid].segment_ratios, h.ts)
+                fc, bare_fc = fcs[sid] * factor, bares[sid] * factor
                 if _lit(then, fc, actual):
                     run["then"][h.ts] = (then, actual)
                     run["now"][h.ts] = (fc, actual)
@@ -256,9 +257,14 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
                         series[sid][t] = capped.get(sid, series[sid][t])
         for sid, arr in good.items():
             fc, base = fcs[sid], bases[sid]
-            clear[sid].update(forecast(site, arr.geometry, models[sid],
-                                       [clearsky_weather(site, t, air.get(t)) for t in tests[sid]
-                                        if _even(t, day_of) != even]))
+            # an hour of a device before a swap is measured with that device: the model at its efficiency
+            if ratios := models[sid].segment_ratios:
+                for series in (fc, base):
+                    for t in series:
+                        series[t] *= ln.device_factor(arr, ratios, t)
+            sky = forecast(site, arr.geometry, models[sid],
+                           [clearsky_weather(site, t, air.get(t)) for t in tests[sid] if _even(t, day_of) != even])
+            clear[sid].update({t: v * ln.device_factor(arr, ratios, t) for t, v in sky.items()})
             for t, p in tests[sid].items():
                 if _even(t, day_of) == even:
                     runs[sid]["in_sample"][t] = (fc[t], p)
@@ -270,8 +276,7 @@ def holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHistory
         return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}
 
     for sid, run in runs.items():
-        steady = steady_hours([(history.power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
-                               for s in good[sid].sensors])
+        steady = ln.array_steady(good[sid], history)
         near = (lambda t, sid=sid: near_limit(sid, t)) if near_limit is not None else None
         sets = subsets(site, tests[sid], clear[sid], steady, day_of, near)
         out[sid] = {**result(run), "scorecard": scorecard(run, sets, day_of)}
@@ -331,7 +336,8 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
             hours = [(t, max(0.0, sat[t]), air.get(t)) for t in tests[sid] if not half(t)]
             for name, model in zip(names, (today, same, sharp, merged)):
                 fc = measured_forecast(site, arr.geometry, model, hours)
-                runs[sid][name].update({h[0]: (fc[h[0]], tests[sid][h[0]]) for h in hours})
+                runs[sid][name].update({h[0]: (fc[h[0]] * ln.device_factor(arr, model.segment_ratios, h[0]),
+                                               tests[sid][h[0]]) for h in hours})
 
     def result(parts: dict[str, Pairs]) -> dict:
         return {"status": OK, **{name: score(pairs, day_of) for name, pairs in parts.items()}}

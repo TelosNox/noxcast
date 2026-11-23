@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Collection
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, tzinfo
 
 from . import archive as fc_archive
@@ -36,6 +36,19 @@ Series = Series
 
 
 @dataclass(frozen=True)
+class Segment:
+    """An array before a system swap (swap.py, docs/concept.md System swap): its sensors and limits then. Its hours
+    end at until; the hours from until to resume (the rest of the swap day, a part on each device) belong to no one."""
+
+    until: float
+    resume: float
+    sensors: tuple[str, ...]
+    limits: tuple[tuple[str, float], ...] = ()
+    caps: tuple[tuple[tuple[str, ...], float], ...] = ()
+    device: bool = True                  # a new device converts the array's power after it: a new efficiency
+
+
+@dataclass(frozen=True)
 class ArrayConfig:
     subentry_id: str
     name: str
@@ -47,6 +60,7 @@ class ArrayConfig:
     # (sensors, fixed limit in W): output limits of the systems the array belongs to, with every sensor of the
     # arrays that share them; periods with their sum at the limit are lower bounds (installation.Cap)
     caps: tuple[tuple[tuple[str, ...], float], ...] = ()
+    segments: tuple[Segment, ...] = ()       # the array before its system swaps, oldest first
 
     @property
     def limit_w(self) -> float | None:
@@ -155,6 +169,34 @@ def scaled_sum(stats: dict[str, dict[float, float | None]], sensors: tuple[str, 
                        for s in sensors])
 
 
+def spans(arr: ArrayConfig) -> list[tuple[ArrayConfig, float | None, float | None]]:
+    """The array as it was in each segment and as it is since the last swap: (the array with that span's sensors and
+    limits, start, end), None = open. Without a swap the array itself, unbounded."""
+    if not arr.segments:
+        return [(arr, None, None)]
+    out: list[tuple[ArrayConfig, float | None, float | None]] = []
+    start = None
+    for seg in arr.segments:
+        out.append((replace(arr, sensors=seg.sensors, limits=seg.limits, caps=seg.caps, segments=()), start, seg.until))
+        start = seg.resume
+    out.append((replace(arr, segments=()), start, None))
+    return out
+
+
+def _within(t: float, start: float | None, end: float | None) -> bool:
+    return (start is None or t >= start) and (end is None or t < end)
+
+
+def array_power(arr: ArrayConfig, stats: dict[str, dict[float, float | None]], factors: dict[str, float]) -> Series:
+    """An array's power in W across its swaps: in each span the sum of that span's sensors."""
+    if not arr.segments:
+        return scaled_sum(stats, arr.sensors, factors)
+    out: Series = {}
+    for view, start, end in spans(arr):
+        out.update({t: v for t, v in scaled_sum(stats, view.sensors, factors).items() if _within(t, start, end)})
+    return out
+
+
 def _only(series: Series, keep: Keep | None) -> Series:
     return series if keep is None else {t: v for t, v in series.items() if keep(t)}
 
@@ -198,6 +240,13 @@ LIMIT_MEAN_SHARE = 0.8
 
 
 def floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) -> set[float]:
+    """Periods at a fixed limit (_floor_hours), across swaps each span with its own sensors and limits."""
+    if not arr.segments:
+        return _floor_hours(arr, history, site)
+    return {t for view, start, end in spans(arr) for t in _floor_hours(view, history, site) if _within(t, start, end)}
+
+
+def _floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None) -> set[float]:
     """Periods in which a sensor of the array reached its fixed limit, or the arrays of a system without a battery
     reached its output limit together: the array's power then is only a lower bound (curtailment.at_limit).
 
@@ -260,14 +309,14 @@ class LeftOut:
 
 def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = HOUR) -> LeftOut:
     """Days without output and hours under snow of one array, from its whole history."""
-    key = (arr.subentry_id, arr.sensors, arr.geometry, arr.valid_since, period)
+    key = (arr.subentry_id, arr.sensors, arr.segments, arr.geometry, arr.valid_since, period)
     if key not in history.memo:
         history.memo[key] = _left_out(site, arr, history, period)
     return history.memo[key]
 
 
 def _left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float) -> LeftOut:
-    summed = scaled_sum(history.power, arr.sensors, history.factors)
+    summed = array_power(arr, history.power, history.factors)
     dead = model_dead_days(site, arr.geometry, summed, valid_since=arr.valid_since, period=period)
     snow, capped = snow_windows(site, arr.geometry, summed, history.snowfall, history.air_temp,
                                 history.satellite_ghi, arr.valid_since)
@@ -288,15 +337,17 @@ def array_samples(arr: ArrayConfig, history: PvHistory, exclusions: list[tuple[f
     learning sees. skip: hour starts left out besides (left_out). site: for hourly periods, to keep the hours that
     only a short peak brought to a limit (floor_hours)."""
     power = history.power
-    summed = scaled_sum(power, arr.sensors, history.factors)
+    summed = array_power(arr, power, history.factors)
     samples = usable_samples(summed, exclusions=exclusions,
                              valid_since=arr.valid_since,
                              full=history.full.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset())
                              | skip)
     if keep is not None:
         samples = [s for s in samples if keep(s[0])]
-    steady = steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
-                           for s in arr.sensors])
+    steady = {t for view, start, end in spans(arr)
+              for t in steady_hours([(power.get(s, {}), history.power_min.get(s, {}), history.power_max.get(s, {}))
+                                     for s in view.sensors])
+              if _within(t, start, end)}
     # an hour charging at the maximum, at an output limit with a battery below it, or one in which a system
     # following the load held PV back: every period in it delivered at least what was measured
     charge = (history.charge.get(arr.subentry_id, frozenset()) | history.held.get(arr.subentry_id, frozenset())
@@ -317,7 +368,7 @@ def hour_reasons(site: Site, arr: ArrayConfig, history: PvHistory,
     dead = set(out.dead)
     left = {"battery_full": history.full.get(sid, frozenset()), "maybe_charging": history.unsure.get(sid, frozenset()),
             "no_output": {t for t in out.hours if solar_day(site, t) in dead}, "snow": out.snow}
-    reasons = sample_reasons(scaled_sum(history.power, arr.sensors, history.factors),
+    reasons = sample_reasons(array_power(arr, history.power, history.factors),
                              exclusions=exclusions, valid_since=arr.valid_since,
                              left={k: v for k, v in left.items() if v})
     output = history.output.get(sid, frozenset())
@@ -391,7 +442,7 @@ def record_archive(archive: dict, site: Site, arrays: dict[str, ArrayConfig], le
     for sid, arr in arrays.items():
         limited = ct.limited_hours(inst, sid, peaks) if peaks else set()
         # an hour at a battery's charge ceiling shows nothing about the sun either, and its forecast is not capped
-        fc_archive.add_actuals(archive, sid, scaled_sum(history.power, arr.sensors, history.factors), now,
+        fc_archive.add_actuals(archive, sid, array_power(arr, history.power, history.factors), now,
                                history.full.get(sid, frozenset()) | history.charge.get(sid, frozenset())
                                | history.held.get(sid, frozenset()) | history.unsure.get(sid, frozenset())
                                | history.output.get(sid, frozenset()),

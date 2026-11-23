@@ -45,7 +45,7 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
     """
     geo = arr.geometry
     reasons = ln.hour_reasons(site, arr, history, exclusions)
-    power = ln.scaled_sum(history.power, arr.sensors, history.factors)
+    power = ln.array_power(arr, history.power, history.factors)
     samples, steady, floors = ln.array_samples(arr, history, exclusions,
                                                skip=ln.left_out(site, arr, history).hours, site=site)
     checked = {row[0]: (row[7], row[8]) for row in

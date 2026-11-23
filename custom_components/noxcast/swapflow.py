@@ -48,6 +48,7 @@ TEXTS = {
             "no_new_statistics": "Die neuen PV-Sensoren haben noch keine Werte. Trage das Datum ein oder warte, bis "
                                  "das neue Gerät eine Stunde gelaufen ist.",
             "in_future": "Das Datum liegt in der Zukunft.",
+            "invalid_value": "Das ist kein gültiges Datum.",
             "before_last_swap": "Das Datum liegt vor dem letzten Tausch dieses Systems.",
             "old_statistics_missing": "Von den bisherigen PV-Sensoren gibt es keine Statistiken mehr. Was gelernt "
                                       "wurde, lässt sich nicht mehr übernehmen.",
@@ -73,6 +74,7 @@ TEXTS = {
             "no_new_statistics": "The new PV sensors have no values yet. Enter the date, or wait until the new "
                                  "device has run for an hour.",
             "in_future": "The date is in the future.",
+            "invalid_value": "This is not a valid date.",
             "before_last_swap": "The date is before this system's last swap.",
             "old_statistics_missing": "The previous PV sensors have no statistics any more. What was learned can no "
                                       "longer be carried over.",

@@ -450,7 +450,7 @@ the old statistics, and it must keep apart what belongs to the modules and what 
   efficiency for as long as the old hours are in the learning window (two years, `HISTORY_YEARS`).
 - House (unchanged by a swap, but often measured by the device): house load and grid. When they come from the old
   device's integration, the load history is lost the same way; the frozen store holds the grid hours the filters
-  need, the load history is not covered (open, below).
+  need, the load relearns (below).
 
 ### Freezing the old hours
 
@@ -494,18 +494,31 @@ An array's history becomes segments: the frozen ones, then the live statistics o
 last swap on. `PvHistory` is built from both; the battery, grid and output hour sets of a frozen segment are
 taken as stored, the fixed-limit bounds are computed per segment with that segment's limits.
 
-- Efficiency per segment: each segment has its own efficiency and its own limits (`limit_w` sets which hours are
-  strong). The forecast uses the newest segment's. Today `model._learn` always finds an efficiency, from very few
-  hours if need be; across a swap a new threshold holds the previous segment's value until the new segment has
-  `MIN_UNSHADED_HOURS` measured hours in cells known free. The panel says which value holds.
+- Two kinds of swap per array, chosen in the swap with a default: a new device converts the array's power (a new
+  inverter, compact device or micro-inverter; the default when the array's power sensors change), or only the
+  storage or the meters around it change (a battery swap; the default when the power sensors stay). Only the first
+  starts a new efficiency segment; the second freezes the hour classifications and nothing else, its ratio is 1.
+  Power is frozen only for the sensors the swap replaces; a sensor that stays is read live across the swap.
 - The scale between segments: the shading map is a transmission relative to the efficiency, so a new inverter 3 %
-  better would otherwise show up as 3 % less shade on every cell learned from old hours. The older segment's
-  samples, lower bounds included, are scaled by the ratio of the new efficiency to theirs. The ratio comes only
-  from hours in cells both segments cover as known free, so that a swap in November does not put the low-sun error
-  of the model into the ratio; until there are `MIN_UNSHADED_HOURS` such hours in each segment the ratio is 1.
-- Order inside a run: scale the older segments by the ratio of the last run, learn temperature coefficient and the
-  shading map on the joined samples, then the efficiency per segment and the new ratio; repeat until the ratio
-  settles, as the sky view does. The temperature coefficient is a module property and is learned on all hours.
+  better would otherwise show up as 3 % less shade on every cell learned from old hours. Each older efficiency
+  segment's samples, lower bounds included, are scaled by its ratio to the newest segment, and learning then runs
+  on the joined samples as on one device: the efficiency it finds is the newest device's, and an older segment's
+  is that divided by its ratio. There is no efficiency learned per segment on its own and no second threshold.
+- The ratio of a segment is the median efficiency of the newest segment's hours over that of the segment's hours,
+  each over measured clear hours in cells both cover as known free, so that a swap in November does not put the
+  low-sun error of the model into the ratio. Until each side has `MIN_UNSHADED_HOURS` such hours the ratio is 1:
+  the joined efficiency then holds, which in the first days is the previous device's, since nearly all hours are
+  its. The panel says whether the ratio is learned or still 1. Several swaps give each older segment its own ratio
+  to the newest, not a chain.
+- Order inside a run: scale the older segments by the ratios of the last run, learn as today on the joined
+  samples, then compute the new ratios. The ratio joins the sky view loop (`SKY_VIEW_ITERATIONS`, which stops when
+  both settle); starting from the last run's ratios, a night needs at most one round more than today. The
+  temperature coefficient is a module property and is learned on all hours. Limits: each segment's fixed-limit
+  bounds come from its own limits; the strong hours and the typical-efficiency fallback (`limit_w`) use the
+  newest segment's.
+- Everything that compares a past hour with the model uses the efficiency of the hour's segment: the hour table and
+  day view (`databasis`), the hindcast, hold-out and backtest, the accuracy archive. Learning scales the measured
+  value; the views scale the model instead, so they keep showing what was really measured.
 - Ageing, change detection and the rest of learning work on the joined samples unchanged: a swap does not reset
   the shading map.
 - The panel's efficiency by month (`efficiency_months`) and the season check (`arraycheck`, `SEASON_SWING`) compare
@@ -516,30 +529,39 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
   pruned with the frozen store.
 - The forecast archive is keyed by array and runs on; the accuracy view marks the swap day.
 
+- House load and grid from the old device's integration are switched to the new sensors like any setting, not
+  frozen: the load profiles learn from `PROFILE_DAYS` (six weeks) and are back within that time, regulated
+  consumers within a year; until then they learn from the fewer days there are. The grid hours the PV filters
+  need are in the frozen classification.
+
 ### What the user sees
 
 - Installation tab: the swap per system, with its date, the old sensors and whether their statistics are still
   there.
 - Data basis / panel: segment boundary in the day and month views, "efficiency since the swap: N hours (until
-  enough: the previous value 0.91)", the efficiency of each segment and the ratio, so the device's effect is a
-  visible number.
+  enough: ratio 1, the joined value 0.91 holds)", the efficiency of each segment and the ratio, so the device's
+  effect is a visible number.
 - Undo: removing the swap restores the live old sensors while their statistics exist; after that, the frozen store
   is the only copy and is deleted only with the array.
 
 ### Compatibility and proof
 
 - New keys in the array's config (segments) with a minor config entry version, a new store with its own version;
-  `LEARNED_VERSION` gains the efficiency per segment and the ratio. Nothing existing is renamed.
+  the learned array gains the ratios per segment, an optional key that older stored data simply lacks (no new
+  `LEARNED_VERSION`). Nothing existing is renamed.
 - Backtest before it is merged: on the maintainer's history, a synthetic swap (freeze at a date, scale the later
   power by 0.95, and without fixed limits by 1.05, so that the limit bounds stay comparable) must give the shading
   map and hold-out error of the run without a swap within its noise, and the scaled efficiency for the new segment.
   Swap dates in winter and summer, for the seasonal bias of the ratio.
 - The real swap of the maintainer's two systems runs as a pre-release through at least one nightly learning run.
 
+- Until the swap exists, a user whose new device is already running keeps the old sensors in Noxcast: the
+  forecast goes on with what was learned, the 5-minute archive of the old sensors is kept, and the swap is later
+  dated back to the first hour of the new device.
+
 Open: an array that moves to another system in the swap (a different topology); a change of wiring (string MPPT
 to micro-inverters, a different number of sensors), after which the old shading map fits less and the old
-segment might better count only for sky view, reflection and facade; the house load when it was measured by the
-old device.
+segment might better count only for sky view, reflection and facade.
 
 ## Data filters
 

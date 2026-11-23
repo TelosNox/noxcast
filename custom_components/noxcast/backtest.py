@@ -86,7 +86,7 @@ def usable(arr: ln.ArrayConfig, history: ln.PvHistory, exclusions: list[tuple[fl
     """The array's hours learning would use, with the mean power (W = Wh per hour). An hour at a battery's charge
     ceiling, or one a system following the load may have held back, is left out here: learning keeps it as a lower bound, but as a measure of the forecast it says nothing.
     site: given, days without output and hours under snow are left out too, as in learning (ln.left_out)."""
-    summed = ln.scaled_sum(history.power, arr.sensors, history.factors)
+    summed = ln.array_power(arr, history.power, history.factors)
     full = (history.full.get(arr.subentry_id, frozenset()) | history.charge.get(arr.subentry_id, frozenset())
             | history.held.get(arr.subentry_id, frozenset()) | history.unsure.get(arr.subentry_id, frozenset())
             | history.output.get(arr.subentry_id, frozenset()))
@@ -302,7 +302,7 @@ def fine_holdout(site: Site, arrays: dict[str, ln.ArrayConfig], history: ln.PvHi
     tests: dict[str, Series] = {}
     out: dict[str, dict] = {}
     for sid, arr in arrays.items():
-        covered[sid] = {day_of(t) for t in ln.scaled_sum(fine.power, arr.sensors, {})}
+        covered[sid] = {day_of(t) for t in ln.array_power(arr, fine.power, {})}
         tests[sid] = {t: p for t, p in usable(arr, history, exclusions, site).items()
                       if t in sat and day_of(t) in covered[sid] and _lit(p, sat[t])}
         folds = [[t for t in tests[sid] if _even(t, day_of) == even] for even in (True, False)]

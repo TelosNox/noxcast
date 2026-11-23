@@ -498,7 +498,8 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
   inverter, compact device or micro-inverter; the default when the array's power sensors change), or only the
   storage or the meters around it change (a battery swap; the default when the power sensors stay). Only the first
   starts a new efficiency segment; the second freezes the hour classifications and nothing else, its ratio is 1.
-  Power is frozen only for the sensors the swap replaces; a sensor that stays is read live across the swap.
+  Power is frozen for every sensor of the array before the swap, also one that stays: its statistics may be deleted
+  later, and then the frozen copy is the only one. The frozen copy holds before the swap, the live statistics after.
 - The scale between segments: the shading map is a transmission relative to the efficiency, so a new inverter 3 %
   better would otherwise show up as 3 % less shade on every cell learned from old hours. Each older efficiency
   segment's samples, lower bounds included, are scaled by its ratio to the newest segment, and learning then runs
@@ -546,7 +547,8 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
 
 ### Compatibility and proof
 
-- New keys in the array's config (segments) with a minor config entry version, a new store with its own version;
+- The segments (swap time, the sensors and limits before, the kind of swap) are kept with their hours in the new
+  store (`swap.py`, its own version), not in the config entry: one place, no config entry migration;
   the learned array gains the ratios per segment, an optional key that older stored data simply lacks (no new
   `LEARNED_VERSION`). Nothing existing is renamed.
 - Backtest before it is merged: on the maintainer's history, a synthetic swap (freeze at a date, scale the later

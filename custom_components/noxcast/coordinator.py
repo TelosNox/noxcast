@@ -10,6 +10,7 @@ import copy
 import logging
 import random
 import time
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -55,6 +56,7 @@ from . import learnchange as lc
 from . import load as lf
 from . import plan as pl
 from . import plateau as pt
+from . import swap as sw
 from .forecasting import NoxcastData
 from .learning import ArrayConfig, ConsumerConfig
 from .model import HEATING_K, LEARNED_VERSION, ArrayGeometry, LearnedArray, Plane, WeatherHour, sun_paths_kept
@@ -221,6 +223,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # 5-minute means per power sensor for sharper shading later (fine.py); bounded to three years
         self._fine_store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.fine")
         self.fine: dict = {}
+        # the hours of replaced devices per array (swap.py): the only copy once their statistics are gone, so it is
+        # never written over after a failed read
+        self._frozen_store: Store[dict] = Store(hass, sw.FROZEN_VERSION, f"{DOMAIN}.{entry.entry_id}.frozen")
+        self.frozen: dict[str, list] = {}
+        self._frozen_ok = False
         self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
         # power limits seen in the measurements (plateau.py): {"detected": {sensor: Plateau.as_dict()}, "systems":
         # {system: Plateau.as_dict()} (output limits on the sum), "dismissed_systems": {system: W},
@@ -304,6 +311,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             _LOGGER.warning("Noxcast 5-minute archive could not be read; starting a new one", exc_info=True)
             self.fine = {}
         try:
+            self.frozen = dict((await self._frozen_store.async_load() or {}).get("arrays", {}))
+            self._frozen_ok = True
+        except Exception:  # noqa: BLE001
+            _LOGGER.error("Noxcast: the frozen hours of swapped devices could not be read; learning goes on without "
+                          "them, and the file is left as it is", exc_info=True)
+        self.arrays = {sid: replace(arr, segments=sw.segments(self.frozen.get(sid, ())))
+                       for sid, arr in self.arrays.items()}
+        try:
             self.weather_archive = dict(await self._weather_store.async_load() or {})
         except Exception:  # noqa: BLE001 – it is only a copy, fetched anew
             _LOGGER.warning("Noxcast weather archive copy could not be read; fetching it anew", exc_info=True)
@@ -334,6 +349,14 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_nightly(self, _now: datetime) -> None:
         await self._async_record_fine()
         await self.async_learn(backtest=True)
+        self._prune_frozen()
+
+    def _prune_frozen(self) -> None:
+        """Frozen hours older than the learning window go, like the live history."""
+        if not self._frozen_ok or not any(self.frozen.values()):
+            return
+        sw.prune(self.frozen, (dt_util.utcnow() - timedelta(days=365 * HISTORY_YEARS)).timestamp())
+        self._frozen_store.async_delay_save(lambda: {"arrays": self.frozen}, 60)
 
     async def _async_record_fine(self) -> None:
         """Keep yesterday's (and any missed day's) 5-minute means per power sensor while the statistics exist: the
@@ -363,7 +386,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             # a day refetched for a newly kept sensor keeps what it holds: the statistics may reach less far back
             if sensor not in self.fine.get(day.isoformat(), {}):
                 fn.add_day(self.fine, day, sensor, day_steps)
-        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids))
+        fn.prune(self.fine, today - timedelta(days=fn.FINE_DAYS), set(sensor_ids) | sw.sensors(self.frozen))
         self._fine_store.async_delay_save(lambda: {"days": self.fine}, 60)
 
     def _fine_steps(self, stats: dict[str, Series], factors: dict[str, float], bounds: list[tuple[date, float, float]],
@@ -763,6 +786,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         held = {sid: frozenset(installation.held_hours(sid, grid_low)) for sid in self.arrays if sid in installation.held}
         history = ln.PvHistory(power, power_min, power_max, factors,
                                air_temp, satellite_ghi, full, charge, held, unsure, snowfall, output=output)
+        history = sw.merge(history, {sid: f for sid, f in self.frozen.items() if sid in self.arrays})
         return history, [(e["start"], e["end"]) for e in self.exclusions]
 
     async def async_hour_tables(self, only: str | None = None) -> dict[str, dict]:

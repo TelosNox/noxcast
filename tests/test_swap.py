@@ -146,3 +146,15 @@ def test_a_battery_swap_keeps_one_efficiency():
     arr = ln.ArrayConfig("roof", "Roof", ("old",), GEO, None, segments=(segment,))
     assert ln.devices(arr) == [(None, None)]
     assert ln.learn_array(SITE, arr, before(), NOW, []).segment_ratios == []
+
+
+def test_the_hour_table_shows_each_hour_with_its_own_device():
+    databasis = load("databasis")
+    arr, history = better(1.05)
+    learned = ln.learn_array(SITE, arr, history, NOW, [])
+    table = databasis.hour_table(SITE, arr, learned, history, [])
+    col = {c: i for i, c in enumerate(table["columns"])}
+    noon = {row[col["start"]]: row for row in table["rows"] if row[col["start"]].endswith("T12:00:00+00:00")}
+    for day in ("2026-06-05", "2026-06-25"):                  # the old device's and the new one's
+        row = noon[f"{day}T12:00:00+00:00"]
+        assert abs(row[col["model_w"]] / row[col["power_w"]] - 1) < 0.02

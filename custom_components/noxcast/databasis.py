@@ -68,18 +68,23 @@ def hour_table(site: Site, arr: ln.ArrayConfig, learned: LearnedArray, history: 
     unshaded = LearnedArray(**{**learned.__dict__, "cells": {}, "facade": None})
     bound = forecast(site, geo, unshaded, [clearsky_weather(site, t, air.get(t)) for t in sky])
     rows = []
+    ratios = learned.segment_ratios
     for t, (why, low) in reasons.items():
         if t not in sky:
             continue
         status = LEFT_OUT if why else LOWER_BOUND if low else USED
         step = steps.get(t, {})
+        # an hour of a device before a swap: the model at that device's efficiency, beside what it measured
+        f = ln.device_factor(arr, ratios, t)
+        if f != 1.0:
+            step = {k: round(v * f, 1) if isinstance(v, (int, float)) else v for k, v in step.items()}
         g, cs_ghi = sat.get(t), sky[t][1]
         kt = round(min(max(0.0, g) / cs_ghi, 1.2), 3) if g is not None and cs_ghi > 50 else None
         iso = datetime.fromtimestamp(t, timezone.utc).isoformat()
         eff, check = checked.get(iso, (None, None))
         temp = air.get(t)
         rows.append([iso, status, " ".join(why or low), round(power[t], 1), step.get("result"),
-                     round(bound[t], 1) if t in bound else None,
+                     round(bound[t] * f, 1) if t in bound else None,
                      *(step.get(name) for name in _STEP_COLUMNS), kt,
                      round(temp, 1) if temp is not None else None, snow.get(t),
                      t in steady if status != LEFT_OUT else None, eff, check if status != LEFT_OUT else None])

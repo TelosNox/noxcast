@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.7.0b2] - 2026-11-23
+
 ### Added
 - *Swap device* in the *Installation* tab: when a system's device is replaced by a new one on the same modules, the
   assistant suggests the new device's sensor for each one and swaps them in one step. Noxcast keeps the old device's

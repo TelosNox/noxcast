@@ -281,6 +281,9 @@ def learn_ratios(site: Site, arr: ArrayConfig, learned: LearnedArray, samples: l
             per_cell = [(_median(newest[c]) / m, min(len(own[c]), len(newest[c]))) for c in shared
                         if (m := _median(own[c])) > 0]
             ratio = weighted_quantile([r for r, _ in per_cell], [w for _, w in per_cell], 0.5) if per_cell else 1.0
+            if not RATIO_LIMITS[0] <= ratio <= RATIO_LIMITS[1]:
+                _LOGGER.warning("%s: the new device measures %.2f times the old one; held at %s. Check the unit and "
+                                "the sensors of the swap", arr.name, ratio, RATIO_LIMITS)
             ratio = min(max(ratio, RATIO_LIMITS[0]), RATIO_LIMITS[1])
         out.append({"until": end, "ratio": round(ratio, 4), "learned": enough,
                     "hours": [round(old_n * period / HOUR), round(new_n * period / HOUR)]})

@@ -74,7 +74,10 @@ const TEXT = {
     certainty: { sure: "sicher", fair: "ziemlich sicher", unsure: "unsicher", derived: "abgeleitet", pending: "noch nicht bewertet (nach dem nächsten Lernlauf)" },
     basis: "Grundlage", basisHours: (n) => `${n} Stunden`, spread: (v) => `Streuung ±${v}`,
     origin: { all: "alle Stunden", clear: "klare Stunden", fit: "angepasst an den Stundenverlauf", shaped: "aus den Nachbarfeldern", limit: "an der Leistungsgrenze" },
-    efficiency: "Wirkungsgrad", skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
+    efficiency: "Wirkungsgrad", swapRatio: (d) => `Gerätetausch am ${d}`,
+    ratioLearned: (r, a, b) => `neues Gerät ${r}× das alte (aus ${a} / ${b} freien klaren Stunden)`,
+    ratioWaiting: (a, b, n) => `noch 1×: zu wenige freie klare Stunden (alt ${a}, neu ${b}, je ${n} nötig)`,
+    skyView: "Himmelssicht", tempCoeff: "Temperaturkoeff.", coverage: "Abdeckung Karte",
     facade: "Horizontlinie (Höhe · Richtung · Bereich)", fromFacade: "aus der Horizontlinie",
     dirRange: "Richtungsfaktor", reflMax: "Reflexion max.", samples: "Stunden", since: "Daten seit", learnedAt: "Letzter Lernlauf",
     free: "frei", partial: "Teilschatten", shaded: "Schatten", none: "keine", less: "weniger", more: "mehr",
@@ -186,7 +189,10 @@ const TEXT = {
     certainty: { sure: "sure", fair: "fairly sure", unsure: "unsure", derived: "derived", pending: "not rated yet (after the next learning run)" },
     basis: "Basis", basisHours: (n) => `${n} hours`, spread: (v) => `spread ±${v}`,
     origin: { all: "all hours", clear: "clear hours", fit: "fitted to the hourly course", shaped: "from the neighbouring cells", limit: "at the power limit" },
-    efficiency: "Efficiency", skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
+    efficiency: "Efficiency", swapRatio: (d) => `Device swap on ${d}`,
+    ratioLearned: (r, a, b) => `new device ${r}× the old one (from ${a} / ${b} free clear hours)`,
+    ratioWaiting: (a, b, n) => `still 1×: too few free clear hours (old ${a}, new ${b}, ${n} each needed)`,
+    skyView: "Sky view", tempCoeff: "Temp. coefficient", coverage: "Map coverage",
     facade: "Horizon line (height · direction · range)", fromFacade: "from the horizon line",
     dirRange: "Direction factor", reflMax: "Reflection max.", samples: "Hours", since: "Data since", learnedAt: "Last learning run",
     free: "free", partial: "partial shade", shaded: "shade", none: "none", less: "less", more: "more",
@@ -845,6 +851,9 @@ class NoxcastPanel extends HTMLElement {
       [t.samples, (la.samples || 0).toLocaleString(this._lang)],
       [t.since, date(la.first_sample)],
       [t.learnedAt, date(arr.last_learning)],
+      // a device swap: how the newest device's efficiency relates to each older one's (learning.learn_ratios)
+      ...(la.segment_ratios || []).map((r) => [t.swapRatio(date(r.until)), r.learned
+        ? t.ratioLearned(num(r.ratio, 3), r.hours[0], r.hours[1]) : t.ratioWaiting(r.hours[0], r.hours[1], 20)]),
     ];
   }
 

@@ -162,3 +162,33 @@ def test_the_ratio_settles_where_the_sun_paths_of_both_devices_differ():
     arr = ln.ArrayConfig("roof", "Roof", ("new",), GEO, None, segments=sw.segments([frozen]))
     [ratio] = ln.learn_array(SITE, arr, history, DAY0 + 60 * 86400, []).segment_ratios
     assert ratio["learned"] and abs(ratio["ratio"] - 1.05) < 0.003
+def test_the_hour_table_shows_each_hour_with_its_own_device():
+    databasis = load("databasis")
+    arr, history = better(1.05)
+    learned = ln.learn_array(SITE, arr, history, NOW, [])
+    table = databasis.hour_table(SITE, arr, learned, history, [])
+    col = {c: i for i, c in enumerate(table["columns"])}
+    noon = {row[col["start"]]: row for row in table["rows"] if row[col["start"]].endswith("T12:00:00+00:00")}
+    for day in ("2026-06-05", "2026-06-25"):                  # the old device's and the new one's
+        row = noon[f"{day}T12:00:00+00:00"]
+        assert abs(row[col["model_w"]] / row[col["power_w"]] - 1) < 0.02
+
+
+def test_a_fixed_limit_does_not_pull_the_ratio_towards_one():
+    # both devices are cut at 400 W: the stronger one loses more of its strong hours to the bounds
+    hours = [DAY0 + h * 3600 for h in range(60 * 24)]
+    until = DAY0 + 30 * 86400
+    def noisy(t: float) -> float:            # a few percent from hour to hour, as a real sky gives
+        return clear(t) * (1 + 0.08 * ((t / 3600 * 0.618) % 1 - 0.5))
+    old = {t: min(noisy(t), 400.0) for t in hours if t < until}
+    new = {t: min(noisy(t) * 0.95, 400.0) for t in hours if t >= until + 86400}
+    limits = (("old", 400.0),)
+    frozen = sw.freeze(SITE, "roof", ln.PvHistory({"old": old}, {"old": old}, {"old": old}, {}),
+                       ln.Segment(until, until + 86400, ("old",), limits=limits))
+    sky = {t: model.clearsky_hour(SITE, GEO, t)[4] for t in hours}
+    live = {"new": new}
+    history = sw.merge(ln.PvHistory(live, live, live, {}, satellite_ghi=sky), {"roof": [frozen]})
+    arr = ln.ArrayConfig("roof", "Roof", ("new",), GEO, None, limits=(("new", 400.0),),
+                         segments=sw.segments([frozen]))
+    [ratio] = ln.learn_array(SITE, arr, history, DAY0 + 60 * 86400, []).segment_ratios
+    assert ratio["learned"] and abs(ratio["ratio"] - 0.95) < 0.005

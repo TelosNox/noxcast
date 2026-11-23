@@ -511,10 +511,12 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
   the joined efficiency then holds, which in the first days is the previous device's, since nearly all hours are
   its. The panel says whether the ratio is learned or still 1. Several swaps give each older segment its own ratio
   to the newest, not a chain.
-- Order inside a run: scale the older segments by the ratios of the last run, learn as today on the joined
-  samples, then compute the new ratios. The ratio joins the sky view loop (`SKY_VIEW_ITERATIONS`, which stops when
-  both settle); starting from the last run's ratios, a night needs at most one round more than today. The
-  temperature coefficient is a module property and is learned on all hours. Limits: each segment's fixed-limit
+- Order inside a run (`learning.learn_array`, `learning.learn_ratios`): learn as today on the joined samples,
+  compute the ratios with that map, and when one is not 1 learn once more on the samples scaled by them. The cells
+  known free hardly depend on a few percent of scale, so a second round settles it; an array without a device swap
+  learns once as before. The ratio is the median over the shared cells of the per-cell ratio of medians, weighted by
+  the fewer side, so that a different mix of sun positions on the two devices does not enter it, and is held within
+  0.75 to 1.33 (a unit or configuration error, not an inverter). The temperature coefficient is a module property and is learned on all hours. Limits: each segment's fixed-limit
   bounds come from its own limits; the strong hours and the typical-efficiency fallback (`limit_w`) use the
   newest segment's.
 - Everything that compares a past hour with the model uses the efficiency of the hour's segment: the hour table and
@@ -522,8 +524,8 @@ taken as stored, the fixed-limit bounds are computed per segment with that segme
   value; the views scale the model instead, so they keep showing what was really measured.
 - Ageing, change detection and the rest of learning work on the joined samples unchanged: a swap does not reset
   the shading map.
-- The panel's efficiency by month (`efficiency_months`) and the season check (`arraycheck`, `SEASON_SWING`) compare
-  within a segment only, so the device step does not read as a seasonal swing.
+- The panel's efficiency by month (`efficiency_months`) and the season check (`arraycheck`, `SEASON_SWING`) see the
+  scaled samples, all on the newest device's scale, so the device step does not read as a seasonal swing.
 - The 5-minute archive is keyed by sensor: its nightly prune keeps the sensors of frozen segments, and the fine
   learning sums each day over the sensors of the segment that day belongs to. Both are changes to `fine.prune` and
   `learning.learn_array`. The archive keeps three years, the frozen hours two; older fine days of a gone sensor are

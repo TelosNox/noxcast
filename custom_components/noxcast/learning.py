@@ -8,7 +8,6 @@ odd ones. Without it everything available is used, as in production.
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, tzinfo
@@ -239,7 +238,6 @@ def _as_newest(arr: ArrayConfig, samples: list[tuple[float, float]], ratios: lis
 RATIO_LIMITS = (0.75, 1.33)
 RATIO_ROUNDS = 4                # learning rounds at most until the ratio settles ...
 RATIO_SETTLED = 0.002           # ... to within this
-RATIO_LIMIT_SHARE = 0.75       # ... and up to this share of the lowest fixed limit of the devices
 RATIO_FREE_W = 0.05             # a period counts for the ratio from this share of the peak power in the model
 
 
@@ -263,15 +261,10 @@ def learn_ratios(site: Site, arr: ArrayConfig, learned: LearnedArray, samples: l
         if cs > 50 and ghi / cs >= CLEAR_KT:
             clear.append((t, p, ghi))
     modeled = measured_forecast(site, arr.geometry, learned, [(t, ghi, air.get(t)) for t, _, ghi in clear], period)
-    # Near a fixed limit the device with more output loses its strong hours to the bounds and keeps its weaker
-    # ones, which pulls its median down and the ratio towards 1. The hours are chosen by the model instead, the same
-    # for both devices: none whose model comes near the lowest limit of any of them.
-    limits = [w for view, _, _ in spans(arr) if (w := view.limit_w) is not None]
-    ceiling = RATIO_LIMIT_SHARE * min(limits) if limits else math.inf
     cells: list[dict[tuple[int, int], list[float]]] = [{} for _ in ranges]
     for t, p, _ in clear:
         model_w = modeled.get(t, 0.0) * HOUR / period
-        if model_w < RATIO_FREE_W * arr.geometry.peak_w or model_w > ceiling:
+        if model_w < RATIO_FREE_W * arr.geometry.peak_w:
             continue
         sun = sun_position(site, t + period / 2)
         if not known_free(learned, sun.azimuth, sun.elevation):

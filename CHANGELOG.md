@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.8.0b1] - 2026-11-24
+
 ### Added
 - Snow in the forecast, only where learned: an array that cleared from at least two snowfalls in its history
   (with the satellite archive) has shown how long snow lies on it and what it still delivers. When the weather

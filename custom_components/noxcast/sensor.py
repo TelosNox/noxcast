@@ -95,6 +95,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
         if coordinator.batteries:
             async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
+        else:
+            async_add_entities([SurplusSensor(coordinator, total_device, BATTERY_SENSORS[0])])
         flexible = [(sid, c.name) for sid, c in coordinator.consumers.items() if c.timing == "flexible"]
         async_add_entities([PlanSensor(coordinator, total_device, sid, name) for sid, name in flexible]
                            + [WindowSensor(coordinator, total_device, sid, name, day)
@@ -414,6 +416,15 @@ def _ahead(b: dict) -> dict:
             "fed_in_hourly": {_iso(t): round(h["fed_in"] / 1000, 3) for t, h in sim.hours.items()}}
 
 
+def _missing_soc(b: dict) -> float:
+    """Percent points of state of charge that would cover the grid energy until the charge start: what the
+    battery delivers from one point of its capacity, after losses. More than the battery holds shows as more than
+    100; a discharge power limit can leave grid energy that no charge covers."""
+    st = b["storage"]
+    per_point = st.capacity_wh / 100 * (max(0.01, min(1.0, st.efficiency)) ** 0.5)
+    return round(b["sim"].grid_wh / per_point, 1) if per_point > 0 else 0.0
+
+
 @dataclass(frozen=True, kw_only=True)
 class BatteryDescription(SensorEntityDescription):
     value: Callable[[dict], Any]
@@ -450,6 +461,11 @@ BATTERY_SENSORS = (
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock",
                        value=lambda b: round((b["sim"].soc_at(b["charge_start"]) or 0) * 100),
                        attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "grid": round(b["sim"].grid_wh / 1000, 3)}),
+    BatteryDescription(key="grid_until_charge_start", translation_key="grid_until_charge_start",
+                       device_class=SensorDeviceClass.ENERGY, native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                       icon="mdi:transmission-tower-import",
+                       value=lambda b: round(b["sim"].grid_wh / 1000, 3),
+                       attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "missing_soc": _missing_soc(b)}),
     BatteryDescription(key="battery_lowest_soc_48h", translation_key="battery_lowest_soc_48h",
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock-outline",
                        value=lambda b: round(low[1] * 100) if (low := _lowest(b)) else None,
@@ -488,6 +504,18 @@ class BatterySensor(NoxcastEntity, SensorEntity):
         return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b),
                 "capacity": round(s.capacity_wh / 1000, 2), "limits": [round(s.min_soc * 100, 1), round(s.max_soc * 100, 1)]}
 
+
+class SurplusSensor(BatterySensor):
+    """Surplus rest of today without batteries: the same entity and attributes, with nothing going into a battery."""
+
+    def _b(self) -> dict | None:
+        data = self.coordinator.data
+        return data.surplus if data is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        b = self._b()
+        return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b)} if b else None
 
 
 class PlanSensor(NoxcastEntity, SensorEntity):

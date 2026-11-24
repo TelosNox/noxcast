@@ -13,6 +13,9 @@ breaking changes.
   the running hour on. *Battery lowest level (48 h)* carries `grid_hourly` and `fed_in_hourly`: per hour of the
   48-hour outlook the energy expected from and into the grid. The Predbat example in the README now fills
   `pv_estimate10` / `pv_estimate90` from them.
+- New sensor *Grid energy until charge start* (with batteries): the energy the battery is expected not to cover
+  until the PV takes over again, and in `missing_soc` the percent points of charge that would cover it, for
+  planning a cheap charge from the grid.
 - The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
   parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
   forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or
@@ -29,6 +32,9 @@ breaking changes.
   simplified. From the next nightly learning run on, learning changes for such installations.
 
 ### Fixed
+- *Surplus rest of today* also exists without a battery, as long as the house load is set up: the PV above the
+  load for the rest of today, with what of it goes into the grid (`fed_in`) and what the feed-in rule curtails
+  (`curtailed`). Until now a household with a large PV but no battery got no surplus forecast at all.
 - With a battery, *Best window*, *PV share now* and *Start now* of flexible consumers count what a run takes from
   the battery. Until now every watt of PV above the load counted as free, also the part that would have charged the
   battery, so a run at noon could show 90 % from PV and still cost grid energy in the night. Now the battery

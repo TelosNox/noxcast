@@ -818,6 +818,11 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
     attrs = hass.states.get(reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_lowest_soc_48h")).attributes
     assert attrs["grid_hourly"] and set(attrs["grid_hourly"]) == set(attrs["fed_in_hourly"])
     assert len(attrs["grid_hourly"]) == len(data.battery["ahead"].hours)
+    # grid energy until the charge start, and the state of charge that would cover it
+    state = hass.states.get(reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_grid_until_charge_start"))
+    st = data.battery["storage"]
+    assert float(state.state) == round(data.battery["sim"].grid_wh / 1000, 3)
+    assert state.attributes["missing_soc"] == round(data.battery["sim"].grid_wh / (st.capacity_wh / 100 * st.efficiency ** 0.5), 1)
     for part in ("replay", "holdout"):
         assert c.pv_backtest[part]["total"]["status"] == "ok", c.pv_backtest
         assert set(c.pv_backtest[part]["arrays"]) == {"S", "EW"}

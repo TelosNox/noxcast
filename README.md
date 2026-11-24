@@ -492,12 +492,16 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and 
 its own, so they do not add up to the day's `p10` / `p90`). The total is offered as solar forecast in the energy dashboard.
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
-`consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
+`consumers`, `correction`, `backtest`), and without batteries **Surplus rest of today** (PV above the load; attributes
+`fed_in` and `curtailed` as below, `to_battery` 0). With batteries: **Surplus rest of today**, **Surplus lost
 today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
 what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
-charge start** (attribute `grid`: grid energy until then), **Battery lowest level (48 h)** (attributes `hourly`: the
+charge start** (attribute `grid`: grid energy until then), **Grid energy until charge start** (what the battery
+cannot cover until the PV takes over again; attribute `missing_soc`: the percent points of charge that would cover
+it, for planning a cheap charge from the grid), **Battery lowest level (48 h)** (attributes `hourly`: the
 expected level at every full hour of the next 48 hours in %, `grid_hourly` and `fed_in_hourly`: per hour the expected
-energy from and into the grid in kWh, `lowest_at`, `until`: earlier when *Forecast days* end before). Per flexible consumer: **PV share now**,
+energy from and into the grid in kWh, `lowest_at`, `until`: earlier when *Forecast days* end
+before). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.

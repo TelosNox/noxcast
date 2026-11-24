@@ -48,6 +48,7 @@ class NoxcastData:
     weather_fetched: datetime | None = None                                # last successful Open-Meteo answer
     load: lf.LoadForecast | None = None       # house load from the running hour until the end of tomorrow
     battery: dict | None = None               # simulation until tomorrow's charge start and 48 h ahead (see battery.day_simulation)
+    surplus: dict | None = None               # without batteries: surplus until the end of the day (battery.without_storage)
     plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see band.forecast_band)
     actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
@@ -404,6 +405,11 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
     arrays = {sid: {**hours, **result.expected.get(sid, {})} for sid, hours in result.arrays.items()}
     result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end,
                                        arrays, feed_in, ahead)
+    if result.battery is None and load_hours is not None:
+        # without a battery the surplus still matters: what goes into the grid and what a limit curtails
+        hours = sorted(t for t in load_hours if now < t + 3600 <= day_end)
+        grid = bt.feed_in(*feed_in, arrays, hours) if feed_in else bt.FeedIn()
+        result.surplus = {"sim": bt.without_storage(total, load_hours, now, day_end, grid), "day_end": day_end}
     if result.load is None or not runs:
         result.plan = {}
         return

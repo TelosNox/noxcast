@@ -47,8 +47,9 @@ TEMPLATES: dict[str, dict[str, Any]] = {
 # system follows the household's feed-in rule (an outer rule holds inside unless a deviation is set)
 BEHAVIOUR = (CONF_REGULATION, CONF_FIXED_POWER, CONF_OWN_FEED_IN)
 GROUP = "group"          # the former template "only group them": independent systems, dissolved by normalize
-# the phases a single-phase subsystem can feed into (const.PHASE_OPTIONS without "three")
+# the phases a single-phase subsystem can feed into, and a subsystem on all three (const.PHASE_OPTIONS)
 PHASES = ("l1", "l2", "l3")
+THREE = "three"
 AC_EFFICIENCY_PCT = 90                               # battery.DEFAULT_EFFICIENCY of the former AC coupling
 
 
@@ -564,8 +565,8 @@ def curtailed_arrays(systems: Mapping[str, System]) -> dict[str, tuple[str, ...]
 
 def _share_limit(parent: System, a: System, b: System) -> bool:
     """Whether two subsystems share their system's output limit: always, unless it holds per phase and both feed
-    into a different single phase. A subsystem on all three, or without a phase, may share any (the safe side:
-    learning leaves out more)."""
+    into a different single phase. A subsystem on all three shares every phase's; one without a phase may share
+    any (the safe side: learning leaves out more)."""
     if not parent.get(CONF_LIMIT_PER_PHASE):
         return True
     pa, pb = a.get(CONF_PHASE), b.get(CONF_PHASE)
@@ -583,8 +584,16 @@ def fixed_power(s: System) -> float | None:
     return float(w) if w else None
 
 
-def ceiling_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | None, tuple[System, ...], float]]:
-    """The fixed ceilings on a system's output, as (phase, the systems below it, W): the output limit
+# The part of a three-phase subsystem's output on each phase: it feeds the three phases evenly, as three-phase
+# inverters usually do; an uneven split is not configured, so it is not known.
+THREE_PHASE_SHARE = 1 / 3
+
+type Shares = dict[str, float]          # system id -> the part of its output a limit holds; a system not named: all
+
+
+def ceiling_groups(systems: Mapping[str, System], sid: str
+                   ) -> list[tuple[str | None, tuple[System, ...], float, Shares]]:
+    """The fixed ceilings on a system's output, as (phase, the systems below it, W, their shares): the output limit
     (limit_groups) and the fixed power, which holds the output at it as a limit does. Both on the whole system: the
     tighter one. A limit per phase stays per phase, and the fixed power holds for the whole system on top."""
     s = systems[sid]
@@ -592,54 +601,70 @@ def ceiling_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | 
     fixed = fixed_power(s)
     whole = (s, *(systems[c] for c in s.children))
     if limit and s.get(CONF_LIMIT_PER_PHASE):
-        return [(p, tree, limit) for p, tree in limit_groups(systems, sid)] + ([(None, whole, fixed)] if fixed else [])
+        return ([(p, tree, limit, shares) for p, tree, shares in limit_groups(systems, sid)]
+                + ([(None, whole, fixed, {})] if fixed else []))
     found = [w for w in (limit, fixed) if w]
-    return [(None, whole, min(found))] if found else []
+    return [(None, whole, min(found), {})] if found else []
 
 
-def limit_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | None, tuple[System, ...]]]:
-    """The parts that share a system's output limit, as (phase, systems): the system and all its subsystems, or,
-    where the limit holds per phase, per phase the subsystems that feed into it (none where the system has no
-    subsystems).
+def limit_groups(systems: Mapping[str, System], sid: str) -> list[tuple[str | None, tuple[System, ...], Shares]]:
+    """The parts that share a system's output limit, as (phase, systems, their shares): the system and all its
+    subsystems, or, where the limit holds per phase, per phase the subsystems that feed into it (none where the
+    system has no subsystems).
 
-    A three-phase subsystem, or one without a phase, takes from the limit of a phase it shares with others, but by
-    how much is not known; it belongs to no group. The limit of a phase then stays an upper bound of its
-    single-phase subsystems (they get at most it, with the other taking a part less), only an hour in which the
-    other took a part shows no cut (phase_status: simplified)."""
+    A three-phase subsystem puts a third of its output on each phase (THREE_PHASE_SHARE): it is in the group of
+    every phase that has single-phase subsystems, with that share. Where there are none, its group is the
+    three-phase subsystems alone ("three"), each phase holding a third of them. A subsystem without a phase takes
+    an unknown part of a phase; it belongs to no group. The limit of a phase then stays an upper bound of its other
+    subsystems, only an hour in which it took a part shows no cut (phase_status: simplified)."""
     s = systems[sid]
     if not s.get(CONF_LIMIT_PER_PHASE):
-        return [(None, (s, *(systems[c] for c in s.children)))]
-    out = []
+        return [(None, (s, *(systems[c] for c in s.children)), {})]
+    children = [systems[c] for c in s.children]
+    three = tuple(c for c in children if c.get(CONF_PHASE) == THREE)
+    shares = {c.id: THREE_PHASE_SHARE for c in three}
+    out: list[tuple[str | None, tuple[System, ...], Shares]] = []
     for phase in PHASES:
-        members = tuple(systems[c] for c in s.children if systems[c].get(CONF_PHASE) == phase)
+        members = tuple(c for c in children if c.get(CONF_PHASE) == phase)
         if members:
-            out.append((phase, members))
+            out.append((phase, members + three, shares if three else {}))
+    if three and not out:
+        # every phase holds a third of them: one group stands for the three
+        out.append((THREE, three, shares))
     return out
 
 
 def shared_limit(systems: Mapping[str, System], sid: str) -> tuple[str, float, tuple[str, ...]] | None:
     """The output limit a subsystem shares with the other subsystems of its system (battery.Battery.shared): (group
     id, W, the arrays of the others without a battery in the group). Per phase only the subsystems on the same
-    phase share it; a subsystem without a single phase shares none (limit_groups)."""
+    phase share it, and the three-phase ones three times it among them: a third of each on every phase. Where a
+    phase holds both, each side keeps its own bound, which holds whatever the other side delivers (simplified).
+    A subsystem without a phase shares none (limit_groups)."""
     s = systems.get(sid)
     parent = systems.get(s.parent or "") if s else None
     if parent is None or not parent.get(CONF_OUTPUT_LIMIT):
         return None
-    for phase, members in limit_groups(systems, parent.id):
-        if s in members:
-            group = parent.id if phase is None else f"{parent.id}:{phase}"
-            others = tuple(a for m in members if m.id != sid and m.battery is None for a in m.arrays)
-            return group, float(parent.get(CONF_OUTPUT_LIMIT)), others
-    return None
+    limit = float(parent.get(CONF_OUTPUT_LIMIT))
+    if not parent.get(CONF_LIMIT_PER_PHASE):
+        members = [systems[c] for c in parent.children]
+        group = parent.id
+    elif s.get(CONF_PHASE) in (*PHASES, THREE):
+        members = [systems[c] for c in parent.children if systems[c].get(CONF_PHASE) == s.get(CONF_PHASE)]
+        group = f"{parent.id}:{s.get(CONF_PHASE)}"
+        limit /= THREE_PHASE_SHARE if s.get(CONF_PHASE) == THREE else 1
+    else:
+        return None
+    others = tuple(a for m in members if m.id != sid and m.battery is None for a in m.arrays)
+    return group, limit, others
 
 
 def _phase_status(s: System, systems: Mapping[str, System]) -> str:
-    """A limit per phase counts for the subsystems on one phase; a subsystem on all three, or without a phase, is
-    left out of the phase limits (limit_groups), so they count simplified."""
+    """A limit per phase counts for the subsystems on one phase and, with a third on each, for those on all three;
+    a subsystem without a phase is left out of the phase limits (limit_groups), so they count simplified."""
     children = [systems[c] for c in s.children]
     if not children:
         return NOT_YET
-    if any(c.get(CONF_PHASE) not in PHASES for c in children):
+    if any(c.get(CONF_PHASE) not in (*PHASES, THREE) for c in children):
         return SIMPLIFIED
     return SIMPLIFIED if any(c.battery for c in children) else EXACT
 
@@ -691,11 +716,10 @@ def effects(household: Mapping[str, Any], systems: Mapping[str, System], subs: S
         if s.get(CONF_LIMIT_PER_PHASE):
             add(sid, "limit_per_phase", _phase_status(s, systems) if limit else NOT_YET, True)
         if s.get(CONF_PHASE):
-            # a phase counts only under a limit per phase; on all three phases it is left out of them
+            # a phase counts only under a limit per phase
             parent = systems.get(s.parent or "")
             per_phase = parent is not None and parent.get(CONF_OUTPUT_LIMIT) and parent.get(CONF_LIMIT_PER_PHASE)
-            add(sid, "phase", (_phase_status(parent, systems) if s.get(CONF_PHASE) in PHASES else SIMPLIFIED)
-                if per_phase else NOT_YET, s.get(CONF_PHASE))
+            add(sid, "phase", _phase_status(parent, systems) if per_phase else NOT_YET, s.get(CONF_PHASE))
         # "delivers everything" and "deliver everything when full" are what Noxcast has always assumed
         # a subsystem shows its system's behaviour, marked as that (it has none of its own)
         sub = s.parent is not None

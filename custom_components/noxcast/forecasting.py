@@ -54,8 +54,9 @@ class NoxcastData:
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
     limits: dict[str, float] = field(default_factory=dict)    # arrays with a fixed limit of their own (W), capped last
-    # fixed limits shared by several arrays: (arrays, W), their sum capped last (curtailment.cap_group)
-    caps: list[tuple[tuple[str, ...], float]] = field(default_factory=list)
+    # fixed limits shared by several arrays: (arrays, W) or (arrays, W, shares), their sum capped last
+    # (curtailment.cap_group)
+    caps: list[tuple] = field(default_factory=list)
     # forecast, morning and expected before the cap, by the same keys (arrays and TOTAL); empty without limits
     uncapped: dict[str, dict[str | None, Series]] = field(default_factory=dict)
     # per limited array: hour start -> clear-sky power at the sub-steps, the shape the cap follows
@@ -66,7 +67,7 @@ class NoxcastData:
     @property
     def capped(self) -> set[str]:
         """Arrays whose published values a fixed limit may cap, their own or a shared one."""
-        return set(self.limits) | {a for members, _ in self.caps for a in members}
+        return set(self.limits) | {a for cap in self.caps for a in cap[0]}
 
     @property
     def arrays(self) -> dict[str, Series]:
@@ -298,7 +299,7 @@ def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], clear: Callable
     the shape of its 15-minute steps.
     """
     limits = {sid: w for sid, w in inst.limited_arrays().items() if sid in arrays}
-    caps = [(members, w) for group, w in inst.forecast_caps() if (members := tuple(a for a in group if a in arrays))]
+    caps = [c for cap in inst.forecast_caps() if (c := ct.within(cap, lambda a: a in arrays))]
     steps: dict[str, dict[str, dict[float, list[float]]]] = {}
     if not limits and not caps:
         return steps
@@ -317,10 +318,11 @@ def _cap(result: NoxcastData, alt: dict[str, dict[str, Series]], clear: Callable
         """A measured hour stays as it is. Its sub-steps stay under its own limit and under its share of a shared
         one (by its part of the members' sum), so its 15-minute steps do too."""
         bounds = [limits[sid]] if sid in limits else []
-        for group, w in caps:
-            total = sum(hour.get(a, 0.0) for a in group)
-            if sid in group and total > 0:
-                bounds.append(w * hour[sid] / total)
+        for cap in caps:
+            k = ct.shares(cap)
+            total = sum(hour.get(a, 0.0) * k.get(a, 1.0) for a in cap[0])
+            if sid in cap[0] and total > 0:
+                bounds.append(cap[1] * hour[sid] / total)
         return ct.fill_steps(hour[sid], profile(sid, t), min(bounds, default=math.inf))
 
     def apply(series: dict, keep=lambda sid, t: False, name: str | None = None) -> None:

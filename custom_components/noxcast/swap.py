@@ -74,7 +74,8 @@ def freeze(site: Site, sid: str, history: PvHistory, segment: Segment, start: fl
     return {
         "until": segment.until, "resume": segment.resume, "start": start,
         "sensors": list(segment.sensors), "limits": [[s, w] for s, w in segment.limits],
-        "caps": [[list(sensors), w] for sensors, w in segment.caps], "device": segment.device,
+        "caps": [[list(cap[0]), cap[1], *([list(cap[2])] if len(cap) > 2 else [])] for cap in segment.caps],
+        "device": segment.device,
         "power": power,
         "hours": {kind: sorted(int(t) for t in getattr(history, kind).get(sid, ()) if inside(t)) for kind in KINDS},
     }
@@ -84,7 +85,8 @@ def segment_of(frozen: Mapping) -> Segment:
     """The segment a stored entry describes."""
     return Segment(float(frozen["until"]), float(frozen["resume"]), tuple(frozen["sensors"]),
                    tuple((s, float(w)) for s, w in frozen.get("limits") or ()),
-                   tuple((tuple(sensors), float(w)) for sensors, w in frozen.get("caps") or ()),
+                   tuple((tuple(cap[0]), float(cap[1]), *([tuple(float(k) for k in cap[2])] if len(cap) > 2 else []))
+                         for cap in frozen.get("caps") or ()),
                    bool(frozen.get("device", True)))
 
 

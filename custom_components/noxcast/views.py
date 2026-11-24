@@ -510,9 +510,9 @@ def _shared(arrays: dict, sid: str) -> list[tuple[list[str], float]]:
     """The limits an array shares with other arrays (learning.ArrayConfig.caps, by sensors) as (arrays, W)."""
     own = set(getattr(arrays[sid], "sensors", ()))
     out = []
-    for sensors, w in getattr(arrays[sid], "caps", ()):
-        if set(sensors) > own:
-            out.append(([a for a, x in arrays.items() if set(getattr(x, "sensors", ())) <= set(sensors)], w))
+    for cap in getattr(arrays[sid], "caps", ()):
+        if set(cap[0]) > own:
+            out.append(([a for a, x in arrays.items() if set(getattr(x, "sensors", ())) <= set(cap[0])], cap[1]))
     return out
 
 

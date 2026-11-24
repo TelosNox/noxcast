@@ -44,7 +44,7 @@ class Segment:
     resume: float
     sensors: tuple[str, ...]
     limits: tuple[tuple[str, float], ...] = ()
-    caps: tuple[tuple[tuple[str, ...], float], ...] = ()
+    caps: tuple[tuple, ...] = ()               # as ArrayConfig.caps
     device: bool = True                  # a new device converts the array's power after it: a new efficiency
 
 
@@ -58,8 +58,9 @@ class ArrayConfig:
     temp_coeff: float | None = None          # per K, from the datasheet
     limits: tuple[tuple[str, float], ...] = ()   # (sensor, fixed limit in W): periods at a limit are lower bounds
     # (sensors, fixed limit in W): output limits of the systems the array belongs to, with every sensor of the
-    # arrays that share them; periods with their sum at the limit are lower bounds (installation.Cap)
-    caps: tuple[tuple[tuple[str, ...], float], ...] = ()
+    # arrays that share them; periods with their sum at the limit are lower bounds (installation.Cap). With a third
+    # element, each sensor's share of that sum (a three-phase device under a limit per phase: curtailment.shares)
+    caps: tuple[tuple, ...] = ()
     segments: tuple[Segment, ...] = ()       # the array before its system swaps, oldest first
 
     @property
@@ -68,7 +69,9 @@ class ArrayConfig:
         a system that holds only this array, whichever is lower (installation.array_limit)."""
         limited = dict(self.limits)
         found = [sum(limited.values())] if self.sensors and all(s in limited for s in self.sensors) else []
-        found += [w for sensors, w in self.caps if set(sensors) == set(self.sensors)]
+        # alone under a limit of which it takes a part, the array reaches it later
+        found += [cap[1] / min(ct.shares(cap).values(), default=1.0) for cap in self.caps
+                  if set(cap[0]) == set(self.sensors)]
         return min(found) if found else None
 
 
@@ -353,11 +356,11 @@ def _floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None)
     better judge: passing clouds cut within each 5 minutes without bringing their mean to the limit. The sum of period maxima is at least
     the maximum of the sum, so a period a little below a shared limit may count as at it: it becomes a lower bound
     where it was exact."""
-    def peaks(sensors: tuple[str, ...]) -> dict[float, tuple[float, float]]:
-        """Period start -> (maximum, mean) of the sensors' sum, in W."""
+    def peaks(sensors: tuple[str, ...], shares: dict[str, float]) -> dict[float, tuple[float, float]]:
+        """Period start -> (maximum, mean) of the sensors' sum, each with its share, in W."""
         series = []
         for sensor in sensors:
-            factor = history.factors.get(sensor, 1.0)
+            factor = history.factors.get(sensor, 1.0) * shares.get(sensor, 1.0)
             high = history.power_max.get(sensor, {})
             series.append({t: (peak * factor, mean * factor) for t, mean in history.power.get(sensor, {}).items()
                            if mean is not None and (peak := high.get(t) if high.get(t) is not None else mean) is not None})
@@ -377,8 +380,9 @@ def _floor_hours(arr: ArrayConfig, history: PvHistory, site: Site | None = None)
         return free_ok[t]
 
     out: set[float] = set()
-    for sensors, limit in [((s,), w) for s, w in arr.limits] + list(arr.caps):
-        for t, (peak, mean) in peaks(sensors).items():
+    for cap in [((s,), w) for s, w in arr.limits] + list(arr.caps):
+        limit = cap[1]
+        for t, (peak, mean) in peaks(cap[0], ct.shares(cap)).items():
             if ct.at_limit(peak, limit) and (mean >= LIMIT_MEAN_SHARE * limit or not near_free(t)):
                 out.add(t)
     return out
@@ -567,9 +571,9 @@ def _capped_measured(site: Site, arrays: dict[str, ArrayConfig], learned: dict[s
     """The model on measured weather for one array, capped like the forecast (forecasting._cap): by its own limit
     and by a limit it shares with other arrays, whose model on the same weather counts in the sum."""
     own = {a: w for a in arrays if inst and (w := inst.array_limit(a)) is not None}
-    caps = [(tuple(a for a in group if a in arrays and a in learned), w)
-            for group, w in (inst.forecast_caps() if inst else []) if sid in group]
-    group = {sid} | {a for members, _ in caps for a in members}
+    caps = [c for cap in (inst.forecast_caps() if inst else [])
+            if sid in cap[0] and (c := ct.within(cap, lambda a: a in arrays and a in learned))]
+    group = {sid} | {a for cap in caps for a in cap[0]}
 
     def predict(hours: list[tuple[float, float, float | None]]) -> Series:
         # an hour of a device before a swap: each array's model at the efficiency of the device that ran then

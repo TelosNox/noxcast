@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from .const import Series
-from .installation import Installation
+from .installation import Cap, Installation
 
 LIMIT_MARGIN = 0.05              # a period counts as at the limit from 95 % of it: current limits drift with voltage
 
@@ -86,7 +86,7 @@ def cuts(inst: Installation, obs: Observed) -> dict[str, Cut]:
         hit = next((i for i in inst.inputs_of(array)
                     if i.sensor in obs.pv and at_limit(obs.pv[i.sensor].peak, i.limit_w)), None)
         cap = next((c for c in inst.caps if array in c.arrays
-                    and at_limit(_sum(inst, c.arrays, {s: v.peak for s, v in obs.pv.items()}), c.limit_w)), None)
+                    and at_limit(_sum(inst, c, {s: v.peak for s, v in obs.pv.items()}), c.limit_w)), None)
         stores = inst.stores_of(array)
         full = [s for s in stores if obs.soc.get(s.sensor, -1.0) >= s.full_pct]
         charging = [s for s in stores if s.charger and s.charger.at_max(obs.charging.get(s.charger.sensor))]
@@ -102,17 +102,17 @@ def cuts(inst: Installation, obs: Observed) -> dict[str, Cut]:
     return out
 
 
-def _sum(inst: Installation, arrays: tuple[str, ...], values: Mapping[str, float | None]) -> float | None:
-    """The summed value of the arrays' sensors; None when a sensor has none. The sum of period maxima is at least
-    the maximum of the sum: a period may count as at the limit although it was a little below, which only makes
-    it a lower bound where it was exact."""
+def _sum(inst: Installation, cap: Cap, values: Mapping[str, float | None]) -> float | None:
+    """The summed value of the sensors of the cap's arrays, each with its array's share; None when a sensor has
+    none. The sum of period maxima is at least the maximum of the sum: a period may count as at the limit although
+    it was a little below, which only makes it a lower bound where it was exact."""
     out = 0.0
-    for a in arrays:
+    for a, k in zip(cap.arrays, cap.shares or [1.0] * len(cap.arrays), strict=True):
         for i in inst.inputs_of(a):
             v = values.get(i.sensor)
             if v is None:
                 return None
-            out += v
+            out += v * k
     return out
 
 
@@ -127,7 +127,7 @@ def limited_hours(inst: Installation, array: str, peaks: Mapping[str, Mapping[fl
         if array in c.arrays:
             sensors = [i.sensor for a in c.arrays for i in inst.inputs_of(a)]
             for t in set().union(*(peaks.get(s, {}) for s in sensors)):
-                if at_limit(_sum(inst, c.arrays, {s: peaks.get(s, {}).get(t) for s in sensors}), c.limit_w):
+                if at_limit(_sum(inst, c, {s: peaks.get(s, {}).get(t) for s in sensors}), c.limit_w):
                     out.add(t)
     return out
 
@@ -149,17 +149,32 @@ def cap_hour(wh: float, limit: float, profile: list[float] | None) -> float:
     return sum(min(k * p, limit) for p in profile) / len(profile)
 
 
+def shares(cap: tuple) -> dict[str, float]:
+    """Member -> the part of its value a shared limit holds: (members, W) holds all of each; (members, W, shares)
+    the shares in the members' order (a three-phase device under a limit per phase: a third)."""
+    return dict(zip(cap[0], cap[2], strict=True)) if len(cap) > 2 and cap[2] else {}
+
+
+def within(cap: tuple, keep: Callable[[str], bool]) -> tuple | None:
+    """The shared limit over only the members keep() accepts, their shares with them; None when none is left."""
+    k = shares(cap)
+    members = tuple(a for a in cap[0] if keep(a))
+    if not members:
+        return None
+    return (members, cap[1], tuple(k[a] for a in members)) if k else (members, cap[1])
+
+
 def cap_group(hours: Mapping[str, float], profile: Callable[[str], list[float] | None], own: Mapping[str, float],
-              shared: Iterable[tuple[tuple[str, ...], float]]) -> dict[str, float]:
+              shared: Iterable[tuple]) -> dict[str, float]:
     """cap_group_steps without the sub-steps."""
     return cap_group_steps(hours, profile, own, shared)[0]
 
 
 def cap_group_steps(hours: Mapping[str, float], profile: Callable[[str], list[float] | None],
-                    own: Mapping[str, float], shared: Iterable[tuple[tuple[str, ...], float]]
+                    own: Mapping[str, float], shared: Iterable[tuple]
                     ) -> tuple[dict[str, float], dict[str, list[float]]]:
     """One hour of several arrays under their fixed limits: own (array -> W) caps an array alone, shared
-    (arrays, W) the sum of those arrays.
+    (arrays, W) the sum of those arrays, (arrays, W, shares) the sum of their shares (shares).
 
     hours: the hour's energy (Wh = mean W) per array; profile(array): its clear-sky power at the hour's sub-steps.
     Every array follows its own profile scaled to its value (as cap_hour), is capped by its own limit, and where
@@ -190,10 +205,11 @@ def cap_group_steps(hours: Mapping[str, float], profile: Callable[[str], list[fl
             changed.add(a)
     # the inner limits first (a subsystem's before its parent's): the outer one then takes only what is left
     # above it, while the other way round the inner one would cut arrays the outer one had already cut
-    for members, limit in sorted(shared, key=lambda c: len(c[0])):
-        group = [a for a in members if a in power]
+    for cap in sorted(shared, key=lambda c: len(c[0])):
+        limit, k = cap[1], shares(cap)
+        group = [a for a in cap[0] if a in power]
         for j in range(n):
-            total = sum(power[a][j] for a in group)
+            total = sum(power[a][j] * k.get(a, 1.0) for a in group)
             if total > limit:
                 for a in group:
                     power[a][j] *= limit / total

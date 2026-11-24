@@ -19,6 +19,9 @@ breaking changes.
   as free. Tomorrow's window now also prefers the hours in which surplus would be lost, as today's does.
 
 ### Added
+- New sensor *Grid energy until charge start* (with batteries): the energy the battery is expected not to cover
+  until the PV takes over again, and in `missing_soc` the percent points of charge that would cover it, for
+  planning a cheap charge from the grid.
 - The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
   parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
   forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or

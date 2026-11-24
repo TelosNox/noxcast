@@ -567,6 +567,9 @@
       "battery_soc_at_charge_start": {
         "name": "Akku bei nächstem Ladebeginn"
       },
+      "grid_until_charge_start": {
+        "name": "Netzbezug bis Ladebeginn"
+      },
       "battery_lowest_soc_48h": {
         "name": "Akku tiefster Stand (48 h)"
       },

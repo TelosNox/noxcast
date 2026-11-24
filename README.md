@@ -495,7 +495,9 @@ With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`,
 `fed_in` and `curtailed` as below, `to_battery` 0). With batteries: **Surplus rest of today**, **Surplus lost
 today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
 what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
-charge start** (attribute `grid`: grid energy until then), **Battery lowest level (48 h)** (attributes `hourly`: the
+charge start** (attribute `grid`: grid energy until then), **Grid energy until charge start** (what the battery
+cannot cover until the PV takes over again; attribute `missing_soc`: the percent points of charge that would cover
+it, for planning a cheap charge from the grid), **Battery lowest level (48 h)** (attributes `hourly`: the
 expected level at every full hour of the next 48 hours in %, `lowest_at`, `until`: earlier when *Forecast days* end
 before). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown

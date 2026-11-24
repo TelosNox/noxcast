@@ -406,6 +406,15 @@ def _ahead(b: dict) -> dict:
             "hourly": {_iso(t): round(s * 100, 1) for t, s in sim.points[1:] if t % 3600 == 0}}
 
 
+def _missing_soc(b: dict) -> float:
+    """Percent points of state of charge that would cover the grid energy until the charge start: what the
+    battery delivers from one point of its capacity, after losses. More than the battery holds shows as more than
+    100; a discharge power limit can leave grid energy that no charge covers."""
+    st = b["storage"]
+    per_point = st.capacity_wh / 100 * (max(0.01, min(1.0, st.efficiency)) ** 0.5)
+    return round(b["sim"].grid_wh / per_point, 1) if per_point > 0 else 0.0
+
+
 @dataclass(frozen=True, kw_only=True)
 class BatteryDescription(SensorEntityDescription):
     value: Callable[[dict], Any]
@@ -442,6 +451,11 @@ BATTERY_SENSORS = (
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock",
                        value=lambda b: round((b["sim"].soc_at(b["charge_start"]) or 0) * 100),
                        attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "grid": round(b["sim"].grid_wh / 1000, 3)}),
+    BatteryDescription(key="grid_until_charge_start", translation_key="grid_until_charge_start",
+                       device_class=SensorDeviceClass.ENERGY, native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                       icon="mdi:transmission-tower-import",
+                       value=lambda b: round(b["sim"].grid_wh / 1000, 3),
+                       attrs=lambda b: {"charge_start": _iso(b["charge_start"]), "missing_soc": _missing_soc(b)}),
     BatteryDescription(key="battery_lowest_soc_48h", translation_key="battery_lowest_soc_48h",
                        native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-clock-outline",
                        value=lambda b: round(low[1] * 100) if (low := _lowest(b)) else None,

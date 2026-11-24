@@ -505,7 +505,9 @@ Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `ba
 `backtest`), und ohne Akkus **Überschuss Rest heute** (PV über der Last; Attribute `fed_in` und `curtailed` wie unten,
 `to_battery` 0). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
 `fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
-Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Akku tiefster Stand (48 h)**
+Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Netzbezug bis Ladebeginn** (was der Akku
+nicht deckt, bis die PV wieder übernimmt; Attribut `missing_soc`: die Prozentpunkte Ladung, die ihn decken würden,
+zum Planen einer günstigen Ladung aus dem Netz), **Akku tiefster Stand (48 h)**
 (Attribute `hourly`: der erwartete Stand zu jeder vollen Stunde der nächsten 48 Stunden in %, `lowest_at`, `until`:
 früher, wenn die *Prognosetage* vorher enden). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,

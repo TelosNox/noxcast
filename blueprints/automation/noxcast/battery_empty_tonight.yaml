@@ -1,0 +1,54 @@
+blueprint:
+  name: Noxcast – battery empty tonight
+  description: >-
+    Sends a notification in the evening when Noxcast expects the battery to run empty before the PV takes over
+    again, with the grid energy it then expects. Noxcast only forecasts; what you do with the notice is up to you.
+  domain: automation
+  source_url: https://github.com/TelosNox/noxcast/blob/main/blueprints/automation/noxcast/battery_empty_tonight.yaml
+  input:
+    empty_at:
+      name: Battery empty at
+      description: Noxcast's sensor *Battery empty at*. It is unknown while the battery lasts until the next charge.
+      selector:
+        entity:
+          filter:
+            - integration: noxcast
+              domain: sensor
+              device_class: timestamp
+    check_time:
+      name: Time of the check
+      default: "18:00:00"
+      selector:
+        time: {}
+    notify_device:
+      name: Device to notify
+      description: A phone with the Home Assistant app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    title:
+      name: Title
+      default: Battery empty tonight
+      selector:
+        text: {}
+
+triggers:
+  - trigger: time
+    at: !input check_time
+
+variables:
+  empty_at: !input empty_at
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set empty = states(empty_at) | as_datetime(none) %}
+      {{ empty is not none and now() < empty < now() + timedelta(hours=24) }}
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: !input title
+    message: "Expected empty at {{ as_local(states(empty_at) | as_datetime).strftime('%H:%M') }}."

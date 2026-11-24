@@ -1,0 +1,59 @@
+blueprint:
+  name: Noxcast – good time to start a consumer
+  description: >-
+    Sends a notification when Noxcast's *Start now* of a flexible consumer turns on: a run started now gets enough
+    from PV and nearly as much as the best window still to come today. At most once a day. Noxcast only forecasts;
+    you start the consumer.
+  domain: automation
+  source_url: https://github.com/TelosNox/noxcast/blob/main/blueprints/automation/noxcast/start_now.yaml
+  input:
+    start_now:
+      name: Start now
+      description: Noxcast's binary sensor *Start now* of the consumer.
+      selector:
+        entity:
+          filter:
+            - integration: noxcast
+              domain: binary_sensor
+    steady:
+      name: Steady for
+      description: How long *Start now* must stay on, so a passing cloud does not notify.
+      default:
+        minutes: 10
+      selector:
+        duration: {}
+    notify_device:
+      name: Device to notify
+      description: A phone with the Home Assistant app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    title:
+      name: Title
+      default: Good time to start
+      selector:
+        text: {}
+
+triggers:
+  - trigger: state
+    entity_id: !input start_now
+    to: "on"
+    for: !input steady
+
+variables:
+  start_now: !input start_now
+  share: "{{ state_attr(start_now, 'pv_share_now') }}"
+
+conditions:
+  # once a day: the automation's last run was before today
+  - condition: template
+    value_template: >-
+      {{ this.attributes.last_triggered is none or as_local(this.attributes.last_triggered | as_datetime).date() < now().date() }}
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: !input title
+    message: "{{ state_attr(start_now, 'friendly_name') }}: {{ share }} % from PV if started now."

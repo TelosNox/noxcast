@@ -90,7 +90,8 @@ A day card with power now and the course of the day, and a weather card with the
 
 ### What Noxcast is not
 
-- It controls nothing. All results are sensors and attributes for your own automations.
+- It controls nothing. All results are sensors and attributes for your own automations; three
+  [blueprints](#notifications-blueprints) send notifications from them.
 - It needs a power sensor per array. A daily energy counter alone is not enough (see [below](#what-you-need)).
 - The shading map fills with clear hours. A position the sun reaches only in winter stays open until a clear
   winter day comes; until then the horizon line fills in.
@@ -501,6 +502,20 @@ before). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.
+
+## Notifications (blueprints)
+
+Noxcast controls nothing, but three blueprints turn its forecast into a notification on your phone (Home Assistant
+app). Import one with its link, then create an automation from it under Settings → Automations & scenes →
+Blueprints and pick the Noxcast sensors and your phone.
+
+| Blueprint | Notifies |
+|---|---|
+| [Battery full early](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTelosNox%2Fnoxcast%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnoxcast%2Fbattery_full_early.yaml) | At a time in the morning (08:00) when the battery is expected to be full before a time (13:00) and at least 1 kWh of surplus to be lost today: a good day for flexible consumers. Needs *Battery full at* and *Surplus lost today* |
+| [Battery empty tonight](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTelosNox%2Fnoxcast%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnoxcast%2Fbattery_empty_tonight.yaml) | At a time in the evening (18:00) when the battery is expected to run empty within the next 24 hours, with the time. Needs *Battery empty at* |
+| [Good time to start](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTelosNox%2Fnoxcast%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnoxcast%2Fstart_now.yaml) | When *Start now* of a flexible consumer turns on and stays on for a while (10 minutes), at most once a day, with the PV share |
+
+The times, the threshold and the title can be changed per automation. The text of the notification is English.
 
 ## Other tools (EVCC, Predbat, EMHASS)
 

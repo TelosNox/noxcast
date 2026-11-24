@@ -19,6 +19,9 @@ breaking changes.
   as free. Tomorrow's window now also prefers the hours in which surplus would be lost, as today's does.
 
 ### Added
+- Three blueprints for notifications on your phone, to import from the README: *Battery full early* (in the
+  morning, when surplus will be lost today), *Battery empty tonight* (in the evening, with the time) and *Good time
+  to start* (when *Start now* of a flexible consumer turns on, once a day). Noxcast still controls nothing.
 - The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
   parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
   forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or

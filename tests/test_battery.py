@@ -376,3 +376,31 @@ def test_without_storage_feeds_in_up_to_the_limit_and_curtails_the_rest():
                                  "curtailed": 200.0}
     assert sim.grid_wh == 300.0 and sim.surplus_wh == sim.lost_wh == 600.0 and sim.lost_from == 10 * H + 1800
     assert not sim.points                                  # no battery, no state of charge
+
+
+def test_even_quarters_repeat_the_hourly_simulation():
+    # without a charge power limit: then the hourly interpolation of "full at" is exact as well (with one, the hour
+    # assumes the battery takes its share of the surplus at the surplus' pace, the quarters see it charge at its limit)
+    b = bt.Battery(3000, 0.4, min_soc=0.1, efficiency=0.9)
+    pv, load_ = {h * H: (2500.0 if 10 <= h < 15 else 0.0) for h in range(8, 20)}, flat(400, range(8, 20))
+    hourly = bt.simulate(b, pv, load_, 8 * H + 600, 20 * H)
+    quarters = bt.simulate_quarters(b, pv, load_, 8 * H + 600, 20 * H, None)
+    assert abs(quarters.full_at - hourly.full_at) < 1.0 and abs(quarters.lost_wh - hourly.lost_wh) < 1.0
+    assert abs(quarters.grid_wh - hourly.grid_wh) < 1.0
+    assert set(quarters.hours) == set(hourly.hours)                 # results per hour, as before
+    assert all(abs(quarters.hours[t]["lost"] - hourly.hours[t]["lost"]) <= 0.5 for t in hourly.hours)
+    assert len(quarters.points) > len(hourly.points)                # the level per quarter
+
+
+def test_pv_rising_within_the_hour_fills_the_battery_later_and_starts_surplus_later():
+    # 900 Wh of PV in the hour against a load of 600 Wh: evenly the battery charges the whole hour; with the sun
+    # rising, the first quarters still draw from the battery and the last ones charge it
+    b = bt.Battery(1000, 0.5, efficiency=1.0)
+    pv, load_ = {10 * H: 900.0}, {10 * H: 600.0}
+    rising = {10 * H: (0.1, 0.2, 0.3, 0.4)}
+    even = bt.simulate_quarters(b, pv, load_, 10 * H, 11 * H, None)
+    shaped = bt.simulate_quarters(b, pv, load_, 10 * H, 11 * H, rising)
+    assert even.grid_wh == 0.0 and even.hours[10 * H]["battery"] == 300.0
+    # quarters: 90 / 180 / 270 / 360 Wh of PV against 150 Wh of load: -60, +30, +120, +210
+    assert shaped.hours[10 * H]["battery"] == 300.0 and min(s for _, s in shaped.points) < 0.5
+    assert bt.shape_of({10 * H: 90.0, 10 * H + 900: 180.0, 10 * H + 1800: 270.0, 10 * H + 2700: 360.0}) == rising

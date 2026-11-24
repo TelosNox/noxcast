@@ -792,9 +792,12 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 
 ### Akku-Simulation und Planung
 
-- Stunde für Stunde von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
+- In Viertelstunden von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
   oberen Grenze und zur Ladeleistung, der Rest geht dem Akku verloren; ein Defizit entlädt bis
-  Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste danach, wo der Akku sitzt.
+  Entladegrenze + Reserve, der Rest kommt aus dem Netz. Verluste danach, wo der Akku sitzt. Die PV folgt innerhalb
+  jeder Stunde ihrer 15-Minuten-Prognose (dem Lauf der Sonne), die Last ist gleichmäßig über die Stunde verteilt, da
+  ihre Profile stündlich sind; bei mehreren Systemen bekommt die PV jedes Systems den Verlauf des Ganzen. Ergebnisse
+  stehen je Stunde, der Ladestand je Viertelstunde.
 - Mit Ausgangsgrenze am System liefert ein Akku höchstens die Grenze minus das, was die PV-Gruppen des Systems in der
   Stunde liefern, und deren PV über der Grenze geht in den Akku oder wird abgeregelt. Teilsysteme unter einer
   gemeinsamen Grenze: Ihre PV und Akkus geben zusammen höchstens die Grenze ab.

@@ -660,6 +660,11 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
 4. **Efficiency** (learned, at 25 °C) × peak power.
 5. **Temperature:** cell temperature from air temperature and irradiance (heating), loss with the
    learned or datasheet coefficient.
+6. **Snow** (only where learned): an array that has cleared from at least two snowfalls in its history (with the
+   satellite archive) has shown how long snow lies on it and what it still delivers meanwhile. When the weather
+   forecasts a day with at least 1 cm of snow at up to 3 °C, its forecast takes that share for as many daylight
+   hours after the last snow, unless 24 degree hours above 0 °C melt it first. An array without such a history
+   forecasts as if there were no snow; the *Learned* tab shows what was learned, the hour's waterfall the *Snow* step.
 
 ### Clear sky
 

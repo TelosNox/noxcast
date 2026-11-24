@@ -22,7 +22,7 @@ from .effects import day_effects
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .learning import ArrayConfig, ConsumerConfig, highest, scaled_sum
 from .installation import Installation
-from .model import SUBSTEPS, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast
+from .model import SUBSTEPS, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, snow_cover
 from .solar import Site
 
 RECENT_MIN_SLOTS_HOUR = 10       # 5-minute values needed to stand in for a just-ended hour
@@ -168,14 +168,14 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     capped_shapes: dict[str, dict[str, dict[float, list[float]]]] = {}
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id, LearnedArray())
-        fresh = forecast(site, arr.geometry, la, weather)
+        fresh = snowed(site, la, weather, forecast(site, arr.geometry, la, weather))
         # keep earlier values for past hours the source no longer reports
         merged = {t: v for t, v in before.hours.get(sub_id, {}).items() if t >= day_start}
         merged.update(fresh)
         today.hours[sub_id] = merged
         result.forecast[sub_id] = dict(sorted(merged.items()))
         for m, hours in models.items():
-            alt[m][sub_id] = forecast(site, arr.geometry, la, hours)
+            alt[m][sub_id] = snowed(site, la, hours, forecast(site, arr.geometry, la, hours))
 
     # today's forecast is fixed in the morning; before that it follows the weather source
     if today.morning_fixed is None or today.morning_fixed.astimezone(local_now.tzinfo).date() != local_now.date():
@@ -250,6 +250,12 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
                    *result.quarters.values()):
         series[TOTAL] = _total(series)
     return result, today, alt
+
+
+def snowed(site: Site, learned: LearnedArray, weather: list[WeatherHour], fc: Series) -> Series:
+    """The forecast with the learned snow cover (model.snow_cover); unchanged without learned snow or snowfall."""
+    cover = snow_cover(site, learned, weather, fc)
+    return {t: v * cover.get(t, 1.0) for t, v in fc.items()} if cover else fc
 
 
 def quarter_hours(hours: Series, shape: Callable[[float], list[float] | None], parts: int = 4) -> Series:

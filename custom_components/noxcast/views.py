@@ -540,7 +540,7 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
         weather.update({w.start: w for w in data.weather if a <= w.start < b})
     hours = [weather[t] for t in sorted(weather) if a <= t < b]
     # snow of the hours before may still lie on the modules (model.snow_cover)
-    before = [w for w in data.weather if w.start < a] if current else []
+    before = [w for w in (*data.lead, *data.weather) if w.start < a] if current else []
     live = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours, before)
     out = []
     for sid, arr in arrays.items():

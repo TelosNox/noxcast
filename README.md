@@ -365,7 +365,8 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 With the battery power sensor, Noxcast learns every night what capacity and round-trip efficiency the battery shows,
 from the last 120 days: charging, energy per percent of level gives the capacity divided by the charging efficiency;
 discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency without
-knowing either. It needs three charging and three discharging runs of at least 15 percent points each. The learned
+knowing either. It needs three charging and three discharging runs of at least 15 percent points each, counted from
+the last change of the battery's capacity or sensors (after an expansion the old battery's runs no longer count). The learned
 capacity replaces the entered one in the forecast (an aged battery holds less than its label), an entered efficiency
 stays. The *Battery & surplus* tab shows both next to what was entered.
 

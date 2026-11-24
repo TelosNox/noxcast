@@ -22,7 +22,7 @@ from .effects import day_effects
 from .intraday import Partial, clearness_shift, expected_hours, held_forecast
 from .learning import ArrayConfig, ConsumerConfig, highest, scaled_sum
 from .installation import Installation
-from .model import SUBSTEPS, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, snow_cover
+from .model import SUBSTEPS, ArrayGeometry, LearnedArray, WeatherHour, clearsky_profile, clearsky_weather, forecast, snow_cover
 from .solar import Site
 
 RECENT_MIN_SLOTS_HOUR = 10       # 5-minute values needed to stand in for a just-ended hour
@@ -54,6 +54,8 @@ class NoxcastData:
     actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
+    # the weather source's hours before local midnight (yesterday): snow that fell then may still lie today
+    lead: list[WeatherHour] = field(default_factory=list)
     limits: dict[str, float] = field(default_factory=dict)    # arrays with a fixed limit of their own (W), capped last
     # fixed limits shared by several arrays: (arrays, W) or (arrays, W, shares), their sum capped last
     # (curtailment.cap_group)
@@ -145,8 +147,8 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
        models: dict[str, list[WeatherHour]], before: Today, actual: dict[str, Series],
        running: dict[str, tuple[float, float, float]], now: datetime, local_now: datetime, day_start: float,
        day_end: float, curtailed: set[float] | frozenset[float] = frozenset(), inst: Installation | None = None,
-       limited: dict[str, set[float]] | None = None, full: dict[str, set[float]] | None = None
-       ) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
+       limited: dict[str, set[float]] | None = None, full: dict[str, set[float]] | None = None,
+       lead: list[WeatherHour] = ()) -> tuple[NoxcastData, Today, dict[str, dict[str, Series]]]:
     """PV forecast per array and in total: weather forecast, morning fix, clear sky, today's expected hours.
 
     weather: hours from local midnight to the horizon; models: each weather model on its own (for the
@@ -154,28 +156,30 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     curtailed PV (curtailed_hours), which the intraday correction does not read as clouds; inst: the
     installation, whose fixed limits cap the forecast last; limited: per array today's hour starts at its fixed
     limit, which the intraday correction treats like curtailed hours; full: per array today's hour starts with a
-    battery full that may curtail it, treated the same. Returns (data, the new Today, the
-    forecast per model and array).
+    battery full that may curtail it, treated the same; lead: the weather source's hours before local midnight,
+    whose snow may still lie (model.snow_cover). Returns (data, the new Today, the forecast per model and array).
 
     Everything up to the published values works on the uncapped forecast, so the intraday correction and the
     band vary the clouds; the cap comes last (curtailment.cap_group) and the uncapped values stay in data.uncapped.
     """
     ts_now = now.timestamp()
-    result = NoxcastData(day_start=day_start)
+    result = NoxcastData(day_start=day_start, lead=list(lead))
     today = Today(dict(before.hours), dict(before.morning), before.morning_fixed, dict(before.held),
                   dict(before.morning_steps), dict(before.morning_late))
     alt: dict[str, dict[str, Series]] = {m: {} for m in models}
     capped_shapes: dict[str, dict[str, dict[float, list[float]]]] = {}
     for sub_id, arr in arrays.items():
         la = learned.get(sub_id, LearnedArray())
-        fresh = snowed(site, la, weather, forecast(site, arr.geometry, la, weather))
+        fresh = snowed(site, arr.geometry, la, weather, forecast(site, arr.geometry, la, weather), lead)
         # keep earlier values for past hours the source no longer reports
         merged = {t: v for t, v in before.hours.get(sub_id, {}).items() if t >= day_start}
         merged.update(fresh)
         today.hours[sub_id] = merged
         result.forecast[sub_id] = dict(sorted(merged.items()))
         for m, hours in models.items():
-            alt[m][sub_id] = snowed(site, la, hours, forecast(site, arr.geometry, la, hours))
+            # a model's own hours are tomorrow's only (the archive): the mean weather before them stands in for its lead
+            ahead = [w for w in (*lead, *weather) if hours and w.start < hours[0].start]
+            alt[m][sub_id] = snowed(site, arr.geometry, la, hours, forecast(site, arr.geometry, la, hours), ahead)
 
     # today's forecast is fixed in the morning; before that it follows the weather source
     if today.morning_fixed is None or today.morning_fixed.astimezone(local_now.tzinfo).date() != local_now.date():
@@ -193,7 +197,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
         for sid in new:
             today.morning[sid] = {t: v for t, v in result.forecast[sid].items() if t < day_end}
             today.morning_steps[sid] = hour_steps(site, arrays[sid].geometry, learned.get(sid, LearnedArray()),
-                                                  day_weather)
+                                                  day_weather, list(lead))
             if today.morning_fixed != now:
                 today.morning_late[sid] = now
     result.morning_fixed, result.morning_steps = today.morning_fixed, today.morning_steps
@@ -252,9 +256,15 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     return result, today, alt
 
 
-def snowed(site: Site, learned: LearnedArray, weather: list[WeatherHour], fc: Series) -> Series:
-    """The forecast with the learned snow cover (model.snow_cover); unchanged without learned snow or snowfall."""
-    cover = snow_cover(site, learned, weather, fc)
+def snowed(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour], fc: Series,
+           before: list[WeatherHour] = ()) -> Series:
+    """The forecast with the learned snow cover (model.snow_cover); unchanged without learned snow or snowfall.
+
+    before: earlier hours, scanned for snow that still lies (their daylight hours use up the cover too)."""
+    if not learned.snow or not any(w.snow for w in (*before, *weather)):
+        return fc
+    lead = [w for w in before if not weather or w.start < weather[0].start]
+    cover = snow_cover(site, learned, [*lead, *weather], {**forecast(site, geo, learned, lead), **fc})
     return {t: v * cover.get(t, 1.0) for t, v in fc.items()} if cover else fc
 
 

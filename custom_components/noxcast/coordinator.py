@@ -1067,7 +1067,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             coupling = bt.COUPLING_AC if house else bt.COUPLING_DC
             eff = d.get(CONF_EFFICIENCY)
             # what the battery shows in its level and power beats the entered capacity; an entered efficiency stays
-            learned = self.battery_capacity.get(sid) or {}
+            learned = self.learned_capacities.get(sid) or {}
             eff = eff or (learned["efficiency"] * 100 if learned else None)
             units.append(bt.Battery(
                 capacity_wh=learned.get("capacity_wh") or float(d.get(CONF_CAPACITY, 0)) * 1000, soc=soc,
@@ -1085,25 +1085,46 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 from_house=house))
         return units
 
+    @staticmethod
+    def _capacity_key(d: dict) -> list:
+        """What a learned capacity belongs to: another capacity or other sensors mean another battery or measurement."""
+        return [d.get(CONF_CAPACITY), d.get(CONF_SOC_SENSOR), d.get(CONF_BATTERY_POWER), bool(d.get(CONF_BATTERY_INVERT))]
+
+    @property
+    def learned_capacities(self) -> dict[str, dict]:
+        """Per battery the learned capacity and round trip that still belong to its settings (battery.learn_capacity)."""
+        return {sid: v for sid, v in self.battery_capacity.items()
+                if sid in self.batteries and v.get("capacity_wh") and v.get("key") == self._capacity_key(self.batteries[sid])}
+
     async def _async_learn_capacities(self) -> None:
         """What each battery with a power sensor shows as capacity and round trip, from its recent level and power
-        (battery.learn_capacity)."""
+        (battery.learn_capacity).
+
+        Only runs since the battery's settings last changed count ("since"): after an expansion with the new capacity
+        entered, the old battery's runs would otherwise hold the old capacity for months. A night without enough runs
+        (statistics purged, a summer without deep cycles) keeps what was learned instead of falling back."""
         found = {sid: d for sid, d in self.batteries.items() if d.get(CONF_SOC_SENSOR) and d.get(CONF_BATTERY_POWER)}
         if not found:
             self.battery_capacity = {}
             return
-        start = dt_util.utcnow() - timedelta(days=bt.CAPACITY_DAYS)
+        now = dt_util.utcnow()
+        basis = {}
+        for sid, d in found.items():
+            prev, key = self.battery_capacity.get(sid) or {}, self._capacity_key(d)
+            basis[sid] = prev if prev.get("key") == key and prev.get("since") else {"key": key, "since": now.timestamp()}
+        start = now - timedelta(days=bt.CAPACITY_DAYS)
         power_ids = sorted({d[CONF_BATTERY_POWER] for d in found.values()})
         socs = await async_hourly_statistics(self.hass, sorted({d[CONF_SOC_SENSOR] for d in found.values()}), start, "mean")
         powers = await async_hourly_statistics(self.hass, power_ids, start, "mean")
         factors = await async_power_factors(self.hass, power_ids)
         out = {}
         for sid, d in found.items():
+            since = basis[sid]["since"]
             sign = (-1.0 if d.get(CONF_BATTERY_INVERT) else 1.0) * factors.get(d[CONF_BATTERY_POWER], 1.0)
-            soc = {t: v / 100 for t, v in socs.get(d[CONF_SOC_SENSOR], {}).items() if v is not None}
-            power = {t: v * sign for t, v in powers.get(d[CONF_BATTERY_POWER], {}).items() if v is not None}
-            if learned := await self.hass.async_add_executor_job(bt.learn_capacity, soc, power):
-                out[sid] = learned
+            soc = {t: v / 100 for t, v in socs.get(d[CONF_SOC_SENSOR], {}).items() if v is not None and t >= since}
+            power = {t: v * sign for t, v in powers.get(d[CONF_BATTERY_POWER], {}).items() if v is not None and t >= since}
+            learned = await self.hass.async_add_executor_job(bt.learn_capacity, soc, power)
+            out[sid] = {**basis[sid], **learned} if learned else basis[sid]
         self.battery_capacity = out
 
     def _shared_cap(self, system: sy.System | None) -> tuple[str, float, tuple[str, ...]] | None:
@@ -1577,6 +1598,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         day_end = dt_util.start_of_local_day(local_now.date() + timedelta(days=1)).timestamp()
         horizon = dt_util.start_of_local_day(local_now.date() + timedelta(days=self.forecast_days)).timestamp()
         outlook = [w for w in weather if w.start >= day_start]
+        lead = [w for w in weather if w.start < day_start]    # yesterday (past_days): its snow may still lie today
         weather = [w for w in outlook if w.start < horizon]
         if not weather:
             raise UpdateFailed("Weather source returned no hours for the forecast horizon")
@@ -1592,7 +1614,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         learned = dict(self.learned)        # the same model for the forecast and its archived steps
         result, self._today, alt_forecasts = await self.hass.async_add_executor_job(
             fc.pv, self.site, self.arrays, learned, weather, models, self._today, actual, running, utc_now,
-            local_now, day_start, day_end, frozenset(), self.installation, limited, curtailed)
+            local_now, day_start, day_end, frozenset(), self.installation, limited, curtailed, lead)
         result.updated, result.weather_fetched = utc_now, dt_util.utc_from_timestamp(fetched)
         result.outlook = outlook
 
@@ -1618,7 +1640,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # how tomorrow's forecast comes about, archived with it (the same weather and model as result)
         steps = await self.hass.async_add_executor_job(
             explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, learned,
-            [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]], [w for w in weather if w.start < tomorrow[0]])
+            [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]], [*lead, *(w for w in weather if w.start < tomorrow[0])])
         self._archive_forecast(weather, result, alt, models, steps, list(per_model) or self.weather_models,
                                await self._async_ensemble(now))
         self._store.async_delay_save(self._store_data, 60)

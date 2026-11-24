@@ -2166,6 +2166,7 @@
     "weather_fetched": "2026-06-10T12:30:00+00:00",
     "load": null,
     "battery": null,
+    "surplus": null,
     "plan": {},
     "band": null,
     "actual": {
@@ -17550,6 +17551,7 @@
       }
      }
     },
+    "surplus": "= previous",
     "plan": {
      "washer": {
       "run": {"__": "RunProfile", "name": "washer", "power_w": 1900.0, "minutes": 74.0},
@@ -20357,6 +20359,7 @@
       "lost_p90": {"1781125200": 1154.8, "1781128800": 1873.7, "1781132400": 1533.7, "1781136000": 963.4}
      }
     },
+    "surplus": "= previous",
     "plan": {
      "washer": {
       "run": "= previous",
@@ -21802,6 +21805,7 @@
       "lost_p90": {"1781128800": 441.0, "1781132400": 1453.8, "1781136000": 920.4}
      }
     },
+    "surplus": "= previous",
     "plan": {
      "washer": {
       "run": "= previous",
@@ -25754,6 +25758,7 @@
       }
      }
     },
+    "surplus": "= previous",
     "plan": {
      "washer": {
       "run": "= previous",
@@ -32309,6 +32314,7 @@
       }
      }
     },
+    "surplus": "= previous",
     "plan": {
      "washer": {
       "run": "= previous",

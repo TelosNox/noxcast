@@ -491,7 +491,8 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and 
 15-minute steps, which add up to each hour); the total sensors also `p10` / `p90`. The total is offered as solar forecast in the energy dashboard.
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
-`consumers`, `correction`, `backtest`). With batteries: **Surplus rest of today**, **Surplus lost
+`consumers`, `correction`, `backtest`), and without batteries **Surplus rest of today** (PV above the load; attributes
+`fed_in` and `curtailed` as below, `to_battery` 0). With batteries: **Surplus rest of today**, **Surplus lost
 today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
 what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
 charge start** (attribute `grid`: grid energy until then), **Battery lowest level (48 h)** (attributes `hourly`: the

@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Fixed
+- *Surplus rest of today* also exists without a battery, as long as the house load is set up: the PV above the
+  load for the rest of today, with what of it goes into the grid (`fed_in`) and what the feed-in rule curtails
+  (`curtailed`). Until now a household with a large PV but no battery got no surplus forecast at all.
+
 ### Added
 - The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
   parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the

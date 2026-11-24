@@ -32,8 +32,8 @@ they cannot take it back.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field, replace
 from statistics import median
-from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from .const import Series
@@ -43,6 +43,8 @@ COUPLING_DC, COUPLING_AC = "dc", "ac"
 DEFAULT_EFFICIENCY = {COUPLING_DC: 0.95, COUPLING_AC: 0.90}   # round trip
 LIMIT_TOLERANCE = 0.02          # within 2 percentage points of a limit counts as reached (as in the review)
 AHEAD_HOURS = 48                # the state of charge outlook for tariff and charge planners
+QUARTER = 900.0                 # the simulation's step: the PV forecast comes in quarter hours, and so does a full
+                                # battery or the morning's first surplus
 
 
 @dataclass(frozen=True)
@@ -220,12 +222,15 @@ class Simulation:
 
 
 def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
-             caps: Limits | None = None, held_wh: float = 0.0, grid: FeedIn | None = None) -> Simulation:
+             caps: Limits | None = None, held_wh: float = 0.0, grid: FeedIn | None = None,
+             step: float = H) -> Simulation:
     """Simulate from now until end. pv and load: Wh per hour start (mean W of the hour).
 
     caps: the output caps (see limits); pv is all PV, the capped part goes to the battery only.
     held_wh: room below the upper limit the batteries will not use (see held_back).
     grid: what of the surplus that does not fit is fed in (see FeedIn); None feeds everything in.
+    step: the length of a period; pv, load and caps.capped are Wh per period start, while caps.discharge and the
+    feed-in shares stay per hour start (in_steps prepares them). sim.hours is then per period.
     """
     caps = caps or Limits()
     grid = grid or FeedIn()
@@ -237,12 +242,13 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
     eta = math.sqrt(max(0.01, min(1.0, battery.efficiency)))
     sim.points.append((now, e / cap))
     sim.max_soc, sim.max_soc_at = e / cap, now
-    t = now - now % H
+    t = now - now % step
     while t < end:
         start = max(t, now)
-        share = (min(t + H, end) - start) / H
+        share = (min(t + step, end) - start) / step
+        per = share * step / H                                     # of an hour, for powers in W
         if share <= 0:
-            t += H
+            t += step
             continue
         capped = caps.capped.get(t, 0.0) * share                   # PV above an output cap: battery only
         net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share - capped
@@ -251,16 +257,16 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
         if surplus > 0:
             sim.surplus_wh += surplus
             room = max(e_max - e, 0.0) / eta                       # surplus the battery can still take
-            limit = battery.max_charge_w * share if battery.max_charge_w else math.inf
+            limit = battery.max_charge_w * per if battery.max_charge_w else math.inf
             take = min(surplus, room, limit)
             e += take * eta
             lost = surplus - take
             if take < surplus and room <= limit and sim.full_at is None:
-                sim.full_at = start + (take / surplus) * (min(t + H, end) - start)
+                sim.full_at = start + (take / surplus) * (min(t + step, end) - start)
             if lost > 0.5 and sim.lost_from is None:
                 sim.lost_from = start
             # the battery takes capped PV first, since nothing else can; what it leaves of it is curtailed
-            fed = grid.fed_in(t, max(lost - max(capped - take, 0.0), 0.0), share)
+            fed = grid.fed_in(t - t % H, max(lost - max(capped - take, 0.0), 0.0), per)
             sim.charged_wh += take
             sim.lost_wh += lost
             sim.fed_in_wh += fed
@@ -269,23 +275,23 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
         if net < 0:                                                # capped PV may charge while the house draws
             need = -net
             avail = max(e - e_min, 0.0) * eta                      # load the battery can still cover
-            power = caps.discharge.get(t, battery.max_discharge_w) if caps.discharge else battery.max_discharge_w
-            limit = power * share if power is not None else math.inf
+            power = caps.discharge.get(t - t % H, battery.max_discharge_w) if caps.discharge else battery.max_discharge_w
+            limit = power * per if power is not None else math.inf
             give = min(need, avail, limit)
             e -= give / eta
             if give < need and avail <= limit:
-                sim.empties.append(start + (give / need) * (min(t + H, end) - start))
+                sim.empties.append(start + (give / need) * (min(t + step, end) - start))
                 if sim.empty_at is None:
                     sim.empty_at = sim.empties[-1]
             sim.grid_wh += need - give
             hour.update(battery=round(hour["battery"] - give, 1), grid=round(need - give, 1))
-        point = min(t + H, end)
+        point = min(t + step, end)
         sim.points.append((point, e / cap))
         if e / cap > sim.max_soc + 1e-9:
             sim.max_soc, sim.max_soc_at = e / cap, point
         hour["soc"] = round(e / cap, 4)
         sim.hours[t] = hour
-        t += H
+        t += step
     if sim.full_at is not None and sim.max_soc_at is not None and sim.full_at < sim.max_soc_at:
         sim.max_soc_at = sim.full_at
     return sim
@@ -399,7 +405,7 @@ def _fill(need: float, caps: list[float]) -> list[float]:
 
 
 def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end: float,
-                   grid: FeedIn | None = None) -> tuple[dict[str, Simulation], Simulation]:
+                   grid: FeedIn | None = None, step: float = H) -> tuple[dict[str, Simulation], Simulation]:
     """Independent systems simulated together, hour by hour, against one house load.
 
     The house load is covered by PV first: the PV of systems without a battery, then each system's own PV (in
@@ -412,6 +418,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
     the whole's is what leaves the house (also the PV of systems without a battery, and what a battery at the house
     grid did not take), as the single storage counts it. The whole's level is weighted by capacity; full, empty and
     loss come from the earliest system, so an early full one is not hidden behind the average.
+    step: the length of a period, as in simulate (the units' pv and caps.capped per period).
     """
     grid = grid or FeedIn()
     n = len(units)
@@ -427,22 +434,23 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
     for u, x, c in zip(units, e, caps_wh):
         sims[u.key].points.append((now, x / c))
         sims[u.key].max_soc, sims[u.key].max_soc_at = x / c, now
-    t = now - now % H
+    t = now - now % step
     while t < end:
         start = max(t, now)
-        share = (min(t + H, end) - start) / H
+        share = (min(t + step, end) - start) / step
+        per = share * step / H                                          # of an hour, for powers in W
         if share <= 0:
-            t += H
+            t += step
             continue
-        stop = min(t + H, end)
+        stop = min(t + step, end)
         own = [u.pv.get(t, 0.0) * share for u in units]
         capped = [min(u.caps.capped.get(t, 0.0) * share, o) for u, o in zip(units, own)]   # battery only
         deliverable = [o - c for o, c in zip(own, capped)]
         free = max(pv.get(t, 0.0) * share - sum(own), 0.0)              # PV of systems without a battery
         power, avail = [], []
         for i, u in enumerate(units):
-            w = u.caps.discharge.get(t, u.storage.max_discharge_w) if u.caps.discharge else u.storage.max_discharge_w
-            power.append(w * share if w is not None else math.inf)
+            w = u.caps.discharge.get(t - t % H, u.storage.max_discharge_w) if u.caps.discharge else u.storage.max_discharge_w
+            power.append(w * per if w is not None else math.inf)
             avail.append(max(e[i] - e_min[i], 0.0) * eta[i])
         give_max = [min(a, p) for a, p in zip(avail, power)]
         need = load.get(t, 0.0) * share - free
@@ -453,7 +461,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
         short = [False] * n
         for i, u in enumerate(units):
             if u.fixed_w:
-                target = u.fixed_w * share
+                target = u.fixed_w * per
                 from_pv[i] = min(deliverable[i], target)
                 give[i] = min(target - from_pv[i], give_max[i])
                 short[i] = from_pv[i] + give[i] < target - 0.5
@@ -478,7 +486,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
             took = 0.0
             if surplus > 0:
                 sim.surplus_wh += surplus
-                took = _charge(sim, e, e_max, eta, i, surplus, u.storage.max_charge_w, share, start, stop)
+                took = _charge(sim, e, e_max, eta, i, surplus, u.storage.max_charge_w, per, start, stop)
                 lost[i] = surplus - took
             # capped PV the battery left is curtailed; the rest of its surplus goes out to the house, except behind a
             # fixed power, which holds the output like a limit: what its battery cannot take is curtailed too
@@ -496,7 +504,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
         to_house = 0.0                                                  # taken by batteries at the house grid
         left = [0.0] * n                                                # what a full one at the house grid lets go
         if takers and out > 0:
-            limit = [units[i].storage.max_charge_w * share if units[i].storage.max_charge_w else math.inf for i in takers]
+            limit = [units[i].storage.max_charge_w * per if units[i].storage.max_charge_w else math.inf for i in takers]
             rooms = [min(max(e_max[i] - e[i], 0.0) / eta[i], c) for i, c in zip(takers, limit)]
             for i, w in zip(takers, _fill(out, rooms)):
                 if w > 0:
@@ -513,7 +521,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
                     sim.full_at = start if rooms[takers.index(i)] <= 1e-9 else stop
                 if out > 0.5:
                     left[i] = out / len(full)
-        fed = grid.fed_in(t, out, share) if out > 0 else 0.0
+        fed = grid.fed_in(t - t % H, out, per) if out > 0 else 0.0
         lost_sum = sum(lost)
         sent = [g + x for g, x in zip(gone, left)]
         for i, u in enumerate(units):
@@ -554,7 +562,7 @@ def simulate_units(units: list[Unit], pv: Series, load: Series, now: float, end:
                           "lost": round(leaves, 1), "grid": round(grid_wh, 1), "fed_in": round(fed, 1),
                           "curtailed": round(leaves - fed, 1),
                           "soc": round(sum(x for x in e) / sum(caps_wh), 4)}
-        t += H
+        t += step
     for sim in sims.values():
         if sim.full_at is not None and sim.max_soc_at is not None and sim.full_at < sim.max_soc_at:
             sim.max_soc_at = sim.full_at
@@ -591,11 +599,70 @@ def _whole(units: list[Unit], sims: dict[str, Simulation], whole: Simulation) ->
     return whole
 
 
+Shape = dict[float, tuple[float, ...]]   # per hour start: the share of each quarter in the hour's PV (adds up to 1)
+
+
+def shape_of(quarters: Series) -> Shape:
+    """The quarter shares of each hour from a series in quarter hours (Wh per quarter start)."""
+    hours: dict[float, list[float]] = {}
+    for t, wh in quarters.items():
+        hours.setdefault(t - t % H, [0.0] * 4)[int(t % H // QUARTER)] += max(wh, 0.0)
+    return {t: tuple(q / sum(qs) for q in qs) for t, qs in hours.items() if sum(qs) > 0}
+
+
+EVEN = (0.25, 0.25, 0.25, 0.25)
+
+
+def in_quarters(hourly: Series, shape: Shape | None = None) -> Series:
+    """Wh per hour start -> Wh per quarter start: by the hour's PV shape where one is given, else evenly (the load,
+    whose course within the hour the hourly profiles do not know)."""
+    out: Series = {}
+    for t, wh in hourly.items():
+        for k, f in enumerate((shape or {}).get(t, EVEN)):
+            out[t + k * QUARTER] = wh * f
+    return out
+
+
+def _quarter_caps(caps: Limits | None, shape: Shape | None) -> Limits | None:
+    """Capped PV follows the PV within the hour; the discharge limits are powers per hour and stay."""
+    return replace(caps, capped=in_quarters(caps.capped, shape)) if caps is not None and caps.capped else caps
+
+
+def _quarter_unit(u: Unit, shape: Shape | None) -> Unit:
+    return replace(u, pv=in_quarters(u.pv, shape), caps=_quarter_caps(u.caps, shape))
+
+
+def _by_hour(sim: Simulation) -> Simulation:
+    """sim.hours per quarter -> per hour: energies add up, the level is the one at the end of the hour."""
+    hours: dict[float, dict] = {}
+    for t, q in sorted(sim.hours.items()):
+        h = hours.setdefault(t - t % H, dict.fromkeys(q, 0.0))
+        for k, v in q.items():
+            h[k] = v if k == "soc" else round(h[k] + v, 1)
+    sim.hours = hours
+    return sim
+
+
+def simulate_quarters(battery: Battery, pv: Series, load: Series, now: float, end: float, shape: Shape | None,
+                      caps: Limits | None = None, held_wh: float = 0.0, grid: FeedIn | None = None) -> Simulation:
+    """simulate in quarter hours from hourly pv and load, the PV shaped within each hour; hours as in simulate."""
+    return _by_hour(simulate(battery, in_quarters(pv, shape), in_quarters(load), now, end, _quarter_caps(caps, shape),
+                             held_wh, grid, QUARTER))
+
+
+def simulate_units_quarters(units: list[Unit], pv: Series, load: Series, now: float, end: float, shape: Shape | None,
+                            grid: FeedIn | None = None) -> tuple[dict[str, Simulation], Simulation]:
+    """simulate_units in quarter hours, as simulate_quarters. Every system's PV gets the shape of the whole."""
+    per, whole = simulate_units([_quarter_unit(u, shape) for u in units], in_quarters(pv, shape), in_quarters(load),
+                                now, end, grid, QUARTER)
+    return {k: _by_hour(v) for k, v in per.items()}, _by_hour(whole)
+
+
 def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
                    band_hours: dict[float, tuple[float, float]] | None, now: float, day_end: float,
                    pv_arrays: dict[str, Series] | None = None,
                    rule: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None,
-                   ahead: tuple[Series, float] | None = None) -> dict | None:
+                   ahead: tuple[Series, float] | None = None, shape: Shape | None = None) -> dict | None:
     """All batteries as one storage, simulated with expected PV against the load forecast until tomorrow's charge start.
 
     {"sim", "charge_start", "storage", "day_end"}, plus with a PV band "band": the surplus lost today and
@@ -605,6 +672,9 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     None feeds everything in.
     ahead: (load, end) for the outlook "ahead": the same simulation for the next AHEAD_HOURS, past the charge start,
     but not past `end`, where the PV forecast ends.
+    shape: how the PV of each hour spreads over its quarters (shape_of the quarter-hour forecast). The simulation runs
+    in quarter hours: a battery that gets full at 11:40 is full then, and the morning's first surplus starts within
+    the hour. Results stay per hour, the levels (points) per quarter.
     """
     if not batteries or load is None:
         return None
@@ -629,10 +699,10 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
             caps_: Limits) -> tuple[Simulation, dict[str, Simulation] | None, dict[float, float]]:
         """The simulation, each system's (None for one storage) and the surplus lost per hour with a full battery."""
         if not several:
-            one = simulate(storage, pv_, load_, now, until, caps_, held, grid)
+            one = simulate_quarters(storage, pv_, load_, now, until, shape, caps_, held, grid)
             return one, None, lost_when_full(one, storage.max_soc)
         units = units_of(batteries, arrays, hours, charging)
-        per, whole = simulate_units(units, pv_, load_, now, until, grid)
+        per, whole = simulate_units_quarters(units, pv_, load_, now, until, shape, grid)
         # full per system: one full system loses its surplus even while the average level is below its limit; what
         # is lost then is what leaves the house, since a battery at the house grid may still take a full one's surplus
         full = {t for u in units for t in lost_when_full(per[u.key], u.storage.max_soc)}
@@ -641,7 +711,7 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
 
     sim, systems, lost_full = run(pv, pv_arrays, load, start, caps)
     out = {"sim": sim, "charge_start": start, "storage": storage, "day_end": day_end, "limits": caps, "held_wh": held,
-           "feed_in": grid, "lost_full": lost_full}
+           "feed_in": grid, "lost_full": lost_full, "shape": shape}
     if systems is not None:
         out["systems"] = systems
         out["units"] = units_of(batteries, pv_arrays, hours, charging)     # for what-if runs (views.battery_entry)
@@ -666,10 +736,11 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
 
 def replay(battery: dict, pv: Series, load: Series, now: float, until: float) -> Simulation:
     """The simulation of day_simulation (its result `battery`) again with another load, e.g. with a planned run."""
+    shape = battery.get("shape")
     if battery.get("units"):
-        return simulate_units(battery["units"], pv, load, now, until, battery.get("feed_in"))[1]
-    return simulate(battery["storage"], pv, load, now, until, battery.get("limits"), battery.get("held_wh", 0.0),
-                    battery.get("feed_in"))
+        return simulate_units_quarters(battery["units"], pv, load, now, until, shape, battery.get("feed_in"))[1]
+    return simulate_quarters(battery["storage"], pv, load, now, until, shape, battery.get("limits"),
+                             battery.get("held_wh", 0.0), battery.get("feed_in"))
 
 
 def planning_cost(battery: dict, pv: Series, load: Series, now: float):

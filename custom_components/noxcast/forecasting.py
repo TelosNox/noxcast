@@ -403,8 +403,10 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
                                        result.clear.get(TOTAL, {}), now, day_end)
     load_hours = result.load.hours if result.load is not None else None
     arrays = {sid: {**hours, **result.expected.get(sid, {})} for sid, hours in result.arrays.items()}
+    # the PV's course within each hour, for the battery simulation in quarter hours
+    quarters = {**result.quarters.get("forecast", {}).get(TOTAL, {}), **result.quarters.get("expected", {}).get(TOTAL, {})}
     result.battery = bt.day_simulation(batteries, dict(total), load_hours, (result.band or {}).get("hours"), now, day_end,
-                                       arrays, feed_in, ahead)
+                                       arrays, feed_in, ahead, bt.shape_of(quarters) if quarters else None)
     if result.battery is None and load_hours is not None:
         # without a battery the surplus still matters: what goes into the grid and what a limit curtails
         hours = sorted(t for t in load_hours if now < t + 3600 <= day_end)

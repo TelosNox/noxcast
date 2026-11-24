@@ -421,10 +421,14 @@ def unit_entry(u: bt.Unit, name: str, hours: list[float]) -> dict:
                               for t in hours), "pv", "capped", "discharge")}
 
 
-def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: float) -> dict:
-    """The storage, PV and load per hour for what-if runs and the current simulation (see battery.day_simulation)."""
+def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: float,
+                  learned: dict[str, dict] | None = None) -> dict:
+    """The storage, PV and load per hour for what-if runs and the current simulation (see battery.day_simulation).
+    learned: per battery what it shows as capacity and round trip (battery.learn_capacity)."""
     out: dict[str, Any] = {"batteries": [{"name": names.get(sid, ""), "capacity_kwh": d.get(CONF_CAPACITY),
-                                          "soc_sensor": d.get(CONF_SOC_SENSOR)} for sid, d in batteries.items()]}
+                                          "soc_sensor": d.get(CONF_SOC_SENSOR), "learned": (learned or {}).get(sid),
+                                          "power_sensor": bool(d.get(CONF_BATTERY_POWER))}
+                                         for sid, d in batteries.items()]}
     b = data.battery if data is not None else None
     if b:
         st, sim = b["storage"], b["sim"]

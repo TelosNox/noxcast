@@ -1,4 +1,5 @@
 """Battery simulation: limits, losses, power limits, full and empty times."""
+import pytest
 from conftest import load
 
 bt = load("battery")
@@ -404,3 +405,38 @@ def test_pv_rising_within_the_hour_fills_the_battery_later_and_starts_surplus_la
     # quarters: 90 / 180 / 270 / 360 Wh of PV against 150 Wh of load: -60, +30, +120, +210
     assert shaped.hours[10 * H]["battery"] == 300.0 and min(s for _, s in shaped.points) < 0.5
     assert bt.shape_of({10 * H: 90.0, 10 * H + 900: 180.0, 10 * H + 1800: 270.0, 10 * H + 2700: 360.0}) == rising
+
+
+def cycles(capacity, eff_charge, eff_discharge, days, power=1000.0, start=0.2, end=0.9):
+    """Hourly mean level and power of a battery that charges and discharges once a day at constant power."""
+    soc, pw = {}, {}
+    t, level = 0, start
+    for _ in range(days):
+        for sign, stop in ((1, end), (-1, start)):
+            while (level < stop) if sign > 0 else (level > stop):
+                step = power * (eff_charge if sign > 0 else 1 / eff_discharge) / capacity
+                soc[t] = level + sign * step / 2       # the mean of an hour belongs to its middle
+                pw[t] = sign * power
+                level += sign * step
+                t += H
+            soc[t], pw[t] = level, 0.0                 # an idle hour between runs
+            t += H
+    return soc, pw
+
+
+def test_learned_capacity_and_round_trip_come_from_charging_and_discharging_runs():
+    soc, pw = cycles(5000, 0.95, 0.95, days=4)
+    learned = bt.learn_capacity(soc, pw)
+    assert learned["capacity_wh"] == pytest.approx(5000, rel=0.03)
+    assert learned["efficiency"] == pytest.approx(0.95 * 0.95, abs=0.02)
+    assert learned["charges"] == learned["discharges"] == 4
+
+
+def test_capacity_is_not_learned_from_too_few_runs_or_small_swings():
+    assert bt.learn_capacity(*cycles(5000, 0.95, 0.95, days=2)) is None
+    assert bt.learn_capacity(*cycles(5000, 0.95, 0.95, days=5, start=0.5, end=0.6)) is None
+
+
+def test_a_power_sensor_that_does_not_match_the_level_teaches_nothing():
+    soc, pw = cycles(5000, 0.95, 0.95, days=4)
+    assert bt.learn_capacity(soc, {t: p * 3 if p < 0 else p for t, p in pw.items()}) is None

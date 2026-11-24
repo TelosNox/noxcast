@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, replace
+from statistics import median
 from datetime import date, timedelta
 
 from .const import Series
@@ -758,6 +759,63 @@ def planning_cost(battery: dict, pv: Series, load: Series, now: float):
         kept = sim.points[-1][1] * deliver if sim.points else 0.0
         return sim.grid_wh, sim.lost_wh, kept
     return cost
+
+
+CAPACITY_SWING = 0.15          # a run must move the state of charge this far, so rounding of the level hardly counts
+CAPACITY_RUNS = 3               # runs per direction before the learned capacity is used
+CAPACITY_MIN_W = 50.0           # mean power of an hour that counts as charging or discharging
+CAPACITY_DAYS = 120             # recent runs only: a battery ages, and an old capacity should not linger
+
+
+def capacity_runs(soc: Series, power: Series) -> tuple[list[float], list[float]]:
+    """Wh per unit of state of charge in runs of charging and of discharging hours.
+
+    soc: hourly mean state of charge (0..1), power: hourly mean battery power in W (> 0 = charging), both by hour
+    start. A run is consecutive hours that all charge (or all discharge) with at least CAPACITY_MIN_W while the
+    level moves the same way; its energy runs from the middle of its first hour to the middle of its last (half of
+    each, both means belong to the middle of their hour). Runs of at least CAPACITY_SWING count. Charging gives
+    capacity / charge efficiency, discharging capacity × discharge efficiency (energy at the power sensor)."""
+    charge, discharge = [], []
+    run: list[float] = []
+
+    def close() -> None:
+        if len(run) < 2:
+            return
+        swing = soc[run[-1]] - soc[run[0]]
+        energy = sum(power[t] for t in run) - (power[run[0]] + power[run[-1]]) / 2
+        if abs(swing) >= CAPACITY_SWING and energy * swing > 0:
+            (charge if swing > 0 else discharge).append(energy / swing)
+
+    for t in sorted(set(soc) & set(power)):
+        p, s = power[t], soc[t]
+        sign = 1 if p >= CAPACITY_MIN_W else -1 if p <= -CAPACITY_MIN_W else 0
+        prev = run[-1] if run else None
+        same = (prev is not None and t - prev == H and sign != 0
+                and sign == (1 if power[prev] > 0 else -1) and (s - soc[prev]) * sign >= 0)
+        if not same:
+            close()
+            run = [t] if sign else []
+        else:
+            run.append(t)
+    close()
+    return charge, discharge
+
+
+def learn_capacity(soc: Series, power: Series) -> dict | None:
+    """The capacity and round-trip efficiency the battery shows, from its level and its power sensor.
+
+    Charging stores a = capacity / η_charge per unit of level, discharging gives b = capacity × η_discharge. With
+    both ways equally efficient, capacity = √(a·b) and the round trip η = b / a, whatever the efficiency is: the
+    medians of at least CAPACITY_RUNS runs each way. None with fewer runs, or with a round trip outside 50–102 %,
+    where the power sensor measures something else than the battery (an inverter's output, the house)."""
+    charge, discharge = capacity_runs(soc, power)
+    if len(charge) < CAPACITY_RUNS or len(discharge) < CAPACITY_RUNS:
+        return None
+    a, b = median(charge), median(discharge)
+    if a <= 0 or b <= 0 or not 0.5 <= b / a <= 1.02:
+        return None
+    return {"capacity_wh": round(math.sqrt(a * b)), "efficiency": round(min(b / a, 1.0), 3),
+            "charges": len(charge), "discharges": len(discharge)}
 
 
 def system_figures(battery: dict, names: dict[str, str]) -> list[dict]:

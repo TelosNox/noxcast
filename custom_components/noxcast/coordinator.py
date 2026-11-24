@@ -31,7 +31,8 @@ from .const import (
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
     CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
-    CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
+    CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE,
+    CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
     CONF_FEED_IN_MODE, CONF_MIN_SOC, CONF_MIN_SOC_ENTITY, CONF_RESERVE, CONF_SOC_SENSOR, SUBENTRY_BATTERY, CONF_SYSTEM, CONF_OUTPUT_LIMIT, CONF_REGULATION, CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_KIND, CONF_START_SHARE,
     COMPARE_COOLDOWN, COMPARE_DAYS, COMPARE_PAUSE, WEATHER_MODEL_OPTIONS,
 )
@@ -238,6 +239,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.frozen: dict[str, list] = {}
         self._frozen_ok = False
         self.battery_log: dict[str, dict] = {}       # local date -> the morning's battery prediction
+        self.battery_capacity: dict[str, dict] = {}  # battery subentry -> what it shows (battery.learn_capacity)
         # power limits seen in the measurements (plateau.py): {"detected": {sensor: Plateau.as_dict()}, "systems":
         # {system: Plateau.as_dict()} (output limits on the sum), "dismissed_systems": {system: W},
         # "dismissed": {sensor: W the user said is no limit}}; only suggested, see issues.py
@@ -259,6 +261,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             self.pv_backtest = pv_backtest.valid(stored.get("pv_backtest"))
             self.model_compare = hc.valid(stored.get("model_compare"))
             self.battery_log = dict(stored.get("battery_log") or {})
+            self.battery_capacity = dict(stored.get("battery_capacity") or {})
             self.learning_changes = {sid: c for sid, c in (stored.get("learning_changes") or {}).items()
                                      if sid in self.learned}
             limits = stored.get("limits") or {}
@@ -526,6 +529,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "pv_backtest": self.pv_backtest,
             "model_compare": self.model_compare,
             "battery_log": self.battery_log,
+            "battery_capacity": {sid: v for sid, v in self.battery_capacity.items() if sid in self.batteries},
             "learning_changes": {sid: c for sid, c in self.learning_changes.items() if sid in self.arrays},
             "limits": self.limits,
             "exclusions": self.exclusions,
@@ -581,6 +585,10 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 return False
         self.last_learning_error = None
         self.last_learning_seconds = round(time.monotonic() - start, 1)
+        try:
+            await self._async_learn_capacities()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Noxcast could not learn the battery capacity; keeping the previous one")
         self._store.async_delay_save(self._store_data, 5)
         await self.async_request_refresh()
         if backtest and (self._backtest_task is None or self._backtest_task.done()):
@@ -1046,7 +1054,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     def _battery_units(self) -> list[bt.Battery]:
         """The configured batteries with their current state of charge and limits."""
         units = []
-        for d in self.batteries.values():
+        for sid, d in self.batteries.items():
             state = self.hass.states.get(d.get(CONF_SOC_SENSOR) or "")
             try:
                 soc = float(state.state) / 100
@@ -1058,8 +1066,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             house = sy.charges_from_house(self.systems, d.get(CONF_SYSTEM))
             coupling = bt.COUPLING_AC if house else bt.COUPLING_DC
             eff = d.get(CONF_EFFICIENCY)
+            # what the battery shows in its level and power beats the entered capacity; an entered efficiency stays
+            learned = self.battery_capacity.get(sid) or {}
+            eff = eff or (learned["efficiency"] * 100 if learned else None)
             units.append(bt.Battery(
-                capacity_wh=float(d.get(CONF_CAPACITY, 0)) * 1000, soc=soc,
+                capacity_wh=learned.get("capacity_wh") or float(d.get(CONF_CAPACITY, 0)) * 1000, soc=soc,
                 max_soc=self._limit(d.get(CONF_MAX_SOC), d.get(CONF_MAX_SOC_ENTITY), 100) / 100,
                 min_soc=min(100.0, self._limit(d.get(CONF_MIN_SOC), d.get(CONF_MIN_SOC_ENTITY), 0) + float(d.get(CONF_RESERVE) or 0)) / 100,
                 efficiency=float(eff) / 100 if eff else bt.DEFAULT_EFFICIENCY.get(coupling, 0.95),
@@ -1073,6 +1084,27 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                 fixed_w=sy.fixed_power(self.systems[system.parent or system.id]) if system else None,
                 from_house=house))
         return units
+
+    async def _async_learn_capacities(self) -> None:
+        """What each battery with a power sensor shows as capacity and round trip, from its recent level and power
+        (battery.learn_capacity)."""
+        found = {sid: d for sid, d in self.batteries.items() if d.get(CONF_SOC_SENSOR) and d.get(CONF_BATTERY_POWER)}
+        if not found:
+            self.battery_capacity = {}
+            return
+        start = dt_util.utcnow() - timedelta(days=bt.CAPACITY_DAYS)
+        power_ids = sorted({d[CONF_BATTERY_POWER] for d in found.values()})
+        socs = await async_hourly_statistics(self.hass, sorted({d[CONF_SOC_SENSOR] for d in found.values()}), start, "mean")
+        powers = await async_hourly_statistics(self.hass, power_ids, start, "mean")
+        factors = await async_power_factors(self.hass, power_ids)
+        out = {}
+        for sid, d in found.items():
+            sign = (-1.0 if d.get(CONF_BATTERY_INVERT) else 1.0) * factors.get(d[CONF_BATTERY_POWER], 1.0)
+            soc = {t: v / 100 for t, v in socs.get(d[CONF_SOC_SENSOR], {}).items() if v is not None}
+            power = {t: v * sign for t, v in powers.get(d[CONF_BATTERY_POWER], {}).items() if v is not None}
+            if learned := await self.hass.async_add_executor_job(bt.learn_capacity, soc, power):
+                out[sid] = learned
+        self.battery_capacity = out
 
     def _shared_cap(self, system: sy.System | None) -> tuple[str, float, tuple[str, ...]] | None:
         """The output limit a battery's system shares with the other subsystems of its system (battery.Battery)."""

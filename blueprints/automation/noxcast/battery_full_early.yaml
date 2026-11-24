@@ -1,0 +1,87 @@
+blueprint:
+  name: Noxcast – battery full early
+  description: >-
+    Sends a notification in the morning when Noxcast expects the battery to be full early and surplus to be lost
+    today: a good day to run flexible consumers while the sun shines. Noxcast only forecasts; what you do with the
+    notice is up to you.
+  domain: automation
+  source_url: https://github.com/TelosNox/noxcast/blob/main/blueprints/automation/noxcast/battery_full_early.yaml
+  input:
+    full_at:
+      name: Battery full at
+      description: Noxcast's sensor *Battery full at*.
+      selector:
+        entity:
+          filter:
+            - integration: noxcast
+              domain: sensor
+              device_class: timestamp
+    lost:
+      name: Surplus lost today
+      description: Noxcast's sensor *Surplus lost today*.
+      selector:
+        entity:
+          filter:
+            - integration: noxcast
+              domain: sensor
+              device_class: energy
+    check_time:
+      name: Time of the check
+      default: "08:00:00"
+      selector:
+        time: {}
+    full_before:
+      name: Full before
+      description: Notify only when the battery is expected to be full before this time.
+      default: "13:00:00"
+      selector:
+        time: {}
+    min_lost:
+      name: Lost at least (kWh)
+      description: Notify only when at least this much surplus is expected to be lost today.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.1
+          unit_of_measurement: kWh
+    notify_device:
+      name: Device to notify
+      description: A phone with the Home Assistant app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    title:
+      name: Title
+      default: Battery full early
+      selector:
+        text: {}
+
+triggers:
+  - trigger: time
+    at: !input check_time
+
+variables:
+  full_at: !input full_at
+  lost: !input lost
+  full_before: !input full_before
+  min_lost: !input min_lost
+  lost_kwh: "{{ states(lost) | float(0) }}"
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set full = states(full_at) | as_datetime(none) %}
+      {{ full is not none and as_local(full).date() == now().date()
+         and as_local(full).strftime('%H:%M:%S') < full_before and lost_kwh | float(0) >= min_lost | float(0) }}
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: !input title
+    message: >-
+      Full at {{ as_local(states(full_at) | as_datetime).strftime('%H:%M') }}, {{ lost_kwh | float(0) | round(1) }} kWh
+      surplus expected to be lost today.

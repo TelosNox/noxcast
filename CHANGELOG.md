@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Three blueprints for notifications on your phone, to import from the README: *Battery full early* (in the
+  morning, when surplus will be lost today), *Battery empty tonight* (in the evening, with the time) and *Good time
+  to start* (when *Start now* of a flexible consumer turns on, once a day). Noxcast still controls nothing.
 - For tariff and charge planners: the total forecast sensors with a range (*Expected today*, *Expected remaining
   today*, *Forecast tomorrow*, *Forecast day after*) carry `hourly_p10` and `hourly_p90`, the range of each hour from
   the running hour on. *Battery lowest level (48 h)* carries `grid_hourly` and `fed_in_hourly`: per hour of the

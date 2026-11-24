@@ -95,6 +95,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
         if coordinator.batteries:
             async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
+        else:
+            async_add_entities([SurplusSensor(coordinator, total_device, BATTERY_SENSORS[0])])
         flexible = [(sid, c.name) for sid, c in coordinator.consumers.items() if c.timing == "flexible"]
         async_add_entities([PlanSensor(coordinator, total_device, sid, name) for sid, name in flexible]
                            + [WindowSensor(coordinator, total_device, sid, name, day)
@@ -478,6 +480,18 @@ class BatterySensor(NoxcastEntity, SensorEntity):
         return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b),
                 "capacity": round(s.capacity_wh / 1000, 2), "limits": [round(s.min_soc * 100, 1), round(s.max_soc * 100, 1)]}
 
+
+class SurplusSensor(BatterySensor):
+    """Surplus rest of today without batteries: the same entity and attributes, with nothing going into a battery."""
+
+    def _b(self) -> dict | None:
+        data = self.coordinator.data
+        return data.surplus if data is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        b = self._b()
+        return {"schema_version": ATTR_SCHEMA_VERSION, **self.entity_description.attrs(b)} if b else None
 
 
 class PlanSensor(NoxcastEntity, SensorEntity):

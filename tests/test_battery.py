@@ -366,3 +366,13 @@ def test_a_battery_at_the_house_grid_decides_what_a_full_system_loses():
     assert abs(out["lost_full"][12 * H] - 2000) < 1e-6
     for sim in out["systems"].values():
         assert sim.curtailed_wh >= -1e-6                                 # the feed-in never exceeds a system's loss
+
+
+def test_without_storage_feeds_in_up_to_the_limit_and_curtails_the_rest():
+    pv, load_ = {10 * H: 1500.0, 11 * H: 200.0}, {10 * H: 300.0, 11 * H: 500.0}
+    sim = bt.without_storage(pv, load_, 10 * H + 1800, 12 * H, bt.FeedIn(limit_w=800))
+    # the running hour counts its second half: 600 Wh surplus, 400 Wh may go out
+    assert sim.hours[10 * H] == {"surplus": 600.0, "battery": 0.0, "lost": 600.0, "grid": 0.0, "fed_in": 400.0,
+                                 "curtailed": 200.0}
+    assert sim.grid_wh == 300.0 and sim.surplus_wh == sim.lost_wh == 600.0 and sim.lost_from == 10 * H + 1800
+    assert not sim.points                                  # no battery, no state of charge

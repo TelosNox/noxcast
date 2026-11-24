@@ -8,6 +8,9 @@ breaking changes.
 ## Unreleased
 
 ### Fixed
+- *Surplus rest of today* also exists without a battery, as long as the house load is set up: the PV above the
+  load for the rest of today, with what of it goes into the grid (`fed_in`) and what the feed-in rule curtails
+  (`curtailed`). Until now a household with a large PV but no battery got no surplus forecast at all.
 - With a battery, *Best window*, *PV share now* and *Start now* of flexible consumers count what a run takes from
   the battery. Until now every watt of PV above the load counted as free, also the part that would have charged the
   battery, so a run at noon could show 90 % from PV and still cost grid energy in the night. Now the battery

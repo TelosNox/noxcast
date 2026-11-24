@@ -502,7 +502,8 @@ Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1) u
 15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
-`backtest`). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
+`backtest`), und ohne Akkus **Überschuss Rest heute** (PV über der Last; Attribute `fed_in` und `curtailed` wie unten,
+`to_battery` 0). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
 `fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
 Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Akku tiefster Stand (48 h)**
 (Attribute `hourly`: der erwartete Stand zu jeder vollen Stunde der nächsten 48 Stunden in %, `lowest_at`, `until`:

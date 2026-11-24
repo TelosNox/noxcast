@@ -114,6 +114,12 @@ def test_surplus_band_battery_and_plan():
     assert result.plan["w"]["today"].pv_share == 1.0
     fc.surplus(result, SITE, None, [], [], DAY_START + 9 * 3600, DAY_END)
     assert result.band is None and result.battery is None and result.plan == {}
+    # without a battery the surplus still counts: under zero export all of it is curtailed
+    sim = result.surplus["sim"]
+    assert sim.surplus_wh > 0 and sim.fed_in_wh == sim.surplus_wh and not sim.points
+    fc.surplus(result, SITE, None, [], [], DAY_START + 9 * 3600, DAY_END, feed_in=(0.0, (), ()))
+    sim = result.surplus["sim"]
+    assert sim.curtailed_wh == sim.surplus_wh > 0 and sim.fed_in_wh == 0.0
 
 
 def test_consumers_are_planned_only_on_pv_that_reaches_the_house():

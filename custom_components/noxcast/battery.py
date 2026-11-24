@@ -290,6 +290,32 @@ def simulate(battery: Battery, pv: Series, load: Series, now: float, end: float,
     return sim
 
 
+def without_storage(pv: Series, load: Series, now: float, end: float, grid: FeedIn | None = None) -> Simulation:
+    """A household without battery, counted as simulate counts it: per hour the PV above the load is surplus, all of
+    it without room ("lost"), fed in as far as the feed-in rule allows and curtailed beyond; the rest of the load
+    comes from the grid. No state of charge."""
+    grid = grid or FeedIn()
+    sim = Simulation()
+    t = now - now % H
+    while t < end:
+        share = (min(t + H, end) - max(t, now)) / H
+        if share > 0:
+            net = (pv.get(t, 0.0) - load.get(t, 0.0)) * share
+            surplus = max(net, 0.0)
+            fed = grid.fed_in(t, surplus, share) if surplus > 0 else 0.0
+            if surplus > 0.5 and sim.lost_from is None:
+                sim.lost_from = max(t, now)
+            sim.surplus_wh += surplus
+            sim.lost_wh += surplus
+            sim.fed_in_wh += fed
+            sim.curtailed_wh += surplus - fed
+            sim.grid_wh += max(-net, 0.0)
+            sim.hours[t] = {"surplus": round(surplus, 1), "battery": 0.0, "lost": round(surplus, 1),
+                            "grid": round(max(-net, 0.0), 1), "fed_in": round(fed, 1), "curtailed": round(surplus - fed, 1)}
+        t += H
+    return sim
+
+
 def charge_start(pv: Series, load: Series, start: float, end: float) -> float | None:
     """First hour in [start, end) with PV above the load: from here the battery charges again."""
     for t in sorted(pv):

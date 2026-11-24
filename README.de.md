@@ -373,7 +373,8 @@ Mit dem Sensor der Akkuleistung lernt Noxcast jede Nacht, welche Kapazität und 
 Akku zeigt, aus den letzten 120 Tagen: Beim Laden ergibt Energie je Prozent Ladestand die Kapazität geteilt durch den
 Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und
 Wirkungsgrad, ohne dass einer davon bekannt sein muss. Dazu braucht es je drei Lade- und Entladeläufe über mindestens
-15 Prozentpunkte. Die gelernte Kapazität ersetzt in der Prognose die eingetragene (ein gealterter Akku fasst weniger,
+15 Prozentpunkte, gezählt ab der letzten Änderung von Kapazität oder Sensoren des Akkus (nach einer Erweiterung zählen
+die Läufe des alten Akkus nicht mehr). Die gelernte Kapazität ersetzt in der Prognose die eingetragene (ein gealterter Akku fasst weniger,
 als auf dem Schild steht), ein eingetragener Wirkungsgrad bleibt. Der Reiter *Akku & Überschuss* zeigt beides neben
 dem Eingetragenen.
 

@@ -612,7 +612,7 @@ def snow_windows(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series
 
 def snow_scan(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | None, air_temp: Series | None,
               satellite_ghi: Series | None = None, valid_since: float | None = None
-              ) -> tuple[set[float], list[float], list[tuple[int, float]]]:
+              ) -> tuple[set[float], list[float], list[dict[float, float]]]:
     """Hour starts in which snow may have covered the array, and the ends of the windows that closed only at
     SNOW_MAX_DAYS although they had a measured hour bright enough to show free modules: the recovery rule had its
     chance and did not fire. The panel points at those, since a rule that never fires on an array (shade, a weak
@@ -633,10 +633,9 @@ def snow_scan(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | 
     The hour that ends a window is kept; hours before first_use are not counted. Without a snowfall archive nothing
     is left out.
 
-    Third: per window that the array itself ended (an hour of free modules, not thaw or SNOW_MAX_DAYS) how snow
-    lay: (daylight hours from the last snow to that hour, what the array delivered in them over what free modules
-    would under the satellite's sky). Only windows whose covered hours all have a satellite value count, since
-    under the clear sky a dull day would read as snow.
+    Third: per window that the array itself ended (an hour of free modules, not thaw or SNOW_MAX_DAYS) the daylight
+    hours from the last snow to that hour with the array's mean power in each (learn_snow). Only windows whose
+    covered hours all have a satellite value count, since under the clear sky a dull day would read as snow.
     """
     start = first_use(power, valid_since)
     if snowfall and air_temp:
@@ -666,7 +665,7 @@ def snow_scan(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | 
     free = forecast(site, geo, LearnedArray(), sky)
     out: set[float] = set()
     capped: list[float] = []
-    cleared: list[tuple[int, float]] = []
+    cleared: list[dict[float, float]] = []
     data_end = max(hourly, default=0.0)
     pending = iter(starts)
     nxt = next(pending, None)
@@ -690,10 +689,7 @@ def snow_scan(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | 
                 bright = kt >= SNOW_RECOVER_KT and expected > 0.05 * geo.peak_w
                 if bright and sum(hourly[t]) / len(hourly[t]) >= SNOW_RECOVER_SHARE * expected:
                     if covered and satellite_ghi and all(h in satellite_ghi for h in covered):
-                        free_wh = sum(free[h] for h in covered)
-                        got = sum(max(sum(hourly[h]) / len(hourly[h]), 0.0) for h in covered)
-                        if free_wh > 0:
-                            cleared.append((len(covered), min(got / free_wh, 1.0)))
+                        cleared.append({h: max(sum(hourly[h]) / len(hourly[h]), 0.0) for h in covered})
                     break
                 chance = chance or bright
                 if expected > 0:
@@ -711,14 +707,23 @@ def snow_scan(site: Site, geo: ArrayGeometry, power: Series, snowfall: Series | 
 SNOW_LEARN_WINDOWS = 2           # snowfalls the array cleared from before the forecast heeds snow
 
 
-def learn_snow(cleared: list[tuple[int, float]]) -> dict | None:
+def learn_snow(site: Site, geo: ArrayGeometry, learned: LearnedArray, cleared: list[dict[float, float]],
+               satellite_ghi: Series | None, air_temp: Series | None) -> dict | None:
     """How snow lies on the array, from the snowfalls it cleared from (snow_scan): the median daylight hours it
-    stayed covered after the last snow and the median share it delivered meanwhile. None with fewer than
+    stayed covered after the last snow and the median share it delivered meanwhile, of what the learned model gives
+    under the satellite's sky. The learned model, since snow_cover applies the share to it: against free modules
+    without shade and with the default efficiency, shade and efficiency would count twice. None with fewer than
     SNOW_LEARN_WINDOWS: then nothing is known, and the forecast ignores snow rather than assume a cover."""
-    if len(cleared) < SNOW_LEARN_WINDOWS:
+    windows = []
+    for hours in cleared:
+        sky = [WeatherHour(t, max((satellite_ghi or {}).get(t, 0.0), 0.0), temp=(air_temp or {}).get(t)) for t in sorted(hours)]
+        model_wh = sum(forecast(site, geo, learned, sky).values())
+        if model_wh > 0:
+            windows.append((len(hours), min(sum(hours.values()) / model_wh, 1.0)))
+    if len(windows) < SNOW_LEARN_WINDOWS:
         return None
-    return {"hours": round(median(h for h, _ in cleared)), "share": round(median(s for _, s in cleared), 3),
-            "windows": len(cleared)}
+    return {"hours": round(median(h for h, _ in windows)), "share": round(median(s for _, s in windows), 3),
+            "windows": len(windows)}
 
 
 def snow_cover(site: Site, learned: LearnedArray, weather: list[WeatherHour], fc: Series) -> dict[float, float]:

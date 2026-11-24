@@ -137,6 +137,8 @@ def deviation(hours: list[Hour], sid: str, base: dict[float, float]) -> dict[flo
       open    = actual − forecast                           without satellite irradiance, or without an actual value
     Shade is not a separate effect of the model on measured weather; it names the hours in which the learned shading
     map shaped the forecast, so a miss there points at the map rather than at efficiency or sky view.
+    In an hour the forecast saw under snow (a snow step), the model on measured weather carries the same cover: the
+    sky and the snow are separate questions, and a cover the forecast got right is no weather deviation.
     """
     out: dict[float, dict] = {}
     for h in hours:
@@ -152,8 +154,10 @@ def deviation(hours: list[Hour], sid: str, base: dict[float, float]) -> dict[flo
         if m is None:
             out[h.ts] = {"open": round(actual - f, 1)}
             continue
-        rest = actual - m
         steps = h.steps.get(sid) or ()
+        if len(steps) > len(STEPS) and (free := sum(steps[:len(STEPS)])) > 0:
+            m *= max(free + steps[len(STEPS)], 0.0) / free
+        rest = actual - m
         light = steps[0] + steps[1] if len(steps) >= len(STEPS) else 0.0
         if h.curtailed or h.limited:
             kind = "limit"

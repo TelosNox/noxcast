@@ -406,7 +406,7 @@ class LeftOut:
     snow: set[float]             # hour starts that snow may have covered (model.snow_windows)
     hours: frozenset[float]      # the hour starts of both
     snow_capped: tuple[float, ...] = ()  # ends of the snow windows that closed only at model.SNOW_MAX_DAYS
-    snow_cleared: tuple[tuple[int, float], ...] = ()  # how snow lay where the array cleared (model.snow_scan)
+    snow_cleared: tuple[dict[float, float], ...] = ()  # how snow lay where the array cleared (model.snow_scan)
 
 
 def left_out(site: Site, arr: ArrayConfig, history: PvHistory, period: float = HOUR) -> LeftOut:
@@ -519,7 +519,8 @@ def learn_array(site: Site, arr: ArrayConfig, history: PvHistory, now: float,
                         arr.name, result.efficiency)
     result.dead_days = solar_dates(out.dead)
     result.snow_days = solar_dates({solar_day(site, t) for t in out.snow})
-    result.snow = learn_snow(list(out.snow_cleared))
+    result.snow = learn_snow(site, arr.geometry, result, list(out.snow_cleared), history.satellite_ghi,
+                             history.air_temp)
     if out.dead or out.snow:
         _LOGGER.info("%s: left out of learning: %d days with almost no output (outage, snow or too dark), %d hours "
                      "that snow may have covered", arr.name, len(out.dead), len(out.snow))

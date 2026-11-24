@@ -117,7 +117,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
 
 class NoxcastEntity(CoordinatorEntity[NoxcastCoordinator]):
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"hourly", "quarter_hourly", "backtest"})      # keep the recorder database small
+    _unrecorded_attributes = frozenset({"hourly", "quarter_hourly", "hourly_p10", "hourly_p90", "grid_hourly",
+                                        "fed_in_hourly", "backtest"})      # keep the recorder database small
 
     def __init__(self, coordinator: NoxcastCoordinator, unique_id: str, device: DeviceInfo) -> None:
         super().__init__(coordinator)
@@ -184,6 +185,12 @@ class ForecastSensor(NoxcastEntity, SensorEntity):
                 {"energy_expected_today": 0, "energy_tomorrow": 1, "energy_day_after": 2}.get(key, -1))
             if value:
                 attrs["p10"], attrs["p90"] = value
+                # the same per hour, from the running hour on; each hour is its own quantile, so they do not add up
+                # to the day's p10 / p90 (a weak day is not weak in every hour at once)
+                hours = band.get("hours") or {}
+                offset = self.entity_description.day_offset
+                attrs["hourly_p10"] = hourly_attribute({t: v[0] for t, v in hours.items()}, offset)
+                attrs["hourly_p90"] = hourly_attribute({t: v[1] for t, v in hours.items()}, offset)
         return attrs
 
 
@@ -403,7 +410,10 @@ def _ahead(b: dict) -> dict:
     if not sim or low is None:
         return {}
     return {"lowest_at": _iso(low[0]), "until": _iso(sim.points[-1][0]),
-            "hourly": {_iso(t): round(s * 100, 1) for t, s in sim.points[1:] if t % 3600 == 0}}
+            "hourly": {_iso(t): round(s * 100, 1) for t, s in sim.points[1:] if t % 3600 == 0},
+            # per hour start in kWh, the running hour from now on: what the grid supplies, and what goes into it
+            "grid_hourly": {_iso(t): round(h["grid"] / 1000, 3) for t, h in sim.hours.items()},
+            "fed_in_hourly": {_iso(t): round(h["fed_in"] / 1000, 3) for t, h in sim.hours.items()}}
 
 
 def _missing_soc(b: dict) -> float:

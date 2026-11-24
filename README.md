@@ -488,7 +488,8 @@ from Noxcast's own weather – the same that drives the forecast.
 | Weather | ✓ | | Current hour, hourly and daily forecast for 7 days |
 
 Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and `quarter_hourly` (the same in
-15-minute steps, which add up to each hour); the total sensors also `p10` / `p90`. The total is offered as solar forecast in the energy dashboard.
+15-minute steps, which add up to each hour); the total sensors also `p10` / `p90` and, from the running hour on, `hourly_p10` / `hourly_p90` (the range of each hour on
+its own, so they do not add up to the day's `p10` / `p90`). The total is offered as solar forecast in the energy dashboard.
 
 With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
 `consumers`, `correction`, `backtest`), and without batteries **Surplus rest of today** (PV above the load; attributes
@@ -498,7 +499,8 @@ what is curtailed), **Battery full at**, **Battery highest level**, **Battery em
 charge start** (attribute `grid`: grid energy until then), **Grid energy until charge start** (what the battery
 cannot cover until the PV takes over again; attribute `missing_soc`: the percent points of charge that would cover
 it, for planning a cheap charge from the grid), **Battery lowest level (48 h)** (attributes `hourly`: the
-expected level at every full hour of the next 48 hours in %, `lowest_at`, `until`: earlier when *Forecast days* end
+expected level at every full hour of the next 48 hours in %, `grid_hourly` and `fed_in_hourly`: per hour the expected
+energy from and into the grid in kWh, `lowest_at`, `until`: earlier when *Forecast days* end
 before). Per flexible consumer: **PV share now**,
 **Best window today** and **Best window tomorrow** (start time; attributes `end`, `pv_share`, `lost_share`; unknown
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
@@ -546,10 +548,14 @@ template:
           detailedForecast: >
             {% set ns = namespace(out=[]) %}
             {% set q = state_attr('sensor.noxcast_expected_today', 'quarter_hourly') or {} %}
+            {% set p10 = state_attr('sensor.noxcast_expected_today', 'hourly_p10') or {} %}
+            {% set p90 = state_attr('sensor.noxcast_expected_today', 'hourly_p90') or {} %}
             {% set starts = q | list %}
             {% for i in range(0, starts | count - 1, 2) %}
-              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(),
-                                         'pv_estimate': ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3)}] %}
+              {% set hour = as_datetime(starts[i]).replace(minute=0).isoformat() %}
+              {% set pv = ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3) %}
+              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(), 'pv_estimate': pv,
+                                         'pv_estimate10': p10.get(hour, pv), 'pv_estimate90': p90.get(hour, pv)}] %}
             {% endfor %}
             {{ ns.out }}
 ```
@@ -564,8 +570,8 @@ Repeat it with `sensor.noxcast_forecast_tomorrow` and `sensor.noxcast_forecast_d
   pv_forecast_d4: sensor.noxcast_predbat_in_3_days
 ```
 
-Noxcast has P10 / P90 per day, not per hour, so the entries carry no `pv_estimate10` / `pv_estimate90`: Predbat then
-uses the central forecast for its weak and strong case. Predbat simulates the battery itself.
+`pv_estimate10` / `pv_estimate90` come from `hourly_p10` / `hourly_p90`, the range per hour (kWh per hour, the mean
+power in kW); hours already past keep the central value. Predbat simulates the battery itself.
 
 ### EMHASS
 

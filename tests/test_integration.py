@@ -810,6 +810,14 @@ async def test_learning_and_forecast_are_pinned(hass: HomeAssistant, hass_storag
         now = hass.states.get(reg.async_get_entity_id("binary_sensor", DOMAIN, f"{sid}_start_now"))
         assert now.attributes["threshold"] == threshold
         assert now.state == ("on" if plan.start_now(p["now"], p["today"], threshold / 100) else "off")
+    # hourly series for tariff and charge planners: P10 / P90 per hour, grid and feed-in per hour of the outlook
+    eid = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_energy_tomorrow")
+    attrs = hass.states.get(eid).attributes
+    assert set(attrs["hourly_p10"]) == set(attrs["hourly_p90"]) and attrs["hourly_p10"]
+    assert all(attrs["hourly_p10"][k] <= attrs["hourly_p90"][k] for k in attrs["hourly_p10"])
+    attrs = hass.states.get(reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_lowest_soc_48h")).attributes
+    assert attrs["grid_hourly"] and set(attrs["grid_hourly"]) == set(attrs["fed_in_hourly"])
+    assert len(attrs["grid_hourly"]) == len(data.battery["ahead"].hours)
     # grid energy until the charge start, and the state of charge that would cover it
     state = hass.states.get(reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_grid_until_charge_start"))
     st = data.battery["storage"]

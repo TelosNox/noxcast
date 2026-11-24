@@ -49,8 +49,10 @@ const INST_TEXT = {
     belongs: "Gehört zu", batteryBelongs: "Akku gehört zu", alone: "– eigenständig am Haushalt –",
     save: "Zuordnung speichern", saving: "Speichert …", notPossible: "Dorthin kann der Teil nicht.",
     moveHelp: "Noxcast lädt danach neu, wie nach dem Bearbeiten eines Eintrags.",
-    swap: "Gerät tauschen", swapTitle: "Gerät tauschen: {name}",
-    swapHelp: "Für ein neues Gerät an denselben Modulen: neuer Wechselrichter oder neues Kompaktgerät, nur ein neuer Akku oder Zähler, oder neue Sensoren derselben Hardware. Nicht für Module, die dazukommen, wegfallen, umziehen oder anders verschaltet werden (dafür „Ändern“ an der PV-Gruppe), nicht für ein zusätzliches Gerät (dafür „+ Teilsystem“ oder „+ PV-Gruppe“) und nicht, wenn sich nur eine Einstellung ändert. Noxcast schlägt für jeden Sensor den passenden des neuen Geräts vor. Beim Tauschen behält Noxcast die Stunden des alten Geräts, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts dazu. Die alten Statistiken unter Entwicklerwerkzeuge → Statistiken nicht löschen, bis der Tausch gespeichert ist.",
+    swapTitle: "Gerät tauschen: {name}",
+    swapLink: "Gerät wurde getauscht? Tausch einrichten …", swapGo: "Weiter",
+    swapHelp: "Für ein neues Gerät an denselben Modulen: neuer Wechselrichter oder neues Kompaktgerät, nur ein neuer Akku oder Zähler, oder neue Sensoren derselben Hardware. Nicht für Module, die dazukommen, wegfallen, umziehen oder anders verschaltet werden (dafür „Ändern“ an der PV-Gruppe), nicht für ein zusätzliches Gerät (dafür „+ Teilsystem“ oder „+ PV-Gruppe“) und nicht, wenn sich nur eine Einstellung ändert (dafür „Ändern“). Baue das neue Gerät zuerst ein und lass es laufen.",
+    swapFormHelp: "Noxcast schlägt für jeden Sensor den passenden des neuen Geräts vor. Beim Tauschen behält Noxcast die Stunden des alten Geräts, damit die Schattenkarte bleibt, und lernt den Wirkungsgrad des neuen Geräts dazu. Die alten Statistiken unter Entwicklerwerkzeuge → Statistiken nicht löschen, bis der Tausch gespeichert ist.",
     swapYes: "Tauschen", swapping: "Tauscht …",
     swapped: "Getauscht. Prüfe jetzt mit „Ändern“ die Grenzen und den Akku des neuen Geräts.",
     swapDone: "Gerät getauscht am {date}", swapDevices: "neuer Wirkungsgrad für: {list}", swapBattery: "nur Akku oder Zähler",
@@ -96,8 +98,10 @@ const INST_TEXT = {
     belongs: "Belongs to", batteryBelongs: "Battery belongs to", alone: "– on its own at the household –",
     save: "Save assignment", saving: "Saving …", notPossible: "The part cannot go there.",
     moveHelp: "Noxcast reloads afterwards, as after editing an entry.",
-    swap: "Swap device", swapTitle: "Swap device: {name}",
-    swapHelp: "For a new device on the same modules: a new inverter or compact device, only a new battery or meter, or new sensors of the same hardware. Not for modules that are added, removed, moved or wired differently (use “Change” on the PV array), not for an additional device (use “+ Subsystem” or “+ PV array”), and not when only a setting changes. Noxcast suggests the fitting sensor of the new device for each one. On swapping, Noxcast keeps the old device's hours, so that the shading map stays, and learns the new device's efficiency on top. Do not delete the old statistics under Developer tools → Statistics until the swap is saved.",
+    swapTitle: "Swap device: {name}",
+    swapLink: "Device replaced? Set up the swap …", swapGo: "Continue",
+    swapHelp: "For a new device on the same modules: a new inverter or compact device, only a new battery or meter, or new sensors of the same hardware. Not for modules that are added, removed, moved or wired differently (use “Change” on the PV array), not for an additional device (use “+ Subsystem” or “+ PV array”), and not when only a setting changes (use “Change”). Install the new device first and let it run.",
+    swapFormHelp: "Noxcast suggests the fitting sensor of the new device for each one. On swapping, Noxcast keeps the old device's hours, so that the shading map stays, and learns the new device's efficiency on top. Do not delete the old statistics under Developer tools → Statistics until the swap is saved.",
     swapYes: "Swap", swapping: "Swapping …",
     swapped: "Swapped. Now check the new device's limits and battery with “Change”.",
     swapDone: "Device swapped on {date}", swapDevices: "new efficiency for: {list}", swapBattery: "battery or meter only",
@@ -116,16 +120,17 @@ class NoxcastInstallation extends HTMLElement {
       const save = path.find((n) => n.dataset && n.dataset.save);
       if (save) { this._move(save.dataset.save); return; }
       // a swap is a mode of its own: nothing else starts while it or another form is being fetched or open
-      const busy = this._starting || this._edit || this._removal || this._swap;
+      const busy = this._starting || this._edit || this._removal || this._swap || this._swapIntro;
       const edit = path.find((n) => n.dataset && n.dataset.edit);
-      if (edit && (this._starting || this._swap)) return;
+      if (edit && (this._starting || this._swap || this._swapIntro)) return;
       if (edit) { this._startEdit(edit.dataset.entry, edit.dataset.edit); return; }
       const remove = path.find((n) => n.dataset && n.dataset.remove);
-      if (remove && (this._starting || this._swap)) return;
+      if (remove && (this._starting || this._swap || this._swapIntro)) return;
       if (remove) { this._askRemove(remove.dataset.entry, remove.dataset.remove); return; }
       const swap = path.find((n) => n.dataset && n.dataset.swap);
       if (swap && busy) return;
-      if (swap) { this._startSwap(swap.dataset.entry, swap.dataset.swap); return; }
+      // the swap is rarely needed and easily mistaken for a change, so its link first says when it fits
+      if (swap) { this._askSwap(swap.dataset.entry, swap.dataset.swap); return; }
       const undo = path.find((n) => n.dataset && n.dataset.undo);
       if (undo && busy) return;
       if (undo) { this._askUndo(undo.dataset.entry, undo.dataset.undo); return; }
@@ -133,13 +138,14 @@ class NoxcastInstallation extends HTMLElement {
       if (act) {
         if (act.dataset.act === "save-part") this._savePart();
         else if (act.dataset.act === "swap-yes") this._saveSwap();
+        else if (act.dataset.act === "swap-go") this._startSwap(this._swapIntro.entryId, this._swapIntro.system);
         else if (act.dataset.act === "remove-yes") this._remove();
         else this._stopEdit();
         return;
       }
       const template = path.find((n) => n.getAttribute && n.getAttribute("data-template"));
       if (template && this._edit) { this._changed({ ...this._edit.input, template: template.getAttribute("data-template") }); return; }
-      if (this._edit || this._removal || this._swap) return;  // the part being changed stays chosen until saved or cancelled
+      if (this._edit || this._removal || this._swap || this._swapIntro) return;  // the part being changed stays chosen until saved or cancelled
       const add = path.find((n) => n.getAttribute && n.getAttribute("data-add"));
       const flow = path.find((n) => n.classList && n.classList.contains("flow"));
       if (add && flow && this._admin) {
@@ -359,6 +365,16 @@ class NoxcastInstallation extends HTMLElement {
     this._form = null;
     this._removal = null;
     this._swap = null;
+    this._swapIntro = null;
+    this._render();
+  }
+
+  _askSwap(entryId, system) {
+    this._editError = null;
+    this._info = null;
+    this._undoAsk = null;
+    this._swapIntro = { entryId, system };
+    this._sel = system;
     this._render();
   }
 
@@ -374,9 +390,11 @@ class NoxcastInstallation extends HTMLElement {
       form = await ask(this._hass, { type: "noxcast/swap_form", entry_id: entryId, system, language: this._lang });
     } catch (err) {
       this._editError = errorText(err, this._hass.language);
+      this._swapIntro = null;
       this._render();
       return;
     } finally { this._starting = false; }
+    this._swapIntro = null;
     this._swap = { entryId, system, form, input: form.data, errors: {}, saving: false, base: null };
     const f = document.createElement("ha-form");
     f.hass = this._hass;
@@ -449,7 +467,7 @@ class NoxcastInstallation extends HTMLElement {
   _swapper(e) {
     const t = this._t, w = this._swap;
     return `<div class="head"><span class="title">${esc(t.swapTitle.replace("{name}", () => w.form.name))}</span></div>
-      <p class="help">${t.swapHelp}</p>
+      <p class="help">${t.swapFormHelp}</p>
       <div class="edit"><div class="slot"></div>
       <div class="error small">${esc(w.base || "")}</div>
       <div class="row"><button class="chip primary" data-act="swap-yes" ${w.saving ? "disabled" : ""}>${
@@ -603,6 +621,14 @@ class NoxcastInstallation extends HTMLElement {
       return `<div class="head"><span class="title">${t.added[kind] || ""}</span></div>${this._editor(e)}`;
     }
     if (this._swap && this._swap.entryId === e.entry_id) return this._swapper(e);
+    const si = this._swapIntro && this._swapIntro.entryId === e.entry_id ? this._swapIntro : null;
+    if (si) {
+      const name = (this._find(e, si.system) || {}).title || "";
+      return `<div class="head"><span class="title">${esc(t.swapTitle.replace("{name}", () => name))}</span></div>
+        <p class="help">${t.swapHelp}</p>
+        <div class="row actions"><button class="chip primary" data-act="swap-go" ${this._starting ? "disabled" : ""}>${
+          t.swapGo}</button><button class="chip" data-act="cancel" ${this._starting ? "disabled" : ""}>${t.cancel}</button></div>`;
+    }
     const rm = this._removal && this._removal.entryId === e.entry_id ? this._removal : null;
     if (rm) {
       return `<div class="head"><span class="title">${esc(t.removeAsk.replace("{name}", rm.name))}</span></div>
@@ -622,8 +648,9 @@ class NoxcastInstallation extends HTMLElement {
     const moves = (node.moves || []).map(([id, label]) => this._belongs(e, id, label)).join("");
     const change = admin ? `<button class="chip" data-edit="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${
       node.ids[0] === "house" ? this._t.changeHouse : this._t.change}</button>${node.ids[0] === "house" ? ""
-      : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}${
-      node.system ? `<button class="chip" data-swap="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.swap}</button>` : ""}` : "";
+      : `<button class="chip" data-remove="${esc(node.ids[0])}" data-entry="${esc(e.entry_id)}">${t.remove}</button>`}` : "";
+    const swapLink = admin && node.system ? `<button class="link" data-swap="${esc(node.ids[0])}" data-entry="${
+      esc(e.entry_id)}">${t.swapLink}</button>` : "";
     return `<div class="head"><span class="title">${esc(node.title)}</span>${change}</div>
       ${err}
       ${node.sub ? `<div class="muted small">${esc(node.sub)}</div>` : ""}
@@ -632,7 +659,8 @@ class NoxcastInstallation extends HTMLElement {
       ${moves ? `<div class="moves">${moves}
         <div class="row"><button class="chip" data-save="${esc(e.entry_id)}" ${this._saving ? "disabled" : ""}>${
           this._saving ? t.saving : t.save}</button><span class="muted small">${t.moveHelp}</span></div>
-        ${this._moveError ? `<div class="error small">${esc(this._moveError)}</div>` : ""}</div>` : ""}`;
+        ${this._moveError ? `<div class="error small">${esc(this._moveError)}</div>` : ""}</div>` : ""}
+      ${swapLink}`;
   }
 
   _render() {
@@ -646,7 +674,7 @@ class NoxcastInstallation extends HTMLElement {
       const removing = this._removal && this._removal.entryId === e.entry_id;
       const diagram = (removing && this._removal.diagram) || (editing && this._edit.diagram) || e.diagram || "";
       // the "+" boxes only for admins, and not while a part is changed or removed
-      const handles = this._admin && !this._edit && !this._removal && !this._swap ? "" : "<style>[data-add] { display: none; }</style>";
+      const handles = this._admin && !this._edit && !this._removal && !this._swap && !this._swapIntro ? "" : "<style>[data-add] { display: none; }</style>";
       return `<section class="card pad">
         ${!e.systems.length && this._admin && !editing ? `<p class="start">${t.start}</p>` : ""}
         ${e.systems.length || this._admin ? `<div class="flow" data-entry="${esc(e.entry_id)}">${this._selStyle()}${handles}${diagram}</div>`
@@ -712,6 +740,8 @@ class NoxcastInstallation extends HTMLElement {
       .help { color: var(--secondary-text-color); font-size: 12px; margin: 12px 0 0; line-height: 1.45; }
       .chip { border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); border-radius: 16px;
         padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+      .link { display: block; margin-top: 16px; padding: 0; border: none; background: none; font: inherit; font-size: 12px;
+        color: var(--secondary-text-color); text-decoration: underline; cursor: pointer; }
     </style>`;
   }
 }

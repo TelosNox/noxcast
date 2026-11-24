@@ -7,6 +7,11 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- *Swap device* is no longer a button next to *Change* and *Remove*, where it was easy to click by mistake. It is a
+  small link at the bottom of a system's details, *Device replaced? Set up the swap …*, which first explains when the
+  swap fits and opens the assistant only on *Continue*.
+
 ## [0.7.0b2] - 2026-11-23
 
 ### Added

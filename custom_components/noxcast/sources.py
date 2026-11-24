@@ -147,7 +147,7 @@ async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
 
 HOURLY = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m", "cloud_cover",
           "sunshine_duration", "wind_speed_10m", "wind_direction_10m", "precipitation", "weather_code",
-          "relative_humidity_2m")
+          "relative_humidity_2m", "snowfall")
 
 
 async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float, days: int = FORECAST_DAYS,
@@ -233,6 +233,7 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
     # precipitation and weather code are for the preceding hour, like irradiance
     precip = {ts: max(v, 0.0) for ts, v in zip(times, map(_number, data["precipitation"])) if ts is not None and v is not None}
     code = {ts: int(v) for ts, v in zip(times, map(_number, data["weather_code"])) if ts is not None and v is not None}
+    snow = {ts: max(v, 0.0) for ts, v in zip(times, map(_number, data.get("snowfall") or [])) if ts is not None and v is not None}
     wind = _mid_wind({ts: (v, _bearing(d)) for ts, v, d in zip(times, map(_number, data["wind_speed_10m"]),
                                                                data["wind_direction_10m"] or [None] * len(times))
                       if ts is not None and v is not None})
@@ -249,7 +250,8 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
                                  sun=min(max(sun[ts], 0.0) / 3600, 1.0) if ts in sun else None,
                                  wind=wind[start][0] if start in wind else None,
                                  wind_dir=wind[start][1] if start in wind else None,
-                                 precip=precip.get(ts), code=code.get(ts), humidity=humidity.get(start)))
+                                 precip=precip.get(ts), code=code.get(ts), humidity=humidity.get(start),
+                                 snow=snow.get(ts)))
     return hours
 
 

@@ -15,7 +15,7 @@ const DAY_TEXT = {
     waterfall: "Wie die Stunde zustande kommt", all: "Alle", hourHint: "Stunde im Diagramm anklicken",
     waterfallDay: "Wie der Tag zustande kommt", wholeDay: "Ganzer Tag", soFar: "Ist bis jetzt",
     measuredUntil: (hm) => `Gemessen bis ${hm}`, restExpected: "Rest erwartet", noDaySteps: "Für diesen Tag gibt es keine Herleitung.",
-    steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme", limit: "Grenze",
+    steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme", snow: "Schnee", limit: "Grenze",
       result: "Prognose", morning: "Prognose 6 Uhr", dayAhead: "Prognose Vortag", latest: "Prognose aktuell", replay: "Modell heute",
       weather: "Neueres Wetter", corr: "Korrektur heute", measured: "Gemessene Stunden", expected: "Erwartung", actual: "Ist",
       devWeather: "Wetter gemessen", devShade: "Schatten verfehlt", devLimit: "Begrenzt", devModel: "Modell", devOpen: "Nicht aufgeteilt" },
@@ -38,6 +38,7 @@ const DAY_TEXT = {
       reflection: "Zusätzliches Licht von beschienenen Flächen in der Umgebung.",
       direction: "Was die Richtungsfaktoren an Geometrie- und Modellfehlern ausgleichen.",
       heat: "Leistungsverlust oder -gewinn durch die Zelltemperatur bei der vorhergesagten Lufttemperatur.",
+      snow: "Was Schnee auf den Modulen nach dem vorhergesagten Schneefall abhält, so lange und so stark, wie es bei dieser Gruppe nach früherem Schnee gemessen wurde.",
       limit: "Was über der eingestellten Leistungsgrenze der Gruppe liegt und deshalb nicht ankommt.",
       weather: "Was die seit 6 Uhr abgerufenen Wetterdaten an der Prognose dieser Stunde geändert haben.",
       corr: "Die Korrektur aus den gemessenen Stunden von heute (klarer oder trüber als vorhergesagt).",
@@ -64,7 +65,7 @@ const DAY_TEXT = {
     waterfall: "How the hour comes about", all: "All", hourHint: "Click an hour in the chart",
     waterfallDay: "How the day comes about", wholeDay: "Whole day", soFar: "Actual so far",
     measuredUntil: (hm) => `Measured until ${hm}`, restExpected: "Rest expected", noDaySteps: "No derivation for this day.",
-    steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat", limit: "Limit",
+    steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat", snow: "Snow", limit: "Limit",
       result: "Forecast", morning: "Forecast 6 am", dayAhead: "Day-ahead forecast", latest: "Latest forecast", replay: "Today's model",
       weather: "Newer weather", corr: "Correction today", measured: "Measured hours", expected: "Expected", actual: "Actual",
       devWeather: "Weather measured", devShade: "Shade missed", devLimit: "Limited", devModel: "Model", devOpen: "Not split" },
@@ -87,6 +88,7 @@ const DAY_TEXT = {
       reflection: "Additional light from sunlit surfaces nearby.",
       direction: "What the direction factors make up for in geometry and model errors.",
       heat: "Loss or gain from the cell temperature at the forecast air temperature.",
+      snow: "What snow on the modules holds back after the forecast snowfall, as long and as much as measured on this array after earlier snow.",
       limit: "What lies above the power limit set for the array and therefore does not arrive.",
       weather: "What the weather data fetched since 6 am changed in the forecast of this hour.",
       corr: "The correction from today's measured hours (clearer or duller than forecast).",
@@ -400,12 +402,12 @@ class NoxcastDay extends HTMLElement {
   }
 
   _lossSankey(e) {
-    const t = this._t, phase = this._phase, sum = { clear: 0, clouds: 0, shade: 0, reflection: 0, direction: 0, heat: 0, limit: 0, result: 0 };
+    const t = this._t, phase = this._phase, sum = { clear: 0, clouds: 0, shade: 0, reflection: 0, direction: 0, heat: 0, snow: 0, limit: 0, result: 0 };
     for (const arr of e.arrays) for (const st of Object.values(arr.steps || {})) for (const k in sum) sum[k] += st[k] || 0;
     if (sum.clear < 100) return "";
     const end = phase === "future" ? null : e.arrays.reduce((a, arr) => a + this._sum(this._main(arr)), 0);
-    const colors = { clouds: "#94A3B8", shade: "#E8543C", reflection: "#22C7E8", direction: "#8B5CF6", heat: "#FF6A3D", limit: "#64748B", dev: "#2EAA6E" };
-    const steps = ["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => Math.abs(sum[k]) >= sum.clear * 0.005)
+    const colors = { clouds: "#94A3B8", shade: "#E8543C", reflection: "#22C7E8", direction: "#8B5CF6", heat: "#FF6A3D", snow: "#7DD3FC", limit: "#64748B", dev: "#2EAA6E" };
+    const steps = ["clouds", "shade", "reflection", "direction", "heat", "snow", "limit"].filter((k) => Math.abs(sum[k]) >= sum.clear * 0.005)
       .map((k) => [k, sum[k], t.steps[k], colors[k]]);
     if (end !== null && Math.abs(end - sum.result) >= sum.clear * 0.005) {
       steps.push(["dev", end - sum.result, phase === "past" ? t.devActual : t.devExpected, end >= sum.result ? colors.dev : colors.shade]);
@@ -682,7 +684,7 @@ class NoxcastDay extends HTMLElement {
     if (!steps.length) return null;
     const sum = (k) => steps.reduce((a, s) => a + (s[k] || 0), 0);
     const from = this._stepsFrom(arrays);
-    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => k !== "limit" || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
+    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "snow", "limit"].filter((k) => (k !== "limit" && k !== "snow") || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
     const at = (key, a) => new Map(tsRows(a[key], "wh")).get(h);
     if (phase === "today") {
       // the steps explain the 6 am forecast; newer weather and today's correction lead on to the expectation
@@ -715,7 +717,7 @@ class NoxcastDay extends HTMLElement {
     if (!all.length) return null;
     const sum = (k) => all.reduce((a, s) => a + (s[k] || 0), 0);
     const from = this._stepsFrom(arrays);
-    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => k !== "limit" || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
+    const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "snow", "limit"].filter((k) => (k !== "limit" && k !== "snow") || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
     const series = (a, key) => new Map(tsRows(a[key], "wh"));
     if (phase === "past") {
       if (arrays.every((a) => a.actual && a.actual.t.length)) {

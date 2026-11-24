@@ -1618,7 +1618,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         # how tomorrow's forecast comes about, archived with it (the same weather and model as result)
         steps = await self.hass.async_add_executor_job(
             explain.replay, self.site, {sid: arr.geometry for sid, arr in self.arrays.items()}, learned,
-            [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]])
+            [w for w in weather if tomorrow[0] <= w.start < tomorrow[1]], [w for w in weather if w.start < tomorrow[0]])
         self._archive_forecast(weather, result, alt, models, steps, list(per_model) or self.weather_models,
                                await self._async_ensemble(now))
         self._store.async_delay_save(self._store_data, 60)
@@ -1631,7 +1631,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return bool(data and data.updated and dt_util.utcnow() - data.updated < STALE_AFTER)
 
 
-_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity")
+_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity", "snow")
 
 
 def _weather_row(w: WeatherHour) -> list:

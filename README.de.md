@@ -681,6 +681,12 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
 4. **Wirkungsgrad** (gelernt, bei 25 °C) × Spitzenleistung.
 5. **Temperatur:** Zelltemperatur aus Lufttemperatur und Einstrahlung (Erwärmung), Verlust mit dem gelernten oder
    dem Datenblatt-Koeffizienten.
+6. **Schnee** (nur wo gelernt): Eine PV-Gruppe, die in ihrer Geschichte nach mindestens zwei Schneefällen wieder frei
+   wurde (mit dem Satellitenarchiv), hat gezeigt, wie lange Schnee auf ihr liegt und was sie währenddessen noch
+   liefert. Sagt das Wetter einen Tag mit mindestens 1 cm Schnee bei bis zu 3 °C an, rechnet ihre Prognose für so
+   viele helle Stunden nach dem letzten Schnee mit diesem Anteil, außer 24 Gradstunden über 0 °C tauen ihn vorher
+   weg. Eine Gruppe ohne solche Geschichte rechnet, als gäbe es keinen Schnee; der Reiter *Gelerntes* zeigt, was
+   gelernt ist, der Wasserfall der Stunde den Schritt *Schnee*.
 
 ### Klarer Himmel
 

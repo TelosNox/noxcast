@@ -539,10 +539,12 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
     if current:
         weather.update({w.start: w for w in data.weather if a <= w.start < b})
     hours = [weather[t] for t in sorted(weather) if a <= t < b]
-    live = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours)
+    # snow of the hours before may still lie on the modules (model.snow_cover)
+    before = [w for w in data.weather if w.start < a] if current else []
+    live = explain.replay(site, {sid: arr.geometry for sid, arr in arrays.items()}, learned, hours, before)
     out = []
     for sid, arr in arrays.items():
-        stored = {h.ts: explain.unpacked(h.steps[sid]) for h in arch if len(h.steps.get(sid) or ()) == len(explain.STEPS)}
+        stored = {h.ts: explain.unpacked(h.steps[sid]) for h in arch if len(h.steps.get(sid) or ()) in (len(explain.STEPS), len(explain.STEPS) + 1)}
         if current and a <= now < b and data.morning_steps.get(sid):
             steps, source = data.morning_steps[sid], "morning"
         elif not current and stored:

@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Snow in the forecast, only where learned: an array that cleared from at least two snowfalls in its history
+  (with the satellite archive) has shown how long snow lies on it and what it still delivers. When the weather
+  forecasts snow, its forecast follows that until it thaws; the hour's waterfall shows the *Snow* step and the
+  *Learned* tab what was learned. Arrays without such a history forecast as before.
 - Batteries with a power sensor learn every night the capacity and round-trip efficiency they show from their
   level and power of the last 120 days. The forecast uses the learned capacity instead of the entered one (an aged
   battery holds less than its label); an entered efficiency stays. The *Battery & surplus* tab shows both.

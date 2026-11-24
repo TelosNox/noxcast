@@ -367,7 +367,7 @@ Ausgangsgrenze.
 | Reserve | Prozentpunkte über der Entladegrenze, bei denen das Entladen praktisch endet (z. B. durch eine Einspeisestopp-Regel) |
 | Gehört zu | Das System, in dem der Akku steckt, ein Akku je System. Leer: das System, aus dessen Menü er geöffnet wurde |
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
-| Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor für die Akkuleistung zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
+| Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor *Lade-/Entladeleistung* zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 
 Mit dem Sensor *Lade-/Entladeleistung* lernt Noxcast jede Nacht, welche Kapazität und welchen Wirkungsgrad im Zyklus der
 Akku zeigt, aus den letzten 120 Tagen: Beim Laden ergibt Energie je Prozent Ladestand die Kapazität geteilt durch den

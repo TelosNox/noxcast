@@ -10,11 +10,12 @@ breaking changes.
 ### Added
 - Snow in the forecast, only where learned: an array that cleared from at least two snowfalls in its history
   (with the satellite archive) has shown how long snow lies on it and what it still delivers. When the weather
-  forecasts snow, its forecast follows that until it thaws; the hour's waterfall shows the *Snow* step and the
+  forecasts snow (or it fell the evening before), its forecast follows that until it thaws; the hour's waterfall shows the *Snow* step and the
   *Learned* tab what was learned. Arrays without such a history forecast as before.
 - Batteries with a power sensor learn every night the capacity and round-trip efficiency they show from their
   level and power of the last 120 days. The forecast uses the learned capacity instead of the entered one (an aged
-  battery holds less than its label); an entered efficiency stays. The *Battery & surplus* tab shows both.
+  battery holds less than its label); an entered efficiency stays. After a change of the battery's capacity or
+  sensors only runs since then count. The *Battery & surplus* tab shows both.
 - Three blueprints for notifications on your phone, to import from the README: *Battery full early* (in the
   morning, when surplus will be lost today), *Battery empty tonight* (in the evening, with the time) and *Good time
   to start* (when *Start now* of a flexible consumer turns on, once a day). Noxcast still controls nothing.

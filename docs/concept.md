@@ -663,6 +663,13 @@ segment might better count only for sky view, reflection and facade.
   reanalysis books the precipitation of a shower as snow at 7-8 °C (on the maintainer's history a false window
   after such a shower took the next morning's hours). In the backtest the balcony array got 19 hours back, the
   errors stayed within ±0.02 points.
+  Snow in the forecast (`model.learn_snow`, `model.snow_cover`), only where learned: a window the array itself
+  ended (an hour of free modules, not thaw or the 7 days) with satellite values in all its covered hours gives the
+  daylight hours from the last snow to that hour and what the array delivered over what free modules would. After
+  two such snowfalls the medians are the array's `snow`; the forecast weather's `snowfall` then covers the array by
+  the same rules (a solar day of at least 1 cm at up to 3 °C, thaw after 24 degree hours) for that many daylight
+  hours at that share, shown as the step *snow*. Without learned snow the forecast ignores it: the thresholds are
+  unfitted, and an assumed cover would be a made-up value.
 - Outages of a sensor: hours without statistics (a sensor unavailable the whole hour, or one of the array's
   sensors missing) are left out. A sensor unavailable for part of an hour still enters with the recorder's mean.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
@@ -768,8 +775,8 @@ segment might better count only for sky view, reflection and facade.
     or for all; today it goes on over newer weather and the correction of the hours ahead, the rest up to the
     expectation is what the measured hours brought, and the measured and expected parts are named below.
     For a chosen hour a waterfall shows how its forecast comes about (`explain.py`): clear sky with
-    the learned efficiency, then clouds, shade, reflection, direction factor and heat, the steps
-    adding up to the forecast, in Wh of that hour. The steps explain the reference the day is
+    the learned efficiency, then clouds, shade, reflection, direction factor, heat and, in hours that learned snow
+    covers, snow (stored as a seventh value only there), the steps adding up to the forecast, in Wh of that hour. The steps explain the reference the day is
     measured against, not a recomputation: they are stored with it, at the 6 o'clock fix for today
     and with the day-ahead forecast in the archive (`steps`), so a newer weather report or a model
     learned since does not change them. Today the waterfall goes on with the change from newer weather,
@@ -1179,11 +1186,19 @@ load(h) = base_profile[day type, h] × k(h)
         + Σ running flexible programs (remaining energy only)
 ```
 
-The battery is simulated hour by hour from now until tomorrow's charge start (first hour with PV
-above load), not until midnight, so "battery empty at" is part of the result:
+The battery is simulated in quarter hours from now until tomorrow's charge start (first hour with PV
+above load), not until midnight, so "battery empty at" is part of the result. The PV of each hour is split by the
+shape of the 15-minute forecast, the load evenly (its profiles are hourly); the results are summed back per hour
+(`battery.simulate_quarters`), the level is kept per quarter:
 
 - Limits per battery (`max_soc` / `min_soc`, number or entity, plus an optional reserve in percent
   points above `min_soc` where discharging stops in practice, e.g. a feed-in stop rule), capacity per battery.
+- Learned capacity (`battery.learn_capacity`): with a battery power sensor, each night the last 120 days of hourly
+  level and power give per charging run a = C / η_charge and per discharging run b = C × η_discharge (energy per
+  unit of level, runs of at least 15 percent points). With both ways equally efficient, C = √(a·b) and the round
+  trip η = b / a, from the medians of at least three runs each way; a round trip outside 50–102 % means the sensor
+  measures something else and nothing is learned. The learned capacity replaces the entered one (an aged battery
+  holds less than its label), the learned round trip only the default efficiency.
 - Charge and discharge power limits: above them surplus is fed in or drawn from the grid although
   the battery still has room or charge.
 - Output limit of the inverter (balcony systems, e.g. 800 W or 1600 W with several phases), optionally

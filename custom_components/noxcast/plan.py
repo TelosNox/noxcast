@@ -10,9 +10,16 @@ Two shares are reported for a start time:
 The best start maximises pv_share, then lost_share, then prefers the earlier start. A start with less than
 MIN_SHARE from surplus is no window: without surplus every start ties and the earliest one, at night, would win.
 Several consumers are placed one after the other (by priority); each takes its share of the surplus.
+
+With a battery, surplus is not free: what a run takes from it would otherwise charge the battery, which may then
+run empty earlier in the night. There the shares come from the battery simulation itself (a Cost), run with and
+without the run: pv_share is the part that costs neither grid energy nor energy the battery would still hold at the
+end of the simulation (the 48-hour outlook), lost_share the part by which the lost surplus shrinks. The battery's
+what-if counts the same way, until the charge start.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from statistics import median
 
@@ -21,6 +28,10 @@ from .const import Series
 H = 3600.0
 STEP = 900.0                      # start grid and integration step: 15 minutes
 MIN_SHARE = 0.05                  # below this share from surplus no start is recommended as a window
+
+# the battery simulation with an extra load (Wh per hour start): (grid Wh, lost surplus Wh, energy still in the
+# battery at the end in Wh it can deliver); see battery.planning_cost
+Cost = Callable[[Series], tuple[float, float, float]]
 
 
 @dataclass(frozen=True)
@@ -68,14 +79,41 @@ def evaluate(run: RunProfile, start: float, surplus: Series, lost: Series) -> Wi
     return Window(start, start + run.minutes * 60, min(1.0, pv / energy), min(1.0, from_lost / energy))
 
 
+def hourly(run: RunProfile, start: float) -> Series:
+    """The run's energy per hour start (Wh), as the hourly battery simulation takes it."""
+    out: Series = {}
+    t, end = start, start + run.minutes * 60
+    while t < end:
+        hour = t - t % H
+        stop = min(end, hour + H)
+        out[hour] = out.get(hour, 0.0) + run.power_w * (stop - t) / H
+        t = stop
+    return out
+
+
+def _add(a: Series, b: Series) -> Series:
+    return {t: a.get(t, 0.0) + b.get(t, 0.0) for t in a.keys() | b.keys()}
+
+
+def evaluate_stored(run: RunProfile, start: float, cost: Cost, planned: Series,
+                    base: tuple[float, float, float]) -> Window:
+    """Shares of a run starting at `start` from the battery simulation: base is the cost with the runs planned
+    before (planned) and without this one."""
+    grid, lost, kept = cost(_add(planned, hourly(run, start)))
+    energy = run.energy_wh or 1.0
+    taken = max(grid - base[0], 0.0) + max(base[2] - kept, 0.0)
+    pv = min(max(1.0 - taken / energy, 0.0), 1.0)
+    return Window(start, start + run.minutes * 60, pv, min(max((base[1] - lost) / energy, 0.0), 1.0))
+
+
 def best_window(run: RunProfile, surplus: Series, lost: Series, earliest: float,
-                latest_end: float) -> Window | None:
-    """Best start on the 15-minute grid with the run ending by latest_end; slot series as in evaluate.
-    None when no run fits or none gets MIN_SHARE from surplus."""
+                latest_end: float, score: Callable[[float], Window] | None = None) -> Window | None:
+    """Best start on the 15-minute grid with the run ending by latest_end; slot series as in evaluate, or
+    score(start) for another way to count. None when no run fits or none gets MIN_SHARE from surplus."""
     start = earliest + (-earliest) % STEP
     best = None
     while start + run.minutes * 60 <= latest_end:
-        w = evaluate(run, start, surplus, lost)
+        w = score(start) if score else evaluate(run, start, surplus, lost)
         if best is None or (round(w.pv_share, 3), round(w.lost_share, 3)) > (round(best.pv_share, 3), round(best.lost_share, 3)):
             best = w
         start += STEP
@@ -103,9 +141,30 @@ def plan(runs: list[RunProfile], surplus_h: Series, lost_h: Series, now: float,
     return out
 
 
+def plan_stored(runs: list[RunProfile], cost: Cost, now: float, earliest: float,
+                latest_end: float) -> dict[str, dict]:
+    """plan() with a battery: the shares from the battery simulation (evaluate_stored)."""
+    planned: Series = {}
+    out = {}
+    for run in runs:
+        base = cost(planned)
+        score = lambda start, run=run, base=base: evaluate_stored(run, start, cost, planned, base)  # noqa: E731
+        best = best_window(run, {}, {}, earliest, latest_end, score)
+        out[run.name] = {"now": score(now), "best": best}
+        if best is not None:                      # the planned run is part of the load for the next ones
+            planned = _add(planned, hourly(run, best.start))
+    return out
+
+
 def day_plan(runs: list[RunProfile], pv: Series, load: Series, lost: Series,
-             now: float, day_end: float) -> dict[str, dict]:
-    """Best windows in the surplus of today (counting what the battery would lose) and of tomorrow, in run order."""
+             now: float, day_end: float, cost: Cost | None = None) -> dict[str, dict]:
+    """Best windows in the surplus of today (counting what the battery would lose) and of tomorrow, in run order.
+    With a battery (cost), both days count with the battery simulation instead (see plan_stored)."""
+    if cost is not None:
+        today = plan_stored(runs, cost, now, now, day_end)
+        tomorrow = plan_stored(runs, cost, day_end, day_end, day_end + 86400)
+        return {r.name: {"run": r, "now": today[r.name]["now"], "today": today[r.name]["best"],
+                         "tomorrow": tomorrow[r.name]["best"]} for r in runs}
     surplus = {t: max(pv.get(t, 0.0) - w, 0.0) for t, w in load.items()}
     today = plan(runs, {t: v for t, v in surplus.items() if t < day_end}, lost, now, day_end)
     tomorrow = plan(runs, {t: v for t, v in surplus.items() if day_end <= t}, {}, day_end, day_end + 86400)

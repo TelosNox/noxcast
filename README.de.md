@@ -797,8 +797,14 @@ load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher +
 - Dieselbe Simulation läuft auch für die nächsten 48 Stunden, über den Ladebeginn hinaus, so weit die PV-Prognose
   reicht: *Akku tiefster Stand (48 h)*, für Tarif- und Ladeplaner.
 - Die erste Simulation nach 06:00 wird je Tag behalten und mit dem gemessenen Ladestand verglichen.
-- **Flexible Verbraucher:** Jeder Lauf wird in den Überschuss gelegt, der ohnehin nicht in den Akku ginge; mehrere
-  werden nacheinander platziert. Ergebnisse: bestes Fenster heute und morgen, PV-Anteil bei Start jetzt.
+- **Flexible Verbraucher:** Ohne Akku ist der PV-Anteil eines Laufs der Teil, den der Überschuss (PV über der Last)
+  deckt. Mit Akku ist Überschuss nicht umsonst: Was ein Lauf nimmt, würde sonst den Akku laden, der dann früher leer
+  ist. Dort läuft die Akkusimulation mit und ohne den Lauf über die 48-Stunden-Vorschau: Der PV-Anteil ist der Teil,
+  der weder Netzstrom braucht noch Energie, die der Akku am Ende sonst noch hätte. Ein Lauf am Mittag eines Tages, an
+  dem der Akku nicht voll wird, kostet seine Energie also in der Nacht, und ein Lauf, bevor der Akku ohnehin voll
+  wird, kostet nichts. Bei gleichem Anteil gewinnt das Fenster, das am meisten sonst verlorenen Überschuss nutzt,
+  dann das frühere. Mehrere Läufe werden nacheinander platziert, jeder mit den vorherigen. Ergebnisse: bestes Fenster
+  heute und morgen, PV-Anteil bei Start jetzt.
 
 ## Datenschutz
 

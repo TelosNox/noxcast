@@ -779,9 +779,14 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 - The same simulation also runs for the next 48 hours, past the charge start, as far as the PV forecast reaches:
   *Battery lowest level (48 h)*, for tariff and charge planners.
 - The first simulation after 06:00 is kept per day and compared with the measured SOC.
-- **Flexible consumers:** each run is placed into the surplus that would not go into the battery
-  anyway; several are placed one after the other. Results: best window today and tomorrow, PV
-  share if started now.
+- **Flexible consumers:** without a battery, a run's PV share is the part the surplus (PV above the load) covers.
+  With a battery, surplus is not free: what a run takes would otherwise charge the battery, which then runs empty
+  earlier. There the battery simulation runs with and without the run over the 48-hour outlook: the PV share is
+  the part that needs neither the grid nor energy the battery would still hold at the end, so a run at noon on a day
+  the battery does not fill costs its energy in the night, and a run before the battery gets full anyway costs
+  nothing. Between equal shares, the window that uses the most surplus that would be lost wins, then the earlier
+  one. Several runs are placed one after the other, each counting the ones before. Results: best window today and
+  tomorrow, PV share if started now.
 
 ## Privacy
 

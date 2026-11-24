@@ -17,7 +17,15 @@ const DAY_TEXT = {
     measuredUntil: (hm) => `Gemessen bis ${hm}`, restExpected: "Rest erwartet", noDaySteps: "Für diesen Tag gibt es keine Herleitung.",
     steps: { clear: "Klarer Himmel", clouds: "Wolken", shade: "Schatten", reflection: "Reflexion", direction: "Richtung", heat: "Wärme", limit: "Grenze",
       result: "Prognose", morning: "Prognose 6 Uhr", dayAhead: "Prognose Vortag", latest: "Prognose aktuell", replay: "Modell heute",
-      weather: "Neueres Wetter", corr: "Korrektur heute", measured: "Gemessene Stunden", expected: "Erwartung", actual: "Ist" },
+      weather: "Neueres Wetter", corr: "Korrektur heute", measured: "Gemessene Stunden", expected: "Erwartung", actual: "Ist",
+      devWeather: "Wetter gemessen", devShade: "Schatten verfehlt", devLimit: "Begrenzt", devModel: "Modell", devOpen: "Nicht aufgeteilt" },
+    devHelp: {
+      devWeather: "Wie viel klarer oder trüber der Himmel laut Satellit war als vorhergesagt: das Modell auf der gemessenen Einstrahlung gegen die Prognose.",
+      devShade: "Wie weit das Ist in Stunden hinter gelernter Abschattung (sie nimmt mindestens 10 % des Lichts) vom Modell auf der gemessenen Einstrahlung abwich: ein Hinweis auf die Schattenkarte.",
+      devLimit: "Was in Stunden mit vollem Akku, Ladegrenze oder fester Leistungsgrenze nicht ankam: dort zeigt das Ist nicht, was die Sonne gebracht hätte.",
+      devModel: "Die übrige Abweichung des Ist vom Modell auf der gemessenen Einstrahlung: Wirkungsgrad, Himmelssicht, Temperatur oder Schatten, der noch nicht gelernt ist.",
+      devOpen: "Stunden ohne Satellitenwerte oder ohne Messwert: ihre Abweichung ist nicht aufgeteilt.",
+    },
     dayHelp: {
       weather: "Was die seit 6 Uhr abgerufenen Wetterdaten an der Prognose des Tages geändert haben.",
       corr: "Die Korrektur aus den gemessenen Stunden von heute, angewandt auf die Stunden, die noch kommen.",
@@ -58,7 +66,15 @@ const DAY_TEXT = {
     measuredUntil: (hm) => `Measured until ${hm}`, restExpected: "Rest expected", noDaySteps: "No derivation for this day.",
     steps: { clear: "Clear sky", clouds: "Clouds", shade: "Shade", reflection: "Reflection", direction: "Direction", heat: "Heat", limit: "Limit",
       result: "Forecast", morning: "Forecast 6 am", dayAhead: "Day-ahead forecast", latest: "Latest forecast", replay: "Today's model",
-      weather: "Newer weather", corr: "Correction today", measured: "Measured hours", expected: "Expected", actual: "Actual" },
+      weather: "Newer weather", corr: "Correction today", measured: "Measured hours", expected: "Expected", actual: "Actual",
+      devWeather: "Weather measured", devShade: "Shade missed", devLimit: "Limited", devModel: "Model", devOpen: "Not split" },
+    devHelp: {
+      devWeather: "How much clearer or duller the sky was by satellite than forecast: the model on the measured irradiance against the forecast.",
+      devShade: "How far the actual value in hours behind learned shade (it takes at least 10 % of the light) differed from the model on the measured irradiance: a hint at the shading map.",
+      devLimit: "What did not arrive in hours with a full battery, a charge ceiling or a fixed power limit: there the actual value does not show what the sun would have brought.",
+      devModel: "The rest of the difference between the actual value and the model on the measured irradiance: efficiency, sky view, temperature, or shade not learned yet.",
+      devOpen: "Hours without satellite values or without a measured value: their deviation is not split.",
+    },
     dayHelp: {
       weather: "What the weather data fetched since 6 am changed in the forecast of the day.",
       corr: "The correction from today's measured hours, applied to the hours still ahead.",
@@ -652,7 +668,7 @@ class NoxcastDay extends HTMLElement {
     });
     const eff = arrays.length === 1 ? `${this._num(arrays[0].efficiency * 100, 1)} %` : `${this._num(arrays.reduce((a, arr) => a + arr.efficiency, 0) / arrays.length * 100, 1)} %`;
     const minor = day ? 50 : 5;
-    const help = (k) => (day && t.dayHelp[k]) || t.stepHelp[k];
+    const help = (k) => (day && t.dayHelp[k]) || t.stepHelp[k] || t.devHelp[k];
     const notes = items.filter(([k, v, kind]) => (kind === "start" || (kind === "step" && Math.abs(v) >= minor) || k === "replay") && help(k))
       .map(([k]) => `<li><b>${t.steps[k]}</b> ${k === "clear" ? t.stepHelp.clear(eff) : help(k)}</li>`).join("");
     const parts = split ? `<div class="gfigs wsplit"><span class="gfig"><span class="muted">${t.measuredUntil(this._hm(split.until))}</span> ${this._kwh(split.done)} ${t.kwh}</span>
@@ -683,7 +699,10 @@ class NoxcastDay extends HTMLElement {
       }
     }
     const act = arrays.map((a) => at("actual", a)).filter((v) => v !== undefined);
-    if (act.length === arrays.length && (phase === "past" || h + HOUR <= now)) items.push(["actual", act.reduce((a, v) => a + v, 0), "actual"]);
+    if (act.length === arrays.length && (phase === "past" || h + HOUR <= now)) {
+      if (phase === "past") items.push(...this._devItems(arrays, [String(h)], 1));
+      items.push(["actual", act.reduce((a, v) => a + v, 0), "actual"]);
+    }
     return { items };
   }
 
@@ -699,7 +718,10 @@ class NoxcastDay extends HTMLElement {
     const items = [["clear", sum("clear"), "start"], ...["clouds", "shade", "reflection", "direction", "heat", "limit"].filter((k) => k !== "limit" || sum(k)).map((k) => [k, sum(k), "step"]), [this._resultKey(from), sum("result"), "total"]];
     const series = (a, key) => new Map(tsRows(a[key], "wh"));
     if (phase === "past") {
-      if (arrays.every((a) => a.actual && a.actual.t.length)) items.push(["actual", arrays.reduce((s, a) => s + this._sum(series(a, "actual")), 0), "actual"]);
+      if (arrays.every((a) => a.actual && a.actual.t.length)) {
+        items.push(...this._devItems(arrays, null, 50));
+        items.push(["actual", arrays.reduce((s, a) => s + this._sum(series(a, "actual")), 0), "actual"]);
+      }
       return { items };
     }
     if (phase !== "today") return { items };
@@ -726,6 +748,21 @@ class NoxcastDay extends HTMLElement {
     if (Math.abs(measured) >= 50) items.push(["measured", measured, "step"]);
     items.push(["expected", end, "total"]);
     return { items, split: { done, rest: end - done, until: now - (now % HOUR) } };
+  }
+
+  // a past day or hour: why the actual value differs from the forecast (views.day_view "deviation", explain.deviation),
+  // in parts that add up to it; hours null = the whole day. Parts below `min` Wh would show as zero and are left out;
+  // the actual value is drawn as its own bar, so the chain still ends there.
+  _devItems(arrays, hours, min) {
+    const keys = ["weather", "shade", "limit", "model", "open"], sum = Object.fromEntries(keys.map((k) => [k, 0]));
+    let any = false;
+    for (const a of arrays) {
+      const dev = a.deviation || {};
+      for (const h of hours || Object.keys(dev)) for (const k of keys) if (dev[h] && dev[h][k] !== undefined) { sum[k] += dev[h][k]; any = true; }
+    }
+    if (!any) return [];
+    const name = (k) => `dev${k[0].toUpperCase()}${k.slice(1)}`;
+    return keys.filter((k) => Math.abs(sum[k]) >= min).map((k) => [name(k), sum[k], "step"]);
   }
 
   // ------------------------------------------------------------ formatting

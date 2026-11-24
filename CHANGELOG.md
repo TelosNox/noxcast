@@ -7,6 +7,13 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
+  parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
+  forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or
+  a fixed power limit) and *Model* (the rest). Hours without satellite values stay *Not split*. It needs the
+  satellite filter, and works for past days already in the archive.
+
 ## [0.7.0] - 2026-11-24
 
 All changes since 0.6.0: the pre-releases 0.7.0b1 and 0.7.0b2 (their single steps are listed in

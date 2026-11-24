@@ -637,6 +637,32 @@ def day_simulation(batteries: list[Battery], pv: Series, load: Series | None,
     return out
 
 
+def replay(battery: dict, pv: Series, load: Series, now: float, until: float) -> Simulation:
+    """The simulation of day_simulation (its result `battery`) again with another load, e.g. with a planned run."""
+    if battery.get("units"):
+        return simulate_units(battery["units"], pv, load, now, until, battery.get("feed_in"))[1]
+    return simulate(battery["storage"], pv, load, now, until, battery.get("limits"), battery.get("held_wh", 0.0),
+                    battery.get("feed_in"))
+
+
+def planning_cost(battery: dict, pv: Series, load: Series, now: float):
+    """For planning consumers (plan.Cost): extra load (Wh per hour start) -> grid Wh, lost surplus Wh and the energy
+    the battery can still deliver at the end. Runs as far as the 48-hour outlook reaches (then load must cover it),
+    else until the charge start: a run that empties the battery tonight but is refilled by tomorrow's surplus costs
+    nothing, one whose energy is still missing at the end costs that energy."""
+    ahead = battery.get("ahead")
+    until = ahead.points[-1][0] if ahead is not None and ahead.points else battery["charge_start"]
+    storage = battery["storage"]
+    deliver = storage.capacity_wh * math.sqrt(max(0.01, min(1.0, storage.efficiency)))
+
+    def cost(extra: Series) -> tuple[float, float, float]:
+        sim = replay(battery, pv, {t: load.get(t, 0.0) + extra.get(t, 0.0) for t in load.keys() | extra.keys()},
+                     now, until)
+        kept = sim.points[-1][1] * deliver if sim.points else 0.0
+        return sim.grid_wh, sim.lost_wh, kept
+    return cost
+
+
 def system_figures(battery: dict, names: dict[str, str]) -> list[dict]:
     """Per independent system (see day_simulation): name, full at, empty at and highest level; empty for one."""
     return [{"name": names.get(key, key), "full": sim.full_at, "empty": sim.empty_at, "max_soc": round(sim.max_soc, 4)}

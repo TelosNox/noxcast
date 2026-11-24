@@ -1227,8 +1227,10 @@ as before, so its results do not change.
 
 The forecast gives the surplus without flexible consumers. Each flexible consumer has a run
 profile (energy, duration, power curve: learned from its sensor or entered by hand / from a
-template). Planning places runs into that surplus, counting only what would not go into the
-battery anyway:
+template). Planning places runs into that surplus. With a battery, surplus that would charge it is not
+free: the battery simulation runs with and without the run over the 48-hour outlook, and the PV share is the part
+of the run that needs neither grid energy nor energy the battery would still hold at the end; surplus that would
+be lost breaks ties:
 
 - best start window today, with its PV share ("11:00–12:30, 95 % from PV");
 - PV share if started now (for a notification or a smart start);

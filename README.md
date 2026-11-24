@@ -284,7 +284,9 @@ without it, and removes nothing before *Remove for good*. The forms for systems,
 on top. Later versions compute more of the settings without new input.
 
 *Swap device* on a system is for the day a device of the system is replaced and the PV modules stay where they
-are. Use it when
+are. It is deliberately out of the way: select the system in the diagram, and at the very bottom of its details the
+small link *Device replaced? Set up the swap …* first explains when the swap fits; only *Continue* opens the
+assistant. Use it when
 
 - a new inverter, microinverter or compact device (inverter, MPPTs and battery in one) takes over the same modules,
   each module on the same kind of input as before;

@@ -289,7 +289,9 @@ ihn, und entfernt nichts vor *Endgültig entfernen*. Die Formulare für Systeme,
 PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
 
 *Gerät tauschen* an einem System ist für den Tag, an dem ein Gerät des Systems ersetzt wird und die PV-Module
-bleiben, wo sie sind. Nutze es, wenn
+bleiben, wo sie sind. Es liegt bewusst abseits: Wähle das System im Bild, ganz unten in seinen Details erklärt der
+kleine Link *Gerät wurde getauscht? Tausch einrichten …* zuerst, wann der Tausch passt; erst *Weiter* öffnet den
+Assistenten. Nutze es, wenn
 
 - ein neuer Wechselrichter, Mikrowechselrichter oder ein neues Kompaktgerät (Wechselrichter, MPPTs und Akku in einem)
   dieselben Module übernimmt, jedes Modul an derselben Art Eingang wie bisher;

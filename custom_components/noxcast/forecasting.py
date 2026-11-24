@@ -414,7 +414,10 @@ def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[
         result.plan = {}
         return
     house_pv, lost = usable(total, result.battery, now)
-    result.plan = pl.day_plan(runs, house_pv, load_hours, lost, now, day_end)
+    # with a battery the plan counts with the battery simulation (plan.plan_stored), over the outlook's load
+    cost = (bt.planning_cost(result.battery, total, ahead[0] if ahead and result.battery.get("ahead") else load_hours, now)
+            if result.battery else None)
+    result.plan = pl.day_plan(runs, house_pv, load_hours, lost, now, day_end, cost)
 
 
 def capped_band(band: dict | None, result: NoxcastData, now: float, day_end: float) -> dict | None:

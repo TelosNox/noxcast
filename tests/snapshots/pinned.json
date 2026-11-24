@@ -17555,15 +17555,15 @@
     "plan": {
      "washer": {
       "run": {"__": "RunProfile", "name": "washer", "power_w": 1900.0, "minutes": 74.0},
-      "now": {"__": "Window", "start": 1781094600.0, "end": 1781099040.0, "pv_share": 0.0, "lost_share": 0.0},
-      "today": {"__": "Window", "start": 1781124300.0, "end": 1781128740.0, "pv_share": 0.70831, "lost_share": 0.178175},
-      "tomorrow": {"__": "Window", "start": 1781193600.0, "end": 1781198040.0, "pv_share": 1.0, "lost_share": 0.0}
+      "now": {"__": "Window", "start": 1781094600.0, "end": 1781099040.0, "pv_share": 0.263249, "lost_share": 0.0651035},
+      "today": {"__": "Window", "start": 1781112600.0, "end": 1781117040.0, "pv_share": 1.0, "lost_share": 1.0},
+      "tomorrow": {"__": "Window", "start": 1781190900.0, "end": 1781195340.0, "pv_share": 1.0, "lost_share": 1.0}
      },
      "dryer": {
       "run": {"__": "RunProfile", "name": "dryer", "power_w": 1500.0, "minutes": 90.0},
-      "now": {"__": "Window", "start": 1781094600.0, "end": 1781100000.0, "pv_share": 0.0, "lost_share": 0.0},
-      "today": {"__": "Window", "start": 1781118900.0, "end": 1781124300.0, "pv_share": 0.840267, "lost_share": 0.0},
-      "tomorrow": {"__": "Window", "start": 1781198100.0, "end": 1781203500.0, "pv_share": 1.0, "lost_share": 0.0}
+      "now": {"__": "Window", "start": 1781094600.0, "end": 1781100000.0, "pv_share": 0.175979, "lost_share": 0.0100127},
+      "today": {"__": "Window", "start": 1781118900.0, "end": 1781124300.0, "pv_share": 0.47767, "lost_share": 0.438355},
+      "tomorrow": {"__": "Window", "start": 1781193600.0, "end": 1781199000.0, "pv_share": 1.0, "lost_share": 1.0}
      }
     },
     "band": {
@@ -20363,14 +20363,14 @@
     "plan": {
      "washer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781118300.0, "end": 1781122740.0, "pv_share": 0.0773434, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781127900.0, "end": 1781132340.0, "pv_share": 0.555699, "lost_share": 0.0},
+      "now": {"__": "= previous", "start": 1781118300.0, "end": 1781122740.0, "pv_share": 0.50429, "lost_share": 0.456322},
+      "today": {"__": "= previous", "start": 1781118900.0, "end": 1781123340.0, "pv_share": 0.498258, "lost_share": 0.456322},
       "tomorrow": "= previous"
      },
      "dryer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781118300.0, "end": 1781123700.0, "pv_share": 0.172611, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781122500.0, "end": 1781127900.0, "pv_share": 0.604472, "lost_share": "= previous"},
+      "now": {"__": "= previous", "start": 1781118300.0, "end": 1781123700.0, "pv_share": 0.0509259, "lost_share": 0.0},
+      "today": {"__": "= previous", "start": 1781126100.0, "end": 1781131500.0, "pv_share": 0.0652514, "lost_share": 0.0},
       "tomorrow": "= previous"
      }
     },
@@ -21809,14 +21809,14 @@
     "plan": {
      "washer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781124000.0, "end": 1781128440.0, "pv_share": 0.0828225, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781128800.0, "end": 1781133240.0, "pv_share": 0.474086, "lost_share": "= previous"},
+      "now": {"__": "= previous", "start": 1781124000.0, "end": 1781128440.0, "pv_share": 0.188086, "lost_share": 0.0},
+      "today": {"__": "= previous", "start": 1781124300.0, "end": 1781128740.0, "pv_share": 0.143041, "lost_share": 0.0},
       "tomorrow": "= previous"
      },
      "dryer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781124000.0, "end": 1781129400.0, "pv_share": 0.117625, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781133300.0, "end": 1781138700.0, "pv_share": 0.473154, "lost_share": "= previous"},
+      "now": {"__": "= previous", "start": 1781124000.0, "end": 1781129400.0, "pv_share": 0.155926, "lost_share": "= previous"},
+      "today": {"__": "= previous", "start": 1781124300.0, "end": 1781129700.0, "pv_share": 0.122778, "lost_share": "= previous"},
       "tomorrow": "= previous"
      }
     },
@@ -25762,15 +25762,15 @@
     "plan": {
      "washer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781166600.0, "end": 1781171040.0, "pv_share": 0.0, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781200800.0, "end": 1781205240.0, "pv_share": 1.0, "lost_share": 1.0},
-      "tomorrow": {"__": "= previous", "start": 1781294400.0, "end": 1781298840.0, "pv_share": "= previous", "lost_share": "= previous"}
+      "now": {"__": "= previous", "start": 1781166600.0, "end": 1781171040.0, "pv_share": 0.202703, "lost_share": "= previous"},
+      "today": {"__": "= previous", "start": 1781190900.0, "end": 1781195340.0, "pv_share": 1.0, "lost_share": 1.0},
+      "tomorrow": {"__": "= previous", "start": 1781283600.0, "end": 1781288040.0, "pv_share": "= previous", "lost_share": "= previous"}
      },
      "dryer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781166600.0, "end": 1781172000.0, "pv_share": 0.0, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781200800.0, "end": 1781206200.0, "pv_share": 1.0, "lost_share": 1.0},
-      "tomorrow": {"__": "= previous", "start": 1781288100.0, "end": 1781293500.0, "pv_share": 0.999593, "lost_share": "= previous"}
+      "now": {"__": "= previous", "start": 1781166600.0, "end": 1781172000.0, "pv_share": 0.166667, "lost_share": "= previous"},
+      "today": {"__": "= previous", "start": 1781193600.0, "end": 1781199000.0, "pv_share": 1.0, "lost_share": 1.0},
+      "tomorrow": {"__": "= previous", "start": 1781288100.0, "end": 1781293500.0, "pv_share": "= previous", "lost_share": "= previous"}
      }
     },
     "band": {
@@ -32318,14 +32318,14 @@
     "plan": {
      "washer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781194200.0, "end": 1781198640.0, "pv_share": 0.189189, "lost_share": "= previous"},
-      "today": "= previous",
+      "now": {"__": "= previous", "start": 1781194200.0, "end": 1781198640.0, "pv_share": 1.0, "lost_share": 0.929768},
+      "today": {"__": "= previous", "start": 1781197200.0, "end": 1781201640.0, "pv_share": "= previous", "lost_share": "= previous"},
       "tomorrow": "= previous"
      },
      "dryer": {
       "run": "= previous",
-      "now": {"__": "= previous", "start": 1781194200.0, "end": 1781199600.0, "pv_share": 0.333333, "lost_share": "= previous"},
-      "today": {"__": "= previous", "start": 1781204400.0, "end": 1781209800.0, "pv_share": "= previous", "lost_share": "= previous"},
+      "now": {"__": "= previous", "start": 1781194200.0, "end": 1781199600.0, "pv_share": 1.0, "lost_share": 0.965735},
+      "today": {"__": "= previous", "start": 1781195400.0, "end": 1781200800.0, "pv_share": "= previous", "lost_share": "= previous"},
       "tomorrow": "= previous"
      }
     },
@@ -34225,8 +34225,8 @@
      "lost": {"t": [1781128800.0, 1781132400.0, 1781136000.0], "wh": [0.0, 0.0, 0.0], "p90": [441.0, 1453.8, 920.4]}
     },
     "plan": [
-     {"name": "Washer", "now": 0.083, "start": 1781128800.0, "end": 1781133240.0, "pv": 0.474},
-     {"name": "Dryer", "now": 0.118, "start": 1781133300.0, "end": 1781138700.0, "pv": 0.473}
+     {"name": "Washer", "now": 0.188, "start": 1781124300.0, "end": 1781128740.0, "pv": 0.143},
+     {"name": "Dryer", "now": 0.156, "start": 1781124300.0, "end": 1781129700.0, "pv": 0.123}
     ]
    },
    "accuracy": {
@@ -42866,17 +42866,17 @@
     "consumers": [
      {
       "name": "Washer",
-      "now": 0.083,
+      "now": 0.188,
       "start_now": false,
-      "today": {"start": 1781128800.0, "end": 1781133240.0, "pv": 0.474},
-      "tomorrow": {"start": 1781193600.0, "end": 1781198040.0, "pv": 1.0}
+      "today": {"start": 1781124300.0, "end": 1781128740.0, "pv": 0.143},
+      "tomorrow": {"start": 1781190900.0, "end": 1781195340.0, "pv": 1.0}
      },
      {
       "name": "Dryer",
-      "now": 0.118,
+      "now": 0.156,
       "start_now": false,
-      "today": {"start": 1781133300.0, "end": 1781138700.0, "pv": 0.473},
-      "tomorrow": {"start": 1781198100.0, "end": 1781203500.0, "pv": 1.0}
+      "today": {"start": 1781124300.0, "end": 1781129700.0, "pv": 0.123},
+      "tomorrow": {"start": 1781193600.0, "end": 1781199000.0, "pv": 1.0}
      }
     ],
     "accuracy": {
@@ -48594,8 +48594,8 @@
      }
     },
     "plan": [
-     {"name": "= previous", "now": 0.189, "start": 1781200800.0, "end": 1781205240.0, "pv": 1.0},
-     {"name": "= previous", "now": 0.333, "start": 1781204400.0, "end": 1781209800.0, "pv": 1.0}
+     {"name": "= previous", "now": 1.0, "start": 1781197200.0, "end": 1781201640.0, "pv": 1.0},
+     {"name": "= previous", "now": 1.0, "start": 1781195400.0, "end": 1781200800.0, "pv": 1.0}
     ]
    },
    "accuracy": {
@@ -49510,16 +49510,16 @@
     "consumers": [
      {
       "name": "= previous",
-      "now": 0.189,
-      "start_now": "= previous",
-      "today": {"start": 1781200800.0, "end": 1781205240.0, "pv": 1.0},
-      "tomorrow": {"start": 1781294400.0, "end": 1781298840.0, "pv": "= previous"}
+      "now": 1.0,
+      "start_now": true,
+      "today": {"start": 1781197200.0, "end": 1781201640.0, "pv": 1.0},
+      "tomorrow": {"start": 1781283600.0, "end": 1781288040.0, "pv": "= previous"}
      },
      {
       "name": "= previous",
-      "now": 0.333,
-      "start_now": "= previous",
-      "today": {"start": 1781204400.0, "end": 1781209800.0, "pv": 1.0},
+      "now": 1.0,
+      "start_now": true,
+      "today": {"start": 1781195400.0, "end": 1781200800.0, "pv": 1.0},
       "tomorrow": {"start": 1781288100.0, "end": 1781293500.0, "pv": "= previous"}
      }
     ],

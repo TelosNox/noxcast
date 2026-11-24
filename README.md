@@ -360,9 +360,9 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Reserve | Percent points above min SOC where discharging stops in practice (e.g. a feed-in stop rule) |
 | Belongs to | The system the battery sits in, one battery per system. Empty: the system whose menu it was opened from |
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
-| Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the battery power sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
+| Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the *Charge / discharge power* sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
 
-With the battery power sensor, Noxcast learns every night what capacity and round-trip efficiency the battery shows,
+With the *Charge / discharge power* sensor, Noxcast learns every night what capacity and round-trip efficiency the battery shows,
 from the last 120 days: charging, energy per percent of level gives the capacity divided by the charging efficiency;
 discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency without
 knowing either. It needs three charging and three discharging runs of at least 15 percent points each, counted from

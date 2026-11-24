@@ -665,11 +665,15 @@ segment might better count only for sky view, reflection and facade.
   errors stayed within ±0.02 points.
   Snow in the forecast (`model.learn_snow`, `model.snow_cover`), only where learned: a window the array itself
   ended (an hour of free modules, not thaw or the 7 days) with satellite values in all its covered hours gives the
-  daylight hours from the last snow to that hour and what the array delivered over what free modules would. After
+  daylight hours from the last snow to that hour and what the array delivered over what its learned model gives
+  under the satellite's sky (the share scales that model, so shade and efficiency do not count twice). After
   two such snowfalls the medians are the array's `snow`; the forecast weather's `snowfall` then covers the array by
   the same rules (a solar day of at least 1 cm at up to 3 °C, thaw after 24 degree hours) for that many daylight
   hours at that share, shown as the step *snow*. Without learned snow the forecast ignores it: the thresholds are
-  unfitted, and an assumed cover would be a made-up value.
+  unfitted, and an assumed cover would be a made-up value. The forecast sees snow back to the start of yesterday
+  (the weather source's past day): a cover learned longer than that ends early after an older snowfall. In the day
+  view's deviation the model on measured weather carries the forecast's cover, so a cover that came as forecast is
+  no weather part; snow that was forecast but did not fall shows as *model* there.
 - Outages of a sensor: hours without statistics (a sensor unavailable the whole hour, or one of the array's
   sensors missing) are left out. A sensor unavailable for part of an hour still enters with the recorder's mean.
 - Unsteady hours: hourly minimum or maximum of every power sensor of an array more than 15 % from
@@ -1198,7 +1202,9 @@ shape of the 15-minute forecast, the load evenly (its profiles are hourly); the 
   unit of level, runs of at least 15 percent points). With both ways equally efficient, C = √(a·b) and the round
   trip η = b / a, from the medians of at least three runs each way; a round trip outside 50–102 % means the sensor
   measures something else and nothing is learned. The learned capacity replaces the entered one (an aged battery
-  holds less than its label), the learned round trip only the default efficiency.
+  holds less than its label), the learned round trip only the default efficiency. A learned value belongs to the
+  capacity and sensors it was learned with: after a change only runs since then count, and the entered capacity
+  holds until they suffice. A night with too few runs keeps the last learned value, which may rest on older runs.
 - Charge and discharge power limits: above them surplus is fed in or drawn from the grid although
   the battery still has room or charge.
 - Output limit of the inverter (balcony systems, e.g. 800 W or 1600 W with several phases), optionally

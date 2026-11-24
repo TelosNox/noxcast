@@ -15,6 +15,7 @@
     "band": null,
     "model_compare": null,
     "battery_log": {},
+    "battery_capacity": {},
     "learning_changes": {},
     "limits": {"detected": {}, "dismissed": {}, "systems": {}, "dismissed_systems": {}},
     "exclusions": [{"start": 1778655600.0, "end": 1778742000.0, "note": "x"}],
@@ -8725,6 +8726,7 @@
     },
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "battery_capacity": "= previous",
     "learning_changes": {
      "S": {
       "at": 1781094600.0,
@@ -19154,6 +19156,7 @@
       "min": 0.164286
      }
     },
+    "battery_capacity": "= previous",
     "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
@@ -20794,6 +20797,7 @@
     "band": "= previous",
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "battery_capacity": "= previous",
     "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
@@ -22770,6 +22774,7 @@
     "band": "= previous",
     "model_compare": "= previous",
     "battery_log": "= previous",
+    "battery_capacity": "= previous",
     "learning_changes": {
      "S": {
       "at": 1781166600.0,
@@ -30969,6 +30974,7 @@
       "min": 0.164286
      }
     },
+    "battery_capacity": "= previous",
     "learning_changes": "= previous",
     "limits": "= previous",
     "exclusions": "= previous",
@@ -42725,8 +42731,8 @@
     "entries": [
      {
       "batteries": [
-       {"name": "battery", "capacity_kwh": 5, "soc_sensor": "sensor.soc"},
-       {"name": "battery", "capacity_kwh": 2, "soc_sensor": "sensor.soc2"}
+       {"name": "battery", "capacity_kwh": 5, "soc_sensor": "sensor.soc", "learned": null, "power_sensor": false},
+       {"name": "battery", "capacity_kwh": 2, "soc_sensor": "sensor.soc2", "learned": null, "power_sensor": false}
       ],
       "storage": {
        "capacity_wh": 7000.0,

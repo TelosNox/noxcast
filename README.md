@@ -362,6 +362,13 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the battery power sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
 
+With the battery power sensor, Noxcast learns every night what capacity and round-trip efficiency the battery shows,
+from the last 120 days: charging, energy per percent of level gives the capacity divided by the charging efficiency;
+discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency without
+knowing either. It needs three charging and three discharging runs of at least 15 percent points each. The learned
+capacity replaces the entered one in the forecast (an aged battery holds less than its label), an entered efficiency
+stays. The *Battery & surplus* tab shows both next to what was entered.
+
 With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
 above it can only charge the battery. Subsystems with batteries under a shared limit deliver together at most that
 limit. The batteries of one system are simulated as one storage (capacities add up, limits weighted by capacity).
@@ -414,7 +421,7 @@ Appears in the sidebar after setup; nothing to configure. Tabs:
 | Day | One day (up to 400 days back, 2 ahead): the arrays stacked, forecast vs expectation vs actual, P10–P90, hourly weather, shade and reflection periods; under *Groups* the course of each array, measured part strong and forecast part faint, and its actual value so far today; for the whole day or a chosen hour, per array or all together, a waterfall from clear sky through clouds, shade, reflection, heat to the forecast and the actual value, and for past days why the actual value differed, in parts that add up: weather measured by satellite, shade missed, limited hours and the model; how the day's expectation developed hour by hour; where the energy went (PV, battery, grid, house) |
 | Forecast accuracy | Day-ahead forecasts against actual over 14 / 30 / 90 days: error, bias, calendar, by weather class, each weather model against the mean; with the satellite filter the split into weather part and model part; how often the actual value fell below, inside or above the published P10–P90 range, per weather class, for whole days and single hours; a nightly backtest: today's model on past days, and on days it did not learn from; on request a comparison of every weather model and pair over the past year, with a recommendation |
 | Load | Rest of today and tomorrow by part (base load, each consumer), learned profiles, backtest, suggested recurring devices |
-| Battery & surplus | Simulation until tomorrow's charge start, with several systems also per system, what-if with more capacity or an extra consumer, the morning prediction against what happened, last 30 days |
+| Battery & surplus | Simulation until tomorrow's charge start, with several systems also per system, what-if with more capacity or an extra consumer, the capacity and round trip each battery shows, the morning prediction against what happened, last 30 days |
 | Installation | The installation as entered: household, systems, subsystems, PV arrays and batteries, and per setting whether Noxcast computes it exactly, simplified or not yet |
 | Diagnostics | Installed version, weather, last learning run, archive; every sensor Noxcast reads with state, statistics and coverage; missing data and errors |
 

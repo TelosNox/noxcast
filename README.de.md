@@ -369,6 +369,14 @@ Ausgangsgrenze.
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor für die Akkuleistung zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 
+Mit dem Sensor der Akkuleistung lernt Noxcast jede Nacht, welche Kapazität und welchen Wirkungsgrad im Zyklus der
+Akku zeigt, aus den letzten 120 Tagen: Beim Laden ergibt Energie je Prozent Ladestand die Kapazität geteilt durch den
+Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und
+Wirkungsgrad, ohne dass einer davon bekannt sein muss. Dazu braucht es je drei Lade- und Entladeläufe über mindestens
+15 Prozentpunkte. Die gelernte Kapazität ersetzt in der Prognose die eingetragene (ein gealterter Akku fasst weniger,
+als auf dem Schild steht), ein eingetragener Wirkungsgrad bleibt. Der Reiter *Akku & Überschuss* zeigt beides neben
+dem Eingetragenen.
+
 Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
 nur den Akku laden. Teilsysteme mit Akkus unter einer gemeinsamen Grenze geben zusammen höchstens diese Grenze ab.
 Die Akkus eines Systems werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet).
@@ -424,7 +432,7 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 | Tag | Ein Tag (bis 400 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; unter *Gruppen* der Verlauf jeder PV-Gruppe, gemessener Teil kräftig und Prognose blass, und ihr Ist bis jetzt; für den ganzen Tag oder eine gewählte Stunde, je PV-Gruppe oder alle zusammen, ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose und zum Ist, und für vergangene Tage, warum das Ist abwich, in Teilen, die sich aufaddieren: Wetter laut Satellit, verfehlter Schatten, begrenzte Stunden und Modell; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
 | Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; wie oft der Ist-Wert unter, in oder über dem veröffentlichten Bereich P10–P90 lag, je Wetterklasse, für ganze Tage und einzelne Stunden; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
-| Akku & Überschuss | Simulation bis zum Ladebeginn morgen, bei mehreren Systemen auch je System, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
+| Akku & Überschuss | Simulation bis zum Ladebeginn morgen, bei mehreren Systemen auch je System, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, Kapazität und Wirkungsgrad, wie jeder Akku sie zeigt, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
 | Anlage | Die Anlage, wie eingetragen: Haushalt, Systeme, Teilsysteme, PV-Gruppen und Akkus, und je Einstellung, ob Noxcast sie genau, vereinfacht oder noch nicht verrechnet |
 | Diagnose | Installierte Version, Wetter, letzter Lernlauf, Archiv; jeder Sensor, den Noxcast liest, mit Zustand, Statistik und Abdeckung; fehlende Daten und Fehler |
 

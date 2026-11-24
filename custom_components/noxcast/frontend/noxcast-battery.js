@@ -11,6 +11,11 @@ const BAT_TEXT = {
     noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf.",
     socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", fedIn: "davon eingespeist", curtailed: "davon abgeregelt", grid: "Netzbezug",
     until: "bis Ladebeginn morgen", never: "–",
+    learnedTitle: "Kapazität, wie der Akku sie zeigt",
+    learned: (n, c, k, eta, a, b) => `${n}: verhält sich wie ${c} kWh (eingetragen ${k} kWh), Wirkungsgrad hin und zurück ${eta} %, aus ${a} Lade- und ${b} Entladeläufen der letzten 120 Tage. Die Prognose rechnet damit.`,
+    notLearned: (n) => `${n}: noch nicht gelernt. Dazu braucht es je drei Lade- und Entladeläufe über mindestens 15 Prozentpunkte.`,
+    noPower: (n) => `${n}: braucht den Sensor der Akkuleistung, um die Kapazität zu lernen; bis dahin gilt die eingetragene.`,
+    learnedHelp: "Beim Laden ergibt Energie durch Ladestand die Kapazität geteilt durch den Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und Wirkungsgrad, ohne dass einer davon bekannt sein muss. Ein eingetragener Wirkungsgrad bleibt.",
     whatIf: "Was wäre, wenn …", capacity: "Akkukapazität", capacityOf: (n) => `Kapazität ${n}`, consumer: "Zusätzlicher Verbraucher", power: "Leistung",
     duration: "Dauer", start: "Start", reset: "Zurücksetzen", now: "jetzt", base: "Wie geplant", variant: "Variante",
     share: "Davon aus PV und Akku", chart: "Ladestand und Leistung", pv: "PV erwartet", load: "Last", soc: "Ladestand",
@@ -32,6 +37,11 @@ const BAT_TEXT = {
     noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run.",
     socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", fedIn: "of that fed in", curtailed: "of that curtailed", grid: "From grid",
     until: "until tomorrow's charge start", never: "–",
+    learnedTitle: "Capacity as the battery shows it",
+    learned: (n, c, k, eta, a, b) => `${n}: behaves like ${c} kWh (entered ${k} kWh), round trip ${eta} %, from ${a} charging and ${b} discharging runs of the last 120 days. The forecast uses it.`,
+    notLearned: (n) => `${n}: not learned yet. It takes three charging and three discharging runs of at least 15 percent points each.`,
+    noPower: (n) => `${n}: needs the battery power sensor to learn the capacity; until then the entered one counts.`,
+    learnedHelp: "Charging, energy per level gives the capacity divided by the charging efficiency; discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency, without knowing either. An entered efficiency stays.",
     whatIf: "What if …", capacity: "Battery capacity", capacityOf: (n) => `Capacity ${n}`, consumer: "Additional consumer", power: "Power",
     duration: "Duration", start: "Start", reset: "Reset", now: "now", base: "As planned", variant: "Variant",
     share: "Covered by PV and battery", chart: "State of charge and power", pv: "PV expected", load: "Load", soc: "State of charge",
@@ -325,6 +335,7 @@ class NoxcastBattery extends HTMLElement {
       <input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v[k]}"><output id="o-${k.replace(":", "-")}"${k.startsWith("cap") ? ` data-cap="${k}"` : ""}>${out}</output></label>`;
     return `
       <section class="card pad"><div class="figs">${figs}</div>${systems}<p class="help">${t.until}: ${this._when(e.charge_start)}. ${t.help}</p></section>
+      ${this._learned(e)}
       <section class="card pad"><div class="head"><h3>${t.whatIf} <span class="muted small">${t.horizon}</span></h3><button id="reset">${t.reset}</button></div>
         <div class="ctls">
           ${this._several(e) ? e.units.map((u) => slider(`cap:${u.key}`, t.capacityOf(esc(u.name)), 0, Math.max(10000, u.storage.capacity_wh * 3), 250, `${this._kwh(v[`cap:${u.key}`])} ${t.kwh}`)).join("")
@@ -336,6 +347,19 @@ class NoxcastBattery extends HTMLElement {
         </div>
         <div class="split"><div class="grow" id="table">${res.table}</div><div class="grow2" id="chart">${res.chart}</div></div>
       </section>`;
+  }
+
+  // per battery the capacity and round trip learned from its level and power (battery.learn_capacity)
+  _learned(e) {
+    const t = this._t, list = e.batteries || [];
+    if (!list.length) return "";
+    const kwh = (wh) => (wh / 1000).toFixed(1);
+    const rows = list.map((b) => {
+      const n = esc(b.name || "");
+      if (b.learned) return t.learned(n, kwh(b.learned.capacity_wh), b.capacity_kwh, Math.round(b.learned.efficiency * 100), b.learned.charges, b.learned.discharges);
+      return b.power_sensor ? t.notLearned(n) : t.noPower(n);
+    });
+    return `<section class="card pad"><h3>${t.learnedTitle}</h3>${rows.map((r) => `<p>${r}</p>`).join("")}<p class="help">${t.learnedHelp}</p></section>`;
   }
 
   _update(e) {

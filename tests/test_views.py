@@ -179,11 +179,14 @@ def test_sensor_roles_rows_and_diagnostics():
 
 
 def test_battery_entry_and_reviews():
-    batteries = {"b1": {"soc_sensor": "sensor.soc", "capacity": 5}, "b2": {"capacity": 2}}
+    batteries = {"b1": {"soc_sensor": "sensor.soc", "capacity": 5, "battery_power": "sensor.p"}, "b2": {"capacity": 2}}
     assert views.soc_capacities(batteries) == {"sensor.soc": 5000.0}
-    plain = views.battery_entry(batteries, {"b1": "Big"}, None, A)
-    assert plain == {"batteries": [{"name": "Big", "capacity_kwh": 5, "soc_sensor": "sensor.soc"},
-                                   {"name": "", "capacity_kwh": 2, "soc_sensor": None}]}
+    learned = {"b1": {"capacity_wh": 4600, "efficiency": 0.9, "charges": 3, "discharges": 4}}
+    plain = views.battery_entry(batteries, {"b1": "Big"}, None, A, learned)
+    assert plain == {"batteries": [{"name": "Big", "capacity_kwh": 5, "soc_sensor": "sensor.soc",
+                                    "learned": learned["b1"], "power_sensor": True},
+                                   {"name": "", "capacity_kwh": 2, "soc_sensor": None, "learned": None,
+                                    "power_sensor": False}]}
     sim = bt.Simulation(full_at=A + 14 * H, lost_wh=10.6, grid_wh=1.4, charged_wh=99.5)
     d = data(load=lf.LoadForecast({A + 11 * H: 100.04, A + 12 * H: 200.06, A + 13 * H: 300.0}, {}, {}, 1.0),
              battery={"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000), "day_end": A + 86400,

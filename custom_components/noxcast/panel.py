@@ -323,7 +323,7 @@ async def ws_battery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         c = entry.runtime_data
         if not c.batteries:
             continue
-        result = views.battery_entry(c.batteries, _battery_names(entry), c.data, now.timestamp())
+        result = views.battery_entry(c.batteries, _battery_names(entry), c.data, now.timestamp(), c.battery_capacity)
         # review: lowest and highest state of charge per day from the long-term statistics
         socs = views.soc_capacities(c.batteries)
         try:

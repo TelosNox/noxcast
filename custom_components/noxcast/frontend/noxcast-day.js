@@ -438,7 +438,8 @@ class NoxcastDay extends HTMLElement {
         labels += `<text x="${xs0.toFixed(1)}" y="${(top0 - gains * k - 26).toFixed(1)}" text-anchor="middle" class="skl">${name}</text><text x="${xs0.toFixed(1)}" y="${(top0 - gains * k - 13).toFixed(1)}" text-anchor="middle" class="skv">${val}</text>`;
         top -= d;
       }
-      if (key === "heat" || (i === steps.length - 1 && key !== "dev") || (steps[i + 1] && steps[i + 1][0] === "dev")) {
+      // the forecast is reached after the last step of the model (snow and limit come after heat), once
+      if (i === steps.map(([k]) => k !== "dev").lastIndexOf(true)) {
         labels += `<line x1="${(xi + 4).toFixed(1)}" x2="${(xi + 4).toFixed(1)}" y1="${(top - 4).toFixed(1)}" y2="${(bot + 4).toFixed(1)}" class="skm"></line>`;
         if (end !== null) labels += `<text x="${(xi + 8).toFixed(1)}" y="${(top - 6).toFixed(1)}" class="skv">${t.steps[this._resultKey(this._stepsFrom(e.arrays))]} ${this._kwh(sum.result)}</text>`;
       }

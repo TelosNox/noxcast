@@ -2,7 +2,7 @@ blueprint:
   name: Noxcast – battery empty tonight
   description: >-
     Sends a notification in the evening when Noxcast expects the battery to run empty before the PV takes over
-    again, with the grid energy it then expects. Noxcast only forecasts; what you do with the notice is up to you.
+    again, with the time. Noxcast only forecasts; what you do with the notice is up to you.
   domain: automation
   source_url: https://github.com/TelosNox/noxcast/blob/main/blueprints/automation/noxcast/battery_empty_tonight.yaml
   input:
@@ -44,7 +44,8 @@ conditions:
   - condition: template
     value_template: >-
       {% set empty = states(empty_at) | as_datetime(none) %}
-      {{ empty is not none and now() < empty < now() + timedelta(hours=24) }}
+      {# a battery that ran empty just before the check (the sensor dates from the last update) still counts #}
+      {{ empty is not none and now() - timedelta(minutes=30) < empty < now() + timedelta(hours=24) }}
 
 actions:
   - domain: mobile_app

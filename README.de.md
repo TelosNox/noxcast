@@ -369,7 +369,7 @@ Ausgangsgrenze.
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor für die Akkuleistung zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 
-Mit dem Sensor der Akkuleistung lernt Noxcast jede Nacht, welche Kapazität und welchen Wirkungsgrad im Zyklus der
+Mit dem Sensor *Lade-/Entladeleistung* lernt Noxcast jede Nacht, welche Kapazität und welchen Wirkungsgrad im Zyklus der
 Akku zeigt, aus den letzten 120 Tagen: Beim Laden ergibt Energie je Prozent Ladestand die Kapazität geteilt durch den
 Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und
 Wirkungsgrad, ohne dass einer davon bekannt sein muss. Dazu braucht es je drei Lade- und Entladeläufe über mindestens
@@ -429,8 +429,8 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 | Reiter | Inhalt |
 |---|---|
 | Übersicht | Der Einstieg: heute erwartet, bis jetzt gegen die Prognose dafür, Rest heute und PV-Leistung jetzt mit dem Tagesverlauf; für flexible Verbraucher, ob jetzt starten, und die besten Fenster; Ladestand des Akkus, wann voll und wann leer, verlorener Überschuss; die nächsten Tage mit Spanne und klarem Himmel; die Prognose von gestern gegen Ist und der Fehler der letzten 14 Tage; eine Statuszeile mit letztem Lernlauf, Sensoren ohne Werte und der installierten Version. Jeder Teil führt in den Reiter, der ihn erklärt |
-| Gelerntes | Ein Lernstand (letzter und nächster Lernlauf, wie weit jede PV-Gruppe ist, für Administratoren ein Knopf zum sofortigen Neulernen); was der letzte nächtliche Lernlauf je PV-Gruppe geändert hat; je PV-Gruppe die gelernten Karten für Schatten, Reflexion und Richtung über Sonnenazimut × Höhe, mit Ebenen dafür, wie sicher jedes Feld ist und wie es sich im letzten Lauf geändert hat, mit den Sonnenbahnen des Jahres, ein Datumsregler, Werte je Feld, ein Raster Monat × Stunde, Kennzahlen (Wirkungsgrad, Himmelssicht, Temperaturkoeffizient, Abdeckung) und eine Plausibilitätsprüfung von Neigung und Azimut |
-| Tag | Ein Tag (bis 400 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; unter *Gruppen* der Verlauf jeder PV-Gruppe, gemessener Teil kräftig und Prognose blass, und ihr Ist bis jetzt; für den ganzen Tag oder eine gewählte Stunde, je PV-Gruppe oder alle zusammen, ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion und Wärme bis zur Prognose und zum Ist, und für vergangene Tage, warum das Ist abwich, in Teilen, die sich aufaddieren: Wetter laut Satellit, verfehlter Schatten, begrenzte Stunden und Modell; wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
+| Gelerntes | Ein Lernstand (letzter und nächster Lernlauf, wie weit jede PV-Gruppe ist, für Administratoren ein Knopf zum sofortigen Neulernen); was der letzte nächtliche Lernlauf je PV-Gruppe geändert hat; je PV-Gruppe die gelernten Karten für Schatten, Reflexion und Richtung über Sonnenazimut × Höhe, mit Ebenen dafür, wie sicher jedes Feld ist und wie es sich im letzten Lauf geändert hat, mit den Sonnenbahnen des Jahres, ein Datumsregler, Werte je Feld, ein Raster Monat × Stunde, Kennzahlen (Wirkungsgrad, Himmelssicht, Temperaturkoeffizient, Abdeckung), wo gelernt, wie Schnee auf ihr lag, und eine Plausibilitätsprüfung von Neigung und Azimut |
+| Tag | Ein Tag (bis 400 Tage zurück, 2 voraus): die PV-Gruppen übereinander, Prognose gegen Erwartung gegen Ist, P10–P90, Wetter je Stunde, Schatten- und Reflexionszeiten; unter *Gruppen* der Verlauf jeder PV-Gruppe, gemessener Teil kräftig und Prognose blass, und ihr Ist bis jetzt; für den ganzen Tag oder eine gewählte Stunde, je PV-Gruppe oder alle zusammen, ein Wasserfall vom klaren Himmel über Wolken, Schatten, Reflexion, Wärme und, wo gelernt, Schnee bis zur Prognose und zum Ist, und für vergangene Tage, warum das Ist abwich, in Teilen, die sich aufaddieren: Wetter laut Satellit, verfehlter Schatten, begrenzte Stunden und Modell (Stunden ohne Satellitenwerte bleiben nicht aufgeteilt); wie sich die Erwartung des Tages Stunde für Stunde entwickelt hat; wohin die Energie ging (PV, Akku, Netz, Haus) |
 | Prognosegüte | Vortagsprognosen gegen Ist über 14 / 30 / 90 Tage: Fehler, Verzerrung, Kalender, nach Wetterklasse, jedes Wettermodell gegen das Mittel; mit Satellitenfilter die Aufteilung in Wetteranteil und Modellanteil; wie oft der Ist-Wert unter, in oder über dem veröffentlichten Bereich P10–P90 lag, je Wetterklasse, für ganze Tage und einzelne Stunden; ein nächtlicher Backtest: das heutige Modell auf vergangenen Tagen, auch auf Tagen, aus denen es nicht gelernt hat; auf Knopfdruck ein Vergleich aller Wettermodelle und Modellpaare über das letzte Jahr, mit Empfehlung |
 | Last | Rest von heute und morgen nach Teilen (Grundlast, jeder Verbraucher), gelernte Profile, Backtest, vorgeschlagene wiederkehrende Geräte |
 | Akku & Überschuss | Simulation bis zum Ladebeginn morgen, bei mehreren Systemen auch je System, Was-wäre-wenn mit mehr Kapazität oder einem zusätzlichen Verbraucher, Kapazität und Wirkungsgrad, wie jeder Akku sie zeigt, die Vorhersage vom Morgen gegen das, was passiert ist, letzte 30 Tage |
@@ -592,7 +592,8 @@ template:
               {% set hour = as_datetime(starts[i]).replace(minute=0).isoformat() %}
               {% set pv = ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3) %}
               {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(), 'pv_estimate': pv,
-                                         'pv_estimate10': p10.get(hour, pv), 'pv_estimate90': p90.get(hour, pv)}] %}
+                                         'pv_estimate10': [p10.get(hour, pv), pv] | min,
+                                         'pv_estimate90': [p90.get(hour, pv), pv] | max}] %}
             {% endfor %}
             {{ ns.out }}
 ```
@@ -608,7 +609,8 @@ Wiederhole ihn mit `sensor.noxcast_forecast_tomorrow` und `sensor.noxcast_foreca
 ```
 
 `pv_estimate10` / `pv_estimate90` kommen aus `hourly_p10` / `hourly_p90`, der Spanne je Stunde (kWh pro Stunde, die
-mittlere Leistung in kW); vergangene Stunden behalten den mittleren Wert. Den Akku simuliert Predbat selbst.
+mittlere Leistung in kW), gehalten um den Wert der halben Stunde: morgens und abends unterscheiden sich die halben
+Stunden einer Stunde stärker als ihre Spanne; vergangene Stunden behalten den mittleren Wert. Den Akku simuliert Predbat selbst.
 
 ### EMHASS
 

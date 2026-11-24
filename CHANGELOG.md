@@ -8,6 +8,10 @@ breaking changes.
 ## Unreleased
 
 ### Added
+- Snow in the forecast, only where learned: an array that cleared from at least two snowfalls in its history
+  (with the satellite archive) has shown how long snow lies on it and what it still delivers. When the weather
+  forecasts snow, its forecast follows that until it thaws; the hour's waterfall shows the *Snow* step and the
+  *Learned* tab what was learned. Arrays without such a history forecast as before.
 - Three blueprints for notifications on your phone, to import from the README: *Battery full early* (in the
   morning, when surplus will be lost today), *Battery empty tonight* (in the evening, with the time) and *Good time
   to start* (when *Start now* of a flexible consumer turns on, once a day). Noxcast still controls nothing.

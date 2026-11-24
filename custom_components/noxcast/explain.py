@@ -4,7 +4,9 @@ Pure functions, no Home Assistant imports. The same model runs with the learned 
 one after the other; each step is the difference to the previous run:
 
   clear sky (with the learned efficiency) → clouds (the weather source's irradiance) → shade →
-  reflection → direction factor → heat (temperature) = forecast
+  reflection → direction factor → heat (temperature) → snow = forecast
+
+Snow is a step only in hours that learned snow covers (model.snow_cover); a stored hour without it has six values.
 
 The order is fixed, so the steps always add up to the forecast. Shade before reflection, since
 reflection is learned where the module itself gets little direct light.
@@ -15,15 +17,18 @@ The steps of a forecast that is kept (the morning fix, the day-ahead archive) ar
 from __future__ import annotations
 
 from .archive import Day, Hour
-from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
+from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast, snow_cover
 from .solar import Site
 
 STEPS = ("clear", "clouds", "shade", "reflection", "direction", "heat")
 LIMIT_TOLERANCE_WH = 1.0      # below the rounding of the steps, far below any real cap
 
 
-def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour]) -> dict[float, dict]:
-    """Per hour start: Wh of the clear-sky start and of each step, plus the resulting forecast."""
+def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: list[WeatherHour],
+               before: list[WeatherHour] = ()) -> dict[float, dict]:
+    """Per hour start: Wh of the clear-sky start and of each step, plus the resulting forecast.
+
+    before: the forecast weather of the hours before, whose snow may still lie (model.snow_cover); no steps."""
     if not weather:
         return {}
     bare = LearnedArray(**{**learned.__dict__, "cells": {}, "facade": None, "reflection": {}, "direction": {}, "temp_coeff": 0.0})
@@ -38,6 +43,10 @@ def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: l
         forecast(site, geo, directed, weather),
         forecast(site, geo, learned, weather),
     ]
+    cover = {}
+    if learned.snow and any(w.snow for w in (*before, *weather)):
+        lead = [w for w in before if w.start < weather[0].start]
+        cover = snow_cover(site, learned, [*lead, *weather], {**forecast(site, geo, learned, lead), **runs[-1]})
     out = {}
     for w in weather:
         values = [r.get(w.start, 0.0) for r in runs]
@@ -46,19 +55,22 @@ def hour_steps(site: Site, geo: ArrayGeometry, learned: LearnedArray, weather: l
         step = {"clear": round(values[0], 1)}
         for i, name in enumerate(STEPS[1:], start=1):
             step[name] = round(values[i] - values[i - 1], 1)
-        step["result"] = round(values[-1], 1)
+        if w.start in cover:
+            step["snow"] = round(values[-1] * (cover[w.start] - 1.0), 1)
+        step["result"] = round(values[-1] * cover.get(w.start, 1.0), 1)
         out[w.start] = step
     return out
 
 
 def packed(step: dict) -> list[float]:
-    """The steps of an hour as stored: the values in STEPS order (the forecast is their sum)."""
-    return [step[k] for k in STEPS]
+    """The steps of an hour as stored: the values in STEPS order, then snow where it covered the array (the forecast
+    is their sum)."""
+    return [step[k] for k in STEPS] + ([step["snow"]] if "snow" in step else [])
 
 
 def unpacked(values: list[float]) -> dict:
     """The steps of an hour from their stored form, with the forecast as "result"."""
-    step = dict(zip(STEPS, values, strict=True))
+    step = dict(zip((*STEPS, "snow") if len(values) > len(STEPS) else STEPS, values, strict=True))
     step["result"] = round(sum(values), 1)
     return step
 
@@ -85,13 +97,14 @@ def archived_weather(day: Day | None) -> list[WeatherHour]:
 
 
 def replay(site: Site, geometries: dict[str, ArrayGeometry], learned: dict[str, LearnedArray],
-           weather: list[WeatherHour]) -> dict[str, dict[float, dict]]:
+           weather: list[WeatherHour], before: list[WeatherHour] = ()) -> dict[str, dict[float, dict]]:
     """Per array the steps of each hour (hour_steps) under the given weather; "result" is the forecast in Wh.
 
     With archived_weather() this replays a past day with the current learned model, as the day view
     does and a backtest can. An array without learned state runs with the defaults.
     """
-    return {sid: hour_steps(site, geo, learned.get(sid) or LearnedArray(), weather) for sid, geo in geometries.items()}
+    return {sid: hour_steps(site, geo, learned.get(sid) or LearnedArray(), weather, before)
+            for sid, geo in geometries.items()}
 
 
 def clearness(site: Site, weather: list[WeatherHour]) -> dict[float, tuple[float, float]]:
@@ -141,7 +154,7 @@ def deviation(hours: list[Hour], sid: str, base: dict[float, float]) -> dict[flo
             continue
         rest = actual - m
         steps = h.steps.get(sid) or ()
-        light = steps[0] + steps[1] if len(steps) == len(STEPS) else 0.0
+        light = steps[0] + steps[1] if len(steps) >= len(STEPS) else 0.0
         if h.curtailed or h.limited:
             kind = "limit"
         elif light > 0 and -steps[2] >= SHADE_SHARE * light:

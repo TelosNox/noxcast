@@ -121,6 +121,7 @@ const TEXT = {
       plOk: "Messwerte und Konfiguration passen zusammen.",
       deadDays: "Nicht ins Lernen eingeflossen: {n}, an denen die Gruppe fast nichts geliefert hat (höchstens 2 % eines klaren Tages: ausgefallen, ganz unter Schnee oder zu dunkel, als dass der Wechselrichter anläuft), zuletzt am {d}. Lag kein Ausfall vor, war es ein sehr dunkler Tag; die Gruppe verliert dadurch nichts.",
       days: { one: "1 Tag", other: "{n} Tage" }, snowDays: "Nicht ins Lernen eingeflossen: Stunden an {n} nach Schneefall, bis die Module wieder frei waren, getaut hat oder eine Woche vorbei war, zuletzt am {d}. Schnee auf den Modulen sähe sonst wie Schatten aus.",
+      snowLearned: "Schnee: Nach {n} Schneefällen war die Gruppe im Mittel {h} helle Stunden bedeckt und lieferte dabei {s} dessen, was freie Module geliefert hätten. Sagt das Wetter wieder mindestens 1 cm Schnee bei bis zu 3 °C an, rechnet die Prognose so lange damit, außer es taut vorher.",
       plHelp: "Der Wirkungsgrad ist das Verhältnis von Messung zu dem, was die eingetragenen Module bei klarem Himmel liefern müssten. Schatten und wenig Daten drücken ihn nach unten; über 100 % kommt er nur, wenn die Konfiguration nicht zur Anlage passt. Jede Tagesstunde mit dem, was das Lernen aus ihr gemacht hat, steht im Export unten und im Diagnose-Download der Integration.",
       export: "Stunden als CSV", exporting: "Wird erstellt …", exportFailed: "Export fehlgeschlagen ({e})",
       exportHelp: "Jede gemessene Tagesstunde der Gruppe: verwendet, begrenzt (Leistungsgrenze, Akku lädt mit voller Leistung, PV zurückgehalten) oder ausgelassen mit allen Gründen, dazu Messung, Leistung bei klarem Himmel, Temperatur, Schneefall und Ladestand des Haushalts. Mit dem Satellitenarchiv (Optionen) auch das Modell mit der gemessenen Strahlung, in Schritten zerlegt. Zeiten in UTC. Ohne Ort und Sensor-IDs, zum Ansehen in einer Tabelle oder zum Anhängen an ein Issue.",
@@ -236,6 +237,7 @@ const TEXT = {
       plOk: "Measurements and configuration fit together.",
       deadDays: "Left out of learning: {n} on which the array delivered almost nothing (at most 2 % of a clear day: off, fully under snow or too dark for the inverter to start), last on {d}. If nothing was off, it was a very dark day; the array loses nothing by it.",
       days: { one: "1 day", other: "{n} days" }, snowDays: "Left out of learning: hours on {n} after snowfall, until the modules were free again, it thawed or a week had passed, last on {d}. Snow on the modules would otherwise look like shade.",
+      snowLearned: "Snow: after {n} snowfalls the array stayed covered for {h} daylight hours (median), delivering {s} of what free modules would have. When the weather forecasts at least 1 cm of snow at up to 3 °C again, the forecast assumes the same for as long, unless it thaws first.",
       plHelp: "The efficiency is the ratio of the measurement to what the configured modules should give under a clear sky. Shade and little data push it down; it only goes above 100 % when the configuration does not fit the installation. Every daylight hour with what learning made of it is in the export below and in the integration's diagnostics download.",
       export: "Hours as CSV", exporting: "Creating …", exportFailed: "Export failed ({e})",
       exportHelp: "Every measured daylight hour of the array: used, capped (power limit, battery charging at full power, PV held back) or left out with all reasons, with the measurement, the clear-sky power, temperature, snowfall and the household's state of charge. With the satellite archive (options) also the model on the measured irradiance, split into its steps. Times in UTC. Without location and sensor IDs, to look at in a spreadsheet or attach to an issue.",
@@ -1139,7 +1141,8 @@ class NoxcastPanel extends HTMLElement {
       .map(([key, days]) => {
         const n = (days.length === 1 ? c.days.one : c.days.other).replace("{n}", days.length);
         return `<p class="note">${c[key].replace("{n}", n).replace("{d}", this._dayDate(days[days.length - 1]))}</p>`;
-      }).join("");
+      }).join("")
+      + (la.snow ? `<p class="note">${c.snowLearned.replace("{n}", la.snow.windows).replace("{h}", la.snow.hours).replace("{s}", pct(la.snow.share))}</p>` : "");
     const admin = this._hass.user && this._hass.user.is_admin;
     // one export at a time: each fetches the whole history
     const busy = this._exporting === arr.id, error = (this._exportErrors || {})[arr.id];

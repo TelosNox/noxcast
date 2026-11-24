@@ -789,9 +789,12 @@ load(h) = base profile × correction + fixed consumers + regulated consumers + r
 
 ### Battery simulation and planning
 
-- Hour by hour from now until tomorrow's charge start (first hour with PV above load): surplus
+- In quarter hours from now until tomorrow's charge start (first hour with PV above load): surplus
   charges up to the upper limit and the charge power, the rest is lost for the battery; a deficit
-  discharges down to min SOC + reserve, the rest comes from the grid. Losses by where the battery sits.
+  discharges down to min SOC + reserve, the rest comes from the grid. Losses by where the battery sits. The PV follows
+  its 15-minute forecast within each hour (the sun's course), the load is spread evenly over the hour, since its
+  profiles are hourly; with several systems each one's PV gets the course of the whole. Results are shown per hour,
+  the level per quarter hour.
 - With an output limit on its system, a battery delivers at most the limit minus what the system's arrays
   deliver in that hour, and their PV above the limit goes into the battery or is curtailed. Subsystems under a
   shared limit: their PV and batteries together deliver at most the limit.

@@ -26,6 +26,10 @@ breaking changes.
   satellite filter, and works for past days already in the archive.
 
 ### Changed
+- The battery forecast runs in quarter hours: within each hour the PV follows its 15-minute forecast, so a
+  battery that gets full at 11:40 is full then, not spread over the hour, and the battery's level is drawn per
+  quarter hour. *Battery full at*, *Battery empty at*, the lost surplus and the windows of flexible consumers shift a
+  little. Results stay per hour.
 - A *three-phase* device under an output limit that holds per phase now counts at the phase limits: it feeds a third
   of its output into each phase, so it shares each phase's limit with the devices on that phase, and devices that
   are all three-phase share three times the limit. Without a battery this caps the PV forecast, and learning counts

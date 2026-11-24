@@ -94,6 +94,12 @@ def test_day_view_of_a_past_day():
     assert roof["steps_from"] == "day_ahead" and list(roof["steps"]) == [h]
     assert roof["steps"][h] == {"clear": 400.0, "clouds": -100.0, "shade": -10.0, "reflection": 5.0, "direction": 0.0,
                                 "heat": -20.0, "result": 275.0}
+    # forecast plus the parts of the deviation is the actual value, hour by hour (explain.deviation)
+    dev = roof["deviation"]
+    actual = dict(zip(roof["actual"]["t"], roof["actual"]["wh"]))
+    for t, parts in dev.items():
+        base = roof["steps"].get(t, {}).get("result", 0.0)
+        assert abs(base + sum(parts.values()) - actual.get(float(t), 0.0)) < 0.5
     assert {k: v[:2] for k, v in view["weather"].items()} == {
         "t": [1782878400.0, 1782882000.0], "ghi": [0.0, 30.0], "clear": [84.6, 234.6], "temp": [None, 15.0]}
     empty = {"t": [], "ghi": [], "clear": [], "temp": []}

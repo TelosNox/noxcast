@@ -771,7 +771,14 @@ segment might better count only for sky view, reflection and facade.
     today's correction (the expectation, for hours still ahead) and the actual value, without a
     subtotal after the newer weather: the whole day by the model alone is a number nobody acts on. For an array with a power limit a last step *Limit* leads from the steps down to the
     capped forecast (`explain.with_limit`); it is not stored, it follows from the forecast. Days archived without steps are replayed from the archived weather with the
-    current model and say so. Past days come from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
+    current model and say so.
+    For a past day the chain goes on from that forecast to the actual value (`explain.deviation`), in parts that add
+    up hour by hour. The model on measured weather (satellite irradiance, archived with the parameters learned then
+    and capped like the forecast) separates the sky from the rest: *weather* is that model minus the forecast; the
+    actual value minus that model is *limit* in hours that were curtailed or at a fixed limit, *shade* in hours whose
+    shade step takes at least 10 % of the light after clouds, and *model* otherwise. Shade is not a separate effect
+    there, it names the hours in which the shading map shaped the forecast, so a miss points at the map rather than at
+    efficiency or sky view. Hours without satellite irradiance or without an actual value stay *open*. Past days come from the day-ahead archive. At every full hour from 5 to 21 o'clock the expectation for the
     whole day (all arrays) is recorded in the archive (`history`); the day view draws these
     snapshots as a fan of curves from early to late next to the day-ahead forecast, and the day
     total of each snapshot over time, so it shows when the day became foreseeable and where the

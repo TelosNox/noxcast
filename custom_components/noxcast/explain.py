@@ -14,7 +14,7 @@ The steps of a forecast that is kept (the morning fix, the day-ahead archive) ar
 """
 from __future__ import annotations
 
-from .archive import Day
+from .archive import Day, Hour
 from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
 from .solar import Site
 
@@ -101,4 +101,52 @@ def clearness(site: Site, weather: list[WeatherHour]) -> dict[float, tuple[float
         cs = clearsky_weather(site, w.start).ghi
         if cs > 0:
             out[w.start] = (w.ghi, cs)
+    return out
+
+
+# ---------------------------------------------------------------- why a past day deviated
+
+DEVIATION = ("weather", "shade", "limit", "model", "open")
+SHADE_SHARE = 0.1             # an hour is behind learned shade when the shade step takes 10 % of the light after clouds
+
+
+def deviation(hours: list[Hour], sid: str, base: dict[float, float]) -> dict[float, dict]:
+    """Per hour start: the deviation of the actual value from the forecast, split into parts that add up to it.
+
+    base: the forecast of each hour as the view shows it (the result of its steps; an hour without steps has none), so
+    that forecast plus all parts is exactly the actual value.
+    The model on measured weather (satellite irradiance, archived as "measured" with the parameters learned then and
+    capped like the forecast) separates the sky from the rest:
+      weather = model on measured weather − forecast        (the sky was clearer or duller than forecast)
+      limit   = actual − model on measured weather          in hours that were curtailed or at a fixed limit
+      shade   = the same                                    in hours behind learned shade (SHADE_SHARE)
+      model   = the same                                    in the other hours
+      open    = actual − forecast                           without satellite irradiance, or without an actual value
+    Shade is not a separate effect of the model on measured weather; it names the hours in which the learned shading
+    map shaped the forecast, so a miss there points at the map rather than at efficiency or sky view.
+    """
+    out: dict[float, dict] = {}
+    for h in hours:
+        actual = (h.actual or {}).get(sid)
+        f = base.get(h.ts, 0.0)
+        if actual is None:
+            if f:
+                out[h.ts] = {"open": round(-f, 1)}
+            continue
+        m = (h.measured or {}).get(sid)
+        if not f and not actual and not m:
+            continue                                            # night: nothing to explain
+        if m is None:
+            out[h.ts] = {"open": round(actual - f, 1)}
+            continue
+        rest = actual - m
+        steps = h.steps.get(sid) or ()
+        light = steps[0] + steps[1] if len(steps) == len(STEPS) else 0.0
+        if h.curtailed or h.limited:
+            kind = "limit"
+        elif light > 0 and -steps[2] >= SHADE_SHARE * light:
+            kind = "shade"
+        else:
+            kind = "model"
+        out[h.ts] = {"weather": round(m - f, 1), kind: round(rest, 1)}
     return out

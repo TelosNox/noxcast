@@ -562,6 +562,10 @@ def day_view(site: Site, arrays: dict, learned: dict[str, LearnedArray], archive
         entry = {"id": sid, "name": arr.name, "peak_w": arr.geometry.peak_w,
                  "steps": {str(int(t)): s for t, s in sorted(steps.items()) if a <= t < b}, "steps_from": source,
                  "efficiency": (learned.get(sid) or LearnedArray()).efficiency}
+        if not current and any(sid in (h.actual or {}) for h in arch):
+            # why the actual value differs from the forecast the steps add up to (explain.deviation)
+            parts = explain.deviation(arch, sid, {t: s["result"] for t, s in steps.items()})
+            entry["deviation"] = {str(int(t)): p for t, p in sorted(parts.items()) if a <= t < b}
         entry["day_ahead"] = columns(((h.ts, h.forecast[sid]) for h in arch if sid in h.forecast), "wh")
         entry["actual"] = columns(((h.ts, h.actual[sid]) for h in arch if sid in (h.actual or {})), "wh")
         if current:

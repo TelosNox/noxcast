@@ -500,15 +500,19 @@ Geräte **Noxcast (gesamt)** und **Noxcast *PV-Gruppe***:
 | Wetter | ✓ | | Aktuelle Stunde, stündliche und tägliche Vorhersage für 7 Tage |
 
 Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1) und `quarter_hourly` (dasselbe in
-15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90`. Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
+15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90` und ab der laufenden Stunde
+`hourly_p10` / `hourly_p90` (die Spanne jeder Stunde für sich, deshalb ergeben sie zusammen nicht `p10` / `p90` des Tages). Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
 Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
 `backtest`), und ohne Akkus **Überschuss Rest heute** (PV über der Last; Attribute `fed_in` und `curtailed` wie unten,
 `to_battery` 0). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
 `fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
-Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Akku tiefster Stand (48 h)**
-(Attribute `hourly`: der erwartete Stand zu jeder vollen Stunde der nächsten 48 Stunden in %, `lowest_at`, `until`:
-früher, wenn die *Prognosetage* vorher enden). Je flexiblem
+Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Netzbezug bis Ladebeginn** (was der Akku
+nicht deckt, bis die PV wieder übernimmt; Attribut `missing_soc`: die Prozentpunkte Ladung, die ihn decken würden,
+zum Planen einer günstigen Ladung aus dem Netz), **Akku tiefster Stand (48 h)**
+(Attribute `hourly`: der erwartete Stand zu jeder vollen Stunde der nächsten 48 Stunden in %, `grid_hourly` und
+`fed_in_hourly`: je Stunde die erwartete Energie aus dem und ins Netz in kWh, `lowest_at`, `until`: früher, wenn die
+*Prognosetage* vorher enden). Je flexiblem
 Verbraucher: **PV-Anteil jetzt**, **bestes Fenster heute** und **bestes Fenster morgen** (Startzeit; Attribute `end`,
 `pv_share`, `lost_share`; unbekannt, wenn kein Lauf passt oder keiner
 mindestens 5 % aus Überschuss bekommt) und der Binärsensor **jetzt starten**: an, solange ein
@@ -572,10 +576,14 @@ template:
           detailedForecast: >
             {% set ns = namespace(out=[]) %}
             {% set q = state_attr('sensor.noxcast_expected_today', 'quarter_hourly') or {} %}
+            {% set p10 = state_attr('sensor.noxcast_expected_today', 'hourly_p10') or {} %}
+            {% set p90 = state_attr('sensor.noxcast_expected_today', 'hourly_p90') or {} %}
             {% set starts = q | list %}
             {% for i in range(0, starts | count - 1, 2) %}
-              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(),
-                                         'pv_estimate': ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3)}] %}
+              {% set hour = as_datetime(starts[i]).replace(minute=0).isoformat() %}
+              {% set pv = ((q[starts[i]] + q[starts[i + 1]]) * 2) | round(3) %}
+              {% set ns.out = ns.out + [{'period_start': as_datetime(starts[i]).isoformat(), 'pv_estimate': pv,
+                                         'pv_estimate10': p10.get(hour, pv), 'pv_estimate90': p90.get(hour, pv)}] %}
             {% endfor %}
             {{ ns.out }}
 ```
@@ -590,8 +598,8 @@ Wiederhole ihn mit `sensor.noxcast_forecast_tomorrow` und `sensor.noxcast_foreca
   pv_forecast_d4: sensor.noxcast_predbat_in_3_days
 ```
 
-Noxcast hat P10 / P90 pro Tag, nicht pro Stunde, deshalb tragen die Einträge kein `pv_estimate10` / `pv_estimate90`:
-Predbat nimmt dann die mittlere Prognose für seinen schwachen und starken Fall. Den Akku simuliert Predbat selbst.
+`pv_estimate10` / `pv_estimate90` kommen aus `hourly_p10` / `hourly_p90`, der Spanne je Stunde (kWh pro Stunde, die
+mittlere Leistung in kW); vergangene Stunden behalten den mittleren Wert. Den Akku simuliert Predbat selbst.
 
 ### EMHASS
 

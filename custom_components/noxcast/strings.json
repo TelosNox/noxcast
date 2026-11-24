@@ -567,6 +567,9 @@
       "battery_soc_at_charge_start": {
         "name": "Battery at next charge start"
       },
+      "grid_until_charge_start": {
+        "name": "Grid energy until charge start"
+      },
       "battery_lowest_soc_48h": {
         "name": "Battery lowest level (48 h)"
       },

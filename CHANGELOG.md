@@ -7,15 +7,12 @@ breaking changes.
 
 ## Unreleased
 
-### Fixed
-- With a battery, *Best window*, *PV share now* and *Start now* of flexible consumers count what a run takes from
-  the battery. Until now every watt of PV above the load counted as free, also the part that would have charged the
-  battery, so a run at noon could show 90 % from PV and still cost grid energy in the night. Now the battery
-  simulation runs with and without the run: a run on a day the battery does not get full shows the energy it takes
-  from the night, and a run before the battery gets full anyway (also early in the morning, from the battery) counts
-  as free. Tomorrow's window now also prefers the hours in which surplus would be lost, as today's does.
-
 ### Added
+- For tariff and charge planners: the total forecast sensors with a range (*Expected today*, *Expected remaining
+  today*, *Forecast tomorrow*, *Forecast day after*) carry `hourly_p10` and `hourly_p90`, the range of each hour from
+  the running hour on. *Battery lowest level (48 h)* carries `grid_hourly` and `fed_in_hourly`: per hour of the
+  48-hour outlook the energy expected from and into the grid. The Predbat example in the README now fills
+  `pv_estimate10` / `pv_estimate90` from them.
 - The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
   parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
   forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or
@@ -30,6 +27,14 @@ breaking changes.
   battery the battery forecast bounds a three-phase device by three times the limit. Until now such a device was
   left out of the phase limits. A device without a phase still is; the *Installation* tab shows that as
   simplified. From the next nightly learning run on, learning changes for such installations.
+
+### Fixed
+- With a battery, *Best window*, *PV share now* and *Start now* of flexible consumers count what a run takes from
+  the battery. Until now every watt of PV above the load counted as free, also the part that would have charged the
+  battery, so a run at noon could show 90 % from PV and still cost grid energy in the night. Now the battery
+  simulation runs with and without the run: a run on a day the battery does not get full shows the energy it takes
+  from the night, and a run before the battery gets full anyway (also early in the morning, from the battery) counts
+  as free. Tomorrow's window now also prefers the hours in which surplus would be lost, as today's does.
 
 ## [0.7.0] - 2026-11-24
 

@@ -73,6 +73,13 @@ def test_each_segment_has_its_own_limits():
     assert floors and max(floors) < SWAP                     # the new device has no limit
 
 
+def test_a_limit_a_device_takes_a_part_of_survives_the_store():
+    # a three-phase device under a limit per phase: each sensor's share is kept with the limit
+    shared = ln.Segment(SWAP, RESUME, ("old",), caps=((("old", "other"), 800.0, (1 / 3, 1.0)), (("old",), 600.0)))
+    frozen = json.loads(json.dumps(sw.freeze(SITE, "roof", before(), shared)))
+    assert sw.segment_of(frozen).caps == shared.caps
+
+
 def test_a_sensor_that_stays_runs_on_live_after_the_swap():
     # a battery swap: the PV sensor stays, its frozen copy holds before, the live statistics after
     live = before()

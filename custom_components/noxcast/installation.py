@@ -174,6 +174,12 @@ class Cap:
     arrays: tuple[str, ...]
     limit_w: float
     phase: str | None = None             # the phase it holds for, where the system's limit holds per phase
+    # per array the part of its output on that phase (a three-phase device: a third); empty: all of every one
+    shares: tuple[float, ...] = ()
+
+    def shared(self) -> tuple:
+        """As curtailment.cap_group takes it: (arrays, W), with the shares where an array counts only in part."""
+        return (self.arrays, self.limit_w, self.shares) if self.shares else (self.arrays, self.limit_w)
 
 
 @dataclass(frozen=True)
@@ -186,6 +192,7 @@ class Outlet:
     limit_w: float
     meters: tuple[Meter, ...]            # the power sensors of every battery below the limit
     phase: str | None = None             # as Cap.phase
+    shares: Mapping[str, float] = field(default_factory=dict)   # array or meter sensor -> as Cap.shares; else all
 
 
 @dataclass(frozen=True)
@@ -257,8 +264,10 @@ class Installation:
                 continue
             sensors = [i.sensor for a in o.arrays for i in self.inputs_of(a)]
             meters = [m.sensor for m in o.meters]
+            shares = {i.sensor: o.shares[a] for a in o.arrays if a in o.shares for i in self.inputs_of(a)}
+            shares.update({m: o.shares[m] for m in meters if m in o.shares})
             reached = (1 - OUTPUT_MARGIN) * o.limit_w
-            fine = _output(sensors, meters, fine_pv, fine_charge)
+            fine = _output(sensors, meters, fine_pv, fine_charge, shares)
             # an hour goes by its 5-minute means only when all of them are there: one without a plane's sun has
             # gaps, and its periods at the limit may sit in them
             count: dict[float, int] = {}
@@ -267,7 +276,8 @@ class Installation:
             known = {h for h, n in count.items() if n >= HOUR // FINE_STEP}
             fine = {t: w for t, w in fine.items() if t - t % HOUR in known}
             out |= {t - t % HOUR for t, w in fine.items() if w >= reached}
-            out |= {t for t, w in _output(sensors, meters, peak, charge).items() if t not in known and w >= reached}
+            out |= {t for t, w in _output(sensors, meters, peak, charge, shares).items()
+                    if t not in known and w >= reached}
         return out
 
     def battery_hours(self, array: str, soc: Mapping[str, Mapping[float, float | None]],
@@ -298,7 +308,8 @@ class Installation:
         """
         inputs = self.inputs_of(array)
         found = [sum(i.limit_w for i in inputs)] if inputs and all(i.limit_w is not None for i in inputs) else []
-        found += [c.limit_w for c in self.caps if c.arrays == (array,)]
+        # an array alone under a limit of which it takes a part (a three-phase device per phase) reaches it later
+        found += [c.limit_w / (c.shares[0] if c.shares else 1.0) for c in self.caps if c.arrays == (array,)]
         return min(found) if found else None
 
     def shared_caps(self, array: str) -> list[Cap]:
@@ -306,10 +317,10 @@ class Installation:
         forecasts (curtailment.cap_group)."""
         return [c for c in self.caps if array in c.arrays and len(c.arrays) > 1]
 
-    def forecast_caps(self) -> list[tuple[tuple[str, ...], float]]:
-        """The fixed limits shared by several arrays as (arrays, W): they cap the sum of the arrays' forecasts
-        (curtailment.cap_group)."""
-        return [(c.arrays, c.limit_w) for c in self.caps if len(c.arrays) > 1]
+    def forecast_caps(self) -> list[tuple]:
+        """The fixed limits shared by several arrays as (arrays, W), with the arrays' shares where they count only
+        in part (Cap.shared): they cap the sum of the arrays' forecasts (curtailment.cap_group)."""
+        return [c.shared() for c in self.caps if len(c.arrays) > 1]
 
     def limited_arrays(self) -> dict[str, float]:
         """Array id -> fixed limit (W), for arrays that have one."""
@@ -334,15 +345,19 @@ def _charge_hours(c: Charger, hourly: Mapping[str, Mapping[float, float]],
 
 
 def _output(sensors: list[str], meters: list[str], pv: Mapping[str, Mapping[float, float]],
-            charge: Mapping[str, Mapping[float, float]]) -> dict[float, float]:
-    """Period start -> the PV of the sensors less what the batteries charged (W), where every sensor has a value.
+            charge: Mapping[str, Mapping[float, float]], shares: Mapping[str, float] | None = None
+            ) -> dict[float, float]:
+    """Period start -> the PV of the sensors less what the batteries charged (W), where every sensor has a value;
+    shares: sensor -> the part of it that counts (Outlet.shares), all where not named.
 
     A discharge counts as nothing: below the limit the controller lowers the discharge before it cuts PV, so PV and
     discharge together at the limit say nothing about the PV."""
     if not sensors or any(s not in pv for s in sensors) or any(m not in charge for m in meters):
         return {}
+    k = shares or {}
     common = set(pv[sensors[0]]).intersection(*(pv[s] for s in sensors[1:]), *(charge[m] for m in meters))
-    return {t: sum(pv[s][t] for s in sensors) - sum(max(charge[m][t], 0.0) for m in meters) for t in common}
+    return {t: sum(pv[s][t] * k.get(s, 1.0) for s in sensors) - sum(max(charge[m][t], 0.0) * k.get(m, 1.0) for m in meters)
+            for t in common}
 
 
 def charge_power(chargers: Iterable[Charger | Meter], values: Mapping[str, Mapping[float, float | None]],
@@ -390,7 +405,7 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
         rest = tuple(s for s in dict.fromkeys(others.get(a, ())) if s != store)
         parts = [ceilings.get(x) for x in systems[sid].arrays]
         ceiling = sum(p for p in parts if p is not None) if parts and None not in parts else None
-        limit = next((w for p, _, w in sy.ceiling_groups(systems, sid) if p is None), None)
+        limit = next((w for p, _, w, _ in sy.ceiling_groups(systems, sid) if p is None), None)
         out[a] = Reach((store,), rest,
                        own_charge=store.charger is None or ceiling is None or ceiling > store.charger.max_w,
                        overflow=bool(limit) and (ceiling is None or ceiling > float(limit)))
@@ -400,34 +415,38 @@ def _reach(systems: Mapping[str, sy.System], batteries: Mapping[str, Mapping[str
 def _caps(systems: Mapping[str, sy.System], arrays: Iterable[str]) -> tuple[Cap, ...]:
     """The output limits and fixed powers that are fixed caps: no battery in the system or its subsystems
     (systems.ceiling_groups). A limit per phase holds for each phase's subsystems, fixed where none of them has a
-    battery."""
+    battery; a three-phase one counts with a third of its arrays."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
+        for phase, tree, limit, shares in sy.ceiling_groups(systems, s.id):
             if any(x.battery for x in tree):
                 continue
-            members = tuple(a for x in tree for a in x.arrays if a in known)
+            members = [(a, shares.get(x.id, 1.0)) for x in tree for a in x.arrays if a in known]
             if members:
-                out.append(Cap(s.id, members, limit, phase))
+                parts = tuple(k for _, k in members) if shares else ()
+                out.append(Cap(s.id, tuple(a for a, _ in members), limit, phase, parts))
     return tuple(out)
 
 
 def _outlets(systems: Mapping[str, sy.System], arrays: Iterable[str],
              batteries: Mapping[str, Mapping[str, Any]]) -> tuple[Outlet, ...]:
     """The output limits with a battery in the system or its subsystems (the others are fixed, _caps), where every
-    such battery has a power sensor: without one the output is not known. Per phase as _caps."""
+    such battery has a power sensor: without one the output is not known. Per phase as _caps: a three-phase
+    subsystem's PV and charge count with a third."""
     known = set(arrays)
     out = []
     for s in sorted(systems.values(), key=lambda s: s.id):
-        for phase, tree, limit in sy.ceiling_groups(systems, s.id):
-            found = [batteries.get(x.battery) or {} for x in tree if x.battery]
-            if not found or not all(d.get(CONF_BATTERY_POWER) for d in found):
+        for phase, tree, limit, shares in sy.ceiling_groups(systems, s.id):
+            found = [(x, batteries.get(x.battery) or {}) for x in tree if x.battery]
+            if not found or not all(d.get(CONF_BATTERY_POWER) for _, d in found):
                 continue
             members = tuple(a for x in tree for a in x.arrays if a in known)
             if members:
-                meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for d in found)
-                out.append(Outlet(s.id, members, limit, meters, phase))
+                meters = tuple(Meter(d[CONF_BATTERY_POWER], bool(d.get(CONF_BATTERY_INVERT))) for _, d in found)
+                parts = {a: shares[x.id] for x in tree if x.id in shares for a in x.arrays if a in known}
+                parts.update({d[CONF_BATTERY_POWER]: shares[x.id] for x, d in found if x.id in shares})
+                out.append(Outlet(s.id, members, limit, meters, phase, parts))
     return tuple(out)
 
 

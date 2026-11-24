@@ -410,9 +410,14 @@ not types of their own. Independent devices are systems of their own, side by si
 - A system's output limit holds for all its subsystems together, whatever phase they feed into (a balcony system
   that keeps the feed-in point at 800 W), or, set per phase, for each phase on its own: the subsystems on one phase
   share it (EcoFlow Stream in three-phase mode), every phase may reach it (`systems.limit_groups`). A three-phase
-  subsystem, or one without a phase, takes an unknown part of every phase it feeds into; it belongs to no phase
-  group, so a phase's limit stays an upper bound of its single-phase subsystems, only an hour in which the other
-  took a part shows no cut (simplified).
+  subsystem feeds the three phases evenly, as three-phase inverters do: a third of its output counts in the limit
+  of every phase (`systems.THREE_PHASE_SHARE`, the shares of `installation.Cap` and `Outlet`), so a phase holds
+  its single-phase subsystems plus a third of each three-phase one, and three-phase subsystems alone share three
+  times the limit. The battery forecast keeps one shared limit per battery: the single-phase subsystems of a phase
+  share the limit, the three-phase ones three times it; each bound holds whatever the other side delivers
+  (simplified where a phase holds both and a battery). A subsystem without a phase takes an unknown part of every
+  phase; it belongs to no phase group, so a phase's limit stays an upper bound of its other subsystems, only an
+  hour in which the other took a part shows no cut (simplified).
 - An outer rule holds inside unless a deviation is set: the household's feed-in rule (free, at most W, at most a
   share of the PV peak power, zero export) is a requirement, not a fact; each system follows it, or names its
   own deviation ("feeds the rest in anyway", "never feeds in"). A deviation is optional and only set where it
@@ -1298,7 +1303,7 @@ this.
 
 Done: temperature loss, the satellite filter and sky view, the geometry check, batteries and then the system model
 (household -> system -> subsystem, with the Installation tab), power limits per sensor and per system (forecast cap,
-lower bounds in learning, suggestion from flat maxima, shared per phase), curtailment per system (full battery, charge power, load
+lower bounds in learning, suggestion from flat maxima, shared per phase, a three-phase device with a third on each), curtailment per system (full battery, charge power, load
 following without battery, the household feed-in limit), the accuracy archive of 400 days and the backtest
 scorecard. The open work is tracked in GitHub issues:
 

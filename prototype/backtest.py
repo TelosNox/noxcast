@@ -130,7 +130,7 @@ def _swapped(site: solar.Site, arrays: dict[str, ln.ArrayConfig], history: ln.Pv
                         kept(history.held), kept(history.unsure), history.snowfall, output=kept(history.output))
     after = {sid: dataclasses.replace(
         arr, sensors=tuple(new[s] for s in arr.sensors), limits=tuple((new[s], w) for s, w in arr.limits),
-        caps=tuple((tuple(new[s] for s in sensors), w) for sensors, w in arr.caps),
+        caps=tuple((tuple(new[s] for s in cap[0]), *cap[1:]) for cap in arr.caps),
         segments=swap.segments(frozen[sid])) for sid, arr in arrays.items()}
     return after, swap.merge(live, frozen)
 

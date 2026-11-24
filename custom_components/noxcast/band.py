@@ -17,7 +17,7 @@ import math
 from collections.abc import Callable
 
 from . import archive as fc_archive
-from .curtailment import LIMIT_MARGIN
+from .curtailment import LIMIT_MARGIN, shares
 from .model import ArrayGeometry, LearnedArray, WeatherHour, clearsky_weather, forecast
 from .solar import Site
 from .const import Series
@@ -89,8 +89,8 @@ def learn_band(archive: dict, clear_ghi: Callable[[float], float],
                 continue
             if limits and any(h.forecast.get(sid, 0.0) >= (1 - LIMIT_MARGIN) * w for sid, w in limits.items()):
                 continue
-            if caps and any(sum(h.forecast.get(sid, 0.0) for sid in group) >= (1 - LIMIT_MARGIN) * w
-                            for group, w in caps):
+            if caps and any(sum(h.forecast.get(sid, 0.0) * shares(cap).get(sid, 1.0) for sid in cap[0])
+                            >= (1 - LIMIT_MARGIN) * cap[1] for cap in caps):
                 continue
             ids = list(h.forecast)
             f = sum(h.forecast.values())

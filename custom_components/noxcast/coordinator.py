@@ -99,6 +99,16 @@ def _models_from_dict(d: dict) -> dict:
 type NoxcastConfigEntry = ConfigEntry[NoxcastCoordinator]
 
 
+def _by_sensors(cap: inst.Cap, sensors_of: dict[str, tuple[str, ...]]) -> tuple:
+    """A shared limit as learning sees it (ArrayConfig.caps): by the sensors of its arrays, each with its array's
+    share where one counts only in part."""
+    sensors = tuple(s for a in cap.arrays for s in sensors_of.get(a, ()))
+    if not cap.shares:
+        return sensors, cap.limit_w
+    return sensors, cap.limit_w, tuple(k for a, k in zip(cap.arrays, cap.shares, strict=True)
+                                       for _ in sensors_of.get(a, ()))
+
+
 def array_configs(entry: ConfigEntry, installation: inst.Installation | None = None) -> dict[str, ArrayConfig]:
     """The arrays as learning sees them; installation adds the output limits of their systems."""
     caps = installation.caps if installation else ()
@@ -123,8 +133,7 @@ def array_configs(entry: ConfigEntry, installation: inst.Installation | None = N
             temp_coeff=float(d[CONF_TEMP_COEFF]) / 100 if d.get(CONF_TEMP_COEFF) is not None else None,
             limits=tuple((s, float(w)) for s, w in sorted((d.get(CONF_SENSOR_LIMITS) or {}).items())
                          if s in d[CONF_POWER_SENSORS] and w is not None and float(w) > 0),
-            caps=tuple((tuple(s for a in c.arrays for s in sensors_of.get(a, ())), c.limit_w)
-                       for c in caps if sub_id in c.arrays))
+            caps=tuple(_by_sensors(c, sensors_of) for c in caps if sub_id in c.arrays))
     return configs
 
 
@@ -448,7 +457,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         if a.limits:
             key.append([list(x) for x in a.limits])
         if a.caps:
-            key.append([[list(sensors), w] for sensors, w in a.caps])
+            key.append([[list(cap[0]), cap[1]] + ([list(cap[2])] if len(cap) > 2 else []) for cap in a.caps])
         return key
 
     def _load_key(self) -> list:

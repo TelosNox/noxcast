@@ -14,6 +14,15 @@ breaking changes.
   a fixed power limit) and *Model* (the rest). Hours without satellite values stay *Not split*. It needs the
   satellite filter, and works for past days already in the archive.
 
+### Changed
+- A *three-phase* device under an output limit that holds per phase now counts at the phase limits: it feeds a third
+  of its output into each phase, so it shares each phase's limit with the devices on that phase, and devices that
+  are all three-phase share three times the limit. Without a battery this caps the PV forecast, and learning counts
+  hours in which a phase reached its limit as "at least this much" instead of learning the cut as shade; with a
+  battery the battery forecast bounds a three-phase device by three times the limit. Until now such a device was
+  left out of the phase limits. A device without a phase still is; the *Installation* tab shows that as
+  simplified. From the next nightly learning run on, learning changes for such installations.
+
 ## [0.7.0] - 2026-11-24
 
 All changes since 0.6.0: the pre-releases 0.7.0b1 and 0.7.0b2 (their single steps are listed in

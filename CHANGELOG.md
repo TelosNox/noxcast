@@ -7,10 +7,53 @@ breaking changes.
 
 ## Unreleased
 
+## [0.7.0] - 2026-11-24
+
+All changes since 0.6.0: the pre-releases 0.7.0b1 and 0.7.0b2 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). A system's device can be swapped while
+keeping what the modules learned, the battery forecast runs per system, and *Learned* shows what each nightly run
+changed and how sure each shading cell is. From the next nightly learning run on, each battery counts as full 3
+percent points below its upper limit, and *Fixed power* bounds the forecast and learning like an output limit.
+
+### Added
+- *Swap device* in the *Installation* tab: when a system's device is replaced by a new one on the same modules, the
+  assistant suggests the new device's sensor for each one and swaps them in one step. Noxcast keeps the old device's
+  hours, so the shading map and what else belongs to the modules stay learned, and learns the new device's
+  efficiency as a ratio to the old one. The newest swap can be undone while the old statistics still exist. Do not
+  delete the old statistics under *Developer tools → Statistics* before the swap is saved. The swap sits as a small
+  link at the bottom of a system's details, *Device replaced? Set up the swap …*, which first explains when it fits.
+  Modules that are added, moved or wired differently are not a swap but a changed PV array (*Change*); the README
+  lists when to use which.
+- *Learned* shows per array what the last nightly learning run changed: a card with hours, efficiency and the other
+  values before and after, how many shading cells got darker or lighter, the largest of them with their hours, and
+  per month what a clear day yields with the old and the new state. A layer *Change* colours the shading map by how
+  each cell moved. It fills after the next nightly learning run.
+- *Forecast accuracy* shows how often the actual value fell below, inside or above the published P10–P90 range,
+  per weather class, for whole days and single hours, next to the target of 1 in 10 below and above. So far this was
+  only in the diagnostics download.
+- The battery forecast simulates separate systems each on its own: each charges from its own PV, so a full balcony
+  battery loses its surplus even while the house battery still has room, and a battery at the house grid charges
+  from what the others send out. They share the consumption evenly, each up to its discharge power, and a system
+  with *fixed power* delivers it whatever the house draws. *Battery full at* and *Battery empty at* show the earliest
+  system, and the `systems` attribute of these sensors and of *Battery highest level* lists each system; the
+  *Battery & surplus* tab shows them per system, and its what-if computes the same way, with a capacity slider per
+  system. *Battery highest level* itself stays the highest level of all batteries together. With several systems the times
+  and the lost surplus can differ from before; batteries of one system stay one storage as before.
+- The shading map under *Learned* has a layer *Certainty*: per cell whether its value is sure, fairly sure, unsure
+  or derived, and on click how many hours it rests on, where it comes from and how far those hours scatter. It fills
+  after the next nightly learning run.
+
 ### Changed
-- *Swap device* is no longer a button next to *Change* and *Remove*, where it was easy to click by mistake. It is a
-  small link at the bottom of a system's details, *Device replaced? Set up the swap …*, which first explains when the
-  swap fits and opens the assistant only on *Continue*.
+- *Battery considered full at* is no longer a setting of the household. Each battery counts as full from its own
+  *Counts as full from* below its upper limit, 3 percent points by default: at an upper limit of 100 % from 97 %
+  instead of 95 %, at 97 % from 94 %. Many batteries stop charging a little below their set limit, and how far
+  differs by system, so the margin can be set per battery. A value you had changed for the household is carried over
+  to each battery (at most 20 points), so that it counts as full where it did before; a battery whose upper limit
+  comes from an entity gets the default margin.
+- *Fixed power* now counts, so forecasts of such systems can get lower: it caps the PV forecast of a system without a battery like an output limit, and learning
+  counts the hours at it as "at least this much" instead of learning them as shade. With a battery, hours at the
+  fixed power while the battery is full or charges at its maximum are treated the same way. The *Installation* tab
+  shows the setting as computed (with a battery as simplified).
 
 ## [0.7.0b2] - 2026-11-23
 

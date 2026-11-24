@@ -12,9 +12,9 @@ const BAT_TEXT = {
     socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", fedIn: "davon eingespeist", curtailed: "davon abgeregelt", grid: "Netzbezug",
     until: "bis Ladebeginn morgen", never: "–",
     learnedTitle: "Kapazität, wie der Akku sie zeigt",
-    learned: (n, c, k, eta, a, b) => `${n}: verhält sich wie ${c} kWh (eingetragen ${k} kWh), Wirkungsgrad hin und zurück ${eta} %, aus ${a} Lade- und ${b} Entladeläufen der letzten 120 Tage. Die Prognose rechnet damit.`,
+    learned: (n, c, k, eta, a, b) => `${n}: verhält sich wie ${c} kWh (eingetragen ${k} kWh), Wirkungsgrad im Zyklus ${eta} %, aus ${a} Lade- und ${b} Entladeläufen der letzten 120 Tage. Die Prognose rechnet mit dieser Kapazität, mit dem Wirkungsgrad nur, wenn keiner eingetragen ist.`,
     notLearned: (n) => `${n}: noch nicht gelernt. Dazu braucht es je drei Lade- und Entladeläufe über mindestens 15 Prozentpunkte.`,
-    noPower: (n) => `${n}: braucht den Sensor der Akkuleistung, um die Kapazität zu lernen; bis dahin gilt die eingetragene.`,
+    noPower: (n) => `${n}: braucht den Sensor Lade-/Entladeleistung, um die Kapazität zu lernen; bis dahin gilt die eingetragene.`,
     learnedHelp: "Beim Laden ergibt Energie durch Ladestand die Kapazität geteilt durch den Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und Wirkungsgrad, ohne dass einer davon bekannt sein muss. Ein eingetragener Wirkungsgrad bleibt.",
     whatIf: "Was wäre, wenn …", capacity: "Akkukapazität", capacityOf: (n) => `Kapazität ${n}`, consumer: "Zusätzlicher Verbraucher", power: "Leistung",
     duration: "Dauer", start: "Start", reset: "Zurücksetzen", now: "jetzt", base: "Wie geplant", variant: "Variante",
@@ -38,9 +38,9 @@ const BAT_TEXT = {
     socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", fedIn: "of that fed in", curtailed: "of that curtailed", grid: "From grid",
     until: "until tomorrow's charge start", never: "–",
     learnedTitle: "Capacity as the battery shows it",
-    learned: (n, c, k, eta, a, b) => `${n}: behaves like ${c} kWh (entered ${k} kWh), round trip ${eta} %, from ${a} charging and ${b} discharging runs of the last 120 days. The forecast uses it.`,
+    learned: (n, c, k, eta, a, b) => `${n}: behaves like ${c} kWh (entered ${k} kWh), round trip ${eta} %, from ${a} charging and ${b} discharging runs of the last 120 days. The forecast uses this capacity, and the round trip only where no efficiency is entered.`,
     notLearned: (n) => `${n}: not learned yet. It takes three charging and three discharging runs of at least 15 percent points each.`,
-    noPower: (n) => `${n}: needs the battery power sensor to learn the capacity; until then the entered one counts.`,
+    noPower: (n) => `${n}: needs the battery power sensor (charge/discharge power) to learn the capacity; until then the entered one counts.`,
     learnedHelp: "Charging, energy per level gives the capacity divided by the charging efficiency; discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency, without knowing either. An entered efficiency stays.",
     whatIf: "What if …", capacity: "Battery capacity", capacityOf: (n) => `Capacity ${n}`, consumer: "Additional consumer", power: "Power",
     duration: "Duration", start: "Start", reset: "Reset", now: "now", base: "As planned", variant: "Variant",
@@ -353,10 +353,9 @@ class NoxcastBattery extends HTMLElement {
   _learned(e) {
     const t = this._t, list = e.batteries || [];
     if (!list.length) return "";
-    const kwh = (wh) => (wh / 1000).toFixed(1);
     const rows = list.map((b) => {
       const n = esc(b.name || "");
-      if (b.learned) return t.learned(n, kwh(b.learned.capacity_wh), b.capacity_kwh, Math.round(b.learned.efficiency * 100), b.learned.charges, b.learned.discharges);
+      if (b.learned) return t.learned(n, this._kwh(b.learned.capacity_wh), this._kwh((b.capacity_kwh || 0) * 1000), Math.round(b.learned.efficiency * 100), b.learned.charges, b.learned.discharges);
       return b.power_sensor ? t.notLearned(n) : t.noPower(n);
     });
     return `<section class="card pad"><h3>${t.learnedTitle}</h3>${rows.map((r) => `<p>${r}</p>`).join("")}<p class="help">${t.learnedHelp}</p></section>`;

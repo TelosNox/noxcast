@@ -425,7 +425,9 @@ Richtungsfaktor und Temperaturkoeffizient (sofern kein Datenblattwert eingetrage
 
 ### Seitenleisten-Panel *Noxcast* (Gesamtübersicht)
 
-Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Reiter:
+Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Es startet einfach, mit *Übersicht*, *Tag*,
+*Akku & Überschuss* und *Anlage*. Der Schalter *Details* oben fügt *Gelerntes*, *Prognosegüte*, *Last* und *Diagnose*
+hinzu; der Browser merkt ihn sich, und ein Link in einen dieser Reiter schaltet ihn ein. Reiter:
 
 | Reiter | Inhalt |
 |---|---|

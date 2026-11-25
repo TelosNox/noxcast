@@ -13,6 +13,11 @@ breaking changes.
   with this load in every hour, plus a consumer with its own sensor while it runs. A measured house load wins and is
   learned as before; the load forecast sensors carry the entered value in `fixed_w`.
 
+### Changed
+- The sidebar panel starts simple: *Overview*, *Day*, *Battery & surplus* and *Installation*. The new *Details*
+  switch in its header shows *Learned*, *Forecast accuracy*, *Load* and *Diagnostics* again; each browser remembers
+  it, and a link from the overview into one of those tabs switches it on.
+
 ## [0.8.0b2] - 2026-11-25
 
 ### Fixed

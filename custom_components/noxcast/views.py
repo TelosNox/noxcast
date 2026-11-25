@@ -147,10 +147,16 @@ def learned_dict(la: LearnedArray) -> dict:
 
 # ---------------------------------------------------------------- noxcast/today (day card)
 
-def today_arrays(arrays: dict, data, tomorrow_start: float, tomorrow_end: float) -> list[dict]:
-    """Per array: expected, held and morning forecast per hour, effects, tomorrow."""
+def today_arrays(arrays: dict, data, tomorrow_start: float, tomorrow_end: float,
+                 day_start: float | None = None) -> list[dict]:
+    """Per array: expected, held and morning forecast per hour, effects, tomorrow, and the energy measured so far.
+
+    day_start: the day the card shows; data computed for another day (an entry whose midnight run has not
+    finished yet) has no measured energy for it (None)."""
     out = []
+    same_day = day_start is None or data.day_start == day_start
     for sub_id, arr in arrays.items():
+        measured = data.measured.get(sub_id) if same_day else None
         effects = data.effects.get(sub_id, {})
         tomorrow = {t: v for t, v in data.forecast.get(sub_id, {}).items() if tomorrow_start <= t < tomorrow_end}
         out.append({
@@ -163,7 +169,7 @@ def today_arrays(arrays: dict, data, tomorrow_start: float, tomorrow_end: float)
             "gain": series(effects.get("gain", {})),
             "periods": effects.get("periods", []),
             "tomorrow_wh": round(sum(tomorrow.values())),
-            "measured_wh": round(data.measured.get(sub_id, 0.0), 1),
+            "measured_wh": None if measured is None else round(measured, 1),
             "updated": data.updated.isoformat() if data.updated else None,
         })
     return out

@@ -58,8 +58,9 @@ def test_measured_energy_counts_only_measurements():
     # before the modules deliver: the running hour adds nothing without a measurement, not its forecast
     assert fc.measured_wh(actual, None, DAY_START, now) == 12.0
     assert fc.measured_wh(actual, (DAY_START + 7 * 3600, 30.0, 0.5), DAY_START, now) == 27.0
+    assert fc.measured_wh({}, None, DAY_START, now) is None              # nothing measured is not 0 Wh
     data, _, _ = run(7.5, actual={"a": actual})
-    assert data.measured == {"a": 12.0, "b": 0.0}
+    assert data.measured == {"a": 12.0, "b": None}
 
 
 def test_morning_fix_totals_and_held_hours():

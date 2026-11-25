@@ -52,7 +52,7 @@ class NoxcastData:
     plan: dict[str, dict] = field(default_factory=dict)   # flexible consumer -> windows today and tomorrow
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see band.forecast_band)
     actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
-    measured: dict[str, float] = field(default_factory=dict)  # today's measured Wh per array until now (measured_wh)
+    measured: dict[str, float | None] = field(default_factory=dict)  # today's measured Wh per array until now (measured_wh)
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
     # the weather source's hours before local midnight (yesterday): snow that fell then may still lie today
@@ -129,14 +129,18 @@ def today_actual(arrays: dict[str, ArrayConfig], hourly: dict[str, dict[float, f
     return hours, running
 
 
-def measured_wh(actual: Series, running: tuple[float, float, float] | None, day_start: float, now: float) -> float:
+def measured_wh(actual: Series, running: tuple[float, float, float] | None, day_start: float,
+                now: float) -> float | None:
     """Energy measured today until now (Wh): the ended hours plus the measured part of the running hour.
 
-    Only measurements count. An hour without one adds nothing instead of its forecast, so the value can only
-    grow during the day and shows no energy before the modules deliver any.
+    Only measurements count. An hour without one adds nothing instead of its forecast, so the value shows no
+    energy before the modules deliver any. None without any measurement today (statistics unavailable, or just
+    after midnight), which is not the same as 0 Wh.
     """
-    done = sum(v for t, v in actual.items() if t >= day_start and t + 3600 <= now)
-    return done + (running[1] * running[2] if running else 0.0)
+    done = [v for t, v in actual.items() if t >= day_start and t + 3600 <= now]
+    if not done and not running:
+        return None
+    return sum(done) + (running[1] * running[2] if running else 0.0)
 
 
 def curtailed_hours(hourly: dict[str, dict[float, float | None]], recent: dict[str, dict[float, float | None]],

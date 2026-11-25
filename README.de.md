@@ -11,6 +11,9 @@ kommt. Optional: eine Lastprognose fürs Haus, eine Akku-Simulation und der best
 
 ![Die Tagesansicht: Prognose, Erwartung und Ist zweier PV-Gruppen, mit dem P10–P90-Band und dem Wetter jeder Stunde](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/day.png)
 
+**Du brauchst** Home Assistant 2026.10 oder neuer, einen Leistungssensor deiner PV und Neigung, Azimut und
+Spitzenleistung der Module ([mehr](#was-du-brauchst)). Alles andere ist optional.
+
 **Stand:** Version 0.x: stabile Releases, noch jung. Solange die Version mit 0 beginnt, kann eine Minor-Version
 inkompatible Änderungen bringen; jede ist im [Changelog](CHANGELOG.md) (englisch) markiert, mit dem, was du tun musst. Alle Screenshots zeigen Demodaten.
 
@@ -20,6 +23,7 @@ deines Home-Assistant-Benutzers; andere Sprachen fallen auf Englisch zurück.
 ## Wo anfangen
 
 Wähle die Zeile, die am besten zu dir passt; sie nennt, was du einrichtest und wo die Antwort auf deine Frage steht.
+Details und Sonderfälle weiter unten sind eingeklappt: Öffne *Details*, wo du sie brauchst.
 
 | Du hast oder willst | Einrichten | Dann ansehen |
 |---|---|---|
@@ -120,6 +124,8 @@ Eine Tageskarte mit der Leistung jetzt und dem Verlauf des Tages und eine Wetter
 | Optional: der Ladestand des Akkus | Stunden mit vollem Akku bleiben außen vor, weil der Wechselrichter dann abregeln kann | Einstellungen → Entitäten, ein Sensor in % |
 | Internetzugang zu Open-Meteo | Die Wettervorhersage | Kostenlos für nicht-kommerzielle Nutzung, ohne Schlüssel |
 
+<details><summary>Details</summary>
+
 Welcher Sensor? Am besten einer je MPPT-Eingang des Wechselrichters (oft *PV1 power*, *PV2 power* oder *DC power*
 genannt). Die Gesamtleistung des Wechselrichters geht auch, solange alle Module daran in dieselbe Richtung zeigen oder
 du die anderen Ausrichtungen einträgst (siehe die Beispiele). Ein Energiezähler in kWh reicht allein nicht; ein
@@ -127,6 +133,8 @@ du die anderen Ausrichtungen einträgst (siehe die Beispiele). Ein Energiezähle
 
 Noxcast liest die Langzeitstatistik von Home Assistant, die der Recorder standardmäßig führt. Je mehr Verlauf, desto
 früher sind die gelernten Werte gut; genutzt werden bis zu zwei Jahre.
+
+</details>
 
 ### Installieren
 
@@ -150,7 +158,7 @@ Ohne HACS: `custom_components/noxcast` nach `config/custom_components` kopieren 
 3. Fertig. Noxcast lernt sofort aus dem vorhandenen Verlauf und danach jede Nacht um 01:30.
 
 Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und in den nächsten Tagen ansteht,
-*Gelerntes*, was es über jede PV-Gruppe herausgefunden hat, *Tag* die Prognose von heute im Detail. Fürs Dashboard: *Karte hinzufügen* → *Noxcast*.
+*Tag* die Prognose von heute im Detail und mit eingeschalteten *Details* *Gelerntes*, was es über jede PV-Gruppe herausgefunden hat. Fürs Dashboard: *Karte hinzufügen* → *Noxcast*.
 
 ![Der Reiter Anlage: PV-Gruppen mit Kompassnadel, Systeme mit Akku und Ausgangsgrenze, Haus und Netz, gestrichelte Kästen zum Hinzufügen einer PV-Gruppe oder eines Systems, und die gewählte PV-Gruppe mit Ändern und Entfernen](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/installation.png)
 
@@ -165,6 +173,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
 | Zwei Wechselrichter, beide Süd, einer teils von einem Baum verschattet | Zwei PV-Gruppen, damit der Baum nur dort gelernt wird, wo er wirkt |
 
 ### Wenn etwas falsch aussieht
+
+<details><summary>Details</summary>
 
 - **Wirkungsgrad über 100 % oder *Prüfen* an der PV-Gruppe:** Die Konfiguration passt nicht zu den Messwerten. Meist
   ist die Spitzenleistung zu niedrig, der Azimut gespiegelt (Ost und West vertauscht) oder ein Sensor fehlt in der
@@ -189,6 +199,8 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   Tagesstunde einer PV-Gruppe mit ihrem Status und jedem Grund, aus dem sie ausgelassen oder begrenzt wurde (Zeiten in
   UTC), für eine Tabellenkalkulation oder ein Issue.
 
+</details>
+
 ## Konfiguration
 
 Einstellungen → Geräte & Dienste → Integration hinzufügen → **Noxcast**. Danach auf der Seite der Integration
@@ -205,6 +217,8 @@ was über einen Ausgang Strom ans Haus abgibt. Es enthält PV-Gruppen und höchs
 die eine Steuerung gemeinsam regelt, etwa die Geräte eines EcoFlow Stream. Der Haushalt ist der Noxcast-Eintrag selbst:
 Ändern auf der Seite der Integration mit ⋮ → *Neu konfigurieren*.
 
+<details><summary>Details</summary>
+
 Vorgaben gelten von außen nach innen: Ein Teilsystem folgt der Regelung und Einspeisung seines Systems, ein System
 der Einspeisevorgabe des Haushalts. Eingetragen wird nur, was abweicht, als Abweichung. Grenzen gelten auf jeder
 Ebene, die engere zählt:
@@ -219,6 +233,8 @@ Ebene, die engere zählt:
 | Steckerspeicher, der aus dem Überschuss lädt | Ein System *Akku am Hausnetz*, ohne PV-Gruppen |
 | EcoFlow Stream mit Ultra und AC Pro | Ein System *Gekoppelte Systeme* mit der gemeinsamen Grenze und *Akkus gleichen sich aus*; seine Teilsysteme sind der Ultra mit seinen PV-Gruppen und seinem Akku und der AC Pro mit seinem Akku |
 | Alter Dach-Wechselrichter und ein Stream, Netzbetreiber verlangt Nulleinspeisung | Zwei Systeme und die Einspeisevorgabe *Nulleinspeisung*. Das Dach kann sie nicht einhalten: Sein System bekommt die Abweichung *Speist den Rest trotzdem ein*. Der Stream folgt der Vorgabe |
+
+</details>
 
 ### 1. Haupteintrag
 
@@ -237,6 +253,8 @@ Ein System ist alles, was über einen Ausgang Strom ans Haus abgibt: ein Wechsel
 Akku mit eigenem Wechselrichter am Hausnetz oder mehrere Geräte, die sich absprechen. Jede PV-Gruppe und jeder Akku
 gehört zu einem System. Ein System enthält entweder PV-Gruppen und höchstens einen Akku oder Teilsysteme (eine Ebene),
 nie beides.
+
+<details><summary>Details</summary>
 
 Ein System fragt zuerst, was es ist (Name, Vorlage, bei einem bestehenden auch *Gehört zu*), dann seine
 Einstellungen, von der Vorlage vorausgefüllt. Jede Einstellung bleibt änderbar. Danach listet sein Menü, was sich tun lässt, jeder Eintrag
@@ -305,11 +323,15 @@ Statistiken unter *Entwicklerwerkzeuge → Statistiken* nicht löschen, bevor de
 listet den Tausch danach, und der neueste lässt sich rückgängig machen, solange die alten Statistiken noch da sind.
 Prüfe danach mit *Ändern* die Grenzen und den Akku des neuen Geräts.
 
+</details>
+
 ### 3. PV-Gruppen (eine je Gruppe von Leistungssensoren)
 
 Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein Wechselrichter.
 
 ![Eine PV-Gruppe: Module Ost und West an zwei Sensoren, jeder mit seiner Grenze, addiert](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-array.de.svg)
+
+<details><summary>Details</summary>
 
 | Feld | Bedeutung |
 |---|---|
@@ -324,10 +346,14 @@ Eine PV-Gruppe ist, was gemeinsam gemessen wird, meist ein MPPT-Eingang oder ein
 
 Gelernt wird sofort aus dem vorhandenen Verlauf und danach jede Nacht (01:30).
 
+</details>
+
 ### 4. Verbraucher (optional, für die Lastprognose)
 
 Ein Verbraucher mit eigenem Sensor wird aus dem Hausverbrauch herausgerechnet und für sich prognostiziert. Das Formular
 hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitbindung.
+
+<details><summary>Details</summary>
 
 | Feld | Bedeutung |
 |---|---|
@@ -338,11 +364,15 @@ hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitb
 | Leistung eines Laufs, Dauer eines Laufs | Nur flexibel, optional: sonst aus dem Verlauf gelernt |
 | Jetzt starten ab PV-Anteil | Nur flexibel, optional (Standard 70 %): Schwelle des Sensors *jetzt starten* |
 
+</details>
+
 ### 5. Akkus (optional, braucht den Hausverbrauch oder eine feste Grundlast)
 
 Name, Ladestand-Sensor, Kapazität und System (*Gehört zu*) stehen oben; Grenzen und Leistung stehen in Abschnitten, die zu bleiben,
 bis sie einen Wert enthalten. Das System sagt, wo der Akku sitzt (siehe *Akku lädt aus*), und gibt seine
 Ausgangsgrenze.
+
+<details><summary>Details</summary>
 
 | Feld | Bedeutung |
 |---|---|
@@ -372,6 +402,8 @@ Systems und der Teilsysteme, mit denen es sich abstimmt. Ein Akku, der mit seine
 einem 5-Minuten-Mittelwert ab 95 % der *Max. Ladeleistung*), zählt dort als „mindestens so viel“, wo der Rest nicht
 abfließen kann, wie bei einer festen Grenze. Einzelheiten stehen unter [Lernen](#lernen-nachts-aus-der-langzeitstatistik).
 
+</details>
+
 ### 6. Optionen (⋮ → Konfigurieren)
 
 | Option | Standard |
@@ -381,12 +413,16 @@ abfließen kann, wie bei einer festen Grenze. Einzelheiten stehen unter [Lernen]
 | Satellitenfilter | Aus: wählt mit der Satellitenstrahlung klare Stunden zum Lernen aus und teilt den Prognosefehler in Wetter und Modell |
 | Archiv-URLs, Satellitenmodell, API-Schlüssel | Open-Meteo; nur für selbst gehosteten oder kommerziellen Zugang ändern |
 
+<details><summary>Details</summary>
+
 Ob der Satellitenfilter hilft, hängt von der Region ab (Berge und Küstennebel verschlechtern ihn). Nach dem Einschalten
 und dem nächsten nächtlichen Lernlauf zeigt der Sensor **Übereinstimmung Satellit** jedes Arrays, wie gut Satellit und
 Anlage bei klaren und bewölkten Stunden übereinstimmen (Korrelation, unverschattete Stunden). Ab 0,9 arbeitet der
 Filter gut; auf der Anlage, an der er entwickelt wurde, lag der Wert bei 0,90–0,94. Unter etwa 0,8 ist er vermutlich nicht
 besser als eine grobe Reanalyse (dort 0,69–0,78), dann lohnt ein Versuch ohne ihn. Ohne ihn werden Himmelssicht,
 Richtungsfaktor und Temperaturkoeffizient (sofern kein Datenblattwert eingetragen ist) nicht gelernt.
+
+</details>
 
 ## Dashboard-Referenz
 
@@ -410,6 +446,8 @@ Erscheint nach der Einrichtung in der Seitenleiste; nichts zu konfigurieren. Rei
 Wird automatisch registriert; hinzufügen über *Karte hinzufügen* → *Noxcast*. Sie zeigt immer, womit Noxcast
 konfiguriert ist (PV-Gruppen, Hausverbrauch, Netz, Akkus, Einspeisung); die Karteneinstellungen ändern nur die
 Darstellung.
+
+<details><summary>Details</summary>
 
 - **Leistung jetzt** als Reihe von Zahlen: PV, Akku, Haus, Netz, mit wandernden Punkten für die Flüsse. Symbole über
   den Zahlen zeigen ihren Zustand: Die Sonne wächst mit dem Anteil an der Spitzenleistung, der Akku ist bis zu seinem
@@ -446,10 +484,14 @@ Darstellung.
 
 Alle Optionen stehen auch im visuellen Editor, gruppiert nach Leistung jetzt, Tagesdiagramm und Optik.
 
+</details>
+
 ### Wetterkarte `custom:noxcast-weather-card`
 
 Die kommenden Tage, je einer pro Zeile (Symbol, Höchst- / Tiefstwert, Niederschlag), mit dem PV-Ertrag, den Noxcast
 erwartet, aus Noxcasts eigenem Wetter – demselben, das die Prognose antreibt.
+
+<details><summary>Details</summary>
 
 | Option | Standard | |
 |---|---|---|
@@ -459,6 +501,8 @@ erwartet, aus Noxcasts eigenem Wetter – demselben, das die Prognose antreibt.
 | `pv_today` | `expected` | Ertrag heute als `expected` (Sensor „Erwartung heute“) oder `forecast` (Sensor „Prognose heute“) |
 | `temperature`, `humidity`, `name` | – | Optional gemessene Außenwerte über den Tagen |
 | `look` | `noxcast` | `noxcast` oder `plain` |
+
+</details>
 
 ## Entitäten
 
@@ -475,6 +519,8 @@ Geräte **Noxcast (gesamt)** und **Noxcast *PV-Gruppe***:
 | Schatten heute (Sensor und Bild), Schattenkarte (Bild) | | ✓ | |
 | Letzter Lernlauf, Prognosefehler (30 Tage) | ✓ | | Fehler je PV-Gruppe und je Wettermodell als Attribute |
 | Wetter | ✓ | | Aktuelle Stunde, stündliche und tägliche Vorhersage für 7 Tage |
+
+<details><summary>Details</summary>
 
 Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1) und `quarter_hourly` (dasselbe in
 15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90` und ab der laufenden Stunde
@@ -496,6 +542,8 @@ mindestens 5 % aus Überschuss bekommt) und der Binärsensor **jetzt starten**: 
 jetzt gestarteter Lauf mindestens den eingestellten PV-Anteil aus Überschuss bekommt und höchstens 5 Punkte weniger
 als das beste Fenster, das heute noch kommt.
 
+</details>
+
 ## Benachrichtigungen (Blueprints)
 
 Noxcast steuert nichts, aber drei Blueprints machen aus der Prognose eine Benachrichtigung aufs Handy (Home-Assistant-
@@ -512,6 +560,8 @@ Uhrzeiten, Schwelle und Titel lassen sich je Automation ändern. Der Text der Be
 
 ## Andere Werkzeuge (EVCC, Predbat, EMHASS)
 
+<details><summary>Details</summary>
+
 Noxcast veröffentlicht seine Prognose in eigenen Attributen, nicht im Format eines anderen Projekts. Jedes Werkzeug
 bekommt sie über seinen eigenen Weg: eine Einstellung, einen Template-Sensor oder einen REST-Befehl. Die Entitäts-IDs
 unten sind die einer englischen Einrichtung; die IDs folgen der Sprache, die Home Assistant beim Hinzufügen von
@@ -521,10 +571,14 @@ der mittleren Leistung in kW. Die Wettervorhersage kommt in Stunden, deshalb bek
 Bewölkung seiner Stunde und folgt dem Lauf der Sonne innerhalb der Stunde (und bleibt unter einer Leistungsgrenze);
 Wolken, die innerhalb der Stunde kommen und gehen, stecken nicht darin.
 
+</details>
+
 ### EVCC
 
 EVCC liest die Solarprognose des Energie-Dashboards von Home Assistant. Wähle dort Noxcast als Solarprognose (und
 keine andere, weil EVCC sie addiert), dann in EVCC:
+
+<details><summary>Details</summary>
 
 ```yaml
 tariffs:
@@ -536,11 +590,15 @@ tariffs:
 
 EVCC liest daraus Stundenwerte.
 
+</details>
+
 ### Predbat
 
 Predbat liest Prognosen in der Form der Solcast-Integration: ein Attribut `detailedForecast` mit halbstündlichen
 Einträgen (`period_start`, `pv_estimate` in kW), die Tagessumme in kWh als Zustand. Ein Template-Sensor je Tag baut
 das aus dem Attribut `quarter_hourly`, jede halbe Stunde aus ihren zwei Viertelstunden:
+
+<details><summary>Details</summary>
 
 ```yaml
 template:
@@ -580,6 +638,8 @@ Wiederhole ihn mit `sensor.noxcast_forecast_tomorrow` und `sensor.noxcast_foreca
 mittlere Leistung in kW), gehalten um den Wert der halben Stunde: morgens und abends unterscheiden sich die halben
 Stunden einer Stunde stärker als ihre Spanne; vergangene Stunden behalten den mittleren Wert. Den Akku simuliert Predbat selbst.
 
+</details>
+
 ### EMHASS
 
 EMHASS nimmt Prognosen als Zuordnung von Zeit zu W, mit der Zeitzone im Schlüssel, und hält in seinen eigenen
@@ -587,6 +647,8 @@ Zeitschritten jeden Wert bis zum nächsten. Ein REST-Befehl baut sie aus den Att
 `hourly` der Last (stell EMHASS auf einen Zeitschritt von 15 Minuten, denn mit einem längeren nimmt es nur den Wert
 am Anfang jedes Schritts); `sensor.battery_soc` steht für
 den Ladestand deines Akkus in %:
+
+<details><summary>Details</summary>
 
 ```yaml
 rest_command:
@@ -615,9 +677,13 @@ rest_command:
 Die Lastprognose enthält jeden eingerichteten Verbraucher. Lass weg, was EMHASS als verschiebbare Last plant, sonst
 zählt die Last doppelt: Richte so einen Verbraucher in Noxcast als *flexibel* ein (er zählt dann mit null).
 
+</details>
+
 ## Reparaturen
 
 Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfernt jede Meldung, sobald sie behoben ist:
+
+<details><summary>Details</summary>
 
 | Meldung | Wann |
 |---|---|
@@ -628,6 +694,8 @@ Noxcast meldet Probleme unter Einstellungen → System → Reparaturen und entfe
 | Welche PV-Gruppen laden den Akku? | Ein Akku lädt vor dem Ausgang eines Geräts mit PV, aber zu seinem System gehört keine PV-Gruppe (nach dem Update: seine bisherigen Einstellungen nannten keine PV-Gruppe). In diesen PV-Gruppen sein System wählen, oder das System auf *Akku am Hausnetz* umstellen. Bis dahin rechnet es wie bisher |
 | Leistung scheint begrenzt | Jeder Leistungssensor einer PV-Gruppe ohne *Leistungsgrenze* blieb an mindestens 3 der letzten 60 Tage flach auf oder nahe seinem Höchstwert, zu Zeiten, in denen die Sonne die Leistung verändert hätte, und ging nie darüber. Noxcast schlägt diesen Höchstwert als Grenze vor: *Grenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen der PV-Gruppe ein) oder *Es gibt keine Grenze* (keine Meldung mehr, bis sich der Wert um mehr als 5 % ändert). Bis du antwortest, ändert sich nichts |
 | System: Leistung scheint begrenzt | Die PV-Gruppen eines Systems ohne Akku und ohne *Ausgangsgrenze* blieben zusammen an mindestens 3 der letzten 60 Tage flach auf oder nahe ihrer höchsten Summe, in den 5-Minuten-Werten, zu Zeiten, in denen der gelernte klare Himmel diese Summe verändert hätte und deutlich darüber lag (Ost und West an einem Wechselrichter, wo kein Sensor allein flach bleibt). Nicht für ein System, das den Hausverbrauch deckt oder eine feste Leistung abgibt. Noxcast schlägt diesen Höchstwert als Ausgangsgrenze des Systems vor, so wie die Sensoren messen: *Ausgangsgrenze setzen*, *Anderer Wert* (beide tragen sie in die Einstellungen des Systems ein) oder *Es gibt keine Grenze*, wie oben |
+
+</details>
 
 ## Dienste
 
@@ -641,6 +709,8 @@ Beide brauchen einen Administrator, ebenso der Bereich *Diagnose* im Panel.
 ## So funktioniert es
 
 ### Prognose einer Stunde
+
+<details><summary>Details</summary>
 
 Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt) und gemittelt:
 
@@ -659,7 +729,11 @@ Berechnet in sechs 10-Minuten-Schritten je Stunde (Sonnenstand in jedem Schritt)
    weg. Eine Gruppe ohne solche Geschichte rechnet, als gäbe es keinen Schnee; der Reiter *Gelerntes* zeigt, was
    gelernt ist, der Wasserfall der Stunde den Schritt *Schnee*.
 
+</details>
+
 ### Klarer Himmel
+
+<details><summary>Details</summary>
 
 Die Einstrahlung bei klarem Himmel (Bezug für die Klarheit, Obergrenze für Bandbreite und Korrekturen) ist ein festes
 physikalisches Modell ohne gelernte Werte und ohne Wetterdaten: Sonnenstand nach NOAA aus Breite, Länge und Zeit,
@@ -669,7 +743,11 @@ Wasserdampf (1 cm) sind fest, für jeden Standort und jede Jahreszeit gleich. Er
 der PV-Gruppe (Schatten, Richtung, Reflexion, Himmelssicht, Wirkungsgrad) und der Temperaturverlust bei der
 vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe bei klarem Himmel.
 
+</details>
+
 ### Lernen (nachts, aus der Langzeitstatistik)
+
+<details><summary>Details</summary>
 
 - **Akkus:** Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres
   eigenen Systems; mit *deckt den Hausverbrauch* auch die der Teilsysteme, mit denen es sich abstimmt; für ein
@@ -727,7 +805,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   genug davon vorliegen, rechnet die Prognose mit freiem Himmel und das Panel zeigt „nicht gelernt“.
 - **Temperaturkoeffizient:** obere Hüllkurve der Leistung über der Zelltemperatur.
 
+</details>
+
 ### Im Lauf des Tages
+
+<details><summary>Details</summary>
 
 - Die Prognose wird alle 30 Minuten und beim Start aktualisiert.
 - **Prognose heute** wird um 06:00 fixiert. **Erwartung heute** = gemessene Stunden + der Rest, korrigiert danach, wie
@@ -747,7 +829,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   zeigen `limited_wh` (Energie über der Grenze) und `limit_w` (ihre eigene Grenze, leer, wenn sie sich nur eine
   teilt), die Gesamtsensoren `limited_wh`.
 
+</details>
+
 ### Wetter
+
+<details><summary>Details</summary>
 
 - Eine Open-Meteo-Abfrage liefert alle konfigurierten Modelle; GHI, DNI und DHI werden gleich gemittelt. Jedes Modell
   wird zusätzlich für sich archiviert, damit seine Genauigkeit mit dem Mittel verglichen werden kann.
@@ -766,7 +852,11 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
   erlaubt; Prognose und nächtliches Lernen brauchen etwa 100 bis 200 am Tag. Nach einem erfolgreichen Lauf wartet der nächste 7 Tage; ein Lauf, den
   ein Fehler oder das Abfragelimit von Open-Meteo abgebrochen hat, kann sofort wiederholt werden.
 
+</details>
+
 ### Archiv und Genauigkeit
+
+<details><summary>Details</summary>
 
 Die Prognose für morgen wird bis Mitternacht überschrieben; die letzte Fassung bleibt als Vortagsprognose erhalten
 (400 Tage) und wird nachts um die gemessene Leistung ergänzt. Im Lauf des Tages wird die erwartete Tagessumme zu jeder
@@ -786,7 +876,11 @@ Archiv-URL, ein anderes Satellitenmodell oder ein anderer Standort holt die ganz
 Archiv nicht erreichbar, fällt der nächtliche Lernlauf aus: Die bisher gelernten Werte bleiben, und die Übersicht
 zeigt den Grund.
 
+</details>
+
 ### Lastprognose
+
+<details><summary>Details</summary>
 
 load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher + laufende flexible
 
@@ -803,7 +897,11 @@ ohne Korrektur, dazu die Verbraucher, die gerade laufen.
 - **Geregelt:** Tagesenergie gegen Tagesmitteltemperatur (Schwelle + Steigung, über die Jahreszeiten gelernt), verteilt
   nach der mittleren Stundenform des Verbrauchers.
 
+</details>
+
 ### Akku-Simulation und Planung
+
+<details><summary>Details</summary>
 
 - In Viertelstunden von jetzt bis zum Ladebeginn morgen (erste Stunde mit PV über der Last): Überschuss lädt bis zur
   oberen Grenze und zur Ladeleistung, der Rest geht dem Akku verloren; ein Defizit entlädt bis
@@ -830,6 +928,8 @@ ohne Korrektur, dazu die Verbraucher, die gerade laufen.
   wird, kostet nichts. Bei gleichem Anteil gewinnt das Fenster, das am meisten sonst verlorenen Überschuss nutzt,
   dann das frühere. Mehrere Läufe werden nacheinander platziert, jeder mit den vorherigen. Ergebnisse: bestes Fenster
   heute und morgen, PV-Anteil bei Start jetzt.
+
+</details>
 
 ## Datenschutz
 

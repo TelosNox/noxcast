@@ -11,6 +11,9 @@ Optional: a house load forecast, a battery simulation and the best time for the 
 
 ![The day view: forecast, expectation and actual of two arrays, with the P10–P90 range and the weather of each hour](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/day.png)
 
+**You need** Home Assistant 2026.10 or newer, a power sensor of your PV and the tilt, azimuth and peak power of the
+modules ([more](#what-you-need)). Everything else is optional.
+
 **Status:** version 0.x: stable releases, still young. While the version starts with 0, a minor version can bring
 breaking changes; each one is marked in the [changelog](CHANGELOG.md) with what you have to do. All screenshots show demo data.
 
@@ -20,6 +23,7 @@ language of your Home Assistant user; other languages fall back to English.
 ## Where to start
 
 Pick the line that fits you best; each names what to set up and where the answer to your question appears.
+Details and special cases further down are folded: open *Details* where you need them.
 
 | You have or want | Set up | Then look at |
 |---|---|---|
@@ -118,6 +122,8 @@ A day card with power now and the course of the day, and a weather card with the
 | Optional: the battery's state of charge | Hours with a full battery are left out, because the inverter may hold back then | Settings → Entities, a sensor in % |
 | Internet access to Open-Meteo | The weather forecast | Free for non-commercial use, no key |
 
+<details><summary>Details</summary>
+
 Which sensor? The best is one per MPPT input of the inverter (often called *PV1 power*, *PV2 power*, or *DC
 power*). The inverter's total output works too, as long as all modules on it face the same way, or you enter
 the other orientations (see the examples). An energy counter in kWh is not enough on its own; a *Derivative*
@@ -125,6 +131,8 @@ helper (Settings → Devices & services → Helpers) turns it into power.
 
 Noxcast reads Home Assistant's long-term statistics, which the recorder keeps by default. The more history,
 the sooner the learned values are good; up to two years are used.
+
+</details>
 
 ### Install
 
@@ -147,8 +155,8 @@ Without HACS: copy `custom_components/noxcast` into `config/custom_components` a
    system's menu.)
 3. Done. Noxcast learns right away from the history you have and then every night at 01:30.
 
-Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Learned* what it
-found about each array, *Day* the forecast of today in detail.
+Then open **Noxcast** in the sidebar: *Overview* shows what is due today and in the days ahead, *Day* the forecast of today in
+detail, and with *Details* switched on *Learned* what it found about each array.
 For the dashboard: *Add card* → *Noxcast*.
 
 ![The Installation tab: PV arrays with compass needles, systems with battery and output limit, house and grid, dashed boxes to add a PV array or a system, and the chosen array with Change and Remove](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/installation.png)
@@ -164,6 +172,8 @@ For the dashboard: *Add card* → *Noxcast*.
 | Two inverters, both south, one partly shaded by a tree | Two arrays, so the tree is learned only where it matters |
 
 ### When something looks wrong
+
+<details><summary>Details</summary>
 
 - **Efficiency above 100 % or *Check* on the array:** the configuration does not fit the measurements. Most often
   the peak power is too low, the azimuth is mirrored (east and west swapped), or a sensor is missing from the
@@ -188,6 +198,8 @@ For the dashboard: *Add card* → *Noxcast*.
   daylight hour of an array with its status and every reason it was left out or capped (times in UTC), for a
   spreadsheet or an issue.
 
+</details>
+
 ## Configuration
 
 Settings → Devices & services → Add integration → **Noxcast**. Then add subentries on the
@@ -203,6 +215,8 @@ delivers through one output to the house. It holds PV arrays and at most one bat
 one control coordinates, such as the units of an EcoFlow Stream. The household is the Noxcast entry itself: change it
 on the integration page with ⋮ → *Reconfigure*.
 
+<details><summary>Details</summary>
+
 Rules go from the outside in: a subsystem follows the regulation and feed-in of its system, a system follows the
 household's feed-in rule. Only what differs is entered, as a deviation. Limits hold at every level, the tighter one
 counts:
@@ -217,6 +231,8 @@ counts:
 | Plug-in battery that charges from surplus | One system *Battery at the house grid*, without PV arrays |
 | EcoFlow Stream with Ultra and AC Pro | One system *Coupled systems* with the shared limit and *Batteries balance each other*; its subsystems are the Ultra with its PV arrays and battery and the AC Pro with its battery |
 | Old roof inverter and a Stream, grid operator requires zero export | Two systems and the feed-in rule *Zero export*. The roof cannot hold it: its system gets the deviation *Feeds the rest in anyway*. The Stream follows the rule |
+
+</details>
 
 ### 1. Main entry
 
@@ -234,6 +250,8 @@ counts:
 A system is everything that delivers through one output to the house: an inverter, a device with PV and battery, a
 battery with its own inverter at the house grid, or several devices that coordinate. Every PV array and every battery
 belongs to a system. A system holds either PV arrays and at most one battery, or subsystems (one level), never both.
+
+<details><summary>Details</summary>
 
 A system first asks what it is (name, template, and for an existing one *Belongs to*), then its settings, filled in
 by the template. Every setting stays changeable. Then its menu lists what it can do, each item marked: ✎ changes the
@@ -301,11 +319,15 @@ show how many are still missing). Do not delete the old statistics under *Develo
 is saved. The system then lists the swap, and the newest one can be undone while the old statistics still exist.
 Check the new device's limits and battery with *Change* afterwards.
 
+</details>
+
 ### 3. PV arrays (one per group of power sensors)
 
 An array is what is measured together, usually one MPPT input or one inverter.
 
 ![A PV array: modules east and west on two sensors, each with its limit, summed](https://raw.githubusercontent.com/TelosNox/noxcast/main/docs/images/concept-array.en.svg)
+
+<details><summary>Details</summary>
 
 | Field | Meaning |
 |---|---|
@@ -320,10 +342,14 @@ An array is what is measured together, usually one MPPT input or one inverter.
 
 Learning starts right away from the existing history and then runs every night (01:30).
 
+</details>
+
 ### 4. Consumers (optional, for the load forecast)
 
 A consumer with its own sensor is taken out of the house load and forecast on its own. The form has two steps: the
 sensor and the timing first, then only the fields of that timing.
+
+<details><summary>Details</summary>
 
 | Field | Meaning |
 |---|---|
@@ -334,10 +360,14 @@ sensor and the timing first, then only the fields of that timing.
 | Run power, run minutes | Flexible only, optional: otherwise learned from history |
 | Start now from PV share | Flexible only, optional (default 70 %): threshold of the *start now* sensor |
 
+</details>
+
 ### 5. Batteries (optional, needs the house load or a fixed base load)
 
 Name, state of charge sensor, capacity and system (*Belongs to*) are on top; limits and power are in sections that stay closed until
 they hold a value. The system says where the battery sits (see *Battery charges from*) and gives its output limit.
+
+<details><summary>Details</summary>
 
 | Field | Meaning |
 |---|---|
@@ -366,6 +396,8 @@ of its own system, and of the subsystems it coordinates with. A battery that cha
 a 5-minute mean at 95 % of *Max charge power*) counts as "at least this much" where the rest cannot go out, like a
 fixed limit. [Learning](#learning-nightly-from-long-term-statistics) has the details.
 
+</details>
+
 ### 6. Options (⋮ → Configure)
 
 | Option | Default |
@@ -375,12 +407,16 @@ fixed limit. [Learning](#learning-nightly-from-long-term-statistics) has the det
 | Satellite filter | Off: uses satellite irradiance to pick clear hours for learning and to split the forecast error into weather and model |
 | Archive URLs, satellite model, API key | Open-Meteo; change only for self-hosted or commercial access |
 
+<details><summary>Details</summary>
+
 Whether the satellite filter helps depends on the region (mountains and coastal fog make it worse). After switching it
 on and the next nightly learning run, each array's **satellite agreement** sensor shows how well satellite and
 installation agree on clear and cloudy hours (correlation, unshaded hours). At 0.9 or above the filter works well; on
 the installation it was developed on it reached 0.90–0.94. Below about 0.8 it is probably no better than a coarse
 reanalysis (0.69–0.78 there), and switching it off is worth a try. Without it, sky view, direction factor and the
 temperature coefficient (unless a datasheet value is set) are not learned.
+
+</details>
 
 ## Dashboard reference
 
@@ -404,6 +440,8 @@ Appears in the sidebar after setup; nothing to configure. Tabs:
 Registered automatically; add it via *Add card* → *Noxcast*. It always shows what Noxcast is
 configured with (arrays, house load, grid, batteries, feed-in); the card settings only change the
 display.
+
+<details><summary>Details</summary>
 
 - **Power now** as a row of figures: PV, battery, home, grid, with moving dots for the
   flows. Icons above the figures show their state: the sun grows with the share of peak power, the
@@ -439,10 +477,14 @@ display.
 
 All options are also in the visual editor, grouped into power now, day chart and look.
 
+</details>
+
 ### Weather card `custom:noxcast-weather-card`
 
 The coming days one per row (symbol, high / low, precipitation) with the PV yield Noxcast expects,
 from Noxcast's own weather – the same that drives the forecast.
+
+<details><summary>Details</summary>
 
 | Option | Default | |
 |---|---|---|
@@ -452,6 +494,8 @@ from Noxcast's own weather – the same that drives the forecast.
 | `pv_today` | `expected` | Today's yield as `expected` (sensor "Expected today") or `forecast` (sensor "Forecast today") |
 | `temperature`, `humidity`, `name` | – | Optional measured outside values above the days |
 | `look` | `noxcast` | `noxcast` or `plain` |
+
+</details>
 
 ## Entities
 
@@ -468,6 +512,8 @@ from Noxcast's own weather – the same that drives the forecast.
 | Shade today (sensor and image), shading map (image) | | ✓ | |
 | Last learning run, forecast error (30 days) | ✓ | | Error per array and per weather model as attributes |
 | Weather | ✓ | | Current hour, hourly and daily forecast for 7 days |
+
+<details><summary>Details</summary>
 
 Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and `quarter_hourly` (the same in
 15-minute steps, which add up to each hour); the total sensors also `p10` / `p90` and, from the running hour on, `hourly_p10` / `hourly_p90` (the range of each hour on
@@ -488,6 +534,8 @@ before). Per flexible consumer: **PV share now**,
 when no run fits or none gets at least 5 % from surplus) and the binary sensor **Start now**: on while a run started now gets at least the configured PV
 share from surplus and no more than 5 points less than the best window still to come today.
 
+</details>
+
 ## Notifications (blueprints)
 
 Noxcast controls nothing, but three blueprints turn its forecast into a notification on your phone (Home Assistant
@@ -504,6 +552,8 @@ The times, the threshold and the title can be changed per automation. The text o
 
 ## Other tools (EVCC, Predbat, EMHASS)
 
+<details><summary>Details</summary>
+
 Noxcast publishes its forecast in its own attributes, not in the format of another project. Each tool gets it through
 its own way in: a setting, a template sensor or a REST command. The entity IDs below are those of an English setup;
 the IDs follow the language Home Assistant had when Noxcast was added, so copy yours from the entity's settings.
@@ -512,10 +562,14 @@ The hourly values are kWh per hour, which is the same number as the mean power i
 each 15-minute step gets its hour's cloudiness and follows the course of the sun within the hour (and stays under a
 power limit); clouds that come and go within the hour are not in it.
 
+</details>
+
 ### EVCC
 
 EVCC reads the solar forecast of the Home Assistant energy dashboard. Choose Noxcast there as the solar forecast (and
 no other one, since EVCC adds them up), then in EVCC:
+
+<details><summary>Details</summary>
 
 ```yaml
 tariffs:
@@ -527,11 +581,15 @@ tariffs:
 
 EVCC reads hourly values from it.
 
+</details>
+
 ### Predbat
 
 Predbat reads forecasts in the form of the Solcast integration: an attribute `detailedForecast` with half-hourly
 entries (`period_start`, `pv_estimate` in kW), the day total in kWh as state. A template sensor per day builds it
 from the `quarter_hourly` attribute, each half hour from its two quarter hours:
+
+<details><summary>Details</summary>
 
 ```yaml
 template:
@@ -571,6 +629,8 @@ Repeat it with `sensor.noxcast_forecast_tomorrow` and `sensor.noxcast_forecast_d
 power in kW), held around the half hour's value: in the morning and evening the half hours of one hour differ
 more than its range; hours already past keep the central value. Predbat simulates the battery itself.
 
+</details>
+
 ### EMHASS
 
 EMHASS takes forecasts as a mapping from time to W, with the time zone in the key, and holds each value until the
@@ -578,6 +638,8 @@ next one in its own time steps. A REST command builds it from the `quarter_hourl
 attributes of the load (set EMHASS to a 15-minute time step, since with a longer one it takes only the value at the
 start of each step); `sensor.battery_soc` stands for your
 battery's state of charge in %:
+
+<details><summary>Details</summary>
 
 ```yaml
 rest_command:
@@ -606,9 +668,13 @@ rest_command:
 The load forecast contains every configured consumer. Leave out what EMHASS plans as a deferrable load, or the load
 counts twice: configure such a consumer as *flexible* in Noxcast (it then counts with zero).
 
+</details>
+
 ## Repairs
 
 Noxcast reports problems under Settings → System → Repairs, and removes each report once it is solved:
+
+<details><summary>Details</summary>
 
 | Issue | When |
 |---|---|
@@ -619,6 +685,8 @@ Noxcast reports problems under Settings → System → Repairs, and removes each
 | Which PV arrays charge the battery? | A battery charges before the output of a device with PV, but no array belongs to its system (after the update: its former settings did not name its array). Choose its system in those arrays, or change the system to *Battery at the house grid*. Until then it computes as before |
 | Power seems to be limited | Every power sensor of a PV array without a *Power limit* stayed flat at or near its maximum on at least 3 days of the last 60, at times when the sun would have changed the power, and never went above it. Noxcast suggests that maximum as the limit: *Set limit*, *Other value* (both write it into the array's settings) or *There is no limit* (no more notice until the level moves by more than 5 %). Nothing changes until you answer |
 | System: output seems to be limited | The PV arrays of a system without battery and without *Output limit* stayed flat together at or near their highest sum on at least 3 days of the last 60, in the 5-minute values, at times when the learned clear sky would have changed that sum and lay clearly above it (east and west on one inverter, where no sensor is flat alone). Not for a system that covers the house load or delivers a fixed power. Noxcast suggests that maximum as the system's output limit, as the sensors measure it: *Set output limit*, *Other value* (both write it into the system's settings) or *There is no limit*, as above |
+
+</details>
 
 ## Services
 
@@ -632,6 +700,8 @@ Both need an administrator, and so does the *Diagnostics* section of the panel.
 ## How it works
 
 ### Forecast of an hour
+
+<details><summary>Details</summary>
 
 Computed in six 10-minute steps per hour (sun position at each step) and averaged:
 
@@ -649,7 +719,11 @@ Computed in six 10-minute steps per hour (sun position at each step) and average
    hours after the last snow, unless 24 degree hours above 0 °C melt it first. An array without such a history
    forecasts as if there were no snow; the *Learned* tab shows what was learned, the hour's waterfall the *Snow* step.
 
+</details>
+
 ### Clear sky
+
+<details><summary>Details</summary>
 
 The clear-sky irradiance (reference for clearness, upper bound of the range and the corrections) is a fixed
 physical model without learned values or weather data: sun position after NOAA from latitude, longitude and time,
@@ -659,7 +733,11 @@ vapour (1 cm) are constant, the same for every location and season. Only afterwa
 array (shade, direction, reflection, sky view, efficiency) and the temperature loss at the forecast air
 temperature turn this irradiance into the clear-sky power of the array.
 
+</details>
+
 ### Learning (nightly, from long-term statistics)
+
+<details><summary>Details</summary>
 
 - **Batteries:** which batteries leave hours out for an array follows from the systems: its own system's battery; with
   *covers the house load*, also those of the subsystems it coordinates with; for a subsystem without a battery under a
@@ -713,7 +791,11 @@ temperature turn this irradiance into the clear-sky power of the array.
   enough of them, the forecast assumes a free sky and the panel shows "not learned yet".
 - **Temperature coefficient:** upper envelope of output over cell temperature.
 
+</details>
+
 ### During the day
+
+<details><summary>Details</summary>
 
 - The forecast refreshes every 30 minutes and at start.
 - **Forecast today** is fixed at 06:00. **Expected today** = measured hours + the rest corrected by
@@ -732,7 +814,11 @@ temperature turn this irradiance into the clear-sky power of the array.
   The forecast sensors of the array show `limited_wh` (energy above the limit) and `limit_w` (its own limit, empty
   where it only shares one); the total sensors `limited_wh`.
 
+</details>
+
 ### Weather
+
+<details><summary>Details</summary>
 
 - One Open-Meteo request returns all configured models; GHI, DNI and DHI are averaged alike.
   Each model is also archived on its own, so its accuracy can be compared with the mean.
@@ -750,7 +836,11 @@ temperature turn this irradiance into the clear-sky power of the array.
   internet connection; the forecast and the nightly learning need about 100 to 200 a day. After a successful run the next one waits 7 days; a run
   stopped by an error or Open-Meteo's request limit can be repeated at once.
 
+</details>
+
 ### Archive and accuracy
+
+<details><summary>Details</summary>
 
 The forecast for tomorrow is overwritten until midnight; the last version is kept as the day-ahead
 forecast (400 days) and completed with the measured output at night. During the day the expected
@@ -770,7 +860,11 @@ new hours and the last two weeks again, which the archives still correct. Anothe
 location fetches the whole history anew. If an archive that is switched on cannot be reached, the nightly learning run
 is skipped: the previous learned values stay, and the overview shows why.
 
+</details>
+
 ### Load forecast
+
+<details><summary>Details</summary>
 
 load(h) = base profile × correction + fixed consumers + regulated consumers + running flexible ones
 
@@ -787,7 +881,11 @@ correction, plus the consumers that run now.
 - **Regulated:** daily energy against daily mean temperature (threshold + slope, learned over the
   seasons), spread by the consumer's mean hourly shape.
 
+</details>
+
 ### Battery simulation and planning
+
+<details><summary>Details</summary>
 
 - In quarter hours from now until tomorrow's charge start (first hour with PV above load): surplus
   charges up to the upper limit and the charge power, the rest is lost for the battery; a deficit
@@ -814,6 +912,8 @@ correction, plus the consumers that run now.
   nothing. Between equal shares, the window that uses the most surplus that would be lost wins, then the earlier
   one. Several runs are placed one after the other, each counting the ones before. Results: best window today and
   tomorrow, PV share if started now.
+
+</details>
 
 ## Privacy
 

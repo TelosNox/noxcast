@@ -8,7 +8,7 @@ const BAT_TEXT = {
   de: {
     outdated: "Noxcast wurde aktualisiert – bitte Seite neu laden",
     noBattery: "Kein Akku eingerichtet. In der Noxcast-Konfiguration einen Akku hinzufügen.",
-    noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf.",
+    noSim: "Für die Simulation fehlen Lastprognose oder Ladestand. Die Lastprognose braucht den Hausverbrauch-Sensor und einen Lernlauf, oder eine feste Grundlast in der Noxcast-Konfiguration.",
     socNow: "Ladestand jetzt", fullAt: "Voll um", emptyAt: "Leer um", lost: "Überschuss ohne Platz", fedIn: "davon eingespeist", curtailed: "davon abgeregelt", grid: "Netzbezug",
     until: "bis Ladebeginn morgen", never: "–",
     learnedTitle: "Kapazität, wie der Akku sie zeigt",
@@ -34,7 +34,7 @@ const BAT_TEXT = {
   en: {
     outdated: "Noxcast was updated – please reload the page",
     noBattery: "No battery set up. Add a battery in the Noxcast configuration.",
-    noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run.",
+    noSim: "The simulation needs the load forecast and the state of charge. The load forecast needs the house load sensor and a learning run, or a fixed base load in the Noxcast configuration.",
     socNow: "State of charge now", fullAt: "Full at", emptyAt: "Empty at", lost: "Surplus without room", fedIn: "of that fed in", curtailed: "of that curtailed", grid: "From grid",
     until: "until tomorrow's charge start", never: "–",
     learnedTitle: "Capacity as the battery shows it",

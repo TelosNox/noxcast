@@ -6,6 +6,7 @@
         "description": "Weather comes from Open-Meteo (free for non-commercial use, no key). This is the household: house load, grid and the feed-in rule. Afterwards you add your systems, PV arrays and batteries, most easily in the Installation tab of the Noxcast panel, which shows every change in the picture.",
         "data": {
           "house_load": "House load",
+          "base_load_w": "Fixed base load",
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
@@ -14,6 +15,7 @@
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
+          "base_load_w": "Optional, only without a house load sensor, e.g. for a balcony system without a meter for the whole house: the load the house draws in every hour (standby of fridge, router and the like). Enables the battery forecast and the planner with this value. A measured house load is learned and wins.",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one. A system with Self-consumption and no battery needs it: hours in which the household imported little or nothing at times count as \"at least this much\" in learning.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
@@ -40,6 +42,7 @@
         "description": "The household: house load, grid and feed-in rule. Systems, PV arrays and batteries are added on the integration page.\n\n{concept}",
         "data": {
           "house_load": "House load",
+          "base_load_w": "Fixed base load",
           "day_type_entity": "Day type",
           "grid_power": "Grid power",
           "grid_invert": "Grid sensor counts export as positive",
@@ -48,6 +51,7 @@
         },
         "data_description": {
           "house_load": "Optional. Enables the load forecast: power of the whole house (W or kW, measurement).",
+          "base_load_w": "Optional, only without a house load sensor, e.g. for a balcony system without a meter for the whole house: the load the house draws in every hour (standby of fridge, router and the like). Enables the battery forecast and the planner with this value. A measured house load is learned and wins.",
           "day_type_entity": "Optional: an entity whose state at noon is the day type, e.g. the Workday binary sensor (a holiday then counts as weekend) or an input_select such as home office / office / holiday. Profiles are learned per state.",
           "grid_power": "Optional. Power at the grid connection (W or kW, measurement), positive = import. Shows measured grid energy in the day view instead of a derived one. A system with Self-consumption and no battery needs it: hours in which the household imported little or nothing at times count as \"at least this much\" in learning.",
           "grid_invert": "Switch on if the grid sensor is positive while feeding in.",
@@ -259,7 +263,7 @@
         },
         "battery": {
           "title": "Battery",
-          "description": "Battery for the surplus simulation (needs the house load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
+          "description": "Battery for the surplus simulation (needs the house load or a fixed base load). Its system says where it sits: before the output of a device with PV, or at the house grid with its own inverter.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "State of charge",

@@ -225,6 +225,7 @@ Ebene, die engere zählt:
 | Feld | Bedeutung |
 |---|---|
 | Hausverbrauch | Optional. Leistung des ganzen Hauses (W/kW). Schaltet die Lastprognose ein |
+| Feste Grundlast | Optional, nur ohne *Hausverbrauch*: die Last in W, die das Haus in jeder Stunde zieht, für ein Balkonkraftwerk ohne Zähler für das ganze Haus (Bereitschaft von Kühlschrank, Router und Ähnlichem; eine Messsteckdose oder der Zähler nachts zeigt sie). Akkuprognose, Überschuss und der Planer für flexible Verbraucher rechnen dann mit diesem Wert; ein Verbraucher mit eigenem Sensor kommt mit seiner Leistung dazu, solange er läuft. Gelernt wird daraus nichts, der Reiter *Last* bleibt ausgeblendet |
 | Tagestyp | Optional. Entität, deren Zustand um 12 Uhr der Tagestyp ist (Workday-Sensor, ein `input_select` wie Homeoffice / Büro / Urlaub). Profile werden je Zustand gelernt |
 | Netzleistung | Optional. Leistung am Netzanschluss, positiv = Bezug (*umkehren*, wenn Einspeisung positiv ist). Ein System mit *Eigenverbrauch* ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog (unter 100 W), zählen beim Lernen als „mindestens so viel“, weil das Gerät PV zurückgehalten haben kann |
 | Einspeisevorgabe, Einspeisegrenze | Was der Haushalt einspeisen darf, wie es der Netzbetreiber verlangt oder du es willst: frei, höchstens eine Leistung in W, höchstens ein Anteil der PV-Leistung in % oder Nulleinspeisung (nie etwas; Überschuss bei vollen Akkus zählt als ungenutzt). Jedes System folgt dieser Vorgabe, außer es nennt eine Abweichung. Die Akkuprognose speist Überschuss ohne Platz bis zur Grenze ein und zählt den Rest als abgeregelt. Mit einer Grenze und dem Sensor *Netzleistung* zählen Stunden, in denen die Einspeisung des Haushalts die Grenze erreichte, (bis auf 5 %, mindestens 100 W) beim Lernen als „mindestens so viel“, weil die PV zurückgehalten worden sein kann; ein Anteil in % zählt von der Leistung aller PV-Gruppen. Eine feste Grenze am Wechselrichter selbst (etwa 60 % der Module) zeigt sich nicht am Netzanschluss: Sie gehört als *Ausgangsgrenze* ins System |
@@ -337,7 +338,7 @@ hat zwei Schritte: erst Sensor und Zeitbindung, dann nur die Felder dieser Zeitb
 | Leistung eines Laufs, Dauer eines Laufs | Nur flexibel, optional: sonst aus dem Verlauf gelernt |
 | Jetzt starten ab PV-Anteil | Nur flexibel, optional (Standard 70 %): Schwelle des Sensors *jetzt starten* |
 
-### 5. Akkus (optional, braucht den Hausverbrauch)
+### 5. Akkus (optional, braucht den Hausverbrauch oder eine feste Grundlast)
 
 Name, Ladestand-Sensor, Kapazität und System (*Gehört zu*) stehen oben; Grenzen und Leistung stehen in Abschnitten, die zu bleiben,
 bis sie einen Wert enthalten. Das System sagt, wo der Akku sitzt (siehe *Akku lädt aus*), und gibt seine
@@ -479,8 +480,8 @@ Prognosesensoren tragen `hourly` (ISO-Zeitstempel → kWh, `schema_version` 1) u
 15-Minuten-Schritten, die zusammen jede Stunde ergeben); die Gesamtsensoren zusätzlich `p10` / `p90` und ab der laufenden Stunde
 `hourly_p10` / `hourly_p90` (die Spanne jeder Stunde für sich, deshalb ergeben sie zusammen nicht `p10` / `p90` des Tages). Die Gesamtprognose wird im Energie-Dashboard als Solarprognose angeboten.
 
-Mit Hausverbrauch: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`, `correction`,
-`backtest`), und ohne Akkus **Überschuss Rest heute** (PV über der Last; Attribute `fed_in` und `curtailed` wie unten,
+Mit Hausverbrauch oder fester Grundlast: **Last Rest heute**, **Last morgen** (Attribute `hourly`, `base`, `consumers`,
+`correction`, `backtest`, `fixed_w`), und ohne Akkus **Überschuss Rest heute** (PV über der Last; Attribute `fed_in` und `curtailed` wie unten,
 `to_battery` 0). Mit Akkus: **Überschuss Rest heute**, **Überschuss verloren heute** (beide mit den Attributen
 `fed_in` und `curtailed`: was vom Überschuss ohne Platz ins Netz geht und was abgeregelt wird), **Akku voll um**, **Akku höchster
 Stand**, **Akku leer um**, **Akku bei nächstem Ladebeginn** (Attribut `grid`: Netzenergie bis dahin), **Netzbezug bis Ladebeginn** (was der Akku
@@ -788,6 +789,9 @@ zeigt den Grund.
 ### Lastprognose
 
 load(h) = Grundprofil × Korrektur + feste Verbraucher + geregelte Verbraucher + laufende flexible
+
+Ohne Hausverbrauch-Sensor tritt eine *Feste Grundlast* an die Stelle des Grundprofils: derselbe Wert in jeder Stunde,
+ohne Korrektur, dazu die Verbraucher, die gerade laufen.
 
 - **Grundprofil:** Hausverbrauch minus alle Verbraucher, Median je Stunde und Tagestyp (letzte Wochen).
 - **Korrektur:** Verhältnis der letzten 4 Stunden zum Profil, das über die nächsten Stunden gegen 1 ausläuft; ein

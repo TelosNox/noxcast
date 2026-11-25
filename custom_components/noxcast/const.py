@@ -13,6 +13,7 @@ CONF_UNENTERED_SOC = "unentered_soc_sensors"  # from 1.8: those of them no batte
 CONF_SOC_FULL = "soc_full_pct"            # until 1.9: from what % every battery counted as full (systems.drop_soc_full)
 DEFAULT_SOC_FULL = 95
 CONF_HOUSE_LOAD = "house_load"           # optional: enables the load forecast
+CONF_BASE_LOAD = "base_load_w"           # optional, W: a fixed load in every hour where no house load is measured
 CONF_GRID = "grid_power"                  # optional: grid power, > 0 = import (measured instead of derived energy paths)
 CONF_GRID_INVERT = "grid_invert"          # the grid sensor counts export as positive
 CONF_FEED_IN = "feed_in"                  # until 1.5: surplus can be fed into the grid (bool); now CONF_FEED_IN_MODE

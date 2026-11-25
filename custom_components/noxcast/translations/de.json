@@ -6,6 +6,7 @@
         "description": "Das Wetter kommt von Open-Meteo (für nicht-kommerzielle Nutzung kostenlos, ohne Schlüssel). Hier steht der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du danach hinzu, am einfachsten im Reiter Anlage des Noxcast-Panels, der jede Änderung im Bild zeigt.",
         "data": {
           "house_load": "Hausverbrauch",
+          "base_load_w": "Feste Grundlast",
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
@@ -14,6 +15,7 @@
         },
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
+          "base_load_w": "Optional, nur ohne Hausverbrauch-Sensor, etwa für ein Balkonkraftwerk ohne Zähler für das ganze Haus: die Last, die das Haus in jeder Stunde zieht (Bereitschaft von Kühlschrank, Router und Ähnlichem). Schaltet mit diesem Wert die Akkuprognose und den Planer ein. Ein gemessener Hausverbrauch wird gelernt und hat Vorrang.",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
@@ -40,6 +42,7 @@
         "description": "Der Haushalt: Hausverbrauch, Netz und Einspeisevorgabe. Systeme, PV-Gruppen und Akkus fügst du auf der Seite der Integration hinzu.\n\n{concept}",
         "data": {
           "house_load": "Hausverbrauch",
+          "base_load_w": "Feste Grundlast",
           "day_type_entity": "Tagestyp",
           "grid_power": "Netzleistung",
           "grid_invert": "Netzsensor zählt Einspeisung positiv",
@@ -48,6 +51,7 @@
         },
         "data_description": {
           "house_load": "Optional. Schaltet die Lastprognose ein: Leistung des ganzen Hauses (W oder kW, measurement).",
+          "base_load_w": "Optional, nur ohne Hausverbrauch-Sensor, etwa für ein Balkonkraftwerk ohne Zähler für das ganze Haus: die Last, die das Haus in jeder Stunde zieht (Bereitschaft von Kühlschrank, Router und Ähnlichem). Schaltet mit diesem Wert die Akkuprognose und den Planer ein. Ein gemessener Hausverbrauch wird gelernt und hat Vorrang.",
           "day_type_entity": "Optional: eine Entität, deren Zustand um 12 Uhr den Tagestyp bestimmt, z. B. der Binärsensor der Workday-Integration (ein Feiertag zählt dann wie ein Wochenende) oder ein input_select wie Homeoffice / Büro / Urlaub. Profile werden je Zustand gelernt.",
           "grid_power": "Optional. Leistung am Netzanschluss (W oder kW, measurement), positiv = Bezug. Die Tagesansicht zeigt dann gemessene statt zurückgerechnete Netzenergie. Ein System mit Eigenverbrauch ohne Akku braucht sie: Stunden, in denen der Haushalt zeitweise kaum etwas bezog, zählen beim Lernen als „mindestens so viel“.",
           "grid_invert": "Einschalten, wenn der Netzsensor beim Einspeisen positiv ist.",
@@ -259,7 +263,7 @@
         },
         "battery": {
           "title": "Akku",
-          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
+          "description": "Akku für die Überschuss-Simulation (braucht den Hausverbrauch oder eine feste Grundlast). Sein System sagt, wo er sitzt: vor dem Ausgang eines Geräts mit PV oder mit eigenem Wechselrichter am Hausnetz.\n\n{diagram}",
           "data": {
             "name": "Name",
             "soc_sensor": "Ladestand",

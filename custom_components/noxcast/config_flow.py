@@ -23,7 +23,7 @@ from .const import (
     WEATHER_MODEL_OPTIONS,
     CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS, CONF_UNENTERED_SOC,
     CONF_TILT, CONF_VALID_SINCE, DOMAIN, POWER_UNIT_FACTORS, SUBENTRY_ARRAY,
-    CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
+    CONF_HOUSE_LOAD, CONF_BASE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_FORECAST_DAYS, FORECAST_DAYS, MAX_FORECAST_DAYS, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER, TIMING_OPTIONS, CONF_KIND, KIND_OPTIONS,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_RUN_MINUTES, CONF_RUN_POWER, CONF_START_SHARE,
     CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE, CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
@@ -57,6 +57,9 @@ def _main_schema(defaults: dict[str, Any]) -> vol.Schema:
     return vol.Schema({
         vol.Optional(CONF_HOUSE_LOAD, description={"suggested_value": defaults.get(CONF_HOUSE_LOAD)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        vol.Optional(CONF_BASE_LOAD, description={"suggested_value": defaults.get(CONF_BASE_LOAD)}):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=10000, step=5,
+                                                                  unit_of_measurement="W", mode=box)),
         vol.Optional(CONF_GRID, description={"suggested_value": defaults.get(CONF_GRID)}):
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         vol.Optional(CONF_GRID_INVERT, default=defaults.get(CONF_GRID_INVERT, False)): selector.BooleanSelector(),

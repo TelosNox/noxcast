@@ -229,6 +229,7 @@ counts:
 | Field | Meaning |
 |---|---|
 | House load | Optional. Whole-house power (W/kW). Enables the load forecast |
+| Fixed base load | Optional, only without *House load*: the load in W the house draws in every hour, for a balcony system without a meter for the whole house (the standby of fridge, router and the like; a smart plug or the meter at night shows it). The battery forecast, the surplus and the planner of flexible consumers then work with this value; a consumer with its own sensor adds its power while it runs. Nothing is learned from it, and the *Load* tab stays hidden |
 | Day type | Optional. Entity whose state at noon is the day type (Workday sensor, an `input_select` such as home office / office / holiday). Profiles are learned per state |
 | Grid power | Optional. Power at the grid connection, positive = import (*invert* if export is positive). A system with *Self-consumption* and no battery needs it: hours in which the household imported little or nothing at times (below 100 W) count as "at least this much" in learning, since the device may have held PV back |
 | Feed-in rule, feed-in limit | What the household may feed in, as the grid operator requires it or you want it: free, at most a power in W, at most a share of the PV peak power in %, or zero export (nothing, ever; surplus with full batteries counts as unused). Every system follows this rule unless it names a deviation. The battery forecast feeds surplus without room in up to the limit and counts the rest as curtailed. With a limit and the *Grid power* sensor, hours in which the household's export reached the limit (within 5 %, at least 100 W) count as "at least this much" in learning, since the PV may have been held back; a share in % counts of the peak power of all PV arrays. A fixed cap set on the inverter itself (such as 60 % of the modules) does not show at the grid connection: enter it as the system's *Output limit* |
@@ -346,7 +347,7 @@ sensor and the timing first, then only the fields of that timing.
 | Run power, run minutes | Flexible only, optional: otherwise learned from history |
 | Start now from PV share | Flexible only, optional (default 70 %): threshold of the *start now* sensor |
 
-### 5. Batteries (optional, needs the house load)
+### 5. Batteries (optional, needs the house load or a fixed base load)
 
 Name, state of charge sensor, capacity and system (*Belongs to*) are on top; limits and power are in sections that stay closed until
 they hold a value. The system says where the battery sits (see *Battery charges from*) and gives its output limit.
@@ -500,8 +501,8 @@ Forecast sensors carry `hourly` (ISO timestamp → kWh, `schema_version` 1) and 
 15-minute steps, which add up to each hour); the total sensors also `p10` / `p90` and, from the running hour on, `hourly_p10` / `hourly_p90` (the range of each hour on
 its own, so they do not add up to the day's `p10` / `p90`). The total is offered as solar forecast in the energy dashboard.
 
-With house load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
-`consumers`, `correction`, `backtest`), and without batteries **Surplus rest of today** (PV above the load; attributes
+With house load or a fixed base load: **Load rest of today**, **Load tomorrow** (attributes `hourly`, `base`,
+`consumers`, `correction`, `backtest`, `fixed_w`), and without batteries **Surplus rest of today** (PV above the load; attributes
 `fed_in` and `curtailed` as below, `to_battery` 0). With batteries: **Surplus rest of today**, **Surplus lost
 today** (both with the attributes `fed_in` and `curtailed`: what of the surplus without room goes into the grid and
 what is curtailed), **Battery full at**, **Battery highest level**, **Battery empty at**, **Battery at next
@@ -791,6 +792,9 @@ is skipped: the previous learned values stay, and the overview shows why.
 ### Load forecast
 
 load(h) = base profile × correction + fixed consumers + regulated consumers + running flexible ones
+
+Without a house load sensor, a *Fixed base load* stands in for the base profile: the same value in every hour, without
+correction, plus the consumers that run now.
 
 - **Base profile:** house load minus all consumers, median per hour and day type (last weeks).
 - **Correction:** ratio of the last 4 hours to the profile, fading towards 1 over the next hours;

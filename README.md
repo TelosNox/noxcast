@@ -413,7 +413,9 @@ temperature coefficient (unless a datasheet value is set) are not learned.
 
 ### Sidebar panel *Noxcast* (full overview)
 
-Appears in the sidebar after setup; nothing to configure. Tabs:
+Appears in the sidebar after setup; nothing to configure. It starts simple, with *Overview*, *Day*, *Battery &
+surplus* and *Installation*. The *Details* switch in the header adds *Learned*, *Forecast accuracy*, *Load* and
+*Diagnostics*; the browser remembers it, and a link into one of those tabs switches it on. Tabs:
 
 | Tab | Content |
 |---|---|

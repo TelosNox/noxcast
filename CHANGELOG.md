@@ -11,6 +11,8 @@ breaking changes.
 - The day card's *Actual* value counts measured energy only. It no longer shows energy before the modules deliver
   any, and no longer drops when an hour ends: the running hour counted part of its forecast until now. The value
   follows Noxcast's half-hourly update, and shows – while no measurement is available.
+- The day card's solid area up to now shows measured power only. It no longer rises before the modules deliver
+  anything: its last point was the running hour's expected value; it now ends at the measured part of that hour.
 
 ## [0.8.0b1] - 2026-11-24
 

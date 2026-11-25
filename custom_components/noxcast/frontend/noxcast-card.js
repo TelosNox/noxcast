@@ -839,10 +839,22 @@ class NoxcastCard extends HTMLElement {
     const y = (p) => Hp - 2 - Math.min(p, ymax) / ymax * (Hp - 16);
     const pts = (f) => [[x(prodStart), y(0)], ...pvH.map((h) => [x(h + H / 2), y(f(h))]), [x(prodEnd), y(0)]];
     const fill = (p) => `${line(p)} L${p[p.length - 1][0].toFixed(1)},${(Hp - 2).toFixed(1)} L${p[0][0].toFixed(1)},${(Hp - 2).toFixed(1)} Z`;
+    // measured: ended hours every group has a measurement for, and the measured part of the running hour at its
+    // middle; the solid area ends there instead of reaching towards the running hour's expected value
+    const actM = new Map(), actN = new Map();
+    for (const a of arrays) for (const [h, v] of tsRows(a.actual, "wh")) { actM.set(h, (actM.get(h) || 0) + v); actN.set(h, (actN.get(h) || 0) + 1); }
+    const act = (h) => (h + H <= now && actN.get(h) === arrays.length ? actM.get(h) : null);
+    const runs = arrays.map((a) => a.running);
+    const run = runs.every((r) => r && r.start === runs[0].start) ? runs : null;
+    const measuredPts = [[x(prodStart), y(0)], ...pvH.filter((h) => act(h) !== null).map((h) => [x(h + H / 2), y(act(h))])];
+    if (run && run[0].start >= prodStart && run[0].start < prodEnd) {
+      const share = Math.min(...run.map((r) => r.share));
+      measuredPts.push([x(run[0].start + share * H / 2), y(run.reduce((a, r) => a + r.w, 0))]);
+    } else if (pvH.length && act(pvH[pvH.length - 1]) !== null) measuredPts.push([x(prodEnd), y(0)]);
     const between = (hi, lo) => { const a = pts(hi), b = pts(lo).reverse(); return `${line(a)} L${b[0][0].toFixed(1)},${b[0][1].toFixed(1)}${curve(b)} Z`; };
     const nowX = now > t0 && now < t1 ? x(now) : null;
 
-    // PV: expectation pale, the past part (= actual) solid, held forecast as contour, shade as notch below the potential
+    // PV: expectation pale, the measured part solid, held forecast as contour, shade as notch below the potential
     const potential = (h) => fc(h) + loss(h);
     const lossTotal = this._show("effects") ? dayH.reduce((a, h) => a + loss(h), 0) : 0;
     const hasLoad = this._show("load") && dayH.some((h) => load(h) !== null);
@@ -882,7 +894,7 @@ class NoxcastCard extends HTMLElement {
       ${lossTotal > 1 ? `<path d="${between(potential, fc)}" fill="url(#nx-shade)"></path>
         <path d="${line(pts(potential))}" fill="none" stroke="${P.shade}" stroke-width="1" stroke-opacity=".6"></path>` : ""}
       <path d="${fill(pts(exp))}" fill="${P.pv}" fill-opacity=".3"></path>
-      <path d="${fill(pts(exp))}" fill="${P.pv}" clip-path="url(#nx-past)"></path>
+      ${measuredPts.length > 1 ? `<path d="${fill(measuredPts)}" fill="${P.pv}" clip-path="url(#nx-past)"></path>` : ""}
       ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
       ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},${Hp} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 L${x(t0).toFixed(1)},${Hp} Z"></path></clipPath>
         <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
@@ -964,7 +976,8 @@ class NoxcastCard extends HTMLElement {
     // values per hour for the tooltip: hovering or tapping an hour shows what the chart draws there
     const socAt = (ts) => (!bat ? null : ts <= now ? m.socAt(ts) : sim.at(ts));
     this._tipRows = dayH.map((h) => {
-      const done = h + H <= now, rows = [[done ? t.actual : t.expected, exp(h), P.pvText]];
+      // an ended hour without a measurement shows the value the chart draws there, as expected
+      const done = act(h) !== null, rows = [[done ? t.actual : t.expected, done ? act(h) : exp(h), P.pvText]];
       if (Math.abs(fc(h) - exp(h)) >= 1 || !done) rows.push([t.lg.forecast, fc(h), P.pvDark]);
       if (loss(h) >= 1) rows.push([t.lg.loss, -loss(h), P.shade]);
       if (load(h) !== null) rows.push([t.lg.load, lv(h), "var(--primary-text-color)"]);

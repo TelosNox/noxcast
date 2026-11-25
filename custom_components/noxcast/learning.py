@@ -594,6 +594,15 @@ def _capped_measured(site: Site, arrays: dict[str, ArrayConfig], learned: dict[s
     return predict
 
 
+def learn_runs(consumers: dict[str, ConsumerConfig], consumer_series: dict[str, Series]) -> dict[str, dict]:
+    """The typical run of each flexible consumer from its own power ({sid: {"power_w", "minutes"}})."""
+    runs = {}
+    for sid, c in consumers.items():
+        if c.timing == lf.TIMING_FLEXIBLE and (run := pl.learn_run(c.name, consumer_series.get(sid, {}))):
+            runs[sid] = {"power_w": run.power_w, "minutes": run.minutes}
+    return runs
+
+
 def learn_load(house_load: str, consumers: dict[str, ConsumerConfig], history: LoadHistory, zone: tzinfo,
                tz: tzinfo, until: float, now: float, air_temp: Series | None = None,
                keep: Keep | None = None) -> LoadLearned | None:
@@ -622,10 +631,7 @@ def learn_load(house_load: str, consumers: dict[str, ConsumerConfig], history: L
                                                           air_temp, zone, until)
     backtest = lf.backtest(load, consumer_series, {sid: c.timing for sid, c in consumers.items()}, zone, now,
                            lf.BACKTEST_DAYS, {sid: c.kind for sid, c in consumers.items()}, air_temp)
-    runs = {}
-    for sid, c in consumers.items():
-        if c.timing == lf.TIMING_FLEXIBLE and (run := pl.learn_run(c.name, consumer_series.get(sid, {}))):
-            runs[sid] = {"power_w": run.power_w, "minutes": run.minutes}
+    runs = learn_runs(consumers, consumer_series)
     _LOGGER.info("Learned load profile from %d days; backtest %s", profile.days, backtest)
     return LoadLearned(profile, floor_profile, profiles, models, backtest, runs,
                        learn_events(house_load, consumers, history.fine, tz, keep) if history.fine is not None else None)

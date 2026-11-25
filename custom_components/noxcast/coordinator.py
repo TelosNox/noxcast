@@ -272,6 +272,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                            "dismissed": {s: float(w) for s, w in (limits.get("dismissed") or {}).items()},
                            "systems": dict(limits.get("systems") or {}),
                            "dismissed_systems": {s: float(w) for s, w in (limits.get("dismissed_systems") or {}).items()}}
+            runs = stored.get("runs") or {}
+            if self.base_load and runs.get("key") == self._load_key():
+                self.run_profiles = {sid: r for sid, r in runs["runs"].items() if sid in self.consumers}
             load = stored.get("load") or {}
             if self.house_load and load.get("key") == self._load_key():
                 self.load_profile = lf.Profile.from_dict(load["base"])
@@ -527,7 +530,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
 
     def _store_data(self) -> dict:
         today = self._today
-        return {
+        data = {
             "band": self.band,
             "pv_backtest": self.pv_backtest,
             "model_compare": self.model_compare,
@@ -559,6 +562,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
             "weather": {"fetched": self._weather[0], "mean": [_weather_row(w) for w in self._weather[1]]}
             if self._weather else None,
         }
+        if self.base_load and self.run_profiles:     # without a house load only the learned runs exist (_async_learn_runs)
+            data["runs"] = {"key": self._load_key(), "runs": self.run_profiles}
+        return data
 
     # ------------------------------------------------------------------ learning
 
@@ -782,6 +788,8 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         await self._async_forecast_error()
         if self.house_load:
             await self._async_learn_load(now, air_temp)
+        elif self.base_load:
+            await self._async_learn_runs(now)
         self.last_learning = now
         self._archive_store.async_delay_save(self._archive_data, 5)
         return history, now.timestamp(), exclusions
@@ -920,7 +928,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         Consumers without a power sensor use their energy sensor: the hourly change in Wh is the mean W, and an hour
         without a statistic counts as 0 (see load.fill_counter_gaps).
         """
-        ids = [self.house_load] + [c.sensor for c in self.consumers.values() if c.sensor]
+        ids = [self.house_load] * bool(self.house_load) + [c.sensor for c in self.consumers.values() if c.sensor]
         energy = [c.energy for c in self.consumers.values() if not c.sensor]
         factors = await async_power_factors(self.hass, ids)
         stats = await async_hourly_statistics(self.hass, ids, start, "mean", period)
@@ -930,7 +938,12 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         out = {sid: {t: max(v, 0.0) * factors.get(sid, 1.0) if sid in energy else v * factors.get(sid, 1.0)
                      for t, v in stats.get(sid, {}).items() if v is not None}
                for sid in ids + energy}
-        hours = out.get(self.house_load, {})
+        # the house load's hours mark where a counter without a statistic stood still; without one, every hour since
+        # start counts
+        hours = out.get(self.house_load) if self.house_load else None
+        if hours is None:
+            first = int(start.timestamp()) // 3600 * 3600 + 3600
+            hours = range(first, int(dt_util.utcnow().timestamp()) // 3600 * 3600, 3600)
         for sid in energy:
             out[sid] = lf.fill_counter_gaps(out[sid], hours)
         return out
@@ -966,6 +979,16 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                     parts.setdefault(t, []).append(wh)
             battery = {t: sum(v) for t, v in parts.items() if len(v) == len(socs)}   # every battery known
         return fl.day_flows(pv, load, battery, start, end, grid)
+
+    async def _async_learn_runs(self, now: datetime) -> None:
+        """Without a house load only the runs of flexible consumers are learned, from their own sensors: the
+        planner needs a run's power and length, and the fixed base load leaves nothing else to learn."""
+        flexible = {sid: c for sid, c in self.consumers.items() if c.timing == lf.TIMING_FLEXIBLE}
+        if not flexible:
+            self.run_profiles = {}
+            return
+        series = await self._async_load_series(now - timedelta(days=lf.PROFILE_DAYS + lf.BACKTEST_DAYS + 1))
+        self.run_profiles = ln.learn_runs(flexible, {sid: series.get(c.series_id, {}) for sid, c in flexible.items()})
 
     async def _async_learn_load(self, now: datetime, air_temp: Series | None = None) -> None:
         """Base-load and consumer profiles from the recent weeks, plus a replay of the last days."""

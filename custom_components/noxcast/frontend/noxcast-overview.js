@@ -5,7 +5,7 @@
 // then every part is a slot that is written only when its content changed, and the live figures (PV power,
 // state of charge, rest of today) are text nodes set from the Home Assistant states. A new answer is fetched when
 // Noxcast's own sensor of the rest of today changes (Noxcast computed anew) and every few minutes besides.
-const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, smooth, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId, kwh, num, hm, power, powerParts, hourCurve, hourStops, smooth, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const RELOAD_MS = 5 * 60000;
 const PLAN_BAND = 0.1;          // "as forecast" while the measured hours so far are this close to their morning forecast
@@ -277,7 +277,6 @@ class NoxcastOverview extends HTMLElement {
     const line = (p) => smoothPath(xy(p));
     // only the hours of the time axis: the night hours of the day would draw their zeros left of it
     const shown = hours.filter((h) => mid(h) >= a && mid(h) <= b);
-    const pts = (key, list = shown) => list.filter((h) => h[key] != null).map((h) => [mid(h), h[key]]);
     let svg = "", scale = "";
     for (let v = 0; v <= ymax + 1e-9; v += step) {
       svg += `<line x1="${L}" x2="${W - R}" y1="${y(v * 1000).toFixed(1)}" y2="${y(v * 1000).toFixed(1)}" class="${v ? "rail" : "axis"}"/>`;
@@ -290,30 +289,32 @@ class NoxcastOverview extends HTMLElement {
       const tx = x(ts), anchor = tx < L + 16 ? "start" : tx > W - R - 16 ? "end" : "middle";
       svg += `<text x="${tx.toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${this._hm(ts)}</text>`;
     }
-    // production edges at zero, so area and curves rise from the axis and return to it
-    const p0 = lit[0].ts, p1 = lit[lit.length - 1].ts + 3600;
-    const edged = (p) => (p.length ? [[p0, 0], ...p, [p1, 0]] : p);
-    // the lines too stay within production: the night hours at the edges of the axis would retrace the zero line
-    const inDay = shown.filter((h) => mid(h) >= p0 && mid(h) <= p1);
-    const clear = pts("clear", inDay);
-    if (clear.length > 1) svg += `<path d="${line(edged(clear))}" class="clear"/>`;
+    // production edges at zero, as in the card and the day page: the curves rise from the axis at the start of the
+    // first producing hour and return to it at the end of the last; clear sky has its own, wider edges
+    const byTs = new Map(shown.map((h) => [h.ts, h])), at = (key) => (ts) => byTs.get(ts)[key];
+    const pv = (h) => h.act ?? h.ex ?? h.fc ?? 0;
+    const pvStops = hourStops(shown.map((h) => h.ts), (ts) => pv(byTs.get(ts)) > 1 || (byTs.get(ts).fc || 0) > 1);
+    // an hour without a value of the series is left out, not drawn as zero
+    const curve = (stops, f) => { const p = hourCurve(stops.filter(([, h]) => h === null || f(h) != null), f); return p.some(([, v]) => v > 0) ? p : []; };
+    const clear = curve(hourStops(shown.map((h) => h.ts), (ts) => (byTs.get(ts).clear || 0) > 1), at("clear"));
+    if (clear.length > 1) svg += `<path d="${line(clear)}" class="clear"/>`;
     const band = shown.filter((h) => h.p10 != null && h.p90 != null);
     if (band.length > 1) {
       const lo = xy(band.map((h) => [mid(h), h.p10])).reverse();
       svg += `<path d="${line(band.map((h) => [mid(h), h.p90]))} L${lo[0][0].toFixed(1)},${lo[0][1].toFixed(1)}${smooth(lo)} Z" class="bandarea"/>`;
     }
     // PV as one area: measured hours, then the expectation for the rest; solid until now, pale after it
-    const day = inDay.map((h) => [mid(h), h.act ?? h.ex ?? h.fc ?? 0]);
+    const day = curve(pvStops, (ts) => pv(byTs.get(ts)));
     if (day.length) {
-      const d = line(edged(day)), base = `L${x(p1).toFixed(1)},${y(0).toFixed(1)} L${x(p0).toFixed(1)},${y(0).toFixed(1)} Z`;
+      const d = line(day), base = `L${x(day[day.length - 1][0]).toFixed(1)},${y(0).toFixed(1)} L${x(day[0][0]).toFixed(1)},${y(0).toFixed(1)} Z`;
       const cut = Math.max(0, Math.min(W, x(nowTs))).toFixed(1);
       svg = `<defs><linearGradient id="ov-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5A524" stop-opacity=".95"/><stop offset="1" stop-color="#FF6A3D" stop-opacity=".55"/></linearGradient>
         <clipPath id="ov-past"><rect x="0" y="0" width="${cut}" height="${H}"/></clipPath><clipPath id="ov-rest"><rect x="${cut}" y="0" width="${W}" height="${H}"/></clipPath></defs>${svg}`;
       svg += `<path d="${d} ${base}" fill="url(#ov-area)" clip-path="url(#ov-past)"/><path d="${d} ${base}" class="rest" clip-path="url(#ov-rest)"/>`;
       svg += `<path d="${d}" class="edge" clip-path="url(#ov-past)"/>`;
     }
-    const fc = pts("fc", inDay);
-    if (fc.length > 1) svg += `<path d="${line(edged(fc))}" class="fc"/>`;
+    const fc = curve(pvStops, at("fc"));
+    if (fc.length > 1) svg += `<path d="${line(fc)}" class="fc"/>`;
     if (nowTs > a && nowTs < b) {
       svg += `<line x1="${x(nowTs).toFixed(1)}" x2="${x(nowTs).toFixed(1)}" y1="${T}" y2="${H - B}" class="now"/>`;
       svg += `<text x="${x(nowTs).toFixed(1)}" y="${T - 3}" text-anchor="middle" class="nowt">${t.now}</text>`;

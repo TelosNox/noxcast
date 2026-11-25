@@ -2,7 +2,7 @@
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/battery".
 // The what-if simulation mirrors battery.simulate (one storage) and battery.simulate_units (separate systems) in the
 // integration; without changes it gives the same numbers.
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, hourCurve, hourStops, kwh, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const BAT_TEXT = {
   de: {
@@ -59,17 +59,29 @@ const BAT_TEXT = {
   },
 };
 
-const H = 3600;
+const H = 3600, QUARTER = 900, EVEN = [0.25, 0.25, 0.25, 0.25];
+
+// hourly rows in quarter hours, as battery.in_quarters: PV and capped PV by the hour's PV shape, the load evenly; the
+// discharge limit is a power and stays. Noxcast simulates in quarters, so the what-if does too and both agree.
+function quarterRows(rows, shape) {
+  return rows.flatMap(([t, pv, load, capped, discharge]) => (shape.get(t) || EVEN)
+    .map((f, k) => [t + k * QUARTER, pv * f, load / 4, (capped || 0) * f, discharge]));
+}
+function quarterUnit(u, shape) {
+  const rows = tsRows(u.hours, "pv", "capped", "discharge")
+    .flatMap(([t, pv, capped, discharge]) => (shape.get(t) || EVEN).map((f, k) => [t + k * QUARTER, [pv * f, (capped || 0) * f, discharge]]));
+  return { ...u, own: new Map(rows) };
+}
 
 // what of the surplus without room (capped PV left out) is fed in, as battery.FeedIn.fed_in
-function fedIn(feed, t, wh, share) {
-  const h = feed.hours.get(t) || [0, 0], free = h[0] * wh, rule = Math.max(1 - h[0] - h[1], 0) * wh;
-  const room = feed.limit_w === null || feed.limit_w === undefined ? Infinity : feed.limit_w * share;
+function fedIn(feed, t, wh, per) {
+  const h = feed.hours.get(t - (t % H)) || [0, 0], free = h[0] * wh, rule = Math.max(1 - h[0] - h[1], 0) * wh;
+  const room = feed.limit_w === null || feed.limit_w === undefined ? Infinity : feed.limit_w * per;
   return free + Math.min(rule, Math.max(room - free, 0));
 }
 
-// state of charge simulation, same rules as battery.simulate
-function simulate(st, hours, now, end, feed) {
+// state of charge simulation, same rules as battery.simulate; rows per step (Wh per step start), powers in W
+function simulate(st, hours, now, end, feed, step = H) {
   const cap = st.capacity_wh, eta = Math.sqrt(Math.max(0.01, Math.min(1, st.efficiency)));
   let e = (st.soc ?? st.min) * cap;
   // held_wh: room of batteries that stopped just below their limit (battery.held_back); an added battery keeps its own
@@ -77,21 +89,21 @@ function simulate(st, hours, now, end, feed) {
   const r = { points: [[now, e / cap]], full: null, empty: null, lost: 0, fed: 0, grid: 0 };
   // capped: PV above an inverter's output limit, only the battery can take it; discharge: limit of the hour (null = none)
   for (const [t, pv, load, capped, discharge] of hours) {
-    if (t + H <= now || t >= end) continue;
-    const start = Math.max(t, now), stop = Math.min(t + H, end), share = (stop - start) / H;
+    if (t + step <= now || t >= end) continue;
+    const start = Math.max(t, now), stop = Math.min(t + step, end), share = (stop - start) / step, per = (stop - start) / H;
     const over = (capped || 0) * share, net = (pv - load) * share - over, surplus = Math.max(net, 0) + over;
     if (surplus > 0) {
-      const room = Math.max(eMax - e, 0) / eta, limit = st.max_charge_w ? st.max_charge_w * share : Infinity;
+      const room = Math.max(eMax - e, 0) / eta, limit = st.max_charge_w ? st.max_charge_w * per : Infinity;
       const take = Math.min(surplus, room, limit);
       e += take * eta;
       if (take < surplus && room <= limit && r.full === null) r.full = start + (take / surplus) * (stop - start);
       r.lost += surplus - take;
       // the battery takes capped PV first; what it leaves of it is curtailed
-      r.fed += fedIn(feed, t, Math.max(surplus - take - Math.max(over - take, 0), 0), share);
+      r.fed += fedIn(feed, t, Math.max(surplus - take - Math.max(over - take, 0), 0), per);
     }
     if (net < 0) {
       const power = discharge === undefined ? st.max_discharge_w : discharge;
-      const need = -net, avail = Math.max(e - eMin, 0) * eta, limit = power !== null && power !== undefined ? power * share : Infinity;
+      const need = -net, avail = Math.max(e - eMin, 0) * eta, limit = power !== null && power !== undefined ? power * per : Infinity;
       const give = Math.min(need, avail, limit);
       e -= give / eta;
       if (give < need && avail <= limit && r.empty === null) r.empty = start + (give / need) * (stop - start);
@@ -117,31 +129,31 @@ function fill(need, caps) {
 }
 
 // separate systems against one house load, same rules as battery.simulate_units; rows: [t, pv, load] of the house,
-// units: as views.unit_entry (hours: t -> [own pv, capped, discharge]); the result is the whole house
-function simulateUnits(units, rows, now, end, feed) {
+// units: as views.unit_entry, with own: step start -> [own pv, capped, discharge] (quarterUnit); the result is the whole house
+function simulateUnits(units, rows, now, end, feed, step = H) {
   const n = units.length, caps = units.map((u) => u.storage.capacity_wh);
   const st = units.map((u) => u.storage), eta = st.map((s) => Math.sqrt(Math.max(0.01, Math.min(1, s.efficiency))));
   const e = st.map((s, i) => (s.soc ?? s.min) * caps[i]);
   const eMax = st.map((s, i) => Math.max(s.max * caps[i] - (units[i].held_wh || 0), 0)), eMin = st.map((s, i) => s.min * caps[i]);
   const follow = units.map((u, i) => i).filter((i) => !units[i].fixed_w), takers = units.map((u, i) => i).filter((i) => units[i].from_house);
-  const own = units.map((u) => new Map(tsRows(u.hours, "pv", "capped", "discharge").map(([t, ...v]) => [t, v])));
+  const own = units.map((u) => u.own || new Map(tsRows(u.hours, "pv", "capped", "discharge").map(([t, ...v]) => [t, v])));
   const total = caps.reduce((a, b) => a + b, 0), level = () => e.reduce((a, b) => a + b, 0) / total;
   const r = { points: [[now, level()]], full: null, empty: null, lost: 0, fed: 0, grid: 0, units: units.map(() => ({ full: null, empty: null })) };
   for (const [t, pvAll, load] of rows) {
-    if (t + H <= now || t >= end) continue;
-    const start = Math.max(t, now), stop = Math.min(t + H, end), share = (stop - start) / H;
+    if (t + step <= now || t >= end) continue;
+    const start = Math.max(t, now), stop = Math.min(t + step, end), share = (stop - start) / step, per = (stop - start) / H;
     const hour = own.map((m, i) => m.get(t) || [0, 0, units[i].storage.max_discharge_w]);
     const ownPv = hour.map(([pv]) => pv * share), capped = hour.map(([, c], i) => Math.min(c * share, ownPv[i]));
     const deliverable = ownPv.map((o, i) => o - capped[i]);
     const free = Math.max(pvAll * share - ownPv.reduce((a, b) => a + b, 0), 0);
-    const power = hour.map(([, , w]) => (w === null || w === undefined ? Infinity : w * share));
+    const power = hour.map(([, , w]) => (w === null || w === undefined ? Infinity : w * per));
     const avail = e.map((x, i) => Math.max(x - eMin[i], 0) * eta[i]), giveMax = avail.map((a, i) => Math.min(a, power[i]));
     let need = load * share - free, out = Math.max(-need, 0);
     need = Math.max(need, 0);
     const fromPv = units.map(() => 0), give = units.map(() => 0), short = units.map(() => false);
     units.forEach((u, i) => {
       if (!u.fixed_w) return;
-      const target = u.fixed_w * share;
+      const target = u.fixed_w * per;
       fromPv[i] = Math.min(deliverable[i], target);
       give[i] = Math.min(target - fromPv[i], giveMax[i]);
       short[i] = fromPv[i] + give[i] < target - 0.5;
@@ -162,7 +174,7 @@ function simulateUnits(units, rows, now, end, feed) {
       const surplus = deliverable[i] - fromPv[i] + capped[i];
       let took = 0;
       if (surplus > 0) {
-        const room = Math.max(eMax[i] - e[i], 0) / eta[i], limit = st[i].max_charge_w ? st[i].max_charge_w * share : Infinity;
+        const room = Math.max(eMax[i] - e[i], 0) / eta[i], limit = st[i].max_charge_w ? st[i].max_charge_w * per : Infinity;
         took = Math.min(surplus, room, limit);
         e[i] += took * eta[i];
         if (took < surplus && room <= limit && r.units[i].full === null) r.units[i].full = start + (took / surplus) * (stop - start);
@@ -174,7 +186,7 @@ function simulateUnits(units, rows, now, end, feed) {
     });
     out += gone.reduce((a, b) => a + b, 0);
     if (takers.length && out > 0) {
-      const limit = takers.map((i) => (st[i].max_charge_w ? st[i].max_charge_w * share : Infinity));
+      const limit = takers.map((i) => (st[i].max_charge_w ? st[i].max_charge_w * per : Infinity));
       const rooms = takers.map((i, k) => Math.min(Math.max(eMax[i] - e[i], 0) / eta[i], limit[k]));
       fill(out, rooms).forEach((w, k) => {
         if (w <= 0) return;
@@ -185,7 +197,7 @@ function simulateUnits(units, rows, now, end, feed) {
         if (rooms[k] < limit[k] && e[i] >= eMax[i] - 1e-6 && r.units[i].full === null) r.units[i].full = rooms[k] <= 1e-9 ? start : stop;
       });
     }
-    const fed = out > 0 ? fedIn(feed, t, out, share) : 0;
+    const fed = out > 0 ? fedIn(feed, t, out, per) : 0;
     const leaves = out + lost.reduce((a, b) => a + b, 0) - gone.reduce((a, b) => a + b, 0);
     r.lost += leaves; r.fed += fed; r.grid += grid;
     r.points.push([stop, level()]);
@@ -268,19 +280,25 @@ class NoxcastBattery extends HTMLElement {
       const overlap = Math.max(0, Math.min(ts + H, b) - Math.max(ts, a)) / H;
       return [ts, pv, load + v.power * overlap, capped, discharge];
     });
+    const shape = this._shape(e), rows = quarterRows(hours, shape);
     if (this._several(e)) {
-      const units = e.units.map((u) => ({ ...u, storage: { ...u.storage, capacity_wh: v[`cap:${u.key}`] } }));
-      return { sim: simulateUnits(units, hours, this._data.now, this._end(e), this._feed(e)), hours };
+      const units = e.units.map((u) => quarterUnit({ ...u, storage: { ...u.storage, capacity_wh: v[`cap:${u.key}`] } }, shape));
+      return { sim: simulateUnits(units, rows, this._data.now, this._end(e), this._feed(e), QUARTER), hours };
     }
-    return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, hours, this._data.now, this._end(e), this._feed(e)), hours };
+    return { sim: simulate({ ...e.storage, capacity_wh: v.capacity_wh }, rows, this._data.now, this._end(e), this._feed(e), QUARTER), hours };
   }
 
   _several(e) { return (e.units || []).length > 1; }
 
   _base(e) {
-    const rows = tsRows(e.hours, "pv", "load", "capped", "discharge");
-    return this._several(e) ? simulateUnits(e.units, rows, this._data.now, this._end(e), this._feed(e))
-      : simulate(e.storage, rows, this._data.now, this._end(e), this._feed(e));
+    const shape = this._shape(e), rows = quarterRows(tsRows(e.hours, "pv", "load", "capped", "discharge"), shape);
+    return this._several(e) ? simulateUnits(e.units.map((u) => quarterUnit(u, shape)), rows, this._data.now, this._end(e), this._feed(e), QUARTER)
+      : simulate(e.storage, rows, this._data.now, this._end(e), this._feed(e), QUARTER);
+  }
+
+  // per hour start the share of each quarter in the hour's PV (battery.shape_of); hours without one spread evenly
+  _shape(e) {
+    return new Map(e.shape ? tsRows(e.shape, "q0", "q1", "q2", "q3").map(([t, ...q]) => [t, q]) : []);
   }
 
   // the feed-in rule of the payload: limit in W (null = free), hour -> [share always, share never feeding in]
@@ -387,11 +405,19 @@ class NoxcastBattery extends HTMLElement {
     for (const f of [0, 0.5, 1]) svg += `<text x="${W - 26}" y="${(ys(f) + 3).toFixed(1)}" class="ax">${f * 100} %</text>`;
     const st = e.storage;
     svg += `<line x1="${pad}" x2="${W - 30}" y1="${ys(st.max).toFixed(1)}" y2="${ys(st.max).toFixed(1)}" class="lim"></line><line x1="${pad}" x2="${W - 30}" y1="${ys(st.min).toFixed(1)}" y2="${ys(st.min).toFixed(1)}" class="lim"></line>`;
-    const area = shown.map(([ts, pv]) => `${x(Math.max(ts, t0)).toFixed(1)},${y(pv).toFixed(1)} ${x(Math.min(ts + H, t1)).toFixed(1)},${y(pv).toFixed(1)}`).join(" ");
-    svg += `<polygon points="${x(t0).toFixed(1)},${y(0)} ${area} ${x(t1).toFixed(1)},${y(0)}" class="pv"></polygon>`;
-    const loadLine = shown.map(([ts, , load]) => `${x(Math.max(ts, t0)).toFixed(1)},${y(load).toFixed(1)} ${x(Math.min(ts + H, t1)).toFixed(1)},${y(load).toFixed(1)}`).join(" ");
-    svg += `<polyline points="${loadLine}" class="load"></polyline>`;
-    const socLine = (pts, cls) => `<polyline points="${pts.map(([ts, f]) => `${x(ts).toFixed(1)},${ys(f).toFixed(1)}`).join(" ")}" class="${cls}"></polyline>`;
+    // the curves of the dashboard card: hourly means at the middle of the hour, smooth, PV from zero where production
+    // begins; the running hour at the left edge is already producing, so its value is held to the edge instead
+    const pvOf = new Map(shown.map(([ts, pv]) => [ts, pv])), loadOf = new Map(shown.map(([ts, , load]) => [ts, load]));
+    const stops = hourStops(shown.map(([ts]) => ts), (ts) => pvOf.get(ts) > 1);
+    if (stops.length > 1 && stops[0][1] === null && stops[1][1] !== null && stops[0][0] <= t0) stops[0] = [t0, stops[1][1]];
+    const pvPts = hourCurve(stops, (ts) => pvOf.get(ts)).map(([ts, w]) => [x(Math.min(Math.max(ts, t0), t1)), y(w)]);
+    svg += `<path d="${smoothPath(pvPts)} L${x(t1).toFixed(1)},${y(0).toFixed(1)} L${x(t0).toFixed(1)},${y(0).toFixed(1)} Z" class="pv"></path>`;
+    // the load spans the whole axis: the first and last hourly means are held to the edges
+    const mids = shown.map(([ts]) => ts).filter((ts) => ts + H / 2 >= t0 && ts + H / 2 <= t1);
+    const loadPts = [[t0, loadOf.get(mids[0])], ...mids.map((ts) => [ts + H / 2, loadOf.get(ts)]), [t1, loadOf.get(mids[mids.length - 1])]]
+      .map(([ts, w]) => [x(ts), y(w)]);
+    svg += `<path d="${smoothPath(loadPts)}" class="load"></path>`;
+    const socLine = (pts, cls) => `<path d="${smoothPath(pts.map(([ts, f]) => [x(ts), ys(f)]))}" class="${cls}"></path>`;
     svg += socLine(base.points, "soc0") + socLine(sim.points, "soc");
     for (let ts = Math.ceil(t0 / H) * H; ts <= t1; ts += H) {
       const hour = Number(this._hm(ts).slice(0, 2));

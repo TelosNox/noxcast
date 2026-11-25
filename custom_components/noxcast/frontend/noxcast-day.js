@@ -1,7 +1,7 @@
 // Noxcast panel section "Day": one day in detail. The groups stacked, forecast against expectation
 // and actual, the weather of each hour, and for a chosen hour how its forecast comes about.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/day".
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh, num, smooth, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, hourCurve, hourStops, kwh, num, smooth, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const DAY_TEXT = {
   de: {
@@ -318,13 +318,14 @@ class NoxcastDay extends HTMLElement {
       <clipPath id="nx-past"><rect x="0" y="0" width="${phase === "past" ? W : phase === "future" ? 0 : Math.max(0, x(now)).toFixed(1)}" height="${Hp + 1}"></rect></clipPath>
       <clipPath id="nx-rest"><rect x="${phase === "past" ? W : phase === "future" ? 0 : Math.max(0, x(now)).toFixed(1)}" y="0" width="${W}" height="${Hp + 1}"></rect></clipPath></defs>`;
     for (let v = step; v <= ymax; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._axis(v, step, v + step > ymax)}</text>`;
-    // stacked groups: one band per array, smooth over the hour middles
-    const pts = (f) => span.map((h) => [x(h + HOUR / 2), f(h)]);
-    let below = span.map(() => 0);
+    // stacked groups: one band per array, smooth over the hour middles, from zero where production begins (as the card)
+    const stops = hourStops(span, (h) => total(mains, h) > 1 || total(refs, h) > 1);
+    const pts = (f) => hourCurve(stops, f).map(([ts, v]) => [x(ts), v]);
+    let below = stops.map(() => 0);
     const layers = mains.map((m, i) => {
-      const lo = below, hi = span.map((h, k) => lo[k] + (m.get(h) || 0));
+      const lo = below, hi = hourCurve(stops, (h) => m.get(h)).map(([, v], k) => lo[k] + v);
       below = hi;
-      const up = hi.map((v, k) => [x(span[k] + HOUR / 2), y(v)]), down = lo.map((v, k) => [x(span[k] + HOUR / 2), y(v)]).reverse();
+      const up = hi.map((v, k) => [x(stops[k][0]), y(v)]), down = lo.map((v, k) => [x(stops[k][0]), y(v)]).reverse();
       const d = `M${up[0][0].toFixed(1)},${up[0][1].toFixed(1)}${smooth(up)} L${down[0][0].toFixed(1)},${down[0][1].toFixed(1)}${smooth(down)} Z`;
       return `<path d="${d}" fill="url(#nx-g${i})" clip-path="url(#nx-past)"></path><path d="${d}" fill="${DAY_COLORS[i % 6]}" fill-opacity=".28" clip-path="url(#nx-rest)"></path>`;
     }).join("");
@@ -531,10 +532,8 @@ class NoxcastDay extends HTMLElement {
       const v = result.get(h) || 0;
       if (v > 0) svg += `<rect x="${(x(h) + 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(x(h + HOUR) - x(h) - 4).toFixed(1)}" height="${(bottom - y(v)).toFixed(1)}" rx="3" class="hbar"><title>${this._hm(h)} ${t.actual} ${Math.round(v)} Wh</title></rect>`;
     }
-    const curve = (m) => {
-      const q = span.map((h) => [x(h + HOUR / 2), y(m.get(h) || 0)]);
-      return `M${q[0][0].toFixed(1)},${q[0][1].toFixed(1)}${smooth(q)}`;
-    };
+    const litSet = new Set(lit), stops = hourStops(span, (h) => litSet.has(h));
+    const curve = (m) => smoothPath(hourCurve(stops, (h) => m.get(h)).map(([ts, v]) => [x(ts), y(v)]));
     if (dayAhead.size) svg += `<path d="${curve(dayAhead)}" class="ref"><title>${t.dayAhead} ${this._kwh(this._sum(dayAhead))} ${t.kwh}</title></path>`;
     snaps.forEach(([ts, m], i) => {
       const k = snaps.length > 1 ? i / (snaps.length - 1) : 1;
@@ -593,19 +592,21 @@ class NoxcastDay extends HTMLElement {
     const { h0, h1, span } = this._daylight(e);
     const withRef = phase !== "future";
     const max = Math.max(1, ...rows.flatMap((r) => span.flatMap((h) => [r.m.get(h) || 0, withRef ? r.r.get(h) || 0 : 0])));
-    const pts = (m) => span.map((h) => `${((h + HOUR / 2 - h0) / (h1 - h0) * 100).toFixed(1)},${(22 - (m.get(h) || 0) / max * 20).toFixed(1)}`).join(" ");
+    // smooth like the chart above, from zero where the group's production begins
+    const pts = (m, stops) => (!stops.length ? "M0,22" : smoothPath(hourCurve(stops, (h) => m.get(h)).map(([ts, v]) => [(ts - h0) / (h1 - h0) * 100, 22 - v / max * 20])));
     // measured part strong, forecast part faint, as in the chart above
     const nowPct = phase === "past" ? 100 : phase === "future" ? 0 : Math.min(100, Math.max(0, (this._data.now - h0) / (h1 - h0) * 100));
     const spark = (r) => {
-      const c = DAY_COLORS[r.i % 6], area = `0,22 ${pts(r.m)} 100,22`;
-      const ref = withRef && r.ref > 0 ? `<polyline points="${pts(r.r)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></polyline>` : "";
+      const stops = hourStops(span, (h) => (r.m.get(h) || 0) > 1 || (withRef && (r.r.get(h) || 0) > 1));
+      const c = DAY_COLORS[r.i % 6], main = pts(r.m, stops), area = `${main} L100,22 L0,22 Z`;
+      const ref = withRef && r.ref > 0 ? `<path d="${pts(r.r, stops)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></path>` : "";
       const now = nowPct > 0 && nowPct < 100 ? `<line x1="${nowPct.toFixed(1)}" x2="${nowPct.toFixed(1)}" y1="0" y2="24" class="nowline" vector-effect="non-scaling-stroke"></line>` : "";
       return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><defs>
         <clipPath id="nx-sp${r.i}p"><rect x="0" y="0" width="${nowPct.toFixed(1)}" height="24"></rect></clipPath>
         <clipPath id="nx-sp${r.i}f"><rect x="${nowPct.toFixed(1)}" y="0" width="${(100 - nowPct).toFixed(1)}" height="24"></rect></clipPath></defs>
-        <polygon points="${area}" fill="${c}" fill-opacity=".7" clip-path="url(#nx-sp${r.i}p)"></polygon>
-        <polygon points="${area}" fill="${c}" fill-opacity=".2" clip-path="url(#nx-sp${r.i}f)"></polygon>
-        <polyline points="${pts(r.m)}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>${now}${ref}</svg>`;
+        <path d="${area}" fill="${c}" fill-opacity=".7" clip-path="url(#nx-sp${r.i}p)"></path>
+        <path d="${area}" fill="${c}" fill-opacity=".2" clip-path="url(#nx-sp${r.i}f)"></path>
+        <path d="${main}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>${now}${ref}</svg>`;
     };
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
     const refLabel = phase === "today" ? t.morning : t.dayAhead;

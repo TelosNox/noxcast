@@ -52,6 +52,16 @@ def test_today_actual_takes_the_just_ended_and_running_hour_from_5_minute_values
     assert running["a"] == (DAY_START + 12 * 3600, 600.0, 4 / 12)
 
 
+def test_measured_energy_counts_only_measurements():
+    now = DAY_START + 7 * 3600 + 30 * 60
+    actual = {DAY_START - 3600: 50.0, DAY_START + 5 * 3600: 0.0, DAY_START + 6 * 3600: 12.0}
+    # before the modules deliver: the running hour adds nothing without a measurement, not its forecast
+    assert fc.measured_wh(actual, None, DAY_START, now) == 12.0
+    assert fc.measured_wh(actual, (DAY_START + 7 * 3600, 30.0, 0.5), DAY_START, now) == 27.0
+    data, _, _ = run(7.5, actual={"a": actual})
+    assert data.measured == {"a": 12.0, "b": 0.0}
+
+
 def test_morning_fix_totals_and_held_hours():
     early, today, _ = run(5)
     assert early.morning_fixed is None and today.morning_fixed is None

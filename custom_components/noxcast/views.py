@@ -163,6 +163,7 @@ def today_arrays(arrays: dict, data, tomorrow_start: float, tomorrow_end: float)
             "gain": series(effects.get("gain", {})),
             "periods": effects.get("periods", []),
             "tomorrow_wh": round(sum(tomorrow.values())),
+            "measured_wh": round(data.measured.get(sub_id, 0.0), 1),
             "updated": data.updated.isoformat() if data.updated else None,
         })
     return out

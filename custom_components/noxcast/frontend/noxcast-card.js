@@ -991,7 +991,9 @@ class NoxcastCard extends HTMLElement {
 
     // the numbers of the day
     const after = now >= prodEnd;
-    const ist = dayH.reduce((a, h) => a + (h + H <= now ? exp(h) : h < now ? exp(h) * (now - h) / H : 0), 0);
+    // measured energy only: the expected value of the running hour is a forecast and would count energy
+    // before the modules deliver any
+    const ist = arrays.reduce((a, arr) => a + (arr.measured_wh || 0), 0);
     const expected = dayH.reduce((a, h) => a + exp(h), 0);
     const morning = dayH.reduce((a, h) => a + (mornM.get(h) || 0), 0);
     const tomorrow = arrays.reduce((a, arr) => a + arr.tomorrow_wh, 0);

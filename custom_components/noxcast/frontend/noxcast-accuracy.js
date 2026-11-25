@@ -583,13 +583,22 @@ class NoxcastAccuracy extends HTMLElement {
       svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${this._hm(h.t).slice(0, 2)}</text>`;
     }
     // smooth through the hour middles and from zero where production begins, as every PV curve; counted in bar
-    // positions, since the listed hours may have gaps; an hour without a value is left out
-    const slots = [];
-    for (let i = i0; i <= i1; i++) slots.push(i);
+    // positions, since the listed hours may have gaps. An hour without a value (left out of learning) breaks the
+    // line: its neighbours end at their middles instead of falling to a zero that was never measured
     for (const [src, v] of series) {
-      const stops = hourStops(slots, (i) => (v[i] || 0) > 1, 1).filter(([, i]) => i === null || v[i] !== null);
-      const pts = hourCurve(stops, (i) => v[i]).map(([k, w]) => [pad + (k - i0) * bw, y(w)]);
-      if (pts.length > 1) svg += `<path d="${smoothPath(pts)}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></path>`;
+      const missing = (i) => i >= i0 && i <= i1 && v[i] === null, runs = [];
+      for (let i = i0; i <= i1; i++) {
+        if (v[i] === null) continue;
+        if (!runs.length || missing(i - 1)) runs.push([]);
+        runs[runs.length - 1].push(i);
+      }
+      for (const run of runs) {
+        const stops = hourStops(run, (i) => (v[i] || 0) > 1, 1), first = run[0], last = run[run.length - 1];
+        if (stops.length && stops[0][1] === null && stops[0][0] === first && missing(first - 1)) stops.shift();
+        if (stops.length && stops.at(-1)[1] === null && stops.at(-1)[0] === last + 1 && missing(last + 1)) stops.pop();
+        const pts = hourCurve(stops, (i) => v[i]).map(([k, w]) => [pad + (k - i0) * bw, y(w)]);
+        if (pts.length > 1) svg += `<path d="${smoothPath(pts)}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></path>`;
+      }
     }
     const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${this._color(src)}"></i>${src === "measured" ? t.measured : esc(this._label(src))} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
     const issued = day.raw.issued ? ` · ${t.issued} ${new Date(day.raw.issued).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" })}` : "";

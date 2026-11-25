@@ -21,7 +21,8 @@ breaking changes.
   groups on the day page, the hourly course of the forecast accuracy, the load profile, the efficiency per month and
   the hours of a learning check. PV curves on the overview, the day page and the battery chart rise from zero where
   production begins, as on the dashboard card, so the same day has the same shape everywhere. The battery chart
-  shows PV and load as curves through the hourly means instead of steps.
+  shows PV and load as curves through the hourly means instead of steps. An hour without a measured value in the hourly course of the forecast
+  accuracy breaks the line there instead of drawing it down to zero.
 
 ### Fixed
 - *As planned* on the *Battery & surplus* page now matches the battery forecast of the card and the overview: the

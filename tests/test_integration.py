@@ -220,13 +220,17 @@ async def test_fixed_base_load_without_house_load_sensor(hass: HomeAssistant, ha
     site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
     weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
 
+    start = dt_util.start_of_local_day().timestamp() - 30 * 86400
+    washer = {start + d * 86400 + h * 3600: 2000.0 if h in (10, 11) and d % 3 == 0 else 0.0   # 2 h runs, every 3rd day
+              for d in range(30) for h in range(24)}
+
     async def fake_stats(_hass, ids, _start, kind, period="hour"):
-        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
+        return {**_statistics(site, 30), "sensor.washer": washer} if kind == "mean" and period == "hour" else {}
 
     async def fake_factors(_hass, ids, table=None):
         return {i: 1.0 for i in ids}
 
-    for sensor in ARRAY["power_sensors"]:
+    for sensor in ARRAY["power_sensors"] + ["sensor.washer"]:
         hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
     hass.states.async_set("sensor.soc", "40", {"unit_of_measurement": "%"})
     with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})), \
@@ -243,6 +247,14 @@ async def test_fixed_base_load_without_house_load_sensor(hass: HomeAssistant, ha
         system = next(iter(parts_of(hass, entry, "system")))
         await system_flow(hass, entry, "add_battery", {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2},
                           subentry_id=system)
+        # a flexible consumer with its own sensor and no entered run: its run is learned from that sensor
+        res = await hass.config_entries.subentries.async_init((entry.entry_id, "consumer"),
+                                                              context={"source": config_entries.SOURCE_USER})
+        res = await hass.config_entries.subentries.async_configure(
+            res["flow_id"], {"name": "Washer", "power_sensor": "sensor.washer", "timing": "flexible"})
+        await hass.config_entries.subentries.async_configure(res["flow_id"], {})
+        await hass.async_block_till_done()
+        washer_id = next(iter(parts_of(hass, entry, "consumer")))
         coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
         assert coordinator.house_load is None and coordinator.base_load == 150.0
         await coordinator.async_learn()
@@ -256,6 +268,11 @@ async def test_fixed_base_load_without_house_load_sensor(hass: HomeAssistant, ha
     tomorrow = next(s for e, s in states.items() if e.endswith("load_tomorrow"))
     assert tomorrow.attributes["fixed_w"] == 150.0 and abs(float(tomorrow.state) - 0.15 * 24) < 0.16   # 23–25 hours
     assert any(e.endswith("battery_full_at") or e.endswith("surplus_today") for e in states)
+    run = coordinator.run_profile(washer_id)
+    assert run is not None and run.power_w == 2000.0 and run.minutes == 120.0
+    assert any(e.endswith("start_now") for e in hass.states.async_entity_ids("binary_sensor"))   # the planner's switch
+    stored = coordinator._store_data()
+    assert stored["runs"]["runs"] == {washer_id: {"power_w": 2000.0, "minutes": 120.0}} and stored["load"] is None
     client = await hass_ws_client(hass)
     await client.send_json_auto_id({"type": "noxcast/learned"})
     msg = await client.receive_json()

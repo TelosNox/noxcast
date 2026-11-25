@@ -17,7 +17,7 @@ from .sensor import NoxcastEntity, _iso
 async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     coordinator = entry.runtime_data
-    if not coordinator.house_load:
+    if not coordinator.load_known:
         return
     device = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name="Noxcast", manufacturer="Noxcast",
                         entry_type=DeviceEntryType.SERVICE)

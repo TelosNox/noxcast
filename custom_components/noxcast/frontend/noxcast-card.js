@@ -991,15 +991,18 @@ class NoxcastCard extends HTMLElement {
 
     // the numbers of the day
     const after = now >= prodEnd;
-    const ist = dayH.reduce((a, h) => a + (h + H <= now ? exp(h) : h < now ? exp(h) * (now - h) / H : 0), 0);
+    // measured energy only: the expected value of the running hour is a forecast and would count energy
+    // before the modules deliver any; null when a group has no measurement (shown as –, not as 0)
+    const ist = arrays.some((arr) => arr.measured_wh == null) ? null : arrays.reduce((a, arr) => a + arr.measured_wh, 0);
+    const istText = ist === null ? "–" : this._kwh(ist, 2);
     const expected = dayH.reduce((a, h) => a + exp(h), 0);
     const morning = dayH.reduce((a, h) => a + (mornM.get(h) || 0), 0);
     const tomorrow = arrays.reduce((a, arr) => a + arr.tomorrow_wh, 0);
-    const dev = morning > 0 ? Math.round((ist / morning - 1) * 100) : null;
+    const dev = morning > 0 && ist !== null ? Math.round((ist / morning - 1) * 100) : null;
     const numbers = after
-      ? `<span><span class="big">${this._kwh(ist, 2)}</span> ${t.kwh}</span>
+      ? `<span><span class="big">${istText}</span> ${t.kwh}</span>
          <span class="muted">${t.morning} ${this._kwh(morning)}${dev === null ? "" : ` <b style="color:var(--primary-text-color);font-weight:500">(${dev > 0 ? "+" : ""}${dev} %)</b>`}</span>`
-      : `<span>${t.actual} <span class="big">${this._kwh(ist, 2)}</span></span>
+      : `<span>${t.actual} <span class="big">${istText}</span></span>
          <span>${t.expected} <b style="font-weight:500">${this._kwh(expected)}</b></span>
          <span class="muted">${t.morning} ${this._kwh(morning)}</span>`;
     el.innerHTML = `${this._weatherStrip(t0, t1, x, X0, X1, W)}<div class="chart">${svg}<div id="nx-tip" class="tip" hidden></div></div>${this._config.legend === false ? "" : this._legend({

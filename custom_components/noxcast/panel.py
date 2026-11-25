@@ -200,7 +200,7 @@ def ws_today(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     day_start = next((c.data.day_start for c in coordinators if c.data.day_start), None)
     day = dt_util.as_local(dt_util.utc_from_timestamp(day_start)).date() if day_start else dt_util.now().date()
     tomorrow_start = _day_start(day + timedelta(days=1))
-    arrays = [a for c in coordinators for a in views.today_arrays(c.arrays, c.data, tomorrow_start, tomorrow_start + 86400)]
+    arrays = [a for c in coordinators for a in views.today_arrays(c.arrays, c.data, tomorrow_start, tomorrow_start + 86400, day_start)]
     result = {"now": dt_util.utcnow().timestamp(), "day_start": day_start, "time_zone": hass.config.time_zone, "arrays": arrays, "days": []}
     # with a load forecast and batteries the card shows what Noxcast computed instead of its own estimate
     if coordinators:

@@ -38,7 +38,7 @@ def data(**kw) -> object:
     d = fc.NoxcastData(
         forecast={None: dict(hours), "roof": dict(hours)}, clear={None: {t: v * 1.5 for t, v in hours.items()}},
         morning={"roof": {A + 12 * H: 300.04}}, expected={"roof": {A + 12 * H: 310.06}, None: {A + 12 * H: 310.0}},
-        held={"roof": {A + 12 * H: 305.0}}, actual={"roof": {A + 10 * H: 200.0}}, correction={"roof": 0.05},
+        held={"roof": {A + 12 * H: 305.0}}, actual={"roof": {A + 10 * H: 200.0}}, measured={"roof": 200.04}, correction={"roof": 0.05},
         effects={"roof": {"loss": {A + 9 * H: 12.34}, "gain": {}, "periods": [{"kind": "shade"}]}},
         updated=datetime(2026, 7, 1, 10, tzinfo=timezone.utc), day_start=A,
         band={"hours": {A + 12 * H: (250.04, 350.06)}, "days": {"1": (2.0, 5.0)}},
@@ -80,6 +80,10 @@ def test_today_arrays_and_totals():
     assert len(roof["tomorrow"]["wh"]) == 24 and roof["tomorrow_wh"] == 4001
     assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == {"t": [], "wh": []}
     assert out[1]["tomorrow_wh"] == 0
+    assert roof["measured_wh"] == 200.0 and out[1]["measured_wh"] is None
+    # data of another day (its midnight run not done yet) measures nothing for the day the card shows
+    assert views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A + 86400)[0]["measured_wh"] is None
+    assert views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A)[0]["measured_wh"] == 200.0
     sim = bt.Simulation(points=[(A + 12 * H, 0.512345)], full_at=A + 14 * H,
                         hours={A + 11 * H: {"lost": 0.0, "soc": 0.7}, A + 12 * H: {"lost": 10.04, "fed_in": 4.02, "soc": 0.89},
                                A + 30 * H: {"lost": 99.0, "soc": 0.5}})     # 30: above the charge power, not full

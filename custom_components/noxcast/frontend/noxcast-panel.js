@@ -39,6 +39,22 @@ const SECTION_TITLES = { de: { overview: "Übersicht", day: "Tag", learned: "Gel
 const SECTION_SHORT = { de: { overview: "Übersicht", day: "Tag", learned: "Gelernt", accuracy: "Güte", load: "Last", battery: "Akku", installation: "Anlage", diagnostics: "Diagnose" },
   en: { overview: "Overview", day: "Day", learned: "Learned", accuracy: "Accuracy", load: "Load", battery: "Battery", installation: "Setup", diagnostics: "Data" } };
 
+// the simple view shows what most users look at; "Details" adds the tabs that explain how the numbers come about
+const SIMPLE_SECTIONS = new Set(["overview", "day", "battery", "installation"]);
+const DETAILS_KEY = "noxcast-details";          // per browser: the Details switch, remembered between visits
+const DETAILS_TEXT = { de: { label: "Details", on: "Details ausblenden: nur Übersicht, Tag, Akku und Anlage zeigen",
+    off: "Details zeigen: auch Gelerntes, Prognosegüte, Last und Diagnose" },
+  en: { label: "Details", on: "Hide details: show only overview, day, battery and installation",
+    off: "Show details: also learned values, forecast accuracy, load and diagnostics" } };
+
+function storedDetails() {
+  try { return window.localStorage.getItem(DETAILS_KEY) === "1"; } catch (e) { return false; }   // storage may be blocked
+}
+
+function storeDetails(on) {
+  try { window.localStorage.setItem(DETAILS_KEY, on ? "1" : "0"); } catch (e) { /* only remembered while the page is open */ }
+}
+
 const AZ_STEP = 10, EL_STEP = 5, COARSE_AZ = 20, COARSE_EL = 15;
 const RAD = Math.PI / 180;
 
@@ -471,7 +487,8 @@ class NoxcastPanel extends HTMLElement {
     this._state = { section: "overview", view: "overview", arrayId: null, mode: "map", layer: "shade", doy: null, sel: null, playing: false };
     // a link may open a section: the end of the first setup opens the Installation tab (?section=installation)
     const asked = new URLSearchParams(window.location.search).get("section");
-    if (asked) this._state.section = asked;
+    this._details = storedDetails();
+    if (asked) { this._state.section = asked; this._openDetails(asked); }
     this._sections = {};
     this._data = null;
     this._cache = {};
@@ -487,6 +504,7 @@ class NoxcastPanel extends HTMLElement {
     this.shadowRoot.addEventListener("noxcast-section", (ev) => {
       ev.stopPropagation();
       this._state.section = ev.detail.section;
+      this._openDetails(ev.detail.section);
       this._state.sel = null;
       this._render();
       window.scrollTo({ top: 0 });
@@ -791,15 +809,19 @@ class NoxcastPanel extends HTMLElement {
     // load and battery only when set up in the integration (sections unknown while loading: all shown)
     const known = (this._data && this._data.sections) || {};
     // the overview first, as the start; then what was learned and the further sections
-    const keys = ["overview", "learned", ...SECTIONS.slice(1).map(([k]) => k)].filter((k) => known[k] !== false);
+    const all = ["overview", "learned", ...SECTIONS.slice(1).map(([k]) => k)].filter((k) => known[k] !== false);
+    // a link into a detail section (the start link of the setup, a figure of the overview) has switched Details on
+    const keys = this._details ? all : all.filter((k) => SIMPLE_SECTIONS.has(k));
     if (!keys.includes(s.section)) { s.section = keys[0]; s.sel = null; }
+    const dt = DETAILS_TEXT[lang] || DETAILS_TEXT.en;
+    const details = `<button class="details ${this._details ? "on" : ""}" data-action="details" aria-pressed="${this._details}" title="${this._details ? dt.on : dt.off}"><ha-icon icon="mdi:tune-variant"></ha-icon><span>${dt.label}</span></button>`;
     const lead = (SECTION_LEADS[lang] || SECTION_LEADS.en)[s.section];
     const hero = `<header class="hero"><div class="hero-text"><h1>${titles[s.section]}</h1><p>${lead}</p></div>${ORBIT}</header>`;
     const tabs = keys.map((k) => `<button class="navtab ${s.section === k ? "on" : ""}" data-action="section" data-section="${k}" title="${titles[k]}" aria-label="${titles[k]}"><ha-icon icon="${SECTION_ICONS[k]}"></ha-icon><span class="long">${titles[k]}</span><span class="short">${short[k]}</span></button>`).join("");
     if (s.section !== "learned") {
       this._stop();
       this.shadowRoot.innerHTML = `${this._style()}
-        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}<span>Noxcast</span></div><nav class="navtabs">${tabs}</nav></div>
+        <div class="toolbar"><ha-menu-button></ha-menu-button><div class="brand">${LOGO}<span>Noxcast</span></div><nav class="navtabs">${tabs}</nav>${details}</div>
         <div class="content">${this._staleNote()}${hero}<div id="section"></div></div>`;
       const section = this._section(s.section);
       if (section) this.shadowRoot.getElementById("section").appendChild(section);
@@ -820,10 +842,17 @@ class NoxcastPanel extends HTMLElement {
       <div class="toolbar">
         <ha-menu-button></ha-menu-button>
         <div class="brand">${LOGO}<span>Noxcast</span></div>
-        <nav class="navtabs">${tabs}</nav>
+        <nav class="navtabs">${tabs}</nav>${details}
       </div>
       <div class="content">${this._staleNote()}${crumbs}${this._state.view === "array" ? "" : hero}${body}</div>`;
     this._afterRender();
+  }
+
+  // a detail section opened by a link: Details stays on, so its tab is there to come back to
+  _openDetails(section) {
+    if (this._details || SIMPLE_SECTIONS.has(section)) return;
+    this._details = true;
+    storeDetails(true);
   }
 
   _afterRender() {
@@ -1618,6 +1647,7 @@ class NoxcastPanel extends HTMLElement {
     const s = this._state, a = el.dataset.action;
     if (a === "reload") { window.location.reload(); return; }
     if (a === "section") { s.section = el.dataset.section; s.sel = null; }
+    else if (a === "details") { this._details = !this._details; storeDetails(this._details); }
     else if (a === "overview") { s.view = "overview"; s.sel = null; this._stop(); }
     else if (a === "open") { s.view = "array"; s.arrayId = el.dataset.id; s.layer = el.dataset.layer || "shade"; s.mode = "map"; s.sel = null; }
     else if (a === "mode") { s.mode = el.dataset.mode; if (s.mode !== "map") this._stop(); }
@@ -1706,6 +1736,12 @@ class NoxcastPanel extends HTMLElement {
         font-size: 14px; color: var(--secondary-text-color); white-space: nowrap; }
       .navtab.on { color: var(--primary-text-color); border-bottom-color: var(--primary-color); }
       .crumbs { display: flex; gap: 4px; align-items: center; font-size: 14px; margin: 0 0 12px; }
+      .details { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none; cursor: pointer;
+        background: var(--nx-tint); border: 1px solid var(--nx-edge); border-radius: 999px; padding: 5px 12px; font-size: 13px;
+        font-weight: 500; color: var(--secondary-text-color); }
+      .details:hover { color: var(--primary-text-color); }
+      .details.on { color: #fff; background: var(--nx-grad); border-color: transparent; }
+      .details ha-icon { --mdc-icon-size: 16px; }
       .navtabs { min-width: 0; }
       .navtab { display: inline-flex; align-items: center; gap: 6px; flex: none; }
       .navtab ha-icon { --mdc-icon-size: 18px; }

@@ -17,8 +17,18 @@ breaking changes; each one is marked in the [changelog](CHANGELOG.md) with what 
 **Languages:** Noxcast is available in English and German (Deutsch). Setup, entities, panel and cards follow the
 language of your Home Assistant user; other languages fall back to English.
 
-- **New to PV forecasts?** Start with [Getting started](#getting-started).
-- **Coming from another forecast integration?** Read [Why Noxcast](#why-noxcast).
+## Where to start
+
+Pick the line that fits you best; each names what to set up and where the answer to your question appears.
+
+| You have or want | Set up | Then look at |
+|---|---|---|
+| Just to know what your modules will deliver | A system with its PV arrays ([Set up](#set-up)) | *Overview* in the panel, the sensors *Expected today* and *Forecast tomorrow*, the weather card |
+| A balcony system with battery, without a meter for the whole house | The template *PV with battery in one device* with its output limit (e.g. 800 W), its battery, and a *Fixed base load* in the [main entry](#1-main-entry) | *Battery full at*, *Battery empty at*, the [blueprints](#notifications-blueprints) |
+| A battery that should not run full too early or empty too soon | The battery with its power sensor, the house load in the main entry | The *Battery & surplus* tab, *Surplus lost today*, the blueprint *Battery full early* |
+| To use more of your own PV: washer, dishwasher, heat pump | The house load and [consumers](#4-consumers-optional-for-the-load-forecast): flexible for what you can shift, fixed for the rest | *Start now*, *Best window today*, the *Load* tab |
+| A dynamic tariff, an electric car or a tool such as EVCC, Predbat or EMHASS | The above as far as you have it | [Other tools](#other-tools-evcc-predbat-emhass), *Grid energy until charge start* |
+| To understand or check the numbers | Nothing more: switch on *Details* in the [panel](#sidebar-panel-noxcast-full-overview) | *Learned*, *Forecast accuracy*, [How it works](#how-it-works), and [Why Noxcast](#why-noxcast) if you come from another forecast |
 
 ## Why Noxcast
 
@@ -169,30 +179,14 @@ For the dashboard: *Add card* → *Noxcast*.
   `noxcast.exclude_period`.
 - *Diagnostics* in the panel lists every sensor Noxcast reads, missing data and errors. The diagnostics download
   of the integration holds what a bug report needs.
-- **What did learning see?** *Learned* → *Data basis* shows per array what the daylight hours were used for
-  (used, capped, battery full, snow, no output, excluded), weighted by clear-sky energy, overall and per month,
-  and points at anomalies with their most telling day: "battery full" while the array delivered what the model
-  expects, clearly above the learned model's clear-sky output under a calm sky, days without output under a bright sky and without
-  snow, bright days below 70 % of the model that no filter explains, and snow periods that only the limit of 7 days
-  after the last snowfall ended, although bright hours would have shown free modules. Renewed by every nightly learning run.
-  With the satellite archive it also says whether there is enough data for the days shown: when the nightly
-  backtest finds the hourly error on days the model has not learned more than 10 % above that on learned days, there
-  are still too few days per sun position, and strong days in the calendar may come from missing data; otherwise
-  they do not.
-  A calendar of the last year shows one cell per day, coloured by output against the model or hatched in the colour
-  of the reason the day was left out; a day is pale when its deviation stays within the usual range: what the
-  satellite's error under that day's sky (under clouds often a quarter, under a clear sky a few percent) and the
-  array's ordinary day-to-day model noise cause together, so only strong colours point at the model or the
-  configuration; admins click a day to see its hours as measured, model and clear-sky bound lines with
-  the left-out and capped hours shaded, and an hour to see how the model comes about (clear sky, clouds, shade, reflection,
-  direction, temperature).
-- **Do the filters fit your installation?** *Does the configuration fit?* exports every measured daylight hour of an
-  array as CSV (*Hours as CSV*, for admins), times in UTC. `status` is `used`, `lower_bound` (shown as *capped*: `at_limit`,
-  `charging_max`, `held_back`; the real output was at least as high) or `left_out`, and `reasons` names all reasons:
-  `before_use`, `battery_full` (a battery of the array's systems), `maybe_charging`,
-  `no_output`, `snow`, `excluded`, `negative`. With the satellite archive (options) the file also holds the model on
-  the measured irradiance, split into clear sky, clouds, shade, reflection, direction and heat. Open it in a
-  spreadsheet, or attach it to an issue.
+- **What did learning see?** *Learned* → *Data basis* shows per array what its daylight hours were used for (used,
+  capped, battery full, snow, no output, excluded), overall and per month, and points at anomalies with their most
+  telling day. A calendar of the last year colours each day by output against the model; pale days stay within the
+  usual range, only strong colours point at the model or the configuration. A click on a day shows its hours, a click
+  on an hour how the model comes about.
+- **Do the filters fit your installation?** *Hours as CSV* under *Does the configuration fit?* exports every measured
+  daylight hour of an array with its status and every reason it was left out or capped (times in UTC), for a
+  spreadsheet or an issue.
 
 ## Configuration
 
@@ -270,20 +264,13 @@ entries shows what sits inside what.
 | Battery charges from | Own PV (before the output) or the household (own inverter at the house grid) |
 | Batteries balance each other | The batteries of the subsystems even out their state of charge; they get one battery forecast |
 
-Noxcast stores every setting, also those it does not compute yet. The panel tab *Installation* draws the installation
-as a flow diagram (PV arrays, systems with their batteries and limits, house, grid). Each setting shows where it acts:
-an array's orientation as a compass needle (north up, longer the steeper), its peak power and sensors in its box, a
-power limit per sensor on the line from the array, a system's output limit (*per phase* where it holds per phase) and
-its deviation from the feed-in rule on its output, a subsystem's phase on the line it feeds, the feed-in rule between
-house and grid. Tapping a part shows its settings and whether each counts exactly, simplified or not yet. There *Belongs to* moves a PV array, a battery or a system to
-another system, with the same rules as the forms. *Change* (administrators only) opens the same form as the configuration dialog beside the
-diagram, for a system, PV array, battery or the household: every change is drawn in the diagram right away, *Save*
-stores it as the dialog would, and Noxcast reloads. The dashed boxes add a part where one fits: *+ PV array*
-below a system's arrays, *+ Battery* in a system whose template has one, *+ Subsystem* in a system of coordinated
-devices, *+ System* below all systems. A new system starts with its template, picked on a picture of the four; the new
-part is drawn highlighted before *Save* creates it. *Remove* shows first what goes with the part, and the diagram
-without it, and removes nothing before *Remove for good*. The forms for systems, PV arrays and batteries show the same diagram
-on top. Later versions compute more of the settings without new input.
+The panel tab *Installation* draws the installation as a flow diagram, each setting where it acts: an array's
+orientation as a compass needle, limits on the lines, the feed-in rule between house and grid. Tapping a part shows
+its settings and whether Noxcast computes each exactly, simplified or not yet. *Change* (administrators) opens the
+configuration form beside the diagram and draws every change before *Save*; *Belongs to* moves a part to another
+system; the dashed boxes add a PV array, battery, subsystem or system where one fits; *Remove* first shows what goes
+with the part. Noxcast stores every setting, also those it does not compute yet; later versions compute more of them
+without new input.
 
 *Swap device* on a system is for the day a device of the system is replaced and the PV modules stay where they
 are. It is deliberately out of the way: select the system in the diagram, and at the very bottom of its details the
@@ -363,36 +350,21 @@ they hold a value. The system says where the battery sits (see *Battery charges 
 | Efficiency | Round trip; default 95 % before the output of a device with PV, 90 % at the house grid |
 | Max charge / discharge power | Optional limits; above them surplus goes to the grid or the grid supplies. With the *Charge / discharge power* sensor, hours charging at the maximum count as "at least this much" in learning where PV may be held back (see below) |
 
-With the *Charge / discharge power* sensor, Noxcast learns every night what capacity and round-trip efficiency the battery shows,
-from the last 120 days: charging, energy per percent of level gives the capacity divided by the charging efficiency;
-discharging, the capacity times the discharging efficiency. Both together give capacity and efficiency without
-knowing either. It needs three charging and three discharging runs of at least 15 percent points each, counted from
-the last change of the battery's capacity or sensors (after an expansion the old battery's runs no longer count). The learned
-capacity replaces the entered one in the forecast (an aged battery holds less than its label), an entered efficiency
-stays. The *Battery & surplus* tab shows both next to what was entered.
+With the *Charge / discharge power* sensor, Noxcast learns every night from the last 120 days what capacity and
+round-trip efficiency the battery shows (three charging and three discharging runs of at least 15 percent points
+since the last change of its capacity or sensors). The learned capacity replaces the entered one in the forecast, since
+an aged battery holds less than its label; an entered efficiency stays. The *Battery & surplus* tab shows both.
 
-With an output limit on its system, PV of the system's arrays and the battery together deliver at most the limit; PV
-above it can only charge the battery. Subsystems with batteries under a shared limit deliver together at most that
-limit. The batteries of one system are simulated as one storage (capacities add up, limits weighted by capacity).
-Separate systems, each with its own inverter at the house, are simulated each on its own: each charges from its own
-PV, a battery at the house grid also from what the others send out. They share the consumption evenly, each up to
-its discharge power; what one cannot give, the others take over. A system with *Fixed power* delivers it whatever
-the house draws. *Battery full at*, *Battery empty at* and *Battery highest level* then show the earliest system (the
-level: all batteries weighted by capacity) and list each system in the `systems` attribute; the *Battery & surplus* tab shows
-them per system, and its what-if computes the same way, with a capacity per system. The *Installation* tab shows the even split as simplified, since not every system settles that way.
+With an output limit on its system, PV and battery together deliver at most the limit; PV above it can only charge the
+battery. The batteries of one system are simulated as one storage. Separate systems are simulated each on its own,
+each charging from its own PV and sharing the consumption evenly up to its discharge power; a system with *Fixed
+power* delivers it whatever the house draws. *Battery full at*, *Battery empty at* and *Battery highest level* then
+show the earliest system and list each one in the `systems` attribute.
 
-Which batteries leave hours out of learning for an array follows from the systems: its own system's battery; with
-*covers the house load*, also the batteries of the subsystems it coordinates with; for a subsystem without a battery
-under a shared output limit, the batteries of the other subsystems. A battery outside the array's system, also one at
-the house grid with zero export, does not count: the inverter that holds the export at zero does not know it, so it
-curtails the same with it or without. A battery counts as full from *Counts as full from* below its
-upper limit (with a limit from an entity, its current value). A battery that charges at its
-maximum power takes no more either: where the rest cannot go out (the system covers the house load or an output limit
-holds), learning counts these hours as "at least this much", like a fixed limit. Leaving them out would drop just the
-bright hours. Noxcast reads the charge power from means, since a single reading of a few seconds can lie far above
-what the battery takes: an hour counts when one of its 5-minute means reaches 95 % of *Max charge power*. Noxcast keeps
-these 5-minute means in its own archive; hours from before have only their hourly mean, which counts from 85 %, and
-an hour between 70 and 85 % is left out of learning. This needs the battery power sensor and the maximum charge power.
+For learning, an array's hours with a full battery are left out where that battery can curtail the array: the battery
+of its own system, and of the subsystems it coordinates with. A battery that charges at its maximum power (an hour with
+a 5-minute mean at 95 % of *Max charge power*) counts as "at least this much" where the rest cannot go out, like a
+fixed limit. [Learning](#learning-nightly-from-long-term-statistics) has the details.
 
 ### 6. Options (⋮ → Configure)
 
@@ -691,7 +663,16 @@ temperature turn this irradiance into the clear-sky power of the array.
 
 ### Learning (nightly, from long-term statistics)
 
-- **Data filters:** hours with a full battery that may curtail the array (see *Battery*), excluded periods, outages
+- **Batteries:** which batteries leave hours out for an array follows from the systems: its own system's battery; with
+  *covers the house load*, also those of the subsystems it coordinates with; for a subsystem without a battery under a
+  shared output limit, those of the other subsystems. A battery outside the array's system, also one at the house grid
+  with zero export, does not count: the inverter that holds the export at zero does not know it. A battery counts as
+  full from *Counts as full from* below its upper limit. One that charges at its maximum power takes no more either:
+  where the rest cannot go out, these hours count as "at least this much", since leaving them out would drop just the
+  bright hours. The charge power is read from means, since a single reading can lie far above what the battery takes:
+  an hour counts when one of its 5-minute means reaches 95 % of *Max charge power*; hours from before Noxcast's own
+  5-minute archive count from an hourly mean of 85 %, and between 70 and 85 % they are left out.
+- **Data filters:** hours with a full battery that may curtail the array (see *Batteries*), excluded periods, outages
   and incomplete hours are left out. So are days on which an array delivered at most 2 % of a clear day (off,
   fully under snow or too dark for the inverter), and, with *Air temperature from archive*, the hours after a snowfall of
   at least 1 cm (in hours up to 3 °C; warmer it falls as rain) until the array delivers again, it thawed or a week has passed. Unsteady hours (passing clouds, restarts) do not count for efficiency, direction factor and reflection.

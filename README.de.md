@@ -17,8 +17,18 @@ inkompatible Änderungen bringen; jede ist im [Changelog](CHANGELOG.md) (englisc
 **Sprachen:** Noxcast gibt es auf Deutsch und Englisch. Einrichtung, Entitäten, Panel und Karten folgen der Sprache
 deines Home-Assistant-Benutzers; andere Sprachen fallen auf Englisch zurück.
 
-- **Neu bei PV-Prognosen?** Fang mit den [ersten Schritten](#erste-schritte) an.
-- **Du kommst von einer anderen Prognose-Integration?** Lies [Warum Noxcast](#warum-noxcast).
+## Wo anfangen
+
+Wähle die Zeile, die am besten zu dir passt; sie nennt, was du einrichtest und wo die Antwort auf deine Frage steht.
+
+| Du hast oder willst | Einrichten | Dann ansehen |
+|---|---|---|
+| Nur wissen, was deine Module liefern | Ein System mit seinen PV-Gruppen ([Einrichten](#einrichten)) | *Übersicht* im Panel, die Sensoren *Erwartung heute* und *Prognose morgen*, die Wetterkarte |
+| Ein Balkonkraftwerk mit Akku, ohne Zähler für das ganze Haus | Die Vorlage *PV mit Akku in einem Gerät* mit ihrer Ausgangsgrenze (etwa 800 W), ihr Akku und eine *Feste Grundlast* im [Haupteintrag](#1-haupteintrag) | *Akku voll um*, *Akku leer um*, die [Blueprints](#benachrichtigungen-blueprints) |
+| Einen Akku, der nicht zu früh voll oder zu früh leer sein soll | Den Akku mit seinem Leistungssensor, den Hausverbrauch im Haupteintrag | Den Reiter *Akku & Überschuss*, *Überschuss verloren heute*, den Blueprint *Akku früh voll* |
+| Mehr eigenen PV-Strom nutzen: Waschmaschine, Spülmaschine, Wärmepumpe | Den Hausverbrauch und [Verbraucher](#4-verbraucher-optional-für-die-lastprognose): flexibel, was du verschieben kannst, fest für den Rest | *jetzt starten*, *bestes Fenster heute*, den Reiter *Last* |
+| Einen dynamischen Tarif, ein E-Auto oder ein Werkzeug wie EVCC, Predbat oder EMHASS | Das oben Genannte, soweit du es hast | [Andere Werkzeuge](#andere-werkzeuge-evcc-predbat-emhass), *Netzbezug bis Ladebeginn* |
+| Die Zahlen verstehen oder prüfen | Nichts weiter: *Details* im [Panel](#seitenleisten-panel-noxcast-gesamtübersicht) einschalten | *Gelerntes*, *Prognosegüte*, [So funktioniert es](#so-funktioniert-es) und [Warum Noxcast](#warum-noxcast), wenn du von einer anderen Prognose kommst |
 
 ## Warum Noxcast
 
@@ -170,31 +180,14 @@ Dann **Noxcast** in der Seitenleiste öffnen: *Übersicht* zeigt, was heute und 
   `noxcast.exclude_period` ausschließen.
 - *Diagnose* im Panel listet jeden Sensor, den Noxcast liest, fehlende Daten und Fehler. Der Diagnose-Download der
   Integration enthält, was ein Fehlerbericht braucht.
-- **Was hat das Lernen gesehen?** *Gelernt* → *Datenbasis* zeigt pro Gruppe, wofür die Tagesstunden verwendet
-  wurden (verwendet, begrenzt, Akku voll, Schnee, kein Ertrag, ausgeschlossen), gewichtet nach der Energie bei
-  klarem Himmel, insgesamt und pro Monat, und weist auf Auffälligkeiten mit ihrem deutlichsten Tag hin: „Akku voll“,
-  obwohl die Gruppe lieferte, was das Modell erwartet, bei ruhigem Himmel deutlich über dem, was das gelernte Modell bei
-  klarem Himmel zulässt, Tage ohne Ertrag bei hellem Himmel und ohne Schnee, helle Tage unter 70 % des Modells, die kein Filter
-  erklärt, und Zeiten nach Schneefall, die erst die Grenze von 7 Tagen nach dem letzten Schneefall beendet hat, obwohl helle Stunden freie Module gezeigt hätten. Neu berechnet bei jedem nächtlichen Lernen.
-  Mit dem Satellitenarchiv sagt sie auch, ob genug Daten für die gezeigten Tage da sind: Findet die nächtliche
-  Rückrechnung den Stundenfehler auf Tagen, die das Modell nicht gelernt hat, um mehr als 10 % über dem auf gelernten
-  Tagen, gibt es noch zu wenige Tage je Sonnenstand, und kräftige Tage im Kalender können von fehlenden Daten
-  kommen; sonst nicht. Ein Kalender des letzten Jahres zeigt ein Feld pro Tag,
-  gefärbt nach Ertrag gegen Modell oder schraffiert in der Farbe des Grunds, aus dem der Tag ausgelassen wurde;
-  blass ist ein Tag, dessen Abweichung im üblichen Rahmen bleibt: was der Fehler des Satelliten bei diesem Himmel
-  (bei Bewölkung oft ein Viertel, bei klarem Himmel wenige Prozent) und das gewöhnliche Rauschen des Modells der
-  Gruppe von Tag zu Tag zusammen verursachen, sodass nur kräftige Farben auf Modell oder Konfiguration hinweisen;
-  Administratoren öffnen per Klick die Stunden eines Tages als Linien für Messung, Modell und Obergrenze bei klarem Himmel mit den
-  ausgelassenen und begrenzten Stunden hinterlegt, und per Klick auf eine Stunde, wie das Modell zustande kommt (klarer Himmel,
-  Wolken, Schatten, Reflexion, Richtung, Temperatur).
-- **Passen die Filter zu deiner Anlage?** *Passt die Konfiguration?* exportiert jede gemessene Tagesstunde einer
-  Gruppe als CSV (*Stunden als CSV*, für Administratoren), Zeiten in UTC. `status` ist `used` (verwendet),
-  `lower_bound` (angezeigt als *begrenzt*: `at_limit`, `charging_max`, `held_back`; die echte Leistung war mindestens so hoch) oder `left_out`
-  (ausgelassen), und `reasons` nennt alle Gründe: `before_use` (vor Inbetriebnahme),
-  `battery_full` (ein Akku der Systeme der Gruppe), `maybe_charging`, `no_output` (kein Ertrag), `snow` (Schnee),
-  `excluded` (ausgeschlossen), `negative`. Mit dem Satellitenarchiv (Optionen) enthält die Datei auch das Modell mit
-  der gemessenen Strahlung, zerlegt in klaren Himmel, Wolken, Schatten, Reflexion, Richtung und Wärme. Öffne sie in
-  einer Tabellenkalkulation oder hänge sie an ein Issue.
+- **Was hat das Lernen gesehen?** *Gelerntes* → *Datenbasis* zeigt je PV-Gruppe, wofür ihre Tagesstunden verwendet
+  wurden (verwendet, begrenzt, Akku voll, Schnee, kein Ertrag, ausgeschlossen), insgesamt und pro Monat, und weist auf
+  Auffälligkeiten mit ihrem deutlichsten Tag hin. Ein Kalender des letzten Jahres färbt jeden Tag nach Ertrag gegen
+  Modell; blasse Tage bleiben im üblichen Rahmen, nur kräftige Farben weisen auf Modell oder Konfiguration hin. Ein Klick
+  auf einen Tag zeigt seine Stunden, ein Klick auf eine Stunde, wie das Modell zustande kommt.
+- **Passen die Filter zu deiner Anlage?** *Stunden als CSV* unter *Passt die Konfiguration?* exportiert jede gemessene
+  Tagesstunde einer PV-Gruppe mit ihrem Status und jedem Grund, aus dem sie ausgelassen oder begrenzt wurde (Zeiten in
+  UTC), für eine Tabellenkalkulation oder ein Issue.
 
 ## Konfiguration
 
@@ -273,22 +266,14 @@ steckt. Teilsysteme haben keinen eigenen Eintrag: Sie stecken im Eintrag ihres S
 | Akku lädt aus | Eigener PV (vor dem Ausgang) oder dem Haushalt (eigener Wechselrichter am Hausnetz) |
 | Akkus gleichen sich aus | Die Akkus der Teilsysteme gleichen ihre Ladestände an; sie bekommen eine gemeinsame Akku-Prognose |
 
-Noxcast speichert jede Einstellung, auch die, die es noch nicht verrechnet. Der Panel-Reiter *Anlage* zeichnet die
-Anlage als Flussbild (PV-Gruppen, Systeme mit ihren Akkus und Grenzen, Haus, Netz). Jede Einstellung steht dort, wo sie
-wirkt: die Ausrichtung einer PV-Gruppe als Kompassnadel (Norden oben, länger je steiler), ihre Spitzenleistung und
-Sensoren im Kasten, eine Leistungsgrenze je Sensor auf der Leitung von der PV-Gruppe, die Ausgangsgrenze eines Systems
-(*je Phase*, wo sie pro Phase gilt) und seine Abweichung von der Einspeisevorgabe an seinem Ausgang, die Phase eines
-Teilsystems auf der Leitung, in die es einspeist, die Einspeisevorgabe zwischen Haus und Netz. Ein Tipp auf einen Teil
-zeigt seine Einstellungen und ob jede genau, vereinfacht oder noch nicht zählt. Dort hängt *Gehört zu* eine PV-Gruppe, einen Akku
-oder ein System an ein anderes System, mit denselben Regeln wie in den Formularen. *Ändern* (nur für Administratoren) öffnet
-neben dem Bild dasselbe Formular wie der Einstellungsdialog, für ein System, eine PV-Gruppe, einen Akku oder den
-Haushalt: Jede Änderung erscheint sofort im Bild, *Speichern* übernimmt sie wie der Dialog, und Noxcast lädt neu. Die
-gestrichelten Kästen fügen einen Teil dort hinzu, wo er passt: *+ PV-Gruppe* unter den PV-Gruppen eines Systems,
-*+ Akku* in einem System, dessen Vorlage einen hat, *+ Teilsystem* in einem System gekoppelter Geräte, *+ System*
-unter allen Systemen. Ein neues System beginnt mit seiner Vorlage, gewählt auf einem Bild der vier; der neue Teil steht
-hervorgehoben im Bild, bevor *Speichern* ihn anlegt. *Entfernen* zeigt erst, was mit dem Teil geht, und das Bild ohne
-ihn, und entfernt nichts vor *Endgültig entfernen*. Die Formulare für Systeme,
-PV-Gruppen und Akkus zeigen dasselbe Bild oben. Spätere Versionen verrechnen mehr davon, ohne dass du etwas neu eintragen musst.
+Der Panel-Reiter *Anlage* zeichnet die Anlage als Flussbild, jede Einstellung dort, wo sie wirkt: die Ausrichtung
+einer PV-Gruppe als Kompassnadel, Grenzen auf den Leitungen, die Einspeisevorgabe zwischen Haus und Netz. Ein Tipp auf
+einen Teil zeigt seine Einstellungen und ob Noxcast jede genau, vereinfacht oder noch nicht verrechnet. *Ändern* (für
+Administratoren) öffnet das Formular der Konfiguration neben dem Bild und zeichnet jede Änderung vor dem *Speichern*;
+*Gehört zu* hängt einen Teil an ein anderes System; die gestrichelten Kästen fügen eine PV-Gruppe, einen Akku, ein
+Teilsystem oder ein System hinzu, wo es passt; *Entfernen* zeigt erst, was mit dem Teil geht. Noxcast speichert jede
+Einstellung, auch die, die es noch nicht verrechnet; spätere Versionen verrechnen mehr davon, ohne dass du etwas neu
+eintragen musst.
 
 *Gerät tauschen* an einem System ist für den Tag, an dem ein Gerät des Systems ersetzt wird und die PV-Module
 bleiben, wo sie sind. Es liegt bewusst abseits: Wähle das System im Bild, ganz unten in seinen Details erklärt der
@@ -370,40 +355,22 @@ Ausgangsgrenze.
 | Wirkungsgrad | Im Zyklus; Standard 95 % vor dem Ausgang eines Geräts mit PV, 90 % am Hausnetz |
 | Max. Lade- / Entladeleistung | Optionale Grenzen; darüber geht Überschuss ins Netz oder das Netz liefert. Mit dem Sensor *Lade-/Entladeleistung* zählen Stunden, in denen er mit der größten Leistung lädt, beim Lernen als „mindestens so viel“, wo PV zurückgehalten sein kann (siehe unten) |
 
-Mit dem Sensor *Lade-/Entladeleistung* lernt Noxcast jede Nacht, welche Kapazität und welchen Wirkungsgrad im Zyklus der
-Akku zeigt, aus den letzten 120 Tagen: Beim Laden ergibt Energie je Prozent Ladestand die Kapazität geteilt durch den
-Ladewirkungsgrad, beim Entladen die Kapazität mal den Entladewirkungsgrad. Aus beiden folgen Kapazität und
-Wirkungsgrad, ohne dass einer davon bekannt sein muss. Dazu braucht es je drei Lade- und Entladeläufe über mindestens
-15 Prozentpunkte, gezählt ab der letzten Änderung von Kapazität oder Sensoren des Akkus (nach einer Erweiterung zählen
-die Läufe des alten Akkus nicht mehr). Die gelernte Kapazität ersetzt in der Prognose die eingetragene (ein gealterter Akku fasst weniger,
-als auf dem Schild steht), ein eingetragener Wirkungsgrad bleibt. Der Reiter *Akku & Überschuss* zeigt beides neben
-dem Eingetragenen.
+Mit dem Sensor *Lade-/Entladeleistung* lernt Noxcast jede Nacht aus den letzten 120 Tagen, welche Kapazität und
+welchen Wirkungsgrad im Zyklus der Akku zeigt (drei Lade- und drei Entladeläufe über mindestens 15 Prozentpunkte seit
+der letzten Änderung von Kapazität oder Sensoren). Die gelernte Kapazität ersetzt in der Prognose die eingetragene,
+weil ein gealterter Akku weniger fasst, als auf dem Schild steht; ein eingetragener Wirkungsgrad bleibt. Der Reiter
+*Akku & Überschuss* zeigt beides.
 
-Mit Ausgangsgrenze am System liefern PV seiner PV-Gruppen und der Akku zusammen höchstens die Grenze; PV darüber kann
-nur den Akku laden. Teilsysteme mit Akkus unter einer gemeinsamen Grenze geben zusammen höchstens diese Grenze ab.
-Die Akkus eines Systems werden als ein Speicher simuliert (Kapazitäten addiert, Grenzen nach Kapazität gewichtet).
-Getrennte Systeme, jedes mit eigenem Wechselrichter am Haus, werden je für sich simuliert: Jedes lädt aus seiner
-eigenen PV, ein Akku am Hausnetz auch aus dem, was die anderen abgeben. Den Verbrauch teilen sie sich gleichmäßig,
-jedes höchstens bis zu seiner Entladeleistung; was eines nicht liefern kann, übernehmen die anderen. Ein System mit
-*Feste Leistung* liefert sie, egal wie viel das Haus bezieht. *Akku voll um*, *Akku leer um* und *Akku höchster
-Stand* zeigen dann das früheste System (den Ladestand: alle Akkus nach Kapazität gewichtet) und nennen jedes
-System im Attribut `systems`; der Reiter *Akku & Überschuss* zeigt sie je System, und seine Was-wäre-wenn-Rechnung rechnet genauso, mit einer Kapazität je System. Der Reiter *Anlage* zeigt die gleichmäßige
-Aufteilung als vereinfacht, da sich nicht jedes System so einpendelt.
+Mit Ausgangsgrenze am System liefern PV und Akku zusammen höchstens die Grenze; PV darüber kann nur den Akku laden. Die
+Akkus eines Systems werden als ein Speicher simuliert. Getrennte Systeme werden je für sich simuliert: Jedes lädt aus
+seiner eigenen PV, den Verbrauch teilen sie sich gleichmäßig bis zur jeweiligen Entladeleistung; ein System mit *Feste
+Leistung* liefert sie, egal wie viel das Haus bezieht. *Akku voll um*, *Akku leer um* und *Akku höchster Stand* zeigen
+dann das früheste System und nennen jedes im Attribut `systems`.
 
-Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres eigenen Systems;
-mit *deckt den Hausverbrauch* auch die Akkus der Teilsysteme, mit denen es sich abstimmt; für ein Teilsystem ohne
-Akku unter einer gemeinsamen Ausgangsgrenze die Akkus der anderen Teilsysteme. Ein Akku außerhalb des Systems der
-PV-Gruppe, auch einer am Hausnetz bei Nulleinspeisung, zählt nicht: Der Wechselrichter, der die Einspeisung auf null
-hält, kennt ihn nicht und regelt mit ihm genauso ab wie ohne ihn. Ein Akku gilt als voll ab *Gilt als voll ab* unter seiner
-Ladegrenze (bei einer Grenze aus einer Entität ihr aktueller Wert). Ein Akku, der mit seiner größten Leistung lädt, nimmt
-ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann (das System deckt den Hausverbrauch, oder eine
-Ausgangsgrenze gilt), zählt das Lernen diese Stunden als „mindestens so viel“, wie bei einer festen Grenze. Sie
-auszulassen würde gerade die hellen Stunden entfernen. Noxcast liest die Ladeleistung aus Mittelwerten, weil ein
-einzelner Messwert von wenigen Sekunden weit über dem liegen kann, was der Akku aufnimmt: Eine Stunde zählt, wenn
-einer ihrer 5-Minuten-Mittelwerte 95 % der *Max. Ladeleistung* erreicht. Diese 5-Minuten-Mittelwerte hebt Noxcast in
-seinem eigenen Archiv auf; Stunden von davor haben nur ihren Stundenmittelwert, der ab 85 % zählt, und eine Stunde
-zwischen 70 und 85 % lässt das Lernen aus. Dafür braucht es den Sensor für die Akkuleistung und die
-größte Ladeleistung.
+Beim Lernen lässt eine PV-Gruppe Stunden mit vollem Akku aus, wo dieser Akku sie abregeln kann: der Akku ihres eigenen
+Systems und der Teilsysteme, mit denen es sich abstimmt. Ein Akku, der mit seiner größten Leistung lädt (eine Stunde mit
+einem 5-Minuten-Mittelwert ab 95 % der *Max. Ladeleistung*), zählt dort als „mindestens so viel“, wo der Rest nicht
+abfließen kann, wie bei einer festen Grenze. Einzelheiten stehen unter [Lernen](#lernen-nachts-aus-der-langzeitstatistik).
 
 ### 6. Optionen (⋮ → Konfigurieren)
 
@@ -706,7 +673,17 @@ vorhergesagten Lufttemperatur aus dieser Einstrahlung die Leistung der Gruppe be
 
 ### Lernen (nachts, aus der Langzeitstatistik)
 
-- **Datenfilter:** Stunden mit vollem Akku, ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
+- **Akkus:** Welche Akkus beim Lernen einer PV-Gruppe Stunden auslassen, folgt aus den Systemen: der Akku ihres
+  eigenen Systems; mit *deckt den Hausverbrauch* auch die der Teilsysteme, mit denen es sich abstimmt; für ein
+  Teilsystem ohne Akku unter einer gemeinsamen Ausgangsgrenze die der anderen Teilsysteme. Ein Akku außerhalb des
+  Systems der PV-Gruppe, auch einer am Hausnetz bei Nulleinspeisung, zählt nicht: Der Wechselrichter, der die
+  Einspeisung auf null hält, kennt ihn nicht. Ein Akku gilt als voll ab *Gilt als voll ab* unter seiner Ladegrenze.
+  Einer, der mit seiner größten Leistung lädt, nimmt ebenfalls nichts mehr auf: Wo der Rest nicht abfließen kann,
+  zählen diese Stunden als „mindestens so viel“, denn sie auszulassen würde gerade die hellen Stunden entfernen. Die
+  Ladeleistung kommt aus Mittelwerten, weil ein einzelner Messwert weit über dem liegen kann, was der Akku aufnimmt:
+  Eine Stunde zählt, wenn einer ihrer 5-Minuten-Mittelwerte 95 % der *Max. Ladeleistung* erreicht; Stunden von vor
+  Noxcasts eigenem 5-Minuten-Archiv zählen ab einem Stundenmittel von 85 %, zwischen 70 und 85 % bleiben sie außen vor.
+- **Datenfilter:** Stunden mit vollem Akku, die die PV-Gruppe abregeln können (siehe *Akkus*), ausgeschlossene Zeiträume, Ausfälle und unvollständige Stunden bleiben
   außen vor. Ebenso Tage, an denen eine PV-Gruppe höchstens 2 % eines klaren Tages geliefert hat (ausgefallen,
   ganz unter Schnee oder zu dunkel für den Wechselrichter), und mit dem Archiv (*Lufttemperatur aus Archiv*) die Stunden nach mindestens
   1 cm Schneefall (in Stunden bis 3 °C; wärmer fällt er als Regen), bis die Gruppe wieder liefert, es getaut hat oder eine Woche vorbei ist. Unruhige Stunden (durchziehende Wolken, Neustarts) zählen nicht für Wirkungsgrad, Richtungsfaktor und

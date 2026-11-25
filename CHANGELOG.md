@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.8.0b2] - 2026-11-25
+
 ### Fixed
 - The day card's *Actual* value counts measured energy only. It no longer shows energy before the modules deliver
   any, and no longer drops when an hour ends: the running hour counted part of its forecast until now. The value

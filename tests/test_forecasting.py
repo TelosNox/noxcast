@@ -190,3 +190,16 @@ def test_every_quarter_of_an_hour_gets_the_hour_s_clearness():
         return {t: quarters[t] / hours[t - t % 3600] for t in quarters if hours[t - t % 3600] > 1}
     bright, dark = shares(1.0), shares(0.3)
     assert bright.keys() == dark.keys() and all(abs(bright[t] - dark[t]) < 1e-9 for t in bright)
+
+
+def test_fixed_load_is_the_entered_base_load_plus_what_runs_now():
+    consumers = {"dw": ln.ConsumerConfig("dw", "Dishwasher", "sensor.dw", lf.TIMING_FIXED, kind=lf.KIND_PROGRAM),
+                 "wm": ln.ConsumerConfig("wm", "Washer", "sensor.wm", lf.TIMING_FLEXIBLE)}
+    now = DAY_START + 10.5 * 3600
+    out = fc.fixed_load(120, consumers, {"dw": lf.Run(800.0, 90.0)}, timezone.utc, now, DAY_END)
+    assert out.k == 1.0 and out.sustained == 0.0
+    assert set(out.base.values()) == {120.0} and min(out.base) == DAY_START + 10 * 3600 and len(out.base) == 14
+    # the running program counts until it ends, nothing is learned for later hours; the flexible one counts zero
+    assert out.consumers["dw"][DAY_START + 11 * 3600] == 800.0 and out.consumers["dw"][DAY_START + 12 * 3600] == 0.0
+    assert set(out.consumers["wm"].values()) == {0.0}
+    assert out.hours[DAY_START + 15 * 3600] == 120.0

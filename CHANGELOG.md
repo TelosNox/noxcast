@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Added
+- Balcony systems without a meter for the whole house: the household setting *Fixed base load* (W) stands in for
+  the house load sensor. The battery forecast, the surplus sensors and the planner of flexible consumers then work
+  with this load in every hour, plus a consumer with its own sensor while it runs. A measured house load wins and is
+  learned as before; the load forecast sensors carry the entered value in `fixed_w`.
+
 ### Changed
 - The sidebar panel starts simple: *Overview*, *Day*, *Battery & surplus* and *Installation*. The new *Details*
   switch in its header shows *Learned*, *Forecast accuracy*, *Load* and *Diagnostics* again; each browser remembers

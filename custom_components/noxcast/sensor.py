@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NoxcastConfigEntry,
                               entry_type=DeviceEntryType.SERVICE)
     async_add_entities([ForecastSensor(coordinator, d, TOTAL, total_device) for d in forecasts]
                        + [LastLearningSensor(coordinator, total_device), ForecastErrorSensor(coordinator, total_device)])
-    if coordinator.house_load:
+    if coordinator.load_known:
         async_add_entities([LoadSensor(coordinator, total_device, 0), LoadSensor(coordinator, total_device, 1)])
         if coordinator.batteries:
             async_add_entities([BatterySensor(coordinator, total_device, d) for d in BATTERY_SENSORS])
@@ -378,6 +378,7 @@ class LoadSensor(NoxcastEntity, SensorEntity):
             "sustained_w": fc.sustained if self._offset == 0 else None,
             "sustained_since": _iso(fc.sustained_since) if self._offset == 0 else None,
             "profile_days": profile.days if profile else 0,
+            "fixed_w": self.coordinator.base_load,     # the entered base load, when no house load is measured
             "backtest": self.coordinator.load_backtest,
         }
 

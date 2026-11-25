@@ -215,6 +215,53 @@ async def test_setup_learn_and_forecast(hass: HomeAssistant, hass_ws_client) -> 
                                      + s["heat"] - s["result"]) < 1 for s in steps.values())
 
 
+async def test_fixed_base_load_without_house_load_sensor(hass: HomeAssistant, hass_ws_client) -> None:
+    """A balcony system without a meter for the whole house: the entered base load drives the battery forecast."""
+    site = solar.Site(hass.config.latitude, hass.config.longitude, float(hass.config.elevation or 0))
+    weather = _clear_hours(site, dt_util.start_of_local_day().timestamp(), 72)
+
+    async def fake_stats(_hass, ids, _start, kind, period="hour"):
+        return _statistics(site, 30) if kind == "mean" and period == "hour" else {}
+
+    async def fake_factors(_hass, ids, table=None):
+        return {i: 1.0 for i in ids}
+
+    for sensor in ARRAY["power_sensors"]:
+        hass.states.async_set(sensor, "0", {"unit_of_measurement": "W", "state_class": "measurement"})
+    hass.states.async_set("sensor.soc", "40", {"unit_of_measurement": "%"})
+    with patch("custom_components.noxcast.coordinator.async_open_meteo", return_value=(weather, {})), \
+         patch("custom_components.noxcast.coordinator.async_power_factors", side_effect=fake_factors), \
+         patch("custom_components.noxcast.coordinator.async_hourly_statistics", side_effect=fake_stats), \
+         patch("custom_components.noxcast.coordinator.async_archive_weather", return_value=({}, {})):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"base_load_w": 150})
+        assert result["type"] is FlowResultType.CREATE_ENTRY and result["result"].data["base_load_w"] == 150
+        entry = result["result"]
+        await hass.async_block_till_done()
+        await system_flow(hass, entry, {"name": "Balcony", "template": "pv_battery"},
+                          {"output_limit_w": 800, "charges_from": "own_pv"}, "add_array", ARRAY)
+        system = next(iter(parts_of(hass, entry, "system")))
+        await system_flow(hass, entry, "add_battery", {"name": "Balcony", "soc_sensor": "sensor.soc", "capacity": 2},
+                          subentry_id=system)
+        coordinator = hass.config_entries.async_get_entry(entry.entry_id).runtime_data
+        assert coordinator.house_load is None and coordinator.base_load == 150.0
+        await coordinator.async_learn()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    data = coordinator.data
+    assert data.load is not None and set(data.load.base.values()) == {150.0}
+    assert data.battery is not None                                  # the battery forecast runs on the fixed load
+    states = {s.entity_id: s for s in hass.states.async_all("sensor")}
+    tomorrow = next(s for e, s in states.items() if e.endswith("load_tomorrow"))
+    assert tomorrow.attributes["fixed_w"] == 150.0 and abs(float(tomorrow.state) - 0.15 * 24) < 0.16   # 23–25 hours
+    assert any(e.endswith("battery_full_at") or e.endswith("surplus_today") for e in states)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "noxcast/learned"})
+    msg = await client.receive_json()
+    assert msg["result"]["sections"] == {"load": False, "battery": True}    # nothing learned to show in the Load tab
+
+
 async def test_array_validation_rejects_energy_sensor(hass: HomeAssistant) -> None:
     weather = [model.WeatherHour(dt_util.utcnow().timestamp(), 100.0)]
     hass.states.async_set("sensor.pv_kwh", "1", {"unit_of_measurement": "kWh", "state_class": "total_increasing"})

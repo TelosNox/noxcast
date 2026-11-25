@@ -29,7 +29,7 @@ from .const import (
     WEATHER_DAYS, WEATHER_MAX_AGE, WEATHER_RETRY, ARCHIVE_DAYS, ENSEMBLE_INTERVAL, EVAL_DAYS, ENSEMBLE_MODELS, ERROR_DAYS, CONF_AZIMUTH, CONF_HEATING, CONF_ORIENTATIONS, CONF_TEMP_COEFF, CONF_NAME, CONF_PEAK_POWER, CONF_POWER_SENSORS, CONF_SENSOR_LIMITS,
     CONF_TILT, CONF_VALID_SINCE, DOMAIN,
     CONF_FORECAST_DAYS, FORECAST_DAYS, HISTORY_YEARS, MAX_FORECAST_DAYS, LEARN_TIME, POWER_UNIT_FACTORS, STALE_AFTER, STORAGE_VERSION, SUBENTRY_ARRAY, UPDATE_MINUTES,
-    CONF_HOUSE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
+    CONF_HOUSE_LOAD, CONF_BASE_LOAD, CONF_GRID, CONF_GRID_INVERT, CONF_DAY_TYPE, CONF_POWER_SENSOR, CONF_TIMING, SUBENTRY_CONSUMER,
     CONF_ELAPSED_TIME, CONF_ENERGY_SENSOR, CONF_REMAINING_TIME, ENERGY_UNIT_FACTORS, MINUTE_FACTORS,
     CONF_BATTERY_INVERT, CONF_BATTERY_POWER, CONF_CAPACITY, CONF_EFFICIENCY, CONF_MAX_CHARGE, CONF_MAX_DISCHARGE,
     CONF_MAX_SOC, CONF_MAX_SOC_ENTITY,
@@ -172,6 +172,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         self.installation = installation_of(entry)
         self.arrays = array_configs(entry, self.installation)
         self.house_load: str | None = entry.data.get(CONF_HOUSE_LOAD) or None
+        # a measured house load is learned; the fixed one stands in only where none is measured
+        self.base_load: float | None = (float(entry.data[CONF_BASE_LOAD]) if not self.house_load
+                                        and entry.data.get(CONF_BASE_LOAD) else None)
         self.grid: str | None = entry.data.get(CONF_GRID) or None
         self.grid_sign = -1.0 if entry.data.get(CONF_GRID_INVERT) else 1.0
         self.forecast_days = max(2, min(MAX_FORECAST_DAYS, int(entry.data.get(CONF_FORECAST_DAYS) or FORECAST_DAYS)))
@@ -1023,6 +1026,9 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
     async def _async_load_forecast(self, now: float, end: float,
                                    temps: Series | None = None) -> lf.LoadForecast | None:
         """Load forecast with the correction from the last hours and the consumers running now."""
+        if self.base_load:
+            running = {sid: run for sid, c in self.consumers.items() if (run := await self._async_run(c, now))}
+            return fc.fixed_load(self.base_load, self.consumers, running, dt_util.get_default_time_zone(), now, end)
         if not self.house_load or self.load_profile is None:
             return None
         try:
@@ -1645,6 +1651,11 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
                                await self._async_ensemble(now))
         self._store.async_delay_save(self._store_data, 60)
         return result
+
+    @property
+    def load_known(self) -> bool:
+        """A load forecast can exist: from the measured house load or the fixed base load."""
+        return bool(self.house_load or self.base_load)
 
     @property
     def forecast_available(self) -> bool:

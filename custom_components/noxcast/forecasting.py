@@ -53,6 +53,7 @@ class NoxcastData:
     band: dict | None = None                  # P10 / P90 of the total: hours, days, rest of today (see band.forecast_band)
     actual: dict[str, Series] = field(default_factory=dict)   # today's measured hours per array
     measured: dict[str, float | None] = field(default_factory=dict)  # today's measured Wh per array until now (measured_wh)
+    running: dict[str, tuple[float, float, float]] = field(default_factory=dict)  # the running hour (today_actual)
     weather: list[WeatherHour] = field(default_factory=list)              # weather hours from today on
     outlook: list[WeatherHour] = field(default_factory=list)              # the same for a week: the weather entity
     # the weather source's hours before local midnight (yesterday): snow that fell then may still lie today
@@ -219,6 +220,7 @@ def pv(site: Site, arrays: dict[str, ArrayConfig], learned: dict[str, LearnedArr
     result.morning_late = today.morning_late
 
     result.actual, result.weather = actual, weather
+    result.running = {sid: r for sid, r in running.items() if sid in arrays}
     result.measured = {sid: measured_wh(actual.get(sid, {}), running.get(sid), day_start, ts_now) for sid in arrays}
     temps = {w.start: w.temp for w in weather}
     clear_weather = [clearsky_weather(site, t, temps.get(t))

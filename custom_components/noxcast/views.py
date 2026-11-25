@@ -170,6 +170,10 @@ def today_arrays(arrays: dict, data, tomorrow_start: float, tomorrow_end: float,
             "periods": effects.get("periods", []),
             "tomorrow_wh": round(sum(tomorrow.values())),
             "measured_wh": None if measured is None else round(measured, 1),
+            # what the card draws as measured: today's measured hours and the measured part of the running hour
+            "actual": series(data.actual.get(sub_id, {}) if same_day else {}),
+            "running": {"start": run[0], "w": round(run[1], 1), "share": round(run[2], 3)}
+            if same_day and (run := data.running.get(sub_id)) else None,
             "updated": data.updated.isoformat() if data.updated else None,
         })
     return out

@@ -81,8 +81,12 @@ def test_today_arrays_and_totals():
     assert roof["updated"] == "2026-07-01T10:00:00+00:00" and out[1]["tomorrow"] == {"t": [], "wh": []}
     assert out[1]["tomorrow_wh"] == 0
     assert roof["measured_wh"] == 200.0 and out[1]["measured_wh"] is None
+    assert roof["actual"] == {"t": [A + 10 * H], "wh": [200.0]} and roof["running"] is None
+    d.running = {"roof": (A + 11 * H, 123.456, 4 / 12)}
+    assert views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A)[0]["running"] == {"start": A + 11 * H, "w": 123.5, "share": 0.333}
     # data of another day (its midnight run not done yet) measures nothing for the day the card shows
-    assert views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A + 86400)[0]["measured_wh"] is None
+    other_day = views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A + 86400)[0]
+    assert other_day["measured_wh"] is None and other_day["actual"] == {"t": [], "wh": []} and other_day["running"] is None
     assert views.today_arrays(arrays(), d, A + 86400, A + 2 * 86400, A)[0]["measured_wh"] == 200.0
     sim = bt.Simulation(points=[(A + 12 * H, 0.512345)], full_at=A + 14 * H,
                         hours={A + 11 * H: {"lost": 0.0, "soc": 0.7}, A + 12 * H: {"lost": 10.04, "fed_in": 4.02, "soc": 0.89},

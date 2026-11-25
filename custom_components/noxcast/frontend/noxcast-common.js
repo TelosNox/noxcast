@@ -74,3 +74,22 @@ export function smooth(p) {
 }
 // the whole path: move to the first point, then smooth through the rest
 export const smoothPath = (p) => `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}${smooth(p)}`;
+
+// Where every chart puts an hourly PV series, as the dashboard card does: each hour's mean at the middle of the hour,
+// and a run of producing hours starts and ends at zero on its outer hour boundary, so a curve rises from the axis
+// where production begins in every chart alike. hours: hour starts in seconds, ascending; lit(h): the hour produces;
+// an hour outside the list or not one hour after its neighbour counts as dark. Returns [ts, hour] stops, hour null
+// where the curve is at zero; dark hours inside a dark stretch keep a stop at their middle.
+export function hourStops(hours, lit, H = 3600) {
+  const on = hours.map((h) => !!lit(h)), out = [];
+  hours.forEach((h, i) => {
+    const prev = i > 0 && hours[i - 1] === h - H && on[i - 1], next = i < hours.length - 1 && hours[i + 1] === h + H && on[i + 1];
+    if (!on[i]) { if (!prev && !next) out.push([h + H / 2, null]); return; }
+    if (!prev) out.push([h, null]);
+    out.push([h + H / 2, h]);
+    if (!next) out.push([h + H, null]);
+  });
+  return out;
+}
+// one series along those stops: [ts, value], zero at the edges of production
+export const hourCurve = (stops, f) => stops.map(([ts, h]) => [ts, h === null ? 0 : f(h) || 0]);

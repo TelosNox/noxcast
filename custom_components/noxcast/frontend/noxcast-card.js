@@ -1094,10 +1094,12 @@ class NoxcastCard extends HTMLElement {
     }
     const liveHome = this._live().home;
     const srvLoad = new Map(tsRows(this._data.today && this._data.today.load, "wh"));     // Noxcast load forecast
+    // the running hour is a mean like every other point: Noxcast's forecast of it, which the battery simulation and the
+    // panel use too; the momentary power only without one, as a kettle would otherwise lift the whole hour
     const load = (h) => {
       if (h + H <= now && measured.has(h)) return measured.get(h);
-      if (h <= now && h + H > now && homeId) return liveHome;
       if (srvLoad.has(h)) return srvLoad.get(h);
+      if (h <= now && h + H > now && homeId) return liveHome;
       const l = byHour.get((((h - today) % 86400) + 86400) % 86400);
       return l && l.length ? l.reduce((a, b) => a + b, 0) / l.length : null;
     };

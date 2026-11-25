@@ -1,7 +1,7 @@
 // Noxcast sidebar panel: what the system has learned per array (shade, reflection, direction factor),
 // plus further sections that live in their own modules (e.g. forecast accuracy).
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/learned".
-const { WS_SCHEMA, ask, errorText, esc } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, smoothPath } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 // further sections: [key, custom element, module]; loaded on first use with this module's cache buster
 const SECTIONS = [["overview", "noxcast-overview", "./noxcast-overview.js"], ["day", "noxcast-day", "./noxcast-day.js"], ["accuracy", "noxcast-accuracy", "./noxcast-accuracy.js"], ["load", "noxcast-load", "./noxcast-load.js"],
@@ -1281,9 +1281,10 @@ class NoxcastPanel extends HTMLElement {
       const segs = [[]];
       rows.forEach((r, i) => {
         if (r[key] == null || (i && ts(r) - ts(rows[i - 1]) > 3600)) segs.push([]);
-        if (r[key] != null) segs[segs.length - 1].push(`${x(ts(r) + 1800).toFixed(1)},${y(r[key]).toFixed(1)}`);
+        if (r[key] != null) segs[segs.length - 1].push([x(ts(r) + 1800), y(r[key])]);
       });
-      return segs.filter((seg) => seg.length).map((seg) => seg.length === 1 ? `M${seg[0]}h0.1` : `M${seg.join("L")}`).join("");
+      // smooth like every other curve; a lone hour stays a dot
+      return segs.filter((seg) => seg.length).map((seg) => seg.length === 1 ? `M${seg[0][0].toFixed(1)},${seg[0][1].toFixed(1)}h0.1` : smoothPath(seg)).join("");
     };
     const kwh = (wh) => `${(wh / 1000).toLocaleString(this._lang, { maximumFractionDigits: 1 })} kWh`;
     // the hours the calendar's ratio rests on: used, with a model value
@@ -1387,7 +1388,7 @@ class NoxcastPanel extends HTMLElement {
     let svg = `<defs><linearGradient id="nx-eff" x1="0" x2="1"><stop offset="0" stop-color="#F5A524"></stop><stop offset=".5" stop-color="#FF6A3D"></stop><stop offset="1" stop-color="#8B5CF6"></stop></linearGradient></defs>`;
     for (const v of [lo + 0.02, (lo + hi) / 2, hi - 0.02]) svg += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"></line><text x="${pad - 4}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="ax">${Math.round(v * 100)}</text>`;
     svg += `<line x1="${pad}" x2="${W}" y1="${y(la.efficiency).toFixed(1)}" y2="${y(la.efficiency).toFixed(1)}" class="sp" stroke-dasharray="5 4"></line>`;
-    svg += `<polyline points="${entries.map(([, m], i) => `${x(i).toFixed(1)},${y(m.efficiency).toFixed(1)}`).join(" ")}" fill="none" stroke="url(#nx-eff)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+    svg += `<path d="${smoothPath(entries.map(([, m], i) => [x(i), y(m.efficiency)]))}" fill="none" stroke="url(#nx-eff)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>`;
     entries.forEach(([m, { efficiency: v, hours: n }], i) => {
       const [yy, mm] = m.split("-").map(Number);
       svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4.5" fill="var(--card-background-color)" stroke="#FF6A3D" stroke-width="2.5"><title>${this._t.months[mm - 1]} ${yy}: ${pct(v)} (${n} ${c.hours})</title></circle>`;

@@ -1,6 +1,6 @@
 // Noxcast panel section "Load": the learned load profile, the consumers and the forecast by part.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/load".
-const { WS_SCHEMA, ask, errorText, esc, escId, hm, kwh, num, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, escId, hm, kwh, num, smoothPath, tsRows } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const LOAD_TEXT = {
   de: {
@@ -201,8 +201,8 @@ class NoxcastLoad extends HTMLElement {
     for (let v = step; v < max; v += step) svg += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v}</text>`;
     for (let h = 0; h < 24; h += 3) svg += `<text x="${x(h).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${h}</text>`;
     for (const [name, f, color, dash] of lines) {
-      const pts = Array.from({ length: 24 }, (_, h) => f(h)).map((v, h) => (v == null ? null : `${x(h).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
-      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ""}><title>${esc(name)}</title></polyline>`;
+      const pts = Array.from({ length: 24 }, (_, h) => f(h)).map((v, h) => (v == null ? null : [x(h), y(v)])).filter(Boolean);
+      if (pts.length) svg += `<path d="${smoothPath(pts)}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ""}><title>${esc(name)}</title></path>`;
     }
     const legend = lines.map(([name, , color, dash]) => `<span><i class="ln" style="border-top:2px ${dash ? "dashed" : "solid"} ${color}"></i>${esc(name)}</span>`).join("");
     const hasFlex = e.consumers.some((c) => c.timing === "flexible");

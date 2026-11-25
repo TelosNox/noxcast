@@ -200,7 +200,8 @@ def test_battery_entry_and_reviews():
              battery={"sim": sim, "storage": bt.Battery(5000, 0.5, 0.9, 0.1, 0.95, 2000), "day_end": A + 86400,
                       "charge_start": A + 32 * H})
     out = views.battery_entry(batteries, {}, d, A + 11.5 * H)
-    assert list(out) == ["batteries", "storage", "hours", "day_end", "charge_start", "sim", "feed_in"]
+    assert list(out) == ["batteries", "storage", "hours", "shape", "day_end", "charge_start", "sim", "feed_in"]
+    assert out["shape"] == {"t": [], "q0": [], "q1": [], "q2": [], "q3": []}     # no quarter forecast: even quarters
     assert out["feed_in"] == {"limit_w": None, "hours": {"t": [], "free": [], "never": []}}   # no rule: all fed in
     assert out["hours"] == {"t": [A + 11 * H, A + 12 * H, A + 13 * H], "pv": [320.0, 310.0, 400.0],
                             "load": [100.0, 200.1, 300.0], "capped": [0.0, 0.0, 0.0], "discharge": [None, None, None]}

@@ -449,6 +449,7 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
         hours = sorted(t for t in load if t + 3600 > now)
         caps = b.get("limits") or bt.Limits()       # output caps: PV that only the battery can take, discharge limit per hour
         grid = b.get("feed_in") or bt.FeedIn()
+        shape = b.get("shape") or {}
         out.update({
             "storage": {"capacity_wh": st.capacity_wh, "soc": st.soc, "max": st.max_soc, "min": st.min_soc,
                         "efficiency": st.efficiency, "max_charge_w": st.max_charge_w,
@@ -458,6 +459,9 @@ def battery_entry(batteries: dict[str, dict], names: dict[str, str], data, now: 
                                None if (w := caps.discharge.get(t, st.max_discharge_w)) is None else round(w, 1))
                               for t in hours),
                              "pv", "load", "capped", "discharge"),
+            # how the PV of each hour spreads over its quarters (battery.shape_of): the what-if simulates in quarter
+            # hours with it, as Noxcast does, so its "as planned" run is the one the card and the overview show
+            "shape": columns(((t, *(round(q, 4) for q in shape[t])) for t in hours if t in shape), "q0", "q1", "q2", "q3"),
             "day_end": b["day_end"], "charge_start": b["charge_start"],
             "sim": {"full": sim.full_at, "empty": sim.empty_at, "lost_wh": round(sim.lost_wh),
                     "grid_wh": round(sim.grid_wh), "charged_wh": round(sim.charged_wh),

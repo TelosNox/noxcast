@@ -17,6 +17,19 @@ breaking changes.
 - The sidebar panel starts simple: *Overview*, *Day*, *Battery & surplus* and *Installation*. The new *Details*
   switch in its header shows *Learned*, *Forecast accuracy*, *Load* and *Diagnostics* again; each browser remembers
   it, and a link from the overview into one of those tabs switches it on.
+- Every chart draws its lines as the same smooth curve that never overshoots a value: also the battery chart, the
+  groups on the day page, the hourly course of the forecast accuracy, the load profile, the efficiency per month and
+  the hours of a learning check. PV curves on the overview, the day page and the battery chart rise from zero where
+  production begins, as on the dashboard card, so the same day has the same shape everywhere. The battery chart
+  shows PV and load as curves through the hourly means instead of steps.
+
+### Fixed
+- *As planned* on the *Battery & surplus* page now matches the battery forecast of the card and the overview: the
+  what-if runs in quarter hours with the PV course within each hour, as the forecast does, instead of whole hours.
+  Its times for full and empty could differ by up to an hour before.
+- The dashboard card draws the running hour of the house load with Noxcast's forecast for that hour, as the battery
+  forecast uses it, instead of the momentary power, which lifted the whole hour while a kettle was on. Without a
+  load forecast it still shows the momentary power.
 
 ## [0.8.0b2] - 2026-11-25
 

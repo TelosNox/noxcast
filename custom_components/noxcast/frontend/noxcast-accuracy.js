@@ -1,6 +1,6 @@
 // Noxcast panel section "Forecast accuracy": day-ahead forecasts from the archive against what happened.
 // Plain custom element, no build step. Data comes from the websocket command "noxcast/accuracy".
-const { WS_SCHEMA, ask, errorText, esc, hm, kwh } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
+const { WS_SCHEMA, ask, errorText, esc, hm, hourCurve, hourStops, kwh, smoothPath } = await import(new URL("./noxcast-common.js" + new URL(import.meta.url).search, import.meta.url).href);
 
 const ACC_TEXT = {
   de: {
@@ -533,7 +533,7 @@ class NoxcastAccuracy extends HTMLElement {
     for (let v = step; v < max; v += step) grid += `<line x1="${pad}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${pad - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._pct(v)}</text>`;
     const lines = pair.map((c, k) => {
       const pts = months.map((m, i) => [i, (c.months[m] || {}).day_error]).filter(([, v]) => v !== null && v !== undefined);
-      return `<polyline points="${pts.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${colors[k]}" stroke-width="2"${k ? ` stroke-dasharray="4 3"` : ""}></polyline>
+      return `${pts.length > 1 ? `<path d="${smoothPath(pts.map(([i, v]) => [x(i), y(v)]))}" fill="none" stroke="${colors[k]}" stroke-width="2"${k ? ` stroke-dasharray="4 3"` : ""}></path>` : ""}
         ${pts.map(([i, v]) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" fill="${colors[k]}"><title>${months[i]}: ${this._pct(v)}</title></circle>`).join("")}`;
     }).join("");
     const every = Math.ceil(months.length / 6);
@@ -582,10 +582,14 @@ class NoxcastAccuracy extends HTMLElement {
       svg += `<rect x="${(x + bw * 0.15).toFixed(1)}" y="${y(actual[i]).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${(H - 18 - y(actual[i])).toFixed(1)}" rx="2" class="abar"><title>${this._hm(h.t)} ${t.actual} ${Math.round(actual[i])} Wh</title></rect>`;
       svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" class="ax">${this._hm(h.t).slice(0, 2)}</text>`;
     }
+    // smooth through the hour middles and from zero where production begins, as every PV curve; counted in bar
+    // positions, since the listed hours may have gaps; an hour without a value is left out
+    const slots = [];
+    for (let i = i0; i <= i1; i++) slots.push(i);
     for (const [src, v] of series) {
-      const pts = [];
-      for (let i = i0; i <= i1; i++) if (v[i] !== null) pts.push(`${(pad + (i - i0 + 0.5) * bw).toFixed(1)},${y(v[i]).toFixed(1)}`);
-      svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></polyline>`;
+      const stops = hourStops(slots, (i) => (v[i] || 0) > 1, 1).filter(([, i]) => i === null || v[i] !== null);
+      const pts = hourCurve(stops, (i) => v[i]).map(([k, w]) => [pad + (k - i0) * bw, y(w)]);
+      if (pts.length > 1) svg += `<path d="${smoothPath(pts)}" fill="none" stroke="${this._color(src)}" stroke-width="2" stroke-linejoin="round"${src === "primary" ? "" : ` stroke-dasharray="4 3"`}></path>`;
     }
     const sums = series.map(([src, v]) => `<span><i class="sw line" style="background:${this._color(src)}"></i>${src === "measured" ? t.measured : esc(this._label(src))} ${this._kwh(v.reduce((a, x) => a + (x || 0), 0))}</span>`).join("");
     const issued = day.raw.issued ? ` · ${t.issued} ${new Date(day.raw.issued).toLocaleString(this._lang, { timeZone: this._data.time_zone, dateStyle: "short", timeStyle: "short" })}` : "";

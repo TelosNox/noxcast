@@ -417,6 +417,19 @@ def load(house_load: str, consumers: dict[str, ConsumerConfig], profile: lf.Prof
     return lf.forecast(profile, out, zone, now, end, k, running, sustained)
 
 
+def fixed_load(watts: float, consumers: dict[str, ConsumerConfig], running: dict[str, lf.Run], tz: tzinfo,
+               now: float, end: float) -> lf.LoadForecast:
+    """Load forecast without a house load sensor: the entered base load in every hour.
+
+    Nothing is learned here, so a consumer adds only what it draws while it runs now (a flexible one counts
+    zero, as in load()). Balcony systems often have no meter for the whole house, but their owner knows the
+    standby load the system covers; with it the battery forecast and the planner work all the same.
+    """
+    flat = lf.Profile(fallback=[float(watts)] * 24)
+    out = [lf.Consumer(sid, c.timing, lf.Profile(), c.kind) for sid, c in consumers.items()]
+    return lf.forecast(flat, out, tz, now, end, 1.0, running)
+
+
 def surplus(result: NoxcastData, site: Site, band: dict | None, batteries: list[bt.Battery],
             runs: list[pl.RunProfile], now: float, day_end: float,
             feed_in: tuple[float | None, tuple[str, ...], tuple[str, ...]] | None = None,

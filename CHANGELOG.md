@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.8.0b3] - 2026-11-25
+
 ### Added
 - Balcony systems without a meter for the whole house: the household setting *Fixed base load* (W) stands in for
   the house load sensor. The battery forecast, the surplus sensors and the planner of flexible consumers then work

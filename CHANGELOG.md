@@ -7,6 +7,89 @@ breaking changes.
 
 ## Unreleased
 
+## [0.8.0] - 2026-11-26
+
+All changes since 0.7.0: the pre-releases 0.8.0b1, 0.8.0b2 and 0.8.0b3 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). Snow and the battery's real capacity
+are learned, the battery forecast runs in quarter hours, a past day explains why it deviated, balcony systems without
+a house meter get a fixed base load, and the sidebar panel starts simple. From the next nightly learning run on,
+learning changes for installations with a three-phase device under an output limit per phase, and batteries with a
+power sensor use their learned capacity.
+
+### Added
+- Snow in the forecast, only where learned: an array that cleared from at least two snowfalls in its history
+  (with the satellite archive) has shown how long snow lies on it and what it still delivers. When the weather
+  forecasts snow (or it fell the evening before), its forecast follows that until it thaws; the hour's waterfall
+  shows the *Snow* step and the *Learned* tab what was learned. Arrays without such a history forecast as before.
+- Batteries with a power sensor learn every night the capacity and round-trip efficiency they show from their
+  level and power of the last 120 days. The forecast uses the learned capacity instead of the entered one (an aged
+  battery holds less than its label); an entered efficiency stays. After a change of the battery's capacity or
+  sensors only runs since then count. The *Battery & surplus* tab shows both.
+- Balcony systems without a meter for the whole house: the household setting *Fixed base load* (W) stands in for
+  the house load sensor. The battery forecast, the surplus sensors and the planner of flexible consumers then work
+  with this load in every hour, plus a consumer with its own sensor while it runs. A flexible consumer's run (power
+  and length) is learned from its own sensor where none is entered, and its *Start now* switch exists as with a house
+  load. A measured house load wins and is learned as before; the load forecast sensors carry the entered value in
+  `fixed_w`.
+- The *Day* tab explains for a past day (and each of its hours) why the actual value differed from the forecast, in
+  parts that add up to the difference: *Weather measured* (the model on the satellite irradiance against the
+  forecast), *Shade missed* (hours behind learned shade), *Limited* (hours with a full battery, a charge ceiling or
+  a fixed power limit) and *Model* (the rest). Hours without satellite values stay *Not split*. It needs the
+  satellite filter, and works for past days already in the archive.
+- Three blueprints for notifications on your phone, to import from the README: *Battery full early* (in the
+  morning, when surplus will be lost today), *Battery empty tonight* (in the evening, with the time) and *Good time
+  to start* (when *Start now* of a flexible consumer turns on, once a day). Noxcast still controls nothing.
+- For tariff and charge planners: the total forecast sensors with a range (*Expected today*, *Expected remaining
+  today*, *Forecast tomorrow*, *Forecast day after*) carry `hourly_p10` and `hourly_p90`, the range of each hour from
+  the running hour on. *Battery lowest level (48 h)* carries `grid_hourly` and `fed_in_hourly`: per hour of the
+  48-hour outlook the energy expected from and into the grid. The Predbat example in the README now fills
+  `pv_estimate10` / `pv_estimate90` from them.
+- New sensor *Grid energy until charge start* (with batteries): the energy the battery is expected not to cover
+  until the PV takes over again, and in `missing_soc` the percent points of charge that would cover it, for
+  planning a cheap charge from the grid.
+
+### Changed
+- The battery forecast runs in quarter hours: within each hour the PV follows its 15-minute forecast, so a
+  battery that gets full at 11:40 is full then, not spread over the hour, and the battery's level is drawn per
+  quarter hour. *Battery full at*, *Battery empty at*, the lost surplus and the windows of flexible consumers shift a
+  little. Results stay per hour. *As planned* on the *Battery & surplus* page computes the same way, so its times for
+  full and empty match the card and the overview.
+- A *three-phase* device under an output limit that holds per phase now counts at the phase limits: it feeds a third
+  of its output into each phase, so it shares each phase's limit with the devices on that phase, and devices that
+  are all three-phase share three times the limit. Without a battery this caps the PV forecast, and learning counts
+  hours in which a phase reached its limit as "at least this much" instead of learning the cut as shade; with a
+  battery the battery forecast bounds a three-phase device by three times the limit. Until now such a device was
+  left out of the phase limits. A device without a phase still is; the *Installation* tab shows that as
+  simplified. From the next nightly learning run on, learning changes for such installations.
+- The sidebar panel starts simple: *Overview*, *Day*, *Battery & surplus* and *Installation*. The new *Details*
+  switch in its header shows *Learned*, *Forecast accuracy*, *Load* and *Diagnostics* again; each browser remembers
+  it, and a link from the overview into one of those tabs switches it on.
+- Every chart draws its lines as the same smooth curve that never overshoots a value: also the battery chart, the
+  groups on the day page, the hourly course of the forecast accuracy, the load profile, the efficiency per month and
+  the hours of a learning check. PV curves on the overview, the day page and the battery chart rise from zero where
+  production begins, as on the dashboard card, so the same day has the same shape everywhere. The battery chart
+  shows PV and load as curves through the hourly means instead of steps. An hour without a measured value in the
+  hourly course of the forecast accuracy breaks the line there instead of drawing it down to zero.
+
+### Fixed
+- *Surplus rest of today* also exists without a battery, as long as the house load is set up: the PV above the
+  load for the rest of today, with what of it goes into the grid (`fed_in`) and what the feed-in rule curtails
+  (`curtailed`). Until now a household with a large PV but no battery got no surplus forecast at all.
+- With a battery, *Best window*, *PV share now* and *Start now* of flexible consumers count what a run takes from
+  the battery. Until now every watt of PV above the load counted as free, also the part that would have charged the
+  battery, so a run at noon could show 90 % from PV and still cost grid energy in the night. Now the battery
+  simulation runs with and without the run: a run on a day the battery does not get full shows the energy it takes
+  from the night, and a run before the battery gets full anyway (also early in the morning, from the battery) counts
+  as free. Tomorrow's window now also prefers the hours in which surplus would be lost, as today's does.
+- The day card's *Actual* value counts measured energy only. It no longer shows energy before the modules deliver
+  any, and no longer drops when an hour ends: the running hour counted part of its forecast until now. The value
+  follows Noxcast's half-hourly update, and shows – while no measurement is available.
+- The day card's solid area up to now shows measured power only. It no longer rises before the modules deliver
+  anything: its last point was the running hour's expected value; it now ends at the measured part of that hour.
+- The dashboard card draws the running hour of the house load with Noxcast's forecast for that hour, as the battery
+  forecast uses it, instead of the momentary power, which lifted the whole hour while a kettle was on. Without a
+  load forecast it still shows the momentary power.
+
 ## [0.8.0b3] - 2026-11-25
 
 ### Added

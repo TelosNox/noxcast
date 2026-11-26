@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.9.0b2] - 2026-11-26
+
 ### Changed
 - The day card draws the house load more quietly: a thin, translucent violet line and only a hint of colour where the
   load is above PV, so the PV forecast and yield stay in front.

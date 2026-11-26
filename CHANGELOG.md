@@ -7,6 +7,19 @@ breaking changes.
 
 ## Unreleased
 
+## [0.9.0] - 2026-11-26
+
+All changes since 0.8.0: the pre-releases 0.9.0b1 and 0.9.0b2 (their single steps are listed in
+[CHANGELOG.md](https://github.com/TelosNox/noxcast/blob/main/CHANGELOG.md)). The day card takes on the look of the
+sidebar panel. Nothing changes in learning or stored data.
+
+### Changed
+- The day card takes on the look of the sidebar panel: stronger colours with one hue per role (PV glows from orange
+  to sun yellow, battery green, grid cyan, home violet in its figure and icon), soft gradients in the chart, a dotted
+  scale and the numbers of the day as labelled figures with the actual in the Noxcast gradient. The house load is
+  drawn quietly, as a thin, translucent violet line with only a hint of colour where it is above PV, so the PV
+  forecast and yield stay in front. The gradient frame stays with `look: noxcast`.
+
 ## [0.9.0b2] - 2026-11-26
 
 ### Changed

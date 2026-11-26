@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.9.0b1] - 2026-11-26
+
 ### Changed
 - The day card takes on the look of the sidebar panel: stronger colours with one hue per role (PV glows from orange
   to sun yellow, battery green, grid cyan, home violet in its figure, icon and load line), soft gradients in the

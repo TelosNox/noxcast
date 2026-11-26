@@ -439,7 +439,8 @@ class NoxcastCard extends HTMLElement {
       @container (max-width: 400px) {
         .figs { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)) !important; gap: 6px 0; }
         .fg.hero { grid-column: 1 / -1; padding-left: 2px; }
-        .fg.hero + .fg { border-left: 0; padding-left: 2px; }
+        /* the small figures may wrap to a further row, so none of them keeps a divider that would stand alone */
+        .fg.hero ~ .fg { border-left: 0; padding-left: 2px; }
       }
       svg { display: block; width: 100%; height: auto; overflow: visible; }
       .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--secondary-text-color); }

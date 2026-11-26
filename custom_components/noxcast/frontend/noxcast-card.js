@@ -895,12 +895,13 @@ class NoxcastCard extends HTMLElement {
     // the load spans the same hours as PV: the first and last hourly means are held to the edges
     const loadPts = [[x(t0), y(lv(dayH[0]))], ...dayH.map((h) => [x(h + H / 2), y(lv(h))]), [x(t1), y(lv(dayH[dayH.length - 1]))]];
     const loadLine = hasLoad ? line(loadPts) : "";
-    // measured until now, forecast after it: solid, then dashed like every forecast
+    // measured until now, forecast after it: solid, then dashed like every forecast. Thin and translucent without a
+    // halo: the load is context, PV stays in front
     const nowCut = now <= t0 ? X0 : now >= t1 ? X1 : x(now);
     const loadSvg = `<clipPath id="nx-load-past"><rect x="0" y="0" width="${nowCut.toFixed(1)}" height="${Hp}"></rect></clipPath>
       <clipPath id="nx-load-next"><rect x="${nowCut.toFixed(1)}" y="0" width="${(W - nowCut).toFixed(1)}" height="${Hp}"></rect></clipPath>
-      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" clip-path="url(#nx-load-past)"></path>
-      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.5" stroke-dasharray="3 3" clip-path="url(#nx-load-next)"></path>`;
+      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.1" stroke-opacity=".55" clip-path="url(#nx-load-past)"></path>
+      <path d="${loadLine}" fill="none" stroke="${P.home}" stroke-width="1.1" stroke-opacity=".55" stroke-dasharray="3 3" clip-path="url(#nx-load-next)"></path>`;
     // P10–P90 of the coming hours, learned by Noxcast from its forecast archive
     const bandM = new Map(tsRows(this._data.today && this._data.today.band, "p10", "p90").map(([ts, lo, hi]) => [ts, [lo, hi]]));
     const bandH = dayH.filter((h) => h + H > now && bandM.has(h));
@@ -918,9 +919,9 @@ class NoxcastCard extends HTMLElement {
       ${measuredPts.length > 1 ? `<path d="${fill(measuredPts)}" fill="url(#nx-pv)" clip-path="url(#nx-past)"></path><path d="${line(measuredPts)}" fill="none" stroke="${P.pvHot}" stroke-width="1.6" clip-path="url(#nx-past)"></path>` : ""}
       ${bandPath ? `<path d="${bandPath}" fill="${P.pv}" fill-opacity=".2" stroke="${P.pvDark}" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="2 2"></path>` : ""}
       ${hasLoad ? `<clipPath id="nx-above"><path d="${line(pts(exp))} L${x(t1).toFixed(1)},${Hp} L${x(t1).toFixed(1)},0 L${x(t0).toFixed(1)},0 L${x(t0).toFixed(1)},${Hp} Z"></path></clipPath>
-        <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".16" clip-path="url(#nx-above)"></path>` : ""}
+        <path d="${fill(loadPts)}" fill="${P.home}" fill-opacity=".07" clip-path="url(#nx-above)"></path>` : ""}
       ${halo(line(pts(fc)))}<path d="${line(pts(fc))}" fill="none" stroke="${P.pvDark}" stroke-width="1.4" stroke-dasharray="3 3"></path>
-      ${hasLoad ? `${halo(loadLine)}${loadSvg}` : ""}
+      ${hasLoad ? loadSvg : ""}
       ${spikes.map(({ h, v }) => { const sx = x(h + H / 2); return `<path d="M${(sx - 4).toFixed(1)},8 L${(sx + 4).toFixed(1)},8 L${sx.toFixed(1)},2 Z" fill="${P.shade}"></path>
         <text x="${(sx + 6).toFixed(1)}" y="9" font-size="9.5" fill="${P.shade}">${kw(v)} kW</text>`; }).join("")}
       <line x1="${X0}" x2="${X1}" y1="${Hp - 1.5}" y2="${Hp - 1.5}" stroke="var(--divider-color)"></line>`;
@@ -1084,7 +1085,7 @@ class NoxcastCard extends HTMLElement {
       [on.actual, sw(`<defs><linearGradient id="nx-lg-pv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.pvHot}"></stop><stop offset="1" stop-color="${P.pv}"></stop></linearGradient></defs><rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-lg-pv)"></rect>`), l.actual],
       [true, box(P.pv, 0.4), l.expected], [true, dash(P.pvDark, true), l.forecast], [on.band, box(P.pv, 0.2), l.band],
       [on.loss, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-shade)"></rect>`), l.loss],
-      [on.load, dash(P.home, false), l.load], [on.deficit, box(P.home, 0.16), l.deficit],
+      [on.load, sw(`<line x1="0" y1="5" x2="16" y2="5" stroke="${P.home}" stroke-width="1.3" stroke-opacity=".7"></line>`), l.load], [on.deficit, box(P.home, 0.1), l.deficit],
       [on.bat, box(P.bat, 0.7), l.bat], [on.lost, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="${P.lost}" fill-opacity=".22"></rect><line x1="1" y1="2" x2="15" y2="2" stroke="${P.lost}" stroke-width="2.5"></line>`), l.lost],
       [on.risk, sw(`<rect x="1" y="1" width="14" height="8" rx="2" fill="url(#nx-risk)"></rect>`), l.risk],
     ];

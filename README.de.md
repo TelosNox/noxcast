@@ -459,7 +459,7 @@ Darstellung.
   Grenze, sonst nach 30 s darunter. Ein Tipp auf eine Zahl öffnet ihre Entität. Stehen mehrere Entitäten dahinter,
   wie bei PV-Gruppen und Akkus, listet sie diese zuerst mit ihren aktuellen Werten; ein Tipp auf eine Zeile öffnet
   diese Entität.
-- **Tagesdiagramm:** PV-Ist (durchgezogen), Erwartung und Prognose (gestrichelt), Schattenverlust schraffiert,
+- **Tagesdiagramm:** PV-Ist (kräftige Fläche), Erwartung (blasse Fläche) und Prognose (gestrichelt), Schattenverlust schraffiert,
   Hausverbrauch, Akkustand (gemessen, dann simuliert; voraus färben sich die Linie und eine weiche Tönung darunter
   orange, wo der Akku voll ist und Überschuss verloren geht, schraffiert, wo das nur bei mehr Sonne
   (P90) passiert), P10–P90-Band,

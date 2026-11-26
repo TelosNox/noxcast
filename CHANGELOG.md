@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The day card takes on the look of the sidebar panel: stronger colours with one hue per role (PV glows from orange
+  to sun yellow, battery green, grid cyan, home violet in its figure, icon and load line), soft gradients in the
+  chart, a dotted scale and the numbers of the day as labelled figures with the actual in the Noxcast gradient. The
+  gradient frame stays with `look: noxcast`.
+
 ## [0.8.0] - 2026-11-26
 
 All changes since 0.7.0: the pre-releases 0.8.0b1, 0.8.0b2 and 0.8.0b3 (their single steps are listed in

@@ -455,13 +455,13 @@ Darstellung.
 - **Leistung jetzt** als Reihe von Zahlen: PV, Akku, Haus, Netz, mit wandernden Punkten für die Flüsse. Symbole über
   den Zahlen zeigen ihren Zustand: Die Sonne wächst mit dem Anteil an der Spitzenleistung, der Akku ist bis zu seinem
   Ladestand gefüllt, ein Fenster des Hauses leuchtet je Laststufe auf, und der Strommast bekommt je Stufe einen Blitz
-  (blau beim Bezug, gelb beim Einspeisen). Eine Stufe geht sofort hoch; herunter geht sie sofort unter 60 % ihrer
+  (cyan beim Bezug, gelb beim Einspeisen). Eine Stufe geht sofort hoch; herunter geht sie sofort unter 60 % ihrer
   Grenze, sonst nach 30 s darunter. Ein Tipp auf eine Zahl öffnet ihre Entität. Stehen mehrere Entitäten dahinter,
   wie bei PV-Gruppen und Akkus, listet sie diese zuerst mit ihren aktuellen Werten; ein Tipp auf eine Zeile öffnet
   diese Entität.
 - **Tagesdiagramm:** PV-Ist (durchgezogen), Erwartung und Prognose (gestrichelt), Schattenverlust schraffiert,
   Hausverbrauch, Akkustand (gemessen, dann simuliert; voraus färben sich die Linie und eine weiche Tönung darunter
-  bernsteinfarben, wo der Akku voll ist und Überschuss verloren geht, schraffiert, wo das nur bei mehr Sonne
+  orange, wo der Akku voll ist und Überschuss verloren geht, schraffiert, wo das nur bei mehr Sonne
   (P90) passiert), P10–P90-Band,
   je PV-Gruppe eine Spur mit Schatten- und Reflexionszeiten, oben Wettersymbole je Stunde. Das Diagramm nutzt die
   ganze Kartenbreite, die Skala steht darin. Überfahren oder Antippen einer Stunde zeigt ihre Werte.

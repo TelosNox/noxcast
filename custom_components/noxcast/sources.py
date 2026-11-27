@@ -147,7 +147,7 @@ async def async_power_factors(hass: HomeAssistant, statistic_ids: list[str],
 
 HOURLY = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m", "cloud_cover",
           "sunshine_duration", "wind_speed_10m", "wind_direction_10m", "precipitation", "weather_code",
-          "relative_humidity_2m", "snowfall")
+          "relative_humidity_2m", "snowfall", "cloud_cover_low")
 
 
 async def async_open_meteo(hass: HomeAssistant, latitude: float, longitude: float, days: int = FORECAST_DAYS,
@@ -227,6 +227,8 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
                        if ts is not None and v is not None})
     clouds = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["cloud_cover"]))
                         if ts is not None and v is not None})
+    low = _mid_hour({ts: v for ts, v in zip(times, map(_number, data.get("cloud_cover_low") or []))
+                     if ts is not None and v is not None})
     sun = {ts: v for ts, v in zip(times, map(_number, data["sunshine_duration"])) if ts is not None and v is not None}
     humidity = _mid_hour({ts: v for ts, v in zip(times, map(_number, data["relative_humidity_2m"]))
                           if ts is not None and v is not None})
@@ -251,7 +253,7 @@ def _hours(times: list[float | None], data: dict[str, list]) -> list[WeatherHour
                                  wind=wind[start][0] if start in wind else None,
                                  wind_dir=wind[start][1] if start in wind else None,
                                  precip=precip.get(ts), code=code.get(ts), humidity=humidity.get(start),
-                                 snow=snow.get(ts)))
+                                 snow=snow.get(ts), low=low.get(start)))
     return hours
 
 

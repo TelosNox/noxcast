@@ -171,6 +171,8 @@ class WeatherHour:
     humidity: float | None = None  # relative humidity %, middle of the hour
     # for snow on the modules (snow_cover), only where the array has learned how snow lies on it:
     snow: float | None = None    # snowfall in the hour, cm
+    # archived for evaluating sources, not used by the model (after snow: stored weather rows are positional):
+    low: float | None = None     # low cloud cover %, middle of the hour
 
 
 # format of LearnedArray in the store: raise when a field changes meaning. Learned state is only a cache of the
@@ -276,6 +278,7 @@ def mean_weather(series: list[list[WeatherHour]]) -> list[WeatherHour]:
             temp=avg([w.temp for w in ws]), cloud=avg([w.cloud for w in ws]), sun=avg([w.sun for w in ws]),
             wind=avg([w.wind for w in ws]), wind_dir=math.degrees(math.atan2(x, y)) % 360 if x or y else None,
             precip=avg([w.precip for w in ws]), humidity=avg([w.humidity for w in ws]), snow=avg([w.snow for w in ws]),
+            low=avg([w.low for w in ws]),
             code=max((w.code for w in ws if w.code is not None and w.code >= THUNDER), default=ws[0].code)))
     return out
 

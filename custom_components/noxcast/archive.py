@@ -6,7 +6,7 @@ from long-term statistics during the nightly learning run.
 
 Layout: {"YYYY-MM-DD": {"issued": iso, "models": [weather model, ...], "band": [P10, P90 kWh],
          "hours": {"<ts>": {"ghi": W/m², "dni": W/m², "dhi": W/m², "temp": °C | None,
-         "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °},
+         "wx": {"cloud": %, "sun": 0-1, "wind": m/s, "wdir": °, "low": %},
          "forecast": {array_id: Wh}, "actual": {array_id: Wh}, "steps": {array_id: [Wh, ...]},
          "alt": {source: {"ghi": W/m², "dni": W/m², "dhi": W/m², "wx": {...}, "forecast": {array_id: Wh}}},
          "sat_ghi": W/m², "measured": {array_id: Wh},
@@ -20,9 +20,10 @@ archived before keep their rows without it. The read-only views give None or {} 
 stood at each full hour of that day, so the panel can show how the forecast developed.
 
 "wx" holds what the weather source says besides irradiance (cloud cover, sunshine share of the
-hour, wind), only for hours with irradiance and only the values the source has – about 40 bytes
-per daylight hour and source. It is not used by the model; it allows comparing sources and
-predictors (e.g. sunshine duration instead of irradiance, wind cooling) on archived days.
+hour, wind, low cloud cover), only for hours with irradiance and only the values the source has –
+about 50 bytes per daylight hour and source. It is not used by the model; it allows comparing
+sources and predictors (e.g. sunshine duration instead of irradiance, wind cooling, a closed low
+cloud deck that the model's irradiance underrates) on archived days.
 
 Executor jobs read the live archive while the event loop keeps changing it. So the event loop never changes
 a day in place: snapshot() and add_history() put a new day dict, and the caller rebinds a copy of the
@@ -179,7 +180,7 @@ def to_store(archive: dict) -> dict:
 
 
 def details(cloud: float | None = None, sun: float | None = None, wind: float | None = None,
-            wind_dir: float | None = None) -> dict:
+            wind_dir: float | None = None, low: float | None = None) -> dict:
     """Compact weather details of an hour; values the source does not have are left out."""
     out = {}
     if cloud is not None:
@@ -190,6 +191,8 @@ def details(cloud: float | None = None, sun: float | None = None, wind: float | 
         out["wind"] = round(wind, 1)
     if wind_dir is not None:
         out["wdir"] = round(wind_dir) % 360
+    if low is not None:
+        out["low"] = round(low)
     return out
 
 

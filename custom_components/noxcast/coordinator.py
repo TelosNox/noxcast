@@ -1222,7 +1222,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         alt = {name: ({t: g for t, g in ghi.items() if a <= t < b}, fc) for name, (ghi, fc) in (alt or {}).items()}
 
         def wx(series: list[WeatherHour]) -> dict[float, dict]:
-            return {w.start: fc_archive.details(w.cloud, w.sun, w.wind, w.wind_dir) for w in series if a <= w.start < b}
+            return {w.start: fc_archive.details(w.cloud, w.sun, w.wind, w.wind_dir, w.low) for w in series if a <= w.start < b}
 
         def split(series: list[WeatherHour]) -> dict[float, tuple[float | None, float | None]]:
             return {w.start: (w.dni, w.dhi) for w in series if a <= w.start < b}
@@ -1687,7 +1687,7 @@ class NoxcastCoordinator(DataUpdateCoordinator[NoxcastData]):
         return bool(data and data.updated and dt_util.utcnow() - data.updated < STALE_AFTER)
 
 
-_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity", "snow")
+_WEATHER_FIELDS = ("start", "ghi", "dni", "dhi", "temp", "cloud", "sun", "wind", "wind_dir", "precip", "code", "humidity", "snow", "low")
 
 
 def _weather_row(w: WeatherHour) -> list:

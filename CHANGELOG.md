@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+## [0.9.1b1] - 2026-11-27
+
+### Changed
+- The forecast archive also keeps the forecast low cloud cover of each hour. It allows a later check whether a closed
+  low cloud deck marks the dull days that come out far darker than forecast. Forecasts and learning do not change.
+
 ## [0.9.0] - 2026-11-26
 
 All changes since 0.8.0: the pre-releases 0.9.0b1 and 0.9.0b2 (their single steps are listed in

@@ -143,6 +143,9 @@ class NoxcastDay extends HTMLElement {
       this._error = null;
       // without a chosen hour the waterfall tells the whole day
       if (this._hour !== null && (this._hour < this._data.start || this._hour >= this._data.end)) this._hour = null;
+      // a group removed while the panel is open: groups and waterfall go back to all together
+      const ids = ((data.entries || [])[0] || { arrays: [] }).arrays.map((a) => a.id);
+      if (this._focus !== "all" && !ids.includes(this._focus)) this._focus = "all";
     } catch (err) {
       this._error = errorText(err, this._hass.language);
       clearTimeout(this._retry);                // Noxcast may still be starting after a restart
@@ -612,9 +615,11 @@ class NoxcastDay extends HTMLElement {
       </div>`;
     const chips = rows.length > 1 ? `<div class="chips">${[["all", t.all], ...e.arrays.map((a) => [a.id, a.name])].map(([id, name]) =>
       `<button class="chip ${(one ? one.arr.id : "all") === id ? "on" : ""}" data-act="focus" data-id="${esc(id)}">${esc(name)}</button>`).join("")}</div>` : "";
-    const lanes = one && (one.arr.periods || []).length;
+    const { h0, h1 } = this._daylight(e);
+    const lanes = one && (one.arr.periods || []).some((p) => p.end > h0 && p.start < h1);
+    const refShown = phase !== "future" && (one ? one.ref > 0 : rows.some((r) => r.ref > 0));
     const legend = `<div class="legend"><span class="muted">${phase === "today" ? `${t.actual} / ${t.expected}` : mainLabel}</span>
-      ${phase !== "future" ? `<span><i class="ln dashed"></i>${refLabel}</span>` : ""}
+      ${refShown ? `<span><i class="ln dashed"></i>${refLabel}</span>` : ""}
       ${lanes ? `<span><i class="sw lshadesw"></i>${t.shade}</span><span><i class="sw lreflsw"></i>${t.refl}</span>` : ""}</div>`;
     const body = one
       ? `<div class="gitem one">${head(one)}${this._groupChart(e, one, true, top([one]))}</div>`
@@ -626,7 +631,8 @@ class NoxcastDay extends HTMLElement {
   _groupChart(e, r, big, ymax) {
     const t = this._t, now = this._data.now, phase = this._phase;
     const { h0, h1, span } = this._daylight(e);
-    const W = big ? 960 : 480, X0 = big ? 40 : 34, X1 = W - 8, top = 10, Hp = big ? 200 : 120;
+    // narrow card: the large chart keeps the small geometry, or its labels would shrink to a few pixels on a phone
+    const W = big && this.clientWidth >= 640 ? 960 : 480, X0 = W > 480 ? 40 : 34, X1 = W - 8, top = 10, Hp = big ? 200 : 120;
     const x = (ts) => X0 + (ts - h0) / (h1 - h0) * (X1 - X0);
     const y = (v) => top + (Hp - top) * (1 - Math.min(v, ymax) / ymax);
     const step = [50, 100, 200, 250, 500, 1000, 2000, 5000].find((s) => ymax / s <= 4) || 10000;
@@ -665,7 +671,7 @@ class NoxcastDay extends HTMLElement {
       const ref = withRef ? ` · ${phase === "today" ? t.morning : t.dayAhead} ${Math.round(r.r.get(h) || 0)} W` : "";
       svg += `<rect x="${x(h).toFixed(1)}" y="0" width="${(x(h + HOUR) - x(h)).toFixed(1)}" height="${Hp}" class="hit" data-act="hour" data-t="${h}"><title>${this._hm(h)}: ${Math.round(r.m.get(h) || 0)} W${ref}</title></rect>`;
     }
-    return `<svg viewBox="0 0 ${W} ${H}" class="gchart${big ? "" : " small"}" role="img" aria-label="${esc(r.arr.name)}">${svg}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" class="gchart${W > 480 ? "" : " small"}" role="img" aria-label="${esc(r.arr.name)}">${svg}</svg>`;
   }
 
   // where the steps of the arrays come from (views.day_view "steps_from"); "mixed" if they differ

@@ -116,7 +116,7 @@ class NoxcastDay extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._offset = 0;
     this._hour = null;          // selected hour start
-    this._focus = "all";        // waterfall: all groups or one
+    this._focus = "all";        // groups and waterfall: all groups or one
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
   }
 
@@ -227,16 +227,17 @@ class NoxcastDay extends HTMLElement {
     if (this._error) body = `<section class="card pad">${esc(this._error)}</section>`;
     else if (!this._data) body = `<div class="pad muted">…</div>`;
     else if (!e || !e.arrays.some((a) => this._main(a).size)) body = `${this._nav()}<section class="card pad">${t.noData}</section>`;
-    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}<div class="split">${this._groups(e)}${this._waterfall(e)}</div>${this._energy(e)}${this._history(e)}`;
+    else body = `${this._nav()}${this._figures(e)}${this._chartCard(e)}${this._groups(e)}${this._waterfall(e)}${this._energy(e)}${this._history(e)}`;
     this.shadowRoot.innerHTML = `${this._style()}<div class="stack">${body}</div>`;
   }
 
-  // a new hour or group only redraws the chart and the waterfall, so the cards do not appear again
+  // a new hour or group only redraws the charts and the waterfall, so the cards do not appear again
   _refresh() {
     const e = this._data && (this._data.entries || [])[0], root = this.shadowRoot;
-    const chart = root.getElementById("chartbox"), wf = root.getElementById("wfbody");
-    if (!e || !chart || !wf) { this._render(); return; }
+    const chart = root.getElementById("chartbox"), wf = root.getElementById("wfbody"), gr = root.getElementById("grbody");
+    if (!e || !chart || !wf || !gr) { this._render(); return; }
     chart.innerHTML = this._chart(e);
+    gr.innerHTML = this._groupsBody(e);
     wf.innerHTML = this._waterfallBody(e);
   }
 
@@ -581,49 +582,90 @@ class NoxcastDay extends HTMLElement {
     return `rgb(${c.join(",")})`;
   }
 
+  // the groups, chosen with the same chips as the waterfall: all of them as small charts on one scale, so their
+  // heights compare, or one large with its own scale and its shade and reflection times. No inner scroll area: it
+  // would hide groups on a phone, and the choice keeps the card bounded instead.
   _groups(e) {
+    return `<section class="card pad"><div id="grbody">${this._groupsBody(e)}</div></section>`;
+  }
+
+  _groupsBody(e) {
     const t = this._t, phase = this._phase;
     const rows = e.arrays.map((arr, i) => {
       const m = this._main(arr), r = this._reference(arr), main = this._sum(m), ref = this._sum(r);
       return { arr, i, m, r, main, ref, clear: this._clear(arr), done: this._done(arr) };
     });
     const total = rows.reduce((a, r) => a + r.main, 0);
-    // same hours as the main chart and one scale for all groups, so the courses line up and their heights compare
-    const { h0, h1, span } = this._daylight(e);
-    const withRef = phase !== "future";
-    const max = Math.max(1, ...rows.flatMap((r) => span.flatMap((h) => [r.m.get(h) || 0, withRef ? r.r.get(h) || 0 : 0])));
-    // smooth like the chart above, from zero where the group's production begins
-    const pts = (m, stops) => (!stops.length ? "M0,22" : smoothPath(hourCurve(stops, (h) => m.get(h)).map(([ts, v]) => [(ts - h0) / (h1 - h0) * 100, 22 - v / max * 20])));
-    // measured part strong, forecast part faint, as in the chart above
-    const nowPct = phase === "past" ? 100 : phase === "future" ? 0 : Math.min(100, Math.max(0, (this._data.now - h0) / (h1 - h0) * 100));
-    const spark = (r) => {
-      const stops = hourStops(span, (h) => (r.m.get(h) || 0) > 1 || (withRef && (r.r.get(h) || 0) > 1));
-      const c = DAY_COLORS[r.i % 6], main = pts(r.m, stops), area = `${main} L100,22 L0,22 Z`;
-      const ref = withRef && r.ref > 0 ? `<path d="${pts(r.r, stops)}" class="sparkref"><title>${phase === "today" && r.arr.morning && r.arr.morning.t.length ? t.morning : t.dayAhead}</title></path>` : "";
-      const now = nowPct > 0 && nowPct < 100 ? `<line x1="${nowPct.toFixed(1)}" x2="${nowPct.toFixed(1)}" y1="0" y2="24" class="nowline" vector-effect="non-scaling-stroke"></line>` : "";
-      return `<svg viewBox="0 0 100 24" class="spark" preserveAspectRatio="none"><defs>
-        <clipPath id="nx-sp${r.i}p"><rect x="0" y="0" width="${nowPct.toFixed(1)}" height="24"></rect></clipPath>
-        <clipPath id="nx-sp${r.i}f"><rect x="${nowPct.toFixed(1)}" y="0" width="${(100 - nowPct).toFixed(1)}" height="24"></rect></clipPath></defs>
-        <path d="${area}" fill="${c}" fill-opacity=".7" clip-path="url(#nx-sp${r.i}p)"></path>
-        <path d="${area}" fill="${c}" fill-opacity=".2" clip-path="url(#nx-sp${r.i}f)"></path>
-        <path d="${main}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>${now}${ref}</svg>`;
-    };
+    const one = rows.length === 1 ? rows[0] : rows.find((r) => r.arr.id === this._focus);
+    const { span } = this._daylight(e);
+    const top = (list) => Math.max(50, ...list.flatMap((r) => span.flatMap((h) => [r.m.get(h) || 0, phase !== "future" ? r.r.get(h) || 0 : 0]))) * 1.08;
     const mainLabel = phase === "past" ? t.actual : phase === "today" ? t.expected : t.forecast;
     const refLabel = phase === "today" ? t.morning : t.dayAhead;
-    // one block per group instead of a wide table: name and main value, the course, then small figures that wrap
     const fig = (k, v) => `<span class="gfig"><span class="muted">${k}</span> ${v}</span>`;
-    return `<section class="card pad grow"><h3>${t.groups}</h3><div class="glist">
-      ${rows.map((r) => `<div class="gitem">
-        <div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${esc(r.arr.name)}</div>
-          <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main, 2)} ${t.kwh}</b></div></div>
-        ${spark(r)}
-        <div class="gfigs">
-          ${phase === "today" ? fig(t.soFar, `${this._kwh(r.done)} ${t.kwh}`) : ""}
-          ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, r.ref > 0 ? this._dev(r.main, r.ref, r.clear) : "–") : ""}
-          ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
-          ${fig(t.share, `${total > 0 ? Math.round(r.main / total * 100) : 0} %`)}
-        </div></div>`).join("")}
-    </div></section>`;
+    const head = (r) => `<div class="ghead"><div class="gname"><i class="dot" style="background:${DAY_COLORS[r.i % 6]}"></i>${esc(r.arr.name)}</div>
+        <div class="gmain"><span class="muted small">${mainLabel}</span> <b>${this._kwh(r.main, 2)} ${t.kwh}</b></div></div>
+      <div class="gfigs">
+        ${phase === "today" ? fig(t.soFar, `${this._kwh(r.done)} ${t.kwh}`) : ""}
+        ${phase !== "future" ? fig(refLabel, r.ref > 0 ? `${this._kwh(r.ref)} ${t.kwh}` : "–") + fig(t.deviation, r.ref > 0 ? this._dev(r.main, r.ref, r.clear) : "–") : ""}
+        ${phase === "today" ? fig(t.correction, r.arr.correction == null ? "–" : `${r.arr.correction > 0 ? "+" : ""}${this._num(r.arr.correction, 2)}`) : ""}
+        ${rows.length > 1 ? fig(t.share, `${total > 0 ? Math.round(r.main / total * 100) : 0} %`) : ""}
+      </div>`;
+    const chips = rows.length > 1 ? `<div class="chips">${[["all", t.all], ...e.arrays.map((a) => [a.id, a.name])].map(([id, name]) =>
+      `<button class="chip ${(one ? one.arr.id : "all") === id ? "on" : ""}" data-act="focus" data-id="${esc(id)}">${esc(name)}</button>`).join("")}</div>` : "";
+    const lanes = one && (one.arr.periods || []).length;
+    const legend = `<div class="legend"><span class="muted">${phase === "today" ? `${t.actual} / ${t.expected}` : mainLabel}</span>
+      ${phase !== "future" ? `<span><i class="ln dashed"></i>${refLabel}</span>` : ""}
+      ${lanes ? `<span><i class="sw lshadesw"></i>${t.shade}</span><span><i class="sw lreflsw"></i>${t.refl}</span>` : ""}</div>`;
+    const body = one
+      ? `<div class="gitem one">${head(one)}${this._groupChart(e, one, true, top([one]))}</div>`
+      : `<div class="ggrid">${rows.map((r) => `<div class="gitem">${head(r)}${this._groupChart(e, r, false, top(rows))}</div>`).join("")}</div>`;
+    return `<h3>${t.groups}</h3>${chips}${body}${legend}`;
+  }
+
+  // one group over the day, on the hours of the main chart: measured part strong, the rest faint, the reference dashed
+  _groupChart(e, r, big, ymax) {
+    const t = this._t, now = this._data.now, phase = this._phase;
+    const { h0, h1, span } = this._daylight(e);
+    const W = big ? 960 : 480, X0 = big ? 40 : 34, X1 = W - 8, top = 10, Hp = big ? 200 : 120;
+    const x = (ts) => X0 + (ts - h0) / (h1 - h0) * (X1 - X0);
+    const y = (v) => top + (Hp - top) * (1 - Math.min(v, ymax) / ymax);
+    const step = [50, 100, 200, 250, 500, 1000, 2000, 5000].find((s) => ymax / s <= 4) || 10000;
+    const withRef = phase !== "future" && r.ref > 0, c = DAY_COLORS[r.i % 6], id = `nx-gc${r.i}${big ? "b" : ""}`;
+    let svg = "";
+    for (let v = step; v <= ymax; v += step) svg += `<line x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rail"></line><text x="${X0 - 5}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${this._axis(v, step, v + step > ymax)}</text>`;
+    svg += `<line x1="${X0}" x2="${X1}" y1="${y(0)}" y2="${y(0)}" class="rail"></line>`;
+    const stops = hourStops(span, (h) => (r.m.get(h) || 0) > 1 || (withRef && (r.r.get(h) || 0) > 1));
+    const nowX = phase === "past" ? W : phase === "future" ? 0 : Math.max(0, x(now));
+    if (stops.length) {
+      const up = hourCurve(stops, (h) => r.m.get(h)).map(([ts, v]) => [x(ts), y(v)]), line = smoothPath(up);
+      const area = `${line} L${up[up.length - 1][0].toFixed(1)},${y(0)} L${up[0][0].toFixed(1)},${y(0)} Z`;
+      svg += `<defs><clipPath id="${id}p"><rect x="0" y="0" width="${nowX.toFixed(1)}" height="${Hp + 1}"></rect></clipPath>
+        <clipPath id="${id}f"><rect x="${nowX.toFixed(1)}" y="0" width="${(W - nowX).toFixed(1)}" height="${Hp + 1}"></rect></clipPath></defs>
+        <path d="${area}" fill="${c}" fill-opacity=".75" clip-path="url(#${id}p)"></path><path d="${area}" fill="${c}" fill-opacity=".22" clip-path="url(#${id}f)"></path>
+        <path d="${line}" fill="none" stroke="${c}" stroke-width="1.6"></path>`;
+      if (withRef) svg += `<path d="${smoothPath(hourCurve(stops, (h) => r.r.get(h)).map(([ts, v]) => [x(ts), y(v)]))}" class="ref"></path>`;
+    }
+    if (phase === "today" && now > h0 && now < h1) svg += `<line x1="${x(now).toFixed(1)}" x2="${x(now).toFixed(1)}" y1="${top - 6}" y2="${Hp}" class="nowline"></line>`;
+    if (this._hour !== null && this._hour >= h0 && this._hour < h1) svg += `<rect x="${x(this._hour).toFixed(1)}" y="${top - 4}" width="${(x(this._hour + HOUR) - x(this._hour)).toFixed(1)}" height="${Hp - top + 4}" class="sel"></rect>`;
+    // shade and reflection times of the group in one lane below, as in the main chart
+    let H = Hp + 16;
+    const per = big ? (r.arr.periods || []).filter((p) => p.end > h0 && p.start < h1) : [];
+    if (per.length) {
+      for (const p of per) {
+        const a = x(Math.max(p.start, h0)), b = x(Math.min(p.end, h1));
+        svg += `<rect x="${a.toFixed(1)}" y="${Hp + 8}" width="${Math.max(2, b - a).toFixed(1)}" height="9" rx="3" class="${p.type === "shade" ? "lshade" : "lrefl"}"><title>${p.type === "shade" ? t.shade : t.refl} ${this._hm(p.start)}–${this._hm(p.end)} · ${this._kwh(p.wh)} ${t.kwh}</title></rect>`;
+      }
+      H += 18;
+    }
+    for (const h of span) {
+      const hr = Number(this._hm(h).slice(0, 2));
+      if (hr % 2 === 0) svg += `<text x="${x(h).toFixed(1)}" y="${H - 2}" text-anchor="middle" class="ax">${hr}</text>`;
+    }
+    for (const h of span) {
+      const ref = withRef ? ` · ${phase === "today" ? t.morning : t.dayAhead} ${Math.round(r.r.get(h) || 0)} W` : "";
+      svg += `<rect x="${x(h).toFixed(1)}" y="0" width="${(x(h + HOUR) - x(h)).toFixed(1)}" height="${Hp}" class="hit" data-act="hour" data-t="${h}"><title>${this._hm(h)}: ${Math.round(r.m.get(h) || 0)} W${ref}</title></rect>`;
+    }
+    return `<svg viewBox="0 0 ${W} ${H}" class="gchart${big ? "" : " small"}" role="img" aria-label="${esc(r.arr.name)}">${svg}</svg>`;
   }
 
   // where the steps of the arrays come from (views.day_view "steps_from"); "mixed" if they differ
@@ -638,7 +680,7 @@ class NoxcastDay extends HTMLElement {
   }
 
   _waterfall(e) {
-    return `<section class="card pad grow"><div id="wfbody">${this._waterfallBody(e)}</div></section>`;
+    return `<section class="card pad"><div id="wfbody">${this._waterfallBody(e)}</div></section>`;
   }
 
   _waterfallBody(e) {
@@ -677,7 +719,8 @@ class NoxcastDay extends HTMLElement {
       .map(([k]) => `<li><b>${t.steps[k]}</b> ${k === "clear" ? t.stepHelp.clear(eff) : help(k)}</li>`).join("");
     const parts = split ? `<div class="gfigs wsplit"><span class="gfig"><span class="muted">${t.measuredUntil(this._hm(split.until))}</span> ${this._kwh(split.done)} ${t.kwh}</span>
       <span class="gfig"><span class="muted">${t.restExpected}</span> ${this._kwh(split.rest)} ${t.kwh}</span></div>` : "";
-    return `${head}<svg viewBox="0 0 ${W} ${n * rowH + 8}" class="wfall" role="img" aria-label="${title}">${svg}</svg>${parts}<ul class="notes">${notes}</ul>`;
+    // full width: the explanations go beside the bars where there is room
+    return `${head}<div class="wfgrid"><div class="wfmain"><svg viewBox="0 0 ${W} ${n * rowH + 8}" class="wfall" role="img" aria-label="${title}">${svg}</svg>${parts}</div><ul class="notes">${notes}</ul></div>`;
   }
 
   _hourItems(arrays, h) {
@@ -797,8 +840,6 @@ class NoxcastDay extends HTMLElement {
     return `<style>
       :host { display: block; --nx-rail: ${d ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)"}; --nx-good: ${d ? "#4CC77A" : "#2E9E5B"}; --nx-bad: ${d ? "#E0574A" : "#C83A2E"}; --nx-warn: ${d ? "#E8B03A" : "#B7791F"}; }
       .stack { display: flex; flex-direction: column; gap: 16px; }
-      .split { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
-      .grow { flex: 1 1 420px; min-width: 0; }
       .card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--divider-color); }
       .pad { padding: 16px; }
       h3 { margin: 0 0 8px; font-size: 15px; font-weight: 500; }
@@ -842,16 +883,16 @@ class NoxcastDay extends HTMLElement {
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .gname { display: flex; align-items: center; gap: 6px; font-weight: 500; }
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
-      .spark { width: 100%; height: 26px; margin: 4px 0 2px; }
-      .sparkref { fill: none; stroke: var(--primary-text-color); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: .6; vector-effect: non-scaling-stroke; }
-      .glist { display: flex; flex-direction: column; }
-      .gitem { padding: 10px 0; border-top: 1px solid var(--divider-color); } .gitem:first-child { border-top: 0; padding-top: 2px; }
+      .ggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px 28px; }
+      .gitem { min-width: 0; } .gchart { margin-top: 6px; } .gchart.small .ax { font-size: 12px; }
       .ghead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
       .gmain b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .gfigs { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
       .gfig { white-space: nowrap; }
       .bad { color: var(--nx-bad); font-weight: 500; } .warn { color: var(--nx-warn); font-weight: 500; }
-      .wfall { max-width: 640px; }
+      .wfgrid { display: flex; flex-wrap: wrap; gap: 4px 32px; align-items: flex-start; }
+      .wfmain { flex: 1 1 420px; min-width: 0; max-width: 640px; } .wfgrid .notes { flex: 1 1 260px; }
+      .lshadesw { background: var(--nx-bad); opacity: .8; } .lreflsw { background: #8B5CF6; opacity: .8; }
       .wl { font-size: 12px; fill: var(--primary-text-color); } .wv { font-size: 12px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
       .wf.start { fill: #F5A524; } .wf.total { fill: #FF6A3D; } .wf.actual { fill: #8B5CF6; }
       .wf.pos { fill: var(--nx-good); } .wf.neg { fill: var(--nx-bad); opacity: .85; }

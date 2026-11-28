@@ -774,7 +774,10 @@ segment might better count only for sky view, reflection and facade.
     where measured, the expectation or forecast for the rest), the reference as a dashed line (the
     6 o'clock forecast today, the day-ahead forecast for past days), the running forecast and the
     P10–P90 band; a weather strip (clearness of each hour, temperature) and today's shade and
-    reflection periods per group. A table per group with its deviation, correction and share.
+    reflection periods per group. A chart per group with its deviation, correction and share: all groups
+    on one scale so their heights compare, or one chosen group large on its own scale with its shade and
+    reflection periods. A chip choice instead of an inner scroll area keeps the card bounded with many
+    groups; the same choice sets the waterfall.
     Until an hour is chosen, the same waterfall shows the whole day: the steps of all hours summed, per array
     or for all; today it goes on over newer weather and the correction of the hours ahead, the rest up to the
     expectation is what the measured hours brought, and the measured and expected parts are named below.

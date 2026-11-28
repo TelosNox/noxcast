@@ -7,6 +7,12 @@ breaking changes.
 
 ## Unreleased
 
+### Changed
+- The groups in the panel's day view get real charts instead of thin lines: hour axis and scale, the reference
+  forecast dashed, a click on an hour chooses it as in the main chart. *All* shows all groups on one
+  scale; choosing a group shows it large with its own scale and its shade and reflection times. The choice also sets
+  the waterfall below, which now spans the full width.
+
 ## [0.9.1b1] - 2026-11-27
 
 ### Changed

@@ -7,6 +7,8 @@ breaking changes.
 
 ## Unreleased
 
+## [0.10.0b1] - 2026-11-28
+
 ### Changed
 - The groups in the panel's day view get real charts instead of thin lines: hour axis and scale, the reference
   forecast dashed, a click on an hour chooses it as in the main chart. *All* shows all groups on one
